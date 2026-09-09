@@ -5,6 +5,8 @@ import Sidebar from './components/Sidebar';
 import Header from './components/Header';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import Customers from './pages/Customers';
+import Vehicles from './pages/Vehicles';
 import './index.css';
 
 function App() {
@@ -33,13 +35,13 @@ function App() {
           <main className="flex-1 overflow-y-auto p-6">
             <Routes>
               <Route path="/dashboard" element={<Dashboard />} />
-              <Route path="/customers" element={<div>Customers Page</div>} />
-              <Route path="/vehicles" element={<div>Vehicles Page</div>} />
-              <Route path="/job-cards" element={<div>Job Cards Page</div>} />
-              <Route path="/invoices" element={<div>Invoices Page</div>} />
-              <Route path="/inventory" element={<div>Inventory Page</div>} />
-              <Route path="/accounts" element={<div>Accounts Page</div>} />
-              <Route path="/settings" element={<div>Settings Page</div>} />
+              <Route path="/customers" element={<Customers />} />
+              <Route path="/vehicles" element={<Vehicles />} />
+              <Route path="/job-cards" element={<div className="text-center py-12">Job Cards Page - Coming Soon</div>} />
+              <Route path="/invoices" element={<div className="text-center py-12">Invoices Page - Coming Soon</div>} />
+              <Route path="/inventory" element={<div className="text-center py-12">Inventory Page - Coming Soon</div>} />
+              <Route path="/accounts" element={<div className="text-center py-12">Accounts Page - Coming Soon</div>} />
+              <Route path="/settings" element={<div className="text-center py-12">Settings Page - Coming Soon</div>} />
               <Route path="*" element={<Navigate to="/dashboard" />} />
             </Routes>
           </main>
