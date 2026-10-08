@@ -78,5 +78,8 @@ These are deployment-ready integration packages/reference implementations. The a
 - `deployment/PRE_DEPLOY_CHECKLIST.md`
 - `deployment/preflight.sh`
 - `deployment/release-manifest.json`
+- `deployment/INTEGRATION_MAP.md`
+- `deployment/source-discovery.sh`
+- `deployment/source-map.json`
 
-The preflight checker is read-only by design. It does not execute migrations, clear caches, write database rows or publish releases.
+The preflight checker and source-discovery helper are read-only by design. It does not execute migrations, clear caches, write database rows or publish releases.
