@@ -47,7 +47,8 @@ FCM server also requires securely deployed service-account credentials outside G
 Release branch: `release/workshop-stack-20261008`
 
 - **PATCH READY** — consolidated ERP release package exists.
-- Draft PR: **#9**.
+- Draft PR: **#9** — currently open and mergeable.
+- Android release Draft PR **#5** is also currently open and mergeable.
 - **LIVE WIRING PENDING** — actual staging Laravel/PHP application source is not present in this repository.
 - Therefore no ERP package below is being represented as already deployed.
 
