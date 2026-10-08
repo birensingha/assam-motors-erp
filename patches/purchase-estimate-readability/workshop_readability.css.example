@@ -1,0 +1,175 @@
+/*
+ * Assam Motors Workshop Readability Layer
+ * Screen-only scale without opening another window.
+ */
+
+:root{
+  --am-ui-scale:1.15;
+  --am-page-font:calc(15px * var(--am-ui-scale));
+  --am-label-font:calc(12px * var(--am-ui-scale));
+  --am-title-font:calc(24px * var(--am-ui-scale));
+  --am-section-font:calc(17px * var(--am-ui-scale));
+  --am-table-font:calc(13px * var(--am-ui-scale));
+  --am-control-h:calc(44px * var(--am-ui-scale));
+  --am-control-pad-y:calc(9px * var(--am-ui-scale));
+  --am-control-pad-x:calc(11px * var(--am-ui-scale));
+  --am-cell-pad-y:calc(8px * var(--am-ui-scale));
+  --am-cell-pad-x:calc(9px * var(--am-ui-scale));
+}
+
+.am-workshop-page{
+  width:min(100%,1700px);
+  margin:0 auto;
+  padding:20px;
+  font-size:var(--am-page-font);
+}
+
+.am-workshop-page h1{
+  font-size:var(--am-title-font);
+  line-height:1.15;
+}
+
+.am-workshop-page h2,
+.am-workshop-page .section-title{
+  font-size:var(--am-section-font);
+}
+
+.am-workshop-page label{
+  font-size:var(--am-label-font);
+  line-height:1.25;
+}
+
+.am-workshop-page input,
+.am-workshop-page select,
+.am-workshop-page textarea{
+  min-height:var(--am-control-h);
+  padding:var(--am-control-pad-y) var(--am-control-pad-x);
+  font-size:var(--am-page-font);
+}
+
+.am-workshop-page textarea{
+  min-height:calc(92px * var(--am-ui-scale));
+}
+
+.am-workshop-page .am-table-wrap{
+  width:100%;
+  overflow:auto;
+  border:1px solid #dbe5ee;
+  border-radius:10px;
+  background:#fff;
+}
+
+.am-workshop-page table{
+  border-collapse:collapse;
+  width:100%;
+  min-width:1250px;
+  font-size:var(--am-table-font);
+}
+
+.am-workshop-page th{
+  position:sticky;
+  top:0;
+  z-index:3;
+  background:#eaf2fb;
+  padding:var(--am-cell-pad-y) var(--am-cell-pad-x);
+  white-space:nowrap;
+}
+
+.am-workshop-page td{
+  padding:var(--am-cell-pad-y) var(--am-cell-pad-x);
+  vertical-align:middle;
+}
+
+.am-workshop-page td input,
+.am-workshop-page td select{
+  min-height:calc(40px * var(--am-ui-scale));
+  font-size:var(--am-table-font);
+}
+
+.am-workshop-page .am-actions button,
+.am-workshop-page .am-btn{
+  min-height:calc(44px * var(--am-ui-scale));
+  padding:0 calc(14px * var(--am-ui-scale));
+  font-size:calc(13px * var(--am-ui-scale));
+  font-weight:800;
+}
+
+.am-workshop-page .am-totals{
+  min-width:360px;
+  font-size:calc(14px * var(--am-ui-scale));
+}
+
+.am-workshop-page .am-totals .grand{
+  font-size:calc(19px * var(--am-ui-scale));
+  font-weight:900;
+}
+
+.am-size-controls{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  flex-wrap:wrap;
+}
+
+.am-size-controls button{
+  min-height:36px;
+  padding:0 11px;
+  border:1px solid #cbd8e5;
+  border-radius:8px;
+  background:#fff;
+  color:#244966;
+  font-weight:800;
+  cursor:pointer;
+}
+
+.am-size-controls button[aria-pressed="true"]{
+  background:#0b315b;
+  color:#fff;
+  border-color:#0b315b;
+}
+
+.am-document-preview{
+  width:min(100%,1120px);
+  margin:0 auto;
+  padding:calc(22px * var(--am-ui-scale));
+  background:#fff;
+  border:1px solid #d9e2ea;
+  box-shadow:0 8px 24px rgba(29,52,75,.08);
+  font-size:var(--am-page-font);
+}
+
+@media(max-width:900px){
+  .am-workshop-page{
+    padding:12px;
+  }
+
+  .am-workshop-page .am-totals{
+    width:100%;
+    min-width:0;
+  }
+}
+
+@media print{
+  :root{
+    --am-ui-scale:1;
+  }
+
+  .am-size-controls,
+  .screen-only{
+    display:none !important;
+  }
+
+  .am-workshop-page,
+  .am-document-preview{
+    width:100%;
+    max-width:none;
+    margin:0;
+    padding:0;
+    box-shadow:none;
+    border:0;
+  }
+
+  .am-workshop-page th{
+    position:static;
+  }
+}
