@@ -305,3 +305,17 @@ Do not ship the FCM production APK as "fully enabled" before:
 | Read-only source discovery helper | READY / BASH SYNTAX PASS | `deployment/source-discovery.sh` |
 | Machine-readable source map | READY | `deployment/source-map.json` |
 | Actual live filename/table mapping | PENDING LIVE SOURCE | Requires staging application root |
+
+
+---
+
+## Phase 15 — Merge / Rebase Audit
+
+| Repository | Status | Evidence |
+|---|---|---|
+| ERP release branch | NO REBASE REQUIRED | main → release: behind 0; consolidated PR #9 is the intended integration PR |
+| Android v6.0.18 release branch | NO REBASE REQUIRED | main → release: behind 0; consolidated PR #5 is the intended integration PR |
+| Android latest completed code/release CI | PASS | Run #113 |
+| Android audit-doc CI | QUEUED at audit update | Run #114; doc-only follow-up commit |
+| Stacked feature PRs | DO NOT MERGE IN PARALLEL WITH CONSOLIDATED PR WITHOUT RE-AUDIT | ERP #1–#8, Android #1–#4 remain draft/open |
+| ERP mergeability after new doc commits | RECALCULATING | GitHub may temporarily return false immediately after head updates; behind count remains 0 |
