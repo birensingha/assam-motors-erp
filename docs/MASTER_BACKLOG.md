@@ -132,7 +132,11 @@ Android v6.0.18 release-gate builds **Run #105 PASS** and **Run #106 PASS**.
   - same-page 100% / 115% / 125% controls prepared
   - default comfortable view is 115%
   - print/PDF scale remains independent
-- [ ] Final Staff APK licensing/distribution package — **NOT FINALIZED**
+- [ ] Final Staff APK licensing/distribution package — **PATCH READY / FINAL SIGNED ARTIFACT PENDING**
+  - Assam Motors internal-use licence notice prepared
+  - About App shows licence/package/update identity
+  - production bundle includes APK + release note + licence + SHA256SUMS + latest.json
+  - live distribution endpoint/device update verification still pending
 
 ## Current hard blockers
 
