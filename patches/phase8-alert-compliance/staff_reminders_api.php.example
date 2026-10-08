@@ -1,0 +1,226 @@
+<?php
+/**
+ * staff-reminders.php integration example.
+ *
+ * Authentication rule:
+ * $authenticatedStaffId MUST come from the verified Staff bearer token/session.
+ * Never accept staff_id from request JSON.
+ */
+
+function am_alert_add_event(PDO $pdo, array $alert, string $eventType, array $extra = []): void
+{
+    $clock = am_staff_alert_clock();
+    $stmt = $pdo->prepare("
+        INSERT INTO staff_action_alert_events (
+            alert_id, staff_id, event_type, postpone_count,
+            status_before, status_after, actor_type, actor_id, note, payload_json,
+            event_at_local, event_at_utc, timezone_name
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ");
+
+    $payload = $extra['payload_json'] ?? null;
+    if (is_array($payload) || is_object($payload)) {
+        $payload = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    $stmt->execute([
+        $alert['id'],
+        $alert['staff_id'],
+        strtoupper($eventType),
+        $extra['postpone_count'] ?? $alert['postpone_count'] ?? null,
+        $extra['status_before'] ?? $alert['status'] ?? null,
+        $extra['status_after'] ?? $alert['status'] ?? null,
+        $extra['actor_type'] ?? 'SYSTEM',
+        $extra['actor_id'] ?? null,
+        $extra['note'] ?? null,
+        $payload,
+        $clock['local'],
+        $clock['utc'],
+        $clock['timezone'],
+    ]);
+}
+
+function am_alert_poll(PDO $pdo, int $staffId): array
+{
+    // IMPORTANT: checkout/login state is intentionally NOT part of this filter.
+    // An unresolved alert must survive into later sessions/days.
+    $stmt = $pdo->prepare("
+        SELECT *
+        FROM staff_action_alerts
+        WHERE staff_id = ?
+          AND status <> 'RESOLVED'
+          AND resolved_at_utc IS NULL
+        ORDER BY
+          CASE status
+            WHEN 'ESCALATED' THEN 1
+            WHEN 'UNDER_REVIEW' THEN 2
+            WHEN 'ACTIVE' THEN 3
+            WHEN 'SNOOZED' THEN 4
+            ELSE 5
+          END,
+          first_triggered_at_utc ASC,
+          id ASC
+    ");
+    $stmt->execute([$staffId]);
+
+    $now = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+    $rows = [];
+
+    while ($r = $stmt->fetch(PDO::FETCH_ASSOC)) {
+        $next = !empty($r['next_reminder_at_utc'])
+            ? new DateTimeImmutable($r['next_reminder_at_utc'], new DateTimeZone('UTC'))
+            : null;
+
+        $r['admin_escalated'] = in_array($r['status'], ['ESCALATED','UNDER_REVIEW'], true) ? 1 : 0;
+        $r['notify_now'] = !$next || $next <= $now;
+        $r['next_reminder_at'] = $r['next_reminder_at_local'];
+        $rows[] = $r;
+    }
+
+    return ['reminders' => $rows];
+}
+
+function am_alert_snooze(PDO $pdo, int $staffId, int $alertId, int $minutes = 10): array
+{
+    $minutes = max(5, min(15, $minutes));
+
+    $pdo->beginTransaction();
+    try {
+        $stmt = $pdo->prepare("
+            SELECT *
+            FROM staff_action_alerts
+            WHERE id = ? AND staff_id = ?
+            FOR UPDATE
+        ");
+        $stmt->execute([$alertId, $staffId]);
+        $alert = $stmt->fetch(PDO::FETCH_ASSOC);
+
+        if (!$alert || $alert['status'] === 'RESOLVED') {
+            throw new RuntimeException('Active alert not found.');
+        }
+
+        $oldStatus = $alert['status'];
+        $count = min(3, ((int)$alert['postpone_count']) + 1);
+        $escalated = $count >= 3;
+
+        $localTz = new DateTimeZone('Asia/Kolkata');
+        $utcTz = new DateTimeZone('UTC');
+        $localNow = new DateTimeImmutable('now', $localTz);
+        $nextLocal = $localNow->modify("+{$minutes} minutes");
+        $nextUtc = $nextLocal->setTimezone($utcTz);
+
+        $newStatus = $escalated ? 'ESCALATED' : 'SNOOZED';
+
+        $sql = "
+            UPDATE staff_action_alerts
+            SET postpone_count = ?,
+                status = ?,
+                next_reminder_at_local = ?,
+                next_reminder_at_utc = ?,
+                escalated_at_local = CASE WHEN ? = 1 THEN COALESCE(escalated_at_local, ?) ELSE escalated_at_local END,
+                escalated_at_utc = CASE WHEN ? = 1 THEN COALESCE(escalated_at_utc, ?) ELSE escalated_at_utc END
+            WHERE id = ?
+        ";
+
+        $pdo->prepare($sql)->execute([
+            $count,
+            $newStatus,
+            $escalated ? null : $nextLocal->format('Y-m-d H:i:s.v'),
+            $escalated ? null : $nextUtc->format('Y-m-d H:i:s.v'),
+            $escalated ? 1 : 0,
+            $localNow->format('Y-m-d H:i:s.v'),
+            $escalated ? 1 : 0,
+            $localNow->setTimezone($utcTz)->format('Y-m-d H:i:s.v'),
+            $alertId,
+        ]);
+
+        am_alert_add_event($pdo, $alert, $escalated ? 'ADMIN_ESCALATED' : 'SNOOZED', [
+            'postpone_count' => $count,
+            'status_before' => $oldStatus,
+            'status_after' => $newStatus,
+            'actor_type' => 'STAFF',
+            'actor_id' => (string)$staffId,
+            'note' => $escalated
+                ? 'Third postponement reached; alert escalated to Admin.'
+                : "Staff postponed alert for {$minutes} minutes.",
+        ]);
+
+        $pdo->commit();
+
+        return [
+            'id' => $alertId,
+            'postpone_count' => $count,
+            'max_postponements' => 3,
+            'minutes' => $minutes,
+            'status' => $newStatus,
+            'escalated' => $escalated,
+            'admin_escalated' => $escalated,
+            'next_reminder_at' => $escalated ? null : $nextLocal->format('Y-m-d H:i:s'),
+        ];
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $e;
+    }
+}
+
+function am_alert_resolve(
+    PDO $pdo,
+    int $alertId,
+    string $resolvedBy,
+    string $note
+): void {
+    $pdo->beginTransaction();
+    try {
+        $stmt = $pdo->prepare("SELECT * FROM staff_action_alerts WHERE id = ? FOR UPDATE");
+        $stmt->execute([$alertId]);
+        $alert = $stmt->fetch(PDO::FETCH_ASSOC);
+        if (!$alert || $alert['status'] === 'RESOLVED') {
+            $pdo->commit();
+            return;
+        }
+
+        $clock = am_staff_alert_clock();
+        $pdo->prepare("
+            UPDATE staff_action_alerts
+            SET status = 'RESOLVED',
+                resolved_at_local = ?,
+                resolved_at_utc = ?,
+                resolved_by = ?,
+                resolution_note = ?,
+                next_reminder_at_local = NULL,
+                next_reminder_at_utc = NULL
+            WHERE id = ?
+        ")->execute([
+            $clock['local'], $clock['utc'], $resolvedBy, $note, $alertId
+        ]);
+
+        am_alert_add_event($pdo, $alert, 'RESOLVED', [
+            'status_before' => $alert['status'],
+            'status_after' => 'RESOLVED',
+            'actor_type' => 'SYSTEM',
+            'actor_id' => $resolvedBy,
+            'note' => $note,
+        ]);
+
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $e;
+    }
+}
+
+/*
+Suggested request router:
+
+GET  ?action=poll
+  -> am_alert_poll($pdo, $authenticatedStaffId)
+
+POST ?action=snooze
+  -> decoded JSON: id/reminder_id + minutes
+  -> am_alert_snooze($pdo, $authenticatedStaffId, $alertId, $minutes)
+
+POST ?action=resolve
+  -> Do NOT trust a generic Staff dismiss.
+  -> First verify the related Attendance/ROT/Inspection business condition.
+  -> If condition is satisfied, call am_alert_resolve(...).
+*/
