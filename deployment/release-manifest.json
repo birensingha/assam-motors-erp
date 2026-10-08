@@ -28,5 +28,11 @@
     "package_id": "com.assammotors.staff",
     "requires_existing_signing_identity": true,
     "firebase_required_for_production": true
+  },
+  "integration_map": {
+    "document": "deployment/INTEGRATION_MAP.md",
+    "discovery_script": "deployment/source-discovery.sh",
+    "machine_map": "deployment/source-map.json",
+    "policy": "read-only discovery before live source edits"
   }
 }
