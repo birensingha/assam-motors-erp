@@ -8,6 +8,7 @@ This branch consolidates the prepared Workshop/Staff implementation packages int
 
 - Customer Master native Admin-auth route and safe Legacy redirect
 - Native Vendor / Part / Labour / Vehicle / Labour-Part Mapping routes and CRUD/search contracts
+- Native Booking & Orders / Users / Products / Staff / Job Applications / Staff Location / Service Reminder contracts
 - Job Card Create with Customer/Vehicle selection, Parts above Labour, direct add without Estimate and server-side totals
 - Job Card Edit with Parts above Labour and direct add without Estimate
 - Job Card Close → Invoice conversion with immutable Parts/Labour snapshot, duplicate prevention, View and Print flow
