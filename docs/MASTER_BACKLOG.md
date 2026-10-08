@@ -27,8 +27,12 @@
   - Live staging source wiring + verification still required
 - [ ] Edit Job Card
 - [ ] Convert to Invoice
+  - Patch package prepared: CLOSED-only gate, server recalculation, immutable Parts/Labour snapshot, duplicate prevention
+  - Live staging schema wiring + verification still required
 - [ ] View Invoice
+  - Invoice snapshot view contract prepared
 - [ ] Print Invoice
+  - A4 Parts-first/Labour-second print reference prepared
 
 ## Phase 4 — OSL Purchase
 - [ ] OSL purchase entry UI like multi-line Parts Purchase
