@@ -1,0 +1,78 @@
+<?php
+/**
+ * JobCardController::create / store reference.
+ *
+ * Adapt model/table names to the live Assam Motors ERP schema.
+ * This intentionally avoids inventing production table names.
+ */
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+
+public function create()
+{
+    // Replace with the existing master-data queries used by Workshop.
+    $customers = collect();
+    $serviceAdvisors = collect();
+    $labourMasters = collect();
+
+    return view('erp.job-cards.create', [
+        'customers' => $customers,
+        'serviceAdvisors' => $serviceAdvisors,
+        'labourMasters' => $labourMasters,
+        'initialStatus' => 'OPEN',
+    ]);
+}
+
+public function store(Request $request)
+{
+    $data = $request->validate([
+        'customer_id' => ['required','integer'],
+        'vehicle_id' => ['required','integer'],
+        'odometer' => ['nullable','numeric','min:0'],
+        'service_advisor_id' => ['nullable','integer'],
+        'customer_complaint' => ['required','string','max:5000'],
+        'workshop_note' => ['nullable','string','max:5000'],
+        'promised_delivery_at' => ['nullable','date'],
+        'save_mode' => ['nullable','in:OPEN,WIP'],
+
+        'parts' => ['nullable','array'],
+        'parts.*.part_id' => ['required_with:parts','integer'],
+        'parts.*.qty' => ['required_with:parts','numeric','gt:0'],
+        'parts.*.rate' => ['nullable','numeric','min:0'],
+        'parts.*.discount_percent' => ['nullable','numeric','between:0,100'],
+        'parts.*.tax_percent' => ['nullable','numeric','between:0,100'],
+
+        'labour' => ['nullable','array'],
+        'labour.*.labour_id' => ['required_with:labour','integer'],
+        'labour.*.technician_id' => ['nullable','integer'],
+        'labour.*.qty' => ['nullable','numeric','gt:0'],
+        'labour.*.rate' => ['nullable','numeric','min:0'],
+    ]);
+
+    $jobCardId = DB::transaction(function () use ($data) {
+        // 1. Re-query Customer.
+        // 2. Re-query Vehicle and verify it belongs to Customer.
+        // 3. Re-query Service Advisor if supplied.
+        // 4. Generate next Job Card number using EXISTING ERP sequence/locking.
+        // 5. Insert Job Card header with OPEN status.
+        // 6. Re-query every Part from Part Master.
+        // 7. Calculate Parts line values on server.
+        // 8. Re-query every Labour item from Labour Master.
+        // 9. Calculate Labour line values on server.
+        // 10. Validate Technician before ROT assignment.
+        // 11. Insert Parts/Labour lines using existing live tables.
+        // 12. Create ROT assignment only through existing ROT service/helper.
+        // 13. Recalculate Parts/Labour/Tax/Grand Total from saved server rows.
+        // 14. Write JOB_CARD_CREATE + child audit events.
+        // 15. If save_mode=WIP, run the normal workflow transition guard.
+
+        throw new RuntimeException(
+            'Wire Job Card create/store to the live Workshop schema before enabling this reference.'
+        );
+    });
+
+    return redirect()
+        ->route('erp.job-cards.edit', $jobCardId)
+        ->with('success', 'Job Card created successfully.');
+}
