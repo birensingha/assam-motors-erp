@@ -356,3 +356,18 @@ Final report: `deployment/FINAL_PRE_MERGE_GATE_20261008.md`
 | Android desired tag | PENDING TOOL CAPABILITY | `v6.0.18` |
 | Staging deployment | NOT DONE | live Laravel/PHP source still unavailable |
 | Signed production APK | NOT DONE | Firebase/server gates still pending |
+
+
+---
+
+## Phase 18 — Live Staging Handoff
+
+| Item | Status | Note |
+|---|---|---|
+| Handoff guide | READY | `deployment/LIVE_STAGING_HANDOFF.md` |
+| Sanitized collector | READY / BASH SYNTAX PASS | `deployment/collect-live-staging.sh` |
+| DB schema-only probe | READY / PHP SYNTAX PASS | `deployment/db-schema-probe.php` |
+| Source-code collection | DISABLED BY DESIGN | Collector gathers paths/inventory, not source contents |
+| .env / credential collection | DISABLED BY DESIGN | Secret scan blocks archive on obvious key/password patterns |
+| Business-row collection | DISABLED BY DESIGN | DB probe reads information_schema metadata only |
+| Actual staging collection | PENDING | Run on the real staging APP_ROOT and upload generated tar.gz |
