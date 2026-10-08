@@ -93,7 +93,7 @@ For full evidence and blockers, see `docs/DELIVERY_STATUS_20261008.md`.
 - [ ] Over-standard warning — **BUILD TESTED**
 - [ ] Pause reason/note transmission — **BUILD TESTED**
 
-Android v6.0.18 release-gate builds **Run #105 PASS** and **Run #106 PASS**.
+Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and latest **Run #112 PASS**.
 
 ## Phase 8–11 — Staff Alerts / Compliance
 
