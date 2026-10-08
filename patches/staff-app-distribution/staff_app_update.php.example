@@ -1,0 +1,56 @@
+<?php
+/**
+ * Staff app update-feed example.
+ *
+ * Recommended path:
+ * /legacy/api/staff-app-update.php
+ *
+ * Adapt authentication/bootstrap paths to the live Staff API.
+ */
+
+// require __DIR__ . '/bootstrap.php';
+// $staff = require_authenticated_staff();
+
+header('Content-Type: application/json; charset=utf-8');
+header('Cache-Control: no-store, private');
+
+$platform = strtolower(trim((string)($_GET['platform'] ?? 'android')));
+$currentVersionCode = max(0, (int)($_GET['version_code'] ?? 0));
+
+if ($platform !== 'android') {
+    http_response_code(400);
+    echo json_encode(['ok' => false, 'error' => 'Unsupported platform']);
+    exit;
+}
+
+// Publish this data from a deployment-controlled file/config generated from
+// the verified production artifact. Do not accept release metadata from
+// browser/Android request input.
+$latest = [
+    'package_id' => 'com.assammotors.staff',
+    'version_name' => '6.0.18',
+    'version_code' => 60018,
+    'channel' => 'production',
+
+    // Replace ONLY after the signed APK exists at this trusted HTTPS URL.
+    'download_url' => null,
+
+    // Replace with the exact SHA256SUMS/latest.json value produced by CI.
+    'sha256' => null,
+
+    'mandatory' => false,
+    'min_supported_version_code' => 60017,
+    'published_at' => null,
+    'release_notes' => 'Assam Motors Staff production update.',
+];
+
+$updateAvailable =
+    $latest['download_url'] !== null &&
+    $latest['sha256'] !== null &&
+    (int)$latest['version_code'] > $currentVersionCode;
+
+echo json_encode([
+    'ok' => true,
+    'update_available' => $updateAvailable,
+    'latest' => $latest,
+], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
