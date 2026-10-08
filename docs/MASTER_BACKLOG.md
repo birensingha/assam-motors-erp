@@ -122,7 +122,11 @@ Android v6.0.18 release-gate builds **Run #105 PASS** and **Run #106 PASS**.
 - [ ] Configure FCM HTTP v1 server credentials — **CONFIG BLOCKED**
 - [ ] Produce final production-signed v6.0.18 APK — **PENDING**
 - [ ] Verify upgrade on installed Staff app — **PENDING**
-- [ ] Verify direct/auto-update delivery path — **PENDING**
+- [ ] Verify direct/auto-update delivery path — **ANDROID CHECK UI + SERVER FEED PATCH READY / LIVE VERIFICATION PENDING**
+  - Settings has Check for App Update
+  - only trusted Assam Motors HTTPS download URLs can open
+  - update-feed endpoint contract prepared
+  - Android/user/device policy still controls final APK installation
 
 ## Additional UX / Distribution Items
 
