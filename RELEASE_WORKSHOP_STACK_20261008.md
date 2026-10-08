@@ -10,6 +10,7 @@ This branch consolidates the prepared Workshop/Staff implementation packages int
 - Job Card Edit with Parts above Labour and direct add without Estimate
 - QC → Ready for Delivery → Job Card Close → Invoice conversion workflow
 - OSL Purchase multi-line fast-entry format
+- Parts Purchase Part Code/Name autocomplete and Job Card/Vehicle allocation search fix
 - ROT START / PAUSE / RESUME / COMPLETE audit history
 - Asia/Kolkata + UTC event timestamps and pause metadata
 - Technician ROT Performance and detailed history
