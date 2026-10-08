@@ -18,6 +18,8 @@
 
 ## Phase 2 — Payment Voucher
 - [ ] Fix /erp/payments/create HTTP 500
+  - Patch package prepared: route/controller/view diagnostics, null-safe create form and acceptance checks
+  - Live staging exception trace + deployment verification still required
 
 ## Phase 3 — Job Card
 - [ ] Create Job Card
