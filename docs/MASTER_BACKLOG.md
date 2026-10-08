@@ -161,3 +161,15 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 - [ ] Run read-only DB inspection against staging — **PENDING DB ACCESS**
 - [ ] Execute staging deployment — **PENDING**
 - [ ] Record smoke-test results and close rollback window — **PENDING**
+
+
+## Phase 14 — Source Mapping / Integration Map
+
+- [x] Patch → route/controller/view/API mapping document — **READY**
+- [x] Android endpoint → ERP endpoint matrix — **READY**
+- [x] DB concept → live-table worksheet — **READY / FILL ON STAGING**
+- [x] Route/controller/view worksheet — **READY / FILL ON STAGING**
+- [x] Read-only source discovery helper — **READY / BASH SYNTAX PASS**
+- [x] Machine-readable source map — **READY**
+- [ ] Run source discovery against actual staging app — **PENDING LIVE SOURCE**
+- [ ] Replace every TBD/DISCOVER entry with exact live file/class/table — **PENDING LIVE SOURCE**
