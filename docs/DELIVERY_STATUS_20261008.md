@@ -208,7 +208,7 @@ Final Staff-visible behaviour still depends on live server ROT data being correc
 | ERP alert/device-token backend live | PENDING |
 | Firebase HTTP v1 server credentials live | PENDING |
 | Final production-signed v6.0.18 APK | NOT YET PRODUCED |
-| Direct device update / auto-update delivery | NOT YET VERIFIED |
+| Direct device update / auto-update delivery | METADATA/POLICY READY; LIVE DELIVERY NOT YET VERIFIED |
 
 Production workflow intentionally refuses to produce the FCM-enabled production APK while required Firebase build values are missing.
 
@@ -222,7 +222,7 @@ Production workflow intentionally refuses to produce the FCM-enabled production 
 | Estimate form readability / zoomed presentation | PATCH READY / LIVE WIRING PENDING | Same-page Estimate preview/reference prepared |
 | Avoid opening separate large window; improve in-page readability | PATCH READY / LIVE VERIFICATION PENDING | 100/115/125% in-page controls; default 115%; no normal window.open flow |
 | Staff notification presentation | BUILD TESTED/PATCH READY | Android notification receiver + alert center; FCM config still blocked |
-| Staff APK licensing/distribution package | NOT FINALIZED | Repository has project licensing, but final production distribution/licence packaging is not marked complete |
+| Staff APK licensing/distribution package | PATCH READY / PRODUCTION ARTIFACT PENDING | Internal-use licence notice, About-screen licence identity, checksum + latest.json production bundle are prepared; signed v6.0.18 still pending |
 
 ---
 
