@@ -90,8 +90,14 @@ say "MODE:     read-only"
   # File paths only: no matched source lines are collected.
   while IFS= read -r root; do
     [[ -e "$root" ]] || continue
-    grep -RIlE "$PATTERN" "$root"       --exclude='.env'       --exclude='.env.*'       --exclude-dir=vendor       --exclude-dir=node_modules       --exclude-dir=storage       2>/dev/null || true
-  done <<'ROOTS'
+    grep -RIlE "$PATTERN" "$root" \
+      --exclude='.env' \
+      --exclude='.env.*' \
+      --exclude-dir=vendor \
+      --exclude-dir=node_modules \
+      --exclude-dir=storage \
+      2>/dev/null || true
+  done > "$OUT/keyword-files.txt" <<'ROOTS'
 routes
 app
 resources/views
@@ -100,7 +106,6 @@ legacy
 config
 database
 ROOTS
-  > "$OUT/keyword-files.txt"
 
   if [[ -f composer.json ]]; then
     cp composer.json "$OUT/composer.json"
@@ -144,7 +149,11 @@ fi
 SECRET_HITS="$OUT/secret-scan.txt"
 : > "$SECRET_HITS"
 
-grep -RInE   '-----BEGIN [A-Z ]*PRIVATE KEY-----|APP_KEY=base64:|DB_PASSWORD=|AIza[0-9A-Za-z_-]{30,}|"private_key"[[:space:]]*:'   "$OUT"   --exclude='secret-scan.txt'   > "$SECRET_HITS" 2>/dev/null || true
+grep -RInE -- \
+  '-----BEGIN [A-Z ]*PRIVATE KEY-----|APP_KEY=base64:|DB_PASSWORD=|AIza[0-9A-Za-z_-]{30,}|"private_key"[[:space:]]*:' \
+  "$OUT" \
+  --exclude='secret-scan.txt' \
+  > "$SECRET_HITS" 2>/dev/null || true
 
 if [[ -s "$SECRET_HITS" ]]; then
   echo
