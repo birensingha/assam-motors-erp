@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Assam Motors — OSL Purchase Reference</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f4f7fb;color:#17324d;font-family:Arial,sans-serif}
+.wrap{max-width:1450px;margin:auto;padding:18px}.title{background:#0b315b;color:#fff;padding:18px 20px;border-radius:14px 14px 0 0}
+.title h1{margin:0;font-size:22px}.title p{margin:5px 0 0;font-size:12px;opacity:.8}
+.panel{background:#fff;border:1px solid #dbe5ee;padding:16px}.header-grid{display:grid;grid-template-columns:2fr 1fr 1fr 1fr;gap:10px}
+label{font-size:11px;font-weight:700;color:#5c6f82}input,select,textarea{width:100%;margin-top:5px;border:1px solid #cfdbe6;border-radius:8px;padding:10px;background:#fff}
+.table-wrap{overflow:auto;margin-top:14px;border:1px solid #dbe5ee;border-radius:10px}table{border-collapse:collapse;width:100%;min-width:1180px}
+th{background:#eaf2fb;color:#21496c;font-size:11px;text-align:left;padding:10px;position:sticky;top:0}td{border-top:1px solid #e7edf3;padding:6px}
+td input,td select{margin:0;padding:8px}.num{text-align:right}.del{background:#d93632;color:#fff;border:0;border-radius:7px;padding:8px 10px}
+.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:12px}.btn{border:0;border-radius:8px;padding:10px 14px;font-weight:800}.add{background:#f59e0b;color:#fff}.save{background:#168445;color:#fff}.cancel{background:#e8eef4;color:#29455f}
+.totals{margin-left:auto;min-width:320px;background:#f8fbfe;border:1px solid #dbe5ee;border-radius:10px;padding:12px}.totals div{display:flex;justify-content:space-between;padding:5px}.totals .grand{font-size:18px;font-weight:900;color:#0b315b;border-top:1px solid #dbe5ee;margin-top:5px;padding-top:10px}
+.footer{display:flex;gap:12px;align-items:flex-start;margin-top:14px}.notes{flex:1}
+@media(max-width:760px){.header-grid{grid-template-columns:1fr}.footer{flex-direction:column}.totals{width:100%;min-width:0}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="title"><h1>OSL Purchase Entry</h1><p>Multi-line fast entry · Parts Purchase style</p></div>
+  <div class="panel">
+    <div class="header-grid">
+      <label>Vendor<input placeholder="Search vendor"></label>
+      <label>Vendor Bill No.<input></label>
+      <label>Invoice Date<input type="date"></label>
+      <label>Purchase Date<input type="date"></label>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>#</th><th>OSL Code</th><th>Description</th><th>Job Card / Vehicle</th><th>Qty</th><th>Rate</th><th>Disc %</th><th>Tax %</th><th>Tax Amt</th><th>Line Total</th><th></th></tr></thead>
+        <tbody id="rows"></tbody>
+      </table>
+    </div>
+
+    <div class="actions">
+      <button class="btn add" type="button" onclick="addRow()">+ Add Line</button>
+    </div>
+
+    <div class="footer">
+      <label class="notes">Remarks<textarea rows="4" placeholder="Purchase remarks"></textarea></label>
+      <div class="totals">
+        <div><span>Subtotal</span><strong id="subtotal">0.00</strong></div>
+        <div><span>Tax</span><strong id="taxTotal">0.00</strong></div>
+        <div class="grand"><span>Grand Total</span><strong id="grandTotal">0.00</strong></div>
+      </div>
+    </div>
+
+    <div class="actions">
+      <button class="btn save" type="button">Save OSL Purchase</button>
+      <button class="btn cancel" type="button">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function money(n){return (Number(n)||0).toFixed(2)}
+function addRow(){
+  const tr=document.createElement('tr');
+  tr.innerHTML='<td class="no"></td>'+
+    '<td><input placeholder="Search code"></td>'+
+    '<td><input placeholder="OSL description"></td>'+
+    '<td><input placeholder="JC No / Vehicle No"></td>'+
+    '<td><input class="qty num" type="number" step="0.001" value="1"></td>'+
+    '<td><input class="rate num" type="number" step="0.01" value="0"></td>'+
+    '<td><input class="disc num" type="number" step="0.01" value="0"></td>'+
+    '<td><input class="tax num" type="number" step="0.01" value="0"></td>'+
+    '<td class="taxamt num">0.00</td><td class="total num">0.00</td>'+
+    '<td><button class="del" type="button" onclick="this.closest(\'tr\').remove();renumber();calc()">✕</button></td>';
+  tr.querySelectorAll('input').forEach(i=>i.addEventListener('input',calc));
+  document.getElementById('rows').appendChild(tr);
+  renumber(); calc();
+}
+function renumber(){document.querySelectorAll('#rows tr').forEach((r,i)=>r.querySelector('.no').textContent=i+1)}
+function calc(){
+  let subtotal=0,taxTotal=0,grand=0;
+  document.querySelectorAll('#rows tr').forEach(r=>{
+    const q=+r.querySelector('.qty').value||0, rate=+r.querySelector('.rate').value||0;
+    const disc=+r.querySelector('.disc').value||0, tax=+r.querySelector('.tax').value||0;
+    const gross=q*rate, taxable=gross-(gross*disc/100), taxAmt=taxable*tax/100, total=taxable+taxAmt;
+    r.querySelector('.taxamt').textContent=money(taxAmt); r.querySelector('.total').textContent=money(total);
+    subtotal+=taxable; taxTotal+=taxAmt; grand+=total;
+  });
+  document.getElementById('subtotal').textContent=money(subtotal);
+  document.getElementById('taxTotal').textContent=money(taxTotal);
+  document.getElementById('grandTotal').textContent=money(grand);
+}
+addRow();addRow();addRow();
+</script>
+</body>
+</html>
