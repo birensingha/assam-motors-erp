@@ -90,12 +90,13 @@ say "MODE:     read-only"
   # File paths only: no matched source lines are collected.
   while IFS= read -r root; do
     [[ -e "$root" ]] || continue
-    grep -RIlE "$PATTERN" "$root" \
+    grep -RIlE \
       --exclude='.env' \
       --exclude='.env.*' \
       --exclude-dir=vendor \
       --exclude-dir=node_modules \
       --exclude-dir=storage \
+      "$PATTERN" "$root" \
       2>/dev/null || true
   done > "$OUT/keyword-files.txt" <<'ROOTS'
 routes
@@ -108,7 +109,13 @@ database
 ROOTS
 
   if [[ -f composer.json ]]; then
-    cp composer.json "$OUT/composer.json"
+    php -r '
+      $j = json_decode(file_get_contents("composer.json"), true) ?: [];
+      echo json_encode([
+        "require" => $j["require"] ?? [],
+        "require-dev" => $j["require-dev"] ?? []
+      ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES), PHP_EOL;
+    ' > "$OUT/composer-requirements.json" 2>/dev/null || true
   fi
 
   if command -v composer >/dev/null 2>&1 && [[ -f composer.json ]]; then
@@ -116,7 +123,14 @@ ROOTS
   fi
 
   if [[ -f package.json ]]; then
-    cp package.json "$OUT/package.json"
+    node -e '
+      const fs=require("fs");
+      const j=JSON.parse(fs.readFileSync("package.json","utf8"));
+      console.log(JSON.stringify({
+        dependencies:j.dependencies||{},
+        devDependencies:j.devDependencies||{}
+      },null,2));
+    ' > "$OUT/node-dependencies.json" 2>/dev/null || true
   fi
 
   {
@@ -149,10 +163,11 @@ fi
 SECRET_HITS="$OUT/secret-scan.txt"
 : > "$SECRET_HITS"
 
-grep -RInE -- \
-  '-----BEGIN [A-Z ]*PRIVATE KEY-----|APP_KEY=base64:|DB_PASSWORD=|AIza[0-9A-Za-z_-]{30,}|"private_key"[[:space:]]*:' \
-  "$OUT" \
+grep -RInE \
   --exclude='secret-scan.txt' \
+  -- \
+  '-----BEGIN [A-Z ]*PRIVATE KEY-----|APP_KEY=base64:|DB_PASSWORD=|AIza[0-9A-Za-z_-]{30,}|github_pat_[0-9A-Za-z_]+|gh[pousr]_[0-9A-Za-z]+|"private_key"[[:space:]]*:' \
+  "$OUT" \
   > "$SECRET_HITS" 2>/dev/null || true
 
 if [[ -s "$SECRET_HITS" ]]; then
