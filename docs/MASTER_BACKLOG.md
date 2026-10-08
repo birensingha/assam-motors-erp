@@ -10,10 +10,15 @@
 - [ ] Service Reminder native staging page
 - [ ] Customer / Customer Master native staging page
 - [ ] Vendor Master correct native route
+  - Native route/CRUD/search patch contract prepared; live wiring pending
 - [ ] Part Master native staging page
+  - Native route/CRUD/search patch contract prepared; live wiring pending
 - [ ] Labour Master native staging page
+  - Native route/CRUD/standard-time validation patch contract prepared; live wiring pending
 - [ ] Vehicle Master native staging page
+  - Native route aligned with existing Vehicle prototype; live wiring pending
 - [ ] Labour / Part Mapping native staging page
+  - Native mapping CRUD/search/reference UI prepared; live wiring pending
 - [x] Attendance native staging route already restored
 
 ## Phase 2 — Payment Voucher
