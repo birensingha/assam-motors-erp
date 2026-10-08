@@ -1,0 +1,69 @@
+{
+  "release": "workshop-stack-20261008",
+  "source_status": "live-laravel-source-not-present-in-this-repository",
+  "modules": [
+    {
+      "name": "customer-master",
+      "patch": "patches/phase1-customer-native-auth",
+      "route": "/erp/native/customers",
+      "expected_controller": "Customer/Admin Native Controller",
+      "expected_view": "erp/native/customers",
+      "live_mapping": "DISCOVER"
+    },
+    {
+      "name": "native-masters",
+      "patch": "patches/native-master-pages",
+      "routes": ["/erp/native/vendors","/erp/native/parts","/erp/native/labours","/erp/native/vehicles","/erp/native/labour-part-mapping"],
+      "live_mapping": "DISCOVER"
+    },
+    {
+      "name": "payment-voucher",
+      "patch": "patches/payment-voucher-500",
+      "route": "/erp/payments/create",
+      "live_mapping": "DISCOVER_CONTROLLER_VIEW_AND_EXCEPTION"
+    },
+    {
+      "name": "job-card",
+      "patches": ["patches/job-card-create","patches/phase3-job-card-edit","patches/job-card-invoice"],
+      "live_mapping": "DISCOVER_HEADER_LINES_ROT_INVOICE_TABLES_AND_ROUTES"
+    },
+    {
+      "name": "parts-purchase",
+      "patch": "patches/parts-purchase-search-allocation",
+      "live_mapping": "DISCOVER_PURCHASE_ROUTE_CONTROLLER_VIEW_AND_MASTER_TABLES"
+    },
+    {
+      "name": "osl-purchase",
+      "patch": "patches/phase4-osl-purchase",
+      "new_table": "osl_purchase_line_items",
+      "live_mapping": "DISCOVER_EXISTING_OSL_HEADER"
+    },
+    {
+      "name": "rot",
+      "patches": ["patches/phase5-rot-backend","patches/phase6-rot-performance"],
+      "new_table": "rot_event_audit",
+      "android_endpoint_concept": "/staff-rot-v3.php",
+      "live_mapping": "DISCOVER"
+    },
+    {
+      "name": "staff-alerts",
+      "patches": ["patches/phase8-alert-compliance","patches/phase9-admin-alert-review-export"],
+      "android_endpoint_concept": "/staff-reminders.php",
+      "new_tables": ["staff_action_alerts","staff_action_alert_events"],
+      "live_mapping": "DISCOVER"
+    },
+    {
+      "name": "fcm",
+      "patch": "patches/phase10-fcm-push",
+      "android_endpoint_concept": "/staff-device-token.php",
+      "new_tables": ["staff_push_devices","staff_push_deliveries"],
+      "live_mapping": "DISCOVER"
+    },
+    {
+      "name": "staff-app-update",
+      "patch": "patches/staff-app-distribution",
+      "android_endpoint_concept": "/staff-app-update.php",
+      "live_mapping": "DISCOVER"
+    }
+  ]
+}
