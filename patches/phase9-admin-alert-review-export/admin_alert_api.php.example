@@ -34,8 +34,9 @@ function am_admin_alert_under_review(
     $pdo->beginTransaction();
     try {
         $alert = am_admin_alert_get_for_update($pdo, $alertId);
-        if ($alert['status'] === 'RESOLVED') {
-            throw new RuntimeException('Resolved alert cannot be put under review.');
+        $allowed = ['ACTIVE','SNOOZED','ESCALATED'];
+        if (!in_array($alert['status'], $allowed, true)) {
+            throw new RuntimeException('Only Active, Snoozed or Escalated alerts can enter Under Review.');
         }
 
         $clock = am_staff_alert_clock();
@@ -87,6 +88,9 @@ function am_admin_alert_add_note(
     $pdo->beginTransaction();
     try {
         $alert = am_admin_alert_get_for_update($pdo, $alertId);
+        if ($alert['status'] === 'RESOLVED') {
+            throw new RuntimeException('Resolved alert is immutable.');
+        }
 
         $pdo->prepare("
             UPDATE staff_action_alerts
@@ -125,16 +129,53 @@ function am_admin_alert_resolve_verified(
         throw new RuntimeException('Required business action is still pending.');
     }
 
-    am_alert_resolve(
-        $pdo,
-        $alertId,
-        'ADMIN:' . $adminUserId,
-        trim($resolutionNote) !== ''
-            ? trim($resolutionNote)
-            : 'Business condition verified by Admin review.'
-    );
+    $note = trim($resolutionNote) !== ''
+        ? trim($resolutionNote)
+        : 'Business condition verified by Admin review.';
 
-    return ['id' => $alertId, 'status' => 'RESOLVED'];
+    $pdo->beginTransaction();
+    try {
+        $alert = am_admin_alert_get_for_update($pdo, $alertId);
+        if ($alert['status'] === 'RESOLVED') {
+            $pdo->commit();
+            return ['id' => $alertId, 'status' => 'RESOLVED'];
+        }
+
+        $clock = am_staff_alert_clock();
+        $before = $alert['status'];
+
+        $pdo->prepare("
+            UPDATE staff_action_alerts
+            SET status = 'RESOLVED',
+                resolved_at_local = ?,
+                resolved_at_utc = ?,
+                resolved_by = ?,
+                resolution_note = ?,
+                next_reminder_at_local = NULL,
+                next_reminder_at_utc = NULL
+            WHERE id = ?
+        ")->execute([
+            $clock['local'],
+            $clock['utc'],
+            'ADMIN:' . $adminUserId,
+            $note,
+            $alertId,
+        ]);
+
+        am_alert_add_event($pdo, $alert, 'RESOLVED', [
+            'status_before' => $before,
+            'status_after' => 'RESOLVED',
+            'actor_type' => 'ADMIN',
+            'actor_id' => (string)$adminUserId,
+            'note' => $note,
+        ]);
+
+        $pdo->commit();
+        return ['id' => $alertId, 'status' => 'RESOLVED'];
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $e;
+    }
 }
 
 /*
