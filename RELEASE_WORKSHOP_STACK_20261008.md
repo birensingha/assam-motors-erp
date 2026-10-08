@@ -9,6 +9,7 @@ This branch consolidates the prepared Workshop/Staff implementation packages int
 - Customer Master native Admin-auth route and safe Legacy redirect
 - Job Card Create with Customer/Vehicle selection, Parts above Labour, direct add without Estimate and server-side totals
 - Job Card Edit with Parts above Labour and direct add without Estimate
+- Job Card Close → Invoice conversion with immutable Parts/Labour snapshot, duplicate prevention, View and Print flow
 - QC → Ready for Delivery → Job Card Close → Invoice conversion workflow
 - OSL Purchase multi-line fast-entry format
 - Parts Purchase Part Code/Name autocomplete and Job Card/Vehicle allocation search fix
@@ -37,12 +38,13 @@ Review every migration against the live staging schema before applying.
 1. Customer native route/navigation
 2. Job Card Create
 3. Job Card Edit
-4. OSL Purchase
-5. ROT audit hooks
-6. Technician Performance
-7. Alert poll/snooze/resolve
-8. Admin Alert Compliance/export
-9. FCM device registration/sender
+4. Job Card Close → Invoice conversion / View / Print
+5. OSL Purchase
+6. ROT audit hooks
+7. Technician Performance
+8. Alert poll/snooze/resolve
+9. Admin Alert Compliance/export
+10. FCM device registration/sender
 
 ## Android dependency
 
