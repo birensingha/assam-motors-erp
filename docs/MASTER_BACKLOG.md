@@ -217,3 +217,17 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 - [ ] Create ERP Git tag `workshop-stack-2026-10-08` — **CONNECTOR CAPABILITY BLOCKED**
 - [ ] Create Android Git tag `v6.0.18` — **CONNECTOR CAPABILITY BLOCKED**
 - [ ] Produce/publish final signed Android artifact — **STILL BLOCKED BY FIREBASE/SERVER GATES**
+
+
+## Phase 18 — Live Staging Source Onboarding
+
+- [x] One-shot staging handoff guide — **READY**
+- [x] Sanitized live-source collector — **READY / BASH SYNTAX PASS**
+- [x] Laravel DB schema-only probe — **READY / PHP SYNTAX PASS**
+- [x] Collector excludes .env and source-code contents — **READY**
+- [x] Collector refuses archive on obvious secret patterns — **READY**
+- [x] Dependency collection sanitized to package/version maps — **READY**
+- [ ] Run collector on actual staging APP_ROOT — **PENDING SERVER SHELL**
+- [ ] Upload generated handoff archive — **PENDING**
+- [ ] Fill exact live route/controller/view/table Integration Map — **PENDING HANDOFF**
+- [ ] Begin controlled staging wiring — **PENDING SOURCE MAP**
