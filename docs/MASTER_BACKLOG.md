@@ -23,6 +23,8 @@
 
 ## Phase 3 — Job Card
 - [ ] Create Job Card
+  - Patch package prepared: Customer/Vehicle selection, Parts above Labour, direct add without Estimate, ROT assignment, server-side totals
+  - Live staging source wiring + verification still required
 - [ ] Edit Job Card
 - [ ] Convert to Invoice
 - [ ] View Invoice
