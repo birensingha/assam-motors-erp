@@ -1,0 +1,16 @@
+<?php
+/**
+ * Compatibility shim for:
+ * /legacy/workshop/customers.php
+ *
+ * This DOES NOT authenticate anyone.
+ * It only sends the browser to the canonical native route.
+ * Laravel's normal Admin middleware then decides whether the request may proceed.
+ *
+ * Deploy this replacement only after confirming customers.php is not used as an
+ * AJAX/JSON API endpoint by another legacy screen.
+ */
+
+header('Cache-Control: no-store, private');
+header('Location: /erp/native/customers', true, 302);
+exit;
