@@ -1,0 +1,157 @@
+<?php
+/**
+ * Admin Staff Alert API integration example.
+ *
+ * Authentication:
+ * - route must use existing ERP Admin middleware
+ * - $adminUserId must come from authenticated Admin session
+ * - never accept admin identity from request JSON
+ */
+
+function am_admin_alert_get_for_update(PDO $pdo, int $alertId): array
+{
+    $stmt = $pdo->prepare("SELECT * FROM staff_action_alerts WHERE id = ? FOR UPDATE");
+    $stmt->execute([$alertId]);
+    $alert = $stmt->fetch(PDO::FETCH_ASSOC);
+
+    if (!$alert) {
+        throw new RuntimeException('Alert not found.');
+    }
+    return $alert;
+}
+
+function am_admin_alert_under_review(
+    PDO $pdo,
+    int $alertId,
+    int $adminUserId,
+    string $note
+): array {
+    $note = trim($note);
+    if ($note === '') {
+        throw new InvalidArgumentException('Admin review note is required.');
+    }
+
+    $pdo->beginTransaction();
+    try {
+        $alert = am_admin_alert_get_for_update($pdo, $alertId);
+        if ($alert['status'] === 'RESOLVED') {
+            throw new RuntimeException('Resolved alert cannot be put under review.');
+        }
+
+        $clock = am_staff_alert_clock();
+        $before = $alert['status'];
+
+        $pdo->prepare("
+            UPDATE staff_action_alerts
+            SET status = 'UNDER_REVIEW',
+                admin_reviewed_by = ?,
+                admin_reviewed_at_local = ?,
+                admin_reviewed_at_utc = ?,
+                admin_note = ?
+            WHERE id = ?
+        ")->execute([
+            $adminUserId,
+            $clock['local'],
+            $clock['utc'],
+            $note,
+            $alertId,
+        ]);
+
+        am_alert_add_event($pdo, $alert, 'ADMIN_UNDER_REVIEW', [
+            'status_before' => $before,
+            'status_after' => 'UNDER_REVIEW',
+            'actor_type' => 'ADMIN',
+            'actor_id' => (string)$adminUserId,
+            'note' => $note,
+        ]);
+
+        $pdo->commit();
+        return ['id' => $alertId, 'status' => 'UNDER_REVIEW'];
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $e;
+    }
+}
+
+function am_admin_alert_add_note(
+    PDO $pdo,
+    int $alertId,
+    int $adminUserId,
+    string $note
+): array {
+    $note = trim($note);
+    if ($note === '') {
+        throw new InvalidArgumentException('Admin note is required.');
+    }
+
+    $pdo->beginTransaction();
+    try {
+        $alert = am_admin_alert_get_for_update($pdo, $alertId);
+
+        $pdo->prepare("
+            UPDATE staff_action_alerts
+            SET admin_note = ?
+            WHERE id = ?
+        ")->execute([$note, $alertId]);
+
+        am_alert_add_event($pdo, $alert, 'ADMIN_NOTE', [
+            'status_before' => $alert['status'],
+            'status_after' => $alert['status'],
+            'actor_type' => 'ADMIN',
+            'actor_id' => (string)$adminUserId,
+            'note' => $note,
+        ]);
+
+        $pdo->commit();
+        return ['id' => $alertId, 'status' => $alert['status']];
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $e;
+    }
+}
+
+/**
+ * $businessSatisfied must be produced by server-side target verification,
+ * not sent as a trusted boolean by the browser.
+ */
+function am_admin_alert_resolve_verified(
+    PDO $pdo,
+    int $alertId,
+    int $adminUserId,
+    bool $businessSatisfied,
+    string $resolutionNote
+): array {
+    if (!$businessSatisfied) {
+        throw new RuntimeException('Required business action is still pending.');
+    }
+
+    am_alert_resolve(
+        $pdo,
+        $alertId,
+        'ADMIN:' . $adminUserId,
+        trim($resolutionNote) !== ''
+            ? trim($resolutionNote)
+            : 'Business condition verified by Admin review.'
+    );
+
+    return ['id' => $alertId, 'status' => 'RESOLVED'];
+}
+
+/*
+Recommended endpoints:
+
+GET  /erp/api/staff-alerts
+GET  /erp/api/staff-alerts/{id}
+POST /erp/api/staff-alerts/{id}/under-review
+POST /erp/api/staff-alerts/{id}/note
+POST /erp/api/staff-alerts/{id}/resolve
+
+For /resolve:
+1. load alert on server;
+2. inspect alert_type / target_type / target_key;
+3. query authoritative Attendance / ROT / Inspection tables;
+4. call am_admin_alert_resolve_verified() only if the business action is satisfied.
+
+Optional force resolution must use a separate privileged endpoint/permission
+and write ADMIN_FORCE_RESOLVE to staff_action_alert_events.
+*/
