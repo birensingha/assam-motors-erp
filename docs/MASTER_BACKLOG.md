@@ -2,12 +2,19 @@
 
 ## Phase 1 — Native Staging Navigation / Authentication
 - [ ] Booking & Orders native staging page
+  - Native list/search/status/assignment contract prepared; live wiring pending
 - [ ] Users native staging page
+  - Native user/role/deactivate contract prepared; live wiring pending
 - [ ] Products native staging page
+  - Native catalog/product contract prepared; kept separate from Part Master; live wiring pending
 - [ ] Staff native staging page
+  - Native Staff/App-login/technician/attendance contract prepared; live wiring pending
 - [ ] Job Applications native staging page
+  - Native review/status/admin-note contract prepared; live wiring pending
 - [ ] Staff Location native staging page
+  - Native read-only location/latest-history contract prepared; live wiring pending
 - [ ] Service Reminder native staging page
+  - Native due/overdue/customer-vehicle follow-up contract and reference UI prepared; live wiring pending
 - [ ] Customer / Customer Master native staging page
 - [ ] Vendor Master correct native route
   - Native route/CRUD/search patch contract prepared; live wiring pending
