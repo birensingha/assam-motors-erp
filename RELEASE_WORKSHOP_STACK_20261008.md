@@ -17,6 +17,7 @@ This branch consolidates the prepared Workshop/Staff implementation packages int
 - QC → Ready for Delivery → Job Card Close → Invoice conversion workflow
 - OSL Purchase multi-line fast-entry format
 - Parts Purchase Part Code/Name autocomplete and Job Card/Vehicle allocation search fix
+- Purchase + Estimate same-page readability layer with 100/115/125% in-page sizing and print isolation
 - Payment Voucher `/erp/payments/create` HTTP 500 diagnostic/fix package
 - ROT START / PAUSE / RESUME / COMPLETE audit history
 - Asia/Kolkata + UTC event timestamps and pause metadata
