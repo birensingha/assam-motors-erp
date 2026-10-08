@@ -27,6 +27,7 @@ This branch consolidates the prepared Workshop/Staff implementation packages int
 - Staff Summary + Alert Detail Excel export contract
 - FCM Staff device registry, HTTP v1 sender and delivery audit
 - Polling fallback retained when push is unavailable
+- Staff Android production distribution/update-feed contract with trusted Assam Motors download host and checksum metadata
 
 ## Recommended database migration order
 
