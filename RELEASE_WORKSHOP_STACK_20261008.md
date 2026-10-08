@@ -2,6 +2,8 @@
 
 Release branch: `release/workshop-stack-20261008`
 
+Current delivery truth/status register: `docs/DELIVERY_STATUS_20261008.md`
+
 This branch consolidates the prepared Workshop/Staff implementation packages into one review/deployment line. It does **not** claim that staging has already been modified because the live ERP PHP/Laravel source is not present in this repository.
 
 ## Included work
