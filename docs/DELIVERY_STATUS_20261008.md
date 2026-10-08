@@ -315,7 +315,26 @@ Do not ship the FCM production APK as "fully enabled" before:
 |---|---|---|
 | ERP release branch | NO REBASE REQUIRED | main → release: behind 0; consolidated PR #9 is the intended integration PR |
 | Android v6.0.18 release branch | NO REBASE REQUIRED | main → release: behind 0; consolidated PR #5 is the intended integration PR |
-| Android latest completed code/release CI | PASS | Run #113 |
-| Android audit-doc CI | QUEUED at audit update | Run #114; doc-only follow-up commit |
+| Android latest completed release CI | PASS | Run #114; Debug + Unsigned Release + artifact upload all passed |
 | Stacked feature PRs | DO NOT MERGE IN PARALLEL WITH CONSOLIDATED PR WITHOUT RE-AUDIT | ERP #1–#8, Android #1–#4 remain draft/open |
-| ERP mergeability after new doc commits | RECALCULATING | GitHub may temporarily return false immediately after head updates; behind count remains 0 |
+| ERP consolidated PR mergeability | MERGEABLE | Fresh GitHub check returned true; behind main = 0 |
+| Android consolidated PR mergeability | MERGEABLE | Fresh GitHub check returned true; behind main = 0 |
+
+
+---
+
+## Phase 16 — Final Pre-Merge Gate
+
+| Check | Status | Note |
+|---|---|---|
+| Duplicate/dead patch audit | PASS | Phase-1 native-navigation umbrella explicitly marked superseded; no active duplicate deployment layer |
+| Sensitive filename scan | PASS | No .env/JKS/keystore/service-account/private-key file tracked |
+| Targeted secret content scan | PASS | No private key/API-key/JWT/bearer/hardcoded password found in sensitive release files |
+| SQL destructive-statement scan | PASS | No DROP/ALTER/TRUNCATE/DELETE/UPDATE/REPLACE statements in prepared SQL |
+| Android latest CI | PASS | Run #114 |
+| ERP/Android behind main | PASS | Both behind = 0 at gate check |
+| ERP/Android mergeability | PASS | Both consolidated PRs returned mergeable=true on fresh check |
+| ERP live staging deployment | NO-GO | Live Laravel/PHP source and exact schema mapping still unavailable |
+| Production signed Android v6.0.18 | NO-GO | Firebase/server/end-to-end gates remain pending |
+
+Final report: `deployment/FINAL_PRE_MERGE_GATE_20261008.md`
