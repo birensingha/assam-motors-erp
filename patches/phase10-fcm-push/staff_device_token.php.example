@@ -1,0 +1,116 @@
+<?php
+/**
+ * staff-device-token.php — authenticated FCM token registration example.
+ *
+ * IMPORTANT:
+ * $authenticatedStaffId must come from the verified Staff bearer token/session.
+ * Never accept staff_id from request JSON.
+ */
+
+function am_push_register_device(
+    PDO $pdo,
+    int $authenticatedStaffId,
+    array $request
+): array {
+    $token = trim((string)($request['fcm_token'] ?? ''));
+    $installationId = trim((string)($request['installation_id'] ?? ''));
+    $platform = strtoupper(trim((string)($request['platform'] ?? 'ANDROID')));
+    $appVersion = trim((string)($request['app_version'] ?? ''));
+    $appBuild = isset($request['app_build']) ? (int)$request['app_build'] : null;
+
+    if ($authenticatedStaffId <= 0) {
+        throw new RuntimeException('Authenticated Staff required.');
+    }
+    if ($token === '' || strlen($token) < 20 || strlen($token) > 4096) {
+        throw new InvalidArgumentException('Invalid FCM token.');
+    }
+    if ($installationId === '' || strlen($installationId) > 80) {
+        throw new InvalidArgumentException('Invalid installation ID.');
+    }
+
+    $clock = am_staff_alert_clock();
+    $hash = hash('sha256', $token);
+
+    $pdo->beginTransaction();
+    try {
+        // A token refresh on the same installation should deactivate older tokens.
+        $pdo->prepare("
+            UPDATE staff_push_devices
+            SET active = 0,
+                disabled_at_local = ?,
+                disabled_at_utc = ?,
+                disable_reason = 'TOKEN_ROTATED'
+            WHERE staff_id = ?
+              AND installation_id = ?
+              AND token_hash <> ?
+              AND active = 1
+        ")->execute([
+            $clock['local'],
+            $clock['utc'],
+            $authenticatedStaffId,
+            $installationId,
+            $hash,
+        ]);
+
+        // token_hash is globally unique. If the same device token is later used
+        // by another authenticated Staff login, ownership moves to that Staff.
+        $pdo->prepare("
+            INSERT INTO staff_push_devices (
+                staff_id, installation_id, fcm_token, token_hash,
+                platform, app_version, app_build, active,
+                registered_at_local, registered_at_utc,
+                last_seen_at_local, last_seen_at_utc,
+                timezone_name
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+                staff_id = VALUES(staff_id),
+                installation_id = VALUES(installation_id),
+                fcm_token = VALUES(fcm_token),
+                platform = VALUES(platform),
+                app_version = VALUES(app_version),
+                app_build = VALUES(app_build),
+                active = 1,
+                last_seen_at_local = VALUES(last_seen_at_local),
+                last_seen_at_utc = VALUES(last_seen_at_utc),
+                disabled_at_local = NULL,
+                disabled_at_utc = NULL,
+                disable_reason = NULL,
+                updated_at = CURRENT_TIMESTAMP
+        ")->execute([
+            $authenticatedStaffId,
+            $installationId,
+            $token,
+            $hash,
+            $platform ?: 'ANDROID',
+            $appVersion ?: null,
+            $appBuild,
+            $clock['local'],
+            $clock['utc'],
+            $clock['local'],
+            $clock['utc'],
+            $clock['timezone'],
+        ]);
+
+        $pdo->commit();
+
+        return [
+            'ok' => true,
+            'push_enabled' => true,
+            'installation_id' => $installationId,
+        ];
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $e;
+    }
+}
+
+/*
+Suggested route:
+
+POST /legacy/api/staff-device-token.php
+
+$request = json_decode(file_get_contents('php://input'), true) ?: [];
+$result = am_push_register_device($pdo, $authenticatedStaffId, $request);
+header('Content-Type: application/json');
+echo json_encode($result);
+*/
