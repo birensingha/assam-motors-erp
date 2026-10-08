@@ -82,5 +82,7 @@ These are deployment-ready integration packages/reference implementations. The a
 - `deployment/source-discovery.sh`
 - `deployment/source-map.json`
 - `deployment/MERGE_REBASE_AUDIT_20261008.md`
+- `deployment/premerge-gate.sh`
+- `deployment/FINAL_PRE_MERGE_GATE_20261008.md`
 
 The preflight checker and source-discovery helper are read-only by design. It does not execute migrations, clear caches, write database rows or publish releases.
