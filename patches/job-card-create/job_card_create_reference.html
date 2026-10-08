@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Create Job Card — Assam Motors</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f3f6fa;color:#17344f;font-family:Arial,sans-serif}.wrap{max-width:1500px;margin:auto;padding:18px}.head{background:#0b315b;color:#fff;padding:18px;border-radius:14px}.head h1{margin:0;font-size:22px}.head p{margin:5px 0 0;opacity:.8;font-size:12px}.panel{background:#fff;border:1px solid #dbe4ee;border-radius:14px;padding:14px;margin-top:12px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}label{font-size:10px;font-weight:800;color:#637589}input,select,textarea{width:100%;margin-top:5px;padding:9px;border:1px solid #ccd9e5;border-radius:8px}.section-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}.section-title h2{margin:0;font-size:16px}.btn{border:0;border-radius:8px;padding:9px 12px;font-weight:850}.add{background:#f59e0b;color:#fff}.save{background:#168445;color:#fff}.start{background:#2563eb;color:#fff}.cancel{background:#e7edf3;color:#274761}.del{background:#dc2626;color:#fff}.table{overflow:auto}table{width:100%;min-width:1100px;border-collapse:collapse}th{background:#eaf2fb;text-align:left;font-size:10px;padding:9px}td{border-top:1px solid #e5edf4;padding:6px}td input,td select{margin:0}.totals{margin-left:auto;max-width:380px}.totals div{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #edf1f5}.totals .grand{font-size:18px;font-weight:900}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}@media(max-width:850px){.grid{grid-template-columns:1fr 1fr}}@media(max-width:560px){.grid{grid-template-columns:1fr}}
+</style></head><body><div class="wrap">
+<div class="head"><h1>Create Job Card</h1><p>Customer → Vehicle → Parts → Labour / ROT → Save</p></div>
+
+<div class="panel grid">
+<label>Customer<input placeholder="Search name / mobile / customer ID"></label>
+<label>Vehicle<input placeholder="Search registration / VIN"></label>
+<label>Odometer<input type="number" min="0"></label>
+<label>Service Advisor<select><option>Select advisor</option></select></label>
+<label style="grid-column:span 2">Customer Complaint<textarea rows="3"></textarea></label>
+<label style="grid-column:span 2">Workshop Instruction / Notes<textarea rows="3"></textarea></label>
+<label>Promised Delivery<input type="datetime-local"></label>
+</div>
+
+<div class="panel">
+<div class="section-title"><h2>Parts</h2><button class="btn add">+ Add Part</button></div>
+<div class="table"><table><thead><tr><th>Part Code</th><th>Part Name</th><th>Qty</th><th>Rate</th><th>Disc %</th><th>Tax %</th><th>Amount</th><th>Source</th><th></th></tr></thead>
+<tbody><tr><td><input placeholder="Search code"></td><td><input placeholder="Search name"></td><td><input value="1"></td><td><input value="0"></td><td><input value="0"></td><td><input value="0"></td><td>0.00</td><td><select><option>MANUAL</option><option>ESTIMATE</option></select></td><td><button class="btn del">×</button></td></tr></tbody></table></div>
+</div>
+
+<div class="panel">
+<div class="section-title"><h2>Labour / ROT</h2><button class="btn add">+ Add Labour</button></div>
+<div class="table"><table><thead><tr><th>Labour Code</th><th>Description</th><th>Technician</th><th>Std Hrs</th><th>Qty</th><th>Rate</th><th>Amount</th><th>ROT</th><th></th></tr></thead>
+<tbody><tr><td><input placeholder="Search labour"></td><td><input></td><td><select><option>Unassigned</option></select></td><td><input value="0"></td><td><input value="1"></td><td><input value="0"></td><td>0.00</td><td><select><option>Create ROT</option><option>No ROT</option></select></td><td><button class="btn del">×</button></td></tr></tbody></table></div>
+</div>
+
+<div class="panel">
+<div class="totals">
+<div><span>Parts Subtotal</span><strong>0.00</strong></div>
+<div><span>Labour Subtotal</span><strong>0.00</strong></div>
+<div><span>Tax</span><strong>0.00</strong></div>
+<div class="grand"><span>Job Card Total</span><strong>0.00</strong></div>
+</div>
+<div class="actions"><button class="btn save">Save Job Card</button><button class="btn start">Save & Start Work</button><button class="btn cancel">Cancel</button></div>
+</div>
+</div></body></html>
