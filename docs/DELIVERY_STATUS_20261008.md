@@ -276,3 +276,17 @@ Do not ship the FCM production APK as "fully enabled" before:
 10. End-to-end test Staff alerts on a real device.
 11. Run existing production signing workflow for v6.0.18.
 12. Verify upgrade installation over the currently installed production app.
+
+
+---
+
+## Deployment / Release Tooling
+
+| Item | Status | Note |
+|---|---|---|
+| Staging deployment runbook | READY | Ordered DB → Admin → Payment → Job Card → Purchase → ROT → Alerts → FCM → Android flow |
+| Rollback matrix | READY | Code-first rollback; preserve additive audit/data tables by default |
+| Pre-deploy checklist | READY | Backup, dependencies, FCM, Android and closeout gates |
+| Read-only preflight checker | READY / SYNTAX VERIFIED | `deployment/preflight.sh`; Bash syntax check passed; no migration/write actions |
+| Machine-readable release manifest | READY | `deployment/release-manifest.json` |
+| Actual staging execution | PENDING | Requires live Laravel/PHP source, DB access and deployment environment |
