@@ -182,6 +182,24 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 - [x] ERP consolidated merge strategy — **PR #9 IS INTEGRATION PR**
 - [x] Android consolidated merge strategy — **PR #5 IS INTEGRATION PR**
 - [x] Stacked feature PR conflict-risk audit — **COMPLETE**
-- [x] Android release CI after functional updater/licence changes — **RUN #113 PASS**
-- [ ] Android audit-doc follow-up CI — **RUN #114 QUEUED/PENDING**
-- [ ] Final GitHub mergeability recheck immediately before approved merge — **PENDING MERGE WINDOW**
+- [x] Android release CI after functional updater/licence changes — **RUN #114 PASS**
+- [x] Android audit-doc follow-up CI — **RUN #114 PASS**
+- [x] Current consolidated PR mergeability check — **ERP #9 TRUE / ANDROID #5 TRUE**
+- [ ] Recheck GitHub mergeability immediately before the actual approved merge — **PENDING MERGE WINDOW**
+
+
+## Phase 16 — Final Pre-Merge Readiness Gate
+
+- [x] Duplicate/dead patch audit — **PASS**
+- [x] Superseded Phase-1 umbrella marked — **PASS**
+- [x] Sensitive tracked filename scan — **PASS**
+- [x] Targeted secret-content scan — **PASS**
+- [x] Migration destructive-statement scan — **PASS**
+- [x] Android Run #114 — **PASS**
+- [x] ERP/Android behind-main check — **0 / 0**
+- [x] Current consolidated PR mergeability — **TRUE / TRUE**
+- [x] Final GO/NO-GO report — **READY**
+- [ ] Owner approval to merge ERP PR #9 — **PENDING**
+- [ ] Owner approval to merge Android PR #5 — **PENDING**
+- [ ] Live staging deployment — **NO-GO UNTIL LIVE SOURCE AVAILABLE**
+- [ ] Final production-signed Android release — **NO-GO UNTIL FIREBASE/SERVER GATES PASS**
