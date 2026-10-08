@@ -67,7 +67,8 @@ The script prints the exact archive path, normally:
 - source **file inventory**
 - matched **file paths only** for Workshop/Admin/Staff keywords
 - Composer direct package list
-- `composer.json` and `package.json` when present
+- sanitized Composer require/require-dev dependency map
+- sanitized Node dependencies/devDependencies map when package.json is present
 - storage/cache permission summary
 - optional database **table/column/index metadata only**
 
