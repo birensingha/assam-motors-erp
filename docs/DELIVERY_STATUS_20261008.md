@@ -218,9 +218,9 @@ Production workflow intentionally refuses to produce the FCM-enabled production 
 
 | Item | Status | Note |
 |---|---|---|
-| Parts Purchase form readability / larger usable view | PARTIALLY COVERED | Search/multi-line contracts prepared; exact live page visual tuning still requires source |
-| Estimate form readability / zoomed presentation | NOT YET PATCHED | Live Estimate source/view required |
-| Avoid opening separate large window; improve in-page readability | NOT YET LIVE VERIFIED | Must be applied to actual Purchase/Estimate templates |
+| Parts Purchase form readability / larger usable view | PATCH READY / LIVE WIRING PENDING | Same-page comfortable-view layer and readable Purchase reference prepared |
+| Estimate form readability / zoomed presentation | PATCH READY / LIVE WIRING PENDING | Same-page Estimate preview/reference prepared |
+| Avoid opening separate large window; improve in-page readability | PATCH READY / LIVE VERIFICATION PENDING | 100/115/125% in-page controls; default 115%; no normal window.open flow |
 | Staff notification presentation | BUILD TESTED/PATCH READY | Android notification receiver + alert center; FCM config still blocked |
 | Staff APK licensing/distribution package | NOT FINALIZED | Repository has project licensing, but final production distribution/licence packaging is not marked complete |
 
