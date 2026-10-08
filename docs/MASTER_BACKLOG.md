@@ -173,3 +173,15 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 - [x] Machine-readable source map — **READY**
 - [ ] Run source discovery against actual staging app — **PENDING LIVE SOURCE**
 - [ ] Replace every TBD/DISCOVER entry with exact live file/class/table — **PENDING LIVE SOURCE**
+
+
+## Phase 15 — Merge / Rebase Audit
+
+- [x] ERP main vs release divergence check — **BEHIND 0 / NO REBASE REQUIRED**
+- [x] Android main vs release divergence check — **BEHIND 0 / NO REBASE REQUIRED**
+- [x] ERP consolidated merge strategy — **PR #9 IS INTEGRATION PR**
+- [x] Android consolidated merge strategy — **PR #5 IS INTEGRATION PR**
+- [x] Stacked feature PR conflict-risk audit — **COMPLETE**
+- [x] Android release CI after functional updater/licence changes — **RUN #113 PASS**
+- [ ] Android audit-doc follow-up CI — **RUN #114 QUEUED/PENDING**
+- [ ] Final GitHub mergeability recheck immediately before approved merge — **PENDING MERGE WINDOW**
