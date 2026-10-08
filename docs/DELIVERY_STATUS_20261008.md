@@ -26,6 +26,7 @@ Release branch: `release/v6.0.18-20261008`
 - **BUILD TESTED** — v6.0.18 / build 60018.
 - GitHub Actions **Run #105: PASS**.
 - GitHub Actions **Run #106: PASS** after the production Firebase guard was added.
+- GitHub Actions **Run #112: PASS** after licence/About/update-check changes.
 - Debug APK: build passed.
 - Unsigned Release APK: build passed.
 - Existing production signing artifact/key package: available.
@@ -201,8 +202,8 @@ Final Staff-visible behaviour still depends on live server ROT data being correc
 |---|---|
 | Integrated Android release branch | READY |
 | v6.0.18 / build 60018 | READY |
-| Debug compile | PASS — Run #106 |
-| Unsigned Release compile | PASS — Run #106 |
+| Debug compile | PASS — latest Run #112 |
+| Unsigned Release compile | PASS — latest Run #112 |
 | Production signing key/package availability | AVAILABLE |
 | Firebase Android build secrets | BLOCKED — not configured |
 | ERP alert/device-token backend live | PENDING |
