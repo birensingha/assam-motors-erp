@@ -1,0 +1,136 @@
+{{-- Payment Voucher create reference.
+     Adapt route/model field names to the live application. --}}
+
+@extends('layouts.admin')
+
+@section('content')
+<div class="container-fluid">
+    <div class="card">
+        <div class="card-header">
+            <h4 class="mb-0">Payment Voucher</h4>
+        </div>
+
+        <div class="card-body">
+            @if ($errors->any())
+                <div class="alert alert-danger">
+                    <ul class="mb-0">
+                        @foreach ($errors->all() as $error)
+                            <li>{{ $error }}</li>
+                        @endforeach
+                    </ul>
+                </div>
+            @endif
+
+            <form method="POST" action="{{ route('erp.payments.store') }}">
+                @csrf
+
+                <div class="row">
+                    <div class="col-md-3">
+                        <label>Voucher Date</label>
+                        <input
+                            type="date"
+                            name="voucher_date"
+                            class="form-control"
+                            value="{{ old('voucher_date', $voucherDate ?? now('Asia/Kolkata')->format('Y-m-d')) }}"
+                            required
+                        >
+                    </div>
+
+                    <div class="col-md-5">
+                        <label>Pay From Account</label>
+                        <select name="account_id" class="form-control" required>
+                            <option value="">Select account</option>
+                            @forelse (($accounts ?? collect()) as $account)
+                                <option
+                                    value="{{ $account->id }}"
+                                    @selected((string)old('account_id', $defaultAccountId ?? '') === (string)$account->id)
+                                >
+                                    {{ $account->code ?? '' }}
+                                    {{ $account->name ?? 'Unnamed Account' }}
+                                </option>
+                            @empty
+                                <option value="" disabled>No active payment account configured</option>
+                            @endforelse
+                        </select>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label>Payment Mode</label>
+                        <select name="payment_mode" class="form-control" required>
+                            <option value="">Select mode</option>
+                            @foreach (($paymentModes ?? collect()) as $mode)
+                                <option value="{{ $mode->code ?? $mode->id }}">
+                                    {{ $mode->name ?? $mode->code ?? 'Payment Mode' }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+                </div>
+
+                <div class="row mt-3">
+                    <div class="col-md-3">
+                        <label>Payee Type</label>
+                        <select name="payee_type" class="form-control" required>
+                            <option value="">Select</option>
+                            <option value="VENDOR">Vendor</option>
+                            <option value="STAFF">Staff</option>
+                            <option value="OTHER">Other</option>
+                        </select>
+                    </div>
+
+                    <div class="col-md-5">
+                        <label>Vendor / Payee</label>
+                        <select name="payee_id" class="form-control">
+                            <option value="">Select if applicable</option>
+                            @foreach (($vendors ?? collect()) as $vendor)
+                                <option value="{{ $vendor->id }}">
+                                    {{ $vendor->name ?? 'Vendor' }}
+                                    {{ !empty($vendor->mobile) ? ' · '.$vendor->mobile : '' }}
+                                </option>
+                            @endforeach
+                        </select>
+                    </div>
+
+                    <div class="col-md-4">
+                        <label>Reference No.</label>
+                        <input
+                            name="reference_no"
+                            class="form-control"
+                            value="{{ old('reference_no') }}"
+                        >
+                    </div>
+                </div>
+
+                <div class="row mt-3">
+                    <div class="col-md-4">
+                        <label>Amount</label>
+                        <input
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            name="amount"
+                            class="form-control"
+                            value="{{ old('amount') }}"
+                            required
+                        >
+                    </div>
+
+                    <div class="col-md-8">
+                        <label>Narration</label>
+                        <textarea
+                            name="narration"
+                            class="form-control"
+                            rows="3"
+                        >{{ old('narration') }}</textarea>
+                    </div>
+                </div>
+
+                <div class="mt-4">
+                    <button class="btn btn-success" type="submit">Save Payment Voucher</button>
+                    <a href="{{ url()->previous() }}" class="btn btn-secondary">Cancel</a>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+@endsection

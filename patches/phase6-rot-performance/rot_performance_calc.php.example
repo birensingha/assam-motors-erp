@@ -1,0 +1,76 @@
+<?php
+/**
+ * ROT Performance calculation helpers.
+ * Supply normalized server rows; do not trust client totals.
+ */
+
+function am_rot_perf_row(array $row): array
+{
+    $standard = max(0, (int)($row['standard_seconds'] ?? 0));
+    $productive = max(0, (int)($row['productive_seconds'] ?? 0));
+
+    $variance = $standard > 0 ? $productive - $standard : null;
+    $efficiency = ($standard > 0 && $productive > 0)
+        ? round(($standard / $productive) * 100, 2)
+        : null;
+
+    $row['standard_seconds'] = $standard;
+    $row['productive_seconds'] = $productive;
+    $row['variance_seconds'] = $variance;
+    $row['efficiency_percent'] = $efficiency;
+    $row['over_standard'] = $variance !== null && $variance > 0;
+
+    return $row;
+}
+
+function am_rot_perf_summary(array $rows): array
+{
+    $summary = [
+        'assigned' => 0,
+        'running' => 0,
+        'paused' => 0,
+        'completed' => 0,
+        'standard_seconds' => 0,
+        'productive_seconds' => 0,
+        'efficiency_percent' => 0.0,
+        'over_standard_count' => 0,
+        'comparable_count' => 0,
+    ];
+
+    foreach ($rows as $raw) {
+        $r = am_rot_perf_row($raw);
+        $status = strtolower(trim((string)($r['status'] ?? 'assigned')));
+
+        if (str_contains($status, 'complete')) $summary['completed']++;
+        elseif (str_contains($status, 'pause')) $summary['paused']++;
+        elseif (str_contains($status, 'run')) $summary['running']++;
+        else $summary['assigned']++;
+
+        if ($r['standard_seconds'] > 0) {
+            $summary['standard_seconds'] += $r['standard_seconds'];
+            $summary['productive_seconds'] += $r['productive_seconds'];
+            $summary['comparable_count']++;
+            if ($r['over_standard']) $summary['over_standard_count']++;
+        }
+    }
+
+    if ($summary['productive_seconds'] > 0 && $summary['standard_seconds'] > 0) {
+        $summary['efficiency_percent'] = round(
+            ($summary['standard_seconds'] / $summary['productive_seconds']) * 100,
+            2
+        );
+    }
+
+    return $summary;
+}
+
+/**
+ * Normalized duration expectation from live ERP:
+ *
+ * productive_seconds =
+ *   completed START→PAUSE/COMPLETE intervals
+ * + completed RESUME→PAUSE/COMPLETE intervals
+ * + currently open RUNNING interval up to server "now"
+ *
+ * Never include PAUSED duration.
+ */

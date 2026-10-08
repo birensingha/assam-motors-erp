@@ -1,0 +1,43 @@
+/*
+ * Assam Motors in-page readability controls.
+ * No popup/new-window behaviour.
+ */
+
+(function(){
+  const KEY = 'am_workshop_ui_scale';
+  const ALLOWED = ['1','1.15','1.25'];
+
+  function applyScale(value){
+    const scale = ALLOWED.includes(String(value)) ? String(value) : '1.15';
+    document.documentElement.style.setProperty('--am-ui-scale', scale);
+
+    document.querySelectorAll('[data-am-scale]').forEach(btn => {
+      btn.setAttribute(
+        'aria-pressed',
+        String(btn.dataset.amScale) === scale ? 'true' : 'false'
+      );
+    });
+
+    try { localStorage.setItem(KEY, scale); } catch (_) {}
+  }
+
+  function init(){
+    let saved = '1.15';
+    try {
+      const candidate = localStorage.getItem(KEY);
+      if (ALLOWED.includes(candidate)) saved = candidate;
+    } catch (_) {}
+
+    applyScale(saved);
+
+    document.querySelectorAll('[data-am-scale]').forEach(btn => {
+      btn.addEventListener('click', () => applyScale(btn.dataset.amScale));
+    });
+  }
+
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', init);
+  } else {
+    init();
+  }
+})();

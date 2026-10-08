@@ -1,0 +1,158 @@
+<?php
+/**
+ * AdminNativeMasterController reference.
+ *
+ * Replace example table/column names with the live ERP schema.
+ * Keep all routes behind existing ERP Admin middleware.
+ */
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+
+final class AdminNativeMasterController
+{
+    public function vendors(Request $request)
+    {
+        $q = trim((string)$request->query('q', ''));
+
+        $rows = DB::table('vendors')
+            ->when($q !== '', function ($query) use ($q) {
+                $like = '%' . $q . '%';
+                $query->where(function ($sub) use ($like) {
+                    $sub->where('vendor_code', 'like', $like)
+                        ->orWhere('name', 'like', $like)
+                        ->orWhere('mobile', 'like', $like)
+                        ->orWhere('gstin', 'like', $like);
+                });
+            })
+            ->orderBy('name')
+            ->paginate(50)
+            ->withQueryString();
+
+        return view('erp.native.vendors.index', compact('rows', 'q'));
+    }
+
+    public function parts(Request $request)
+    {
+        $q = trim((string)$request->query('q', ''));
+
+        $rows = DB::table('parts')
+            ->when($q !== '', function ($query) use ($q) {
+                $like = '%' . $q . '%';
+                $query->where(function ($sub) use ($like) {
+                    $sub->where('part_code', 'like', $like)
+                        ->orWhere('part_name', 'like', $like)
+                        ->orWhere('description', 'like', $like)
+                        ->orWhere('oem_no', 'like', $like);
+                });
+            })
+            ->orderBy('part_name')
+            ->paginate(50)
+            ->withQueryString();
+
+        return view('erp.native.parts.index', compact('rows', 'q'));
+    }
+
+    public function labours(Request $request)
+    {
+        $q = trim((string)$request->query('q', ''));
+
+        $rows = DB::table('labours')
+            ->when($q !== '', function ($query) use ($q) {
+                $like = '%' . $q . '%';
+                $query->where(function ($sub) use ($like) {
+                    $sub->where('labour_code', 'like', $like)
+                        ->orWhere('description', 'like', $like);
+                });
+            })
+            ->orderBy('description')
+            ->paginate(50)
+            ->withQueryString();
+
+        return view('erp.native.labours.index', compact('rows', 'q'));
+    }
+
+    public function vehicles(Request $request)
+    {
+        $q = trim((string)$request->query('q', ''));
+
+        // Search starts from Vehicle and LEFT JOINs Customer.
+        // Missing optional Customer display fields must not hide the Vehicle row.
+        $rows = DB::table('vehicles as v')
+            ->leftJoin('customers as c', 'c.id', '=', 'v.customer_id')
+            ->select('v.*', 'c.name as customer_name')
+            ->when($q !== '', function ($query) use ($q) {
+                $like = '%' . $q . '%';
+                $norm = '%' . strtoupper(
+                    preg_replace('/[\s\-\.\/]+/u', '', $q) ?? ''
+                ) . '%';
+
+                $query->where(function ($sub) use ($like, $norm) {
+                    $sub->whereRaw(
+                        "REPLACE(REPLACE(REPLACE(REPLACE(UPPER(COALESCE(v.registration_no,'')), ' ', ''), '-', ''), '.', ''), '/', '') LIKE ?",
+                        [$norm]
+                    )
+                    ->orWhere('c.name', 'like', $like)
+                    ->orWhere('v.brand', 'like', $like)
+                    ->orWhere('v.model', 'like', $like)
+                    ->orWhere('v.chassis_number', 'like', $like)
+                    ->orWhere('v.engine_number', 'like', $like);
+                });
+            })
+            ->orderByDesc('v.id')
+            ->paginate(50)
+            ->withQueryString();
+
+        return view('erp.native.vehicles.index', compact('rows', 'q'));
+    }
+
+    public function labourPartMapping(Request $request)
+    {
+        $q = trim((string)$request->query('q', ''));
+
+        $rows = DB::table('labour_part_mappings as m')
+            ->join('labours as l', 'l.id', '=', 'm.labour_id')
+            ->join('parts as p', 'p.id', '=', 'm.part_id')
+            ->when($q !== '', function ($query) use ($q) {
+                $like = '%' . $q . '%';
+                $query->where(function ($sub) use ($like) {
+                    $sub->where('l.labour_code', 'like', $like)
+                        ->orWhere('l.description', 'like', $like)
+                        ->orWhere('p.part_code', 'like', $like)
+                        ->orWhere('p.part_name', 'like', $like);
+                });
+            })
+            ->select([
+                'm.*',
+                'l.labour_code',
+                'l.description as labour_description',
+                'p.part_code',
+                'p.part_name'
+            ])
+            ->orderBy('l.description')
+            ->paginate(50)
+            ->withQueryString();
+
+        return view('erp.native.labour-part-mapping.index', compact('rows', 'q'));
+    }
+
+    public function storeLabourPartMapping(Request $request)
+    {
+        $data = $request->validate([
+            'labour_id' => ['required','integer'],
+            'part_id' => ['required','integer'],
+            'default_qty' => ['required','numeric','gt:0'],
+            'requirement' => ['required','in:REQUIRED,OPTIONAL'],
+            'note' => ['nullable','string','max:1000'],
+        ]);
+
+        return DB::transaction(function () use ($data) {
+            // Re-query Labour and Part server-side and require them to be active.
+            // Reject duplicate active Labour+Part mapping.
+            // Insert mapping + audit using live schema.
+            throw new RuntimeException(
+                'Wire Labour/Part Mapping to the live schema before enabling this reference.'
+            );
+        });
+    }
+}

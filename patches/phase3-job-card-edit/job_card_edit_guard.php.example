@@ -1,0 +1,70 @@
+<?php
+/**
+ * Job Card Edit guard — integration example.
+ * Adapt names to the live ERP model/schema.
+ */
+
+function am_job_card_assert_editable(array $jobCard, bool $isAdmin = false): void
+{
+    $status = strtoupper(trim((string)($jobCard['status'] ?? '')));
+
+    if ($status === 'INVOICED') {
+        throw new RuntimeException('Invoiced Job Card is locked.');
+    }
+
+    if ($status === 'CLOSED' && !$isAdmin) {
+        throw new RuntimeException('Closed Job Card can be reopened only by Admin.');
+    }
+}
+
+function am_job_card_assert_transition(string $from, string $to, array $context = []): void
+{
+    $from = strtoupper(trim($from));
+    $to = strtoupper(trim($to));
+
+    $allowed = [
+        'OPEN' => ['WIP'],
+        'DRAFT' => ['WIP'],
+        'WIP' => ['QC_PENDING'],
+        'IN PROGRESS' => ['QC_PENDING'],
+        'QC_PENDING' => ['QC_PASSED'],
+        'QC_PASSED' => ['READY_FOR_DELIVERY'],
+        'READY_FOR_DELIVERY' => ['CLOSED'],
+        'CLOSED' => ['INVOICED'],
+    ];
+
+    if (!in_array($to, $allowed[$from] ?? [], true)) {
+        throw new RuntimeException("Invalid Job Card workflow transition: $from -> $to");
+    }
+
+    if ($to === 'QC_PASSED' && empty($context['qc_user_id'])) {
+        throw new RuntimeException('QC user is required.');
+    }
+
+    if (in_array($to, ['READY_FOR_DELIVERY','CLOSED'], true)
+        && !empty($context['has_running_rot'])) {
+        throw new RuntimeException('Running ROT must be completed or authorised before this status.');
+    }
+}
+
+/*
+Recommended update transaction:
+
+$pdo->beginTransaction();
+try {
+    // SELECT ... FOR UPDATE current Job Card
+    // am_job_card_assert_editable(...)
+    // update header
+    // upsert Parts
+    // upsert Labour
+    // calculate totals on server
+    // write job_card_edit_audit rows
+    // commit
+    $pdo->commit();
+} catch (Throwable $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
+    throw $e;
+}
+
+Never accept client totals as final totals.
+*/

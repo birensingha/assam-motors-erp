@@ -1,0 +1,240 @@
+<?php
+/**
+ * FCM HTTP v1 sender example.
+ *
+ * Dependencies:
+ *   composer require google/auth
+ *
+ * Secrets:
+ *   export GOOGLE_APPLICATION_CREDENTIALS=/secure/path/firebase-service-account.json
+ *   export FIREBASE_PROJECT_ID=your-project-id
+ *
+ * Never commit the service-account JSON file.
+ */
+
+use Google\Auth\Credentials\ServiceAccountCredentials;
+
+function am_fcm_access_token(): string
+{
+    if (!class_exists(ServiceAccountCredentials::class)) {
+        throw new RuntimeException('google/auth is required for FCM HTTP v1.');
+    }
+
+    $credentialsPath = trim((string)getenv('GOOGLE_APPLICATION_CREDENTIALS'));
+    if ($credentialsPath === '' || !is_readable($credentialsPath)) {
+        throw new RuntimeException('GOOGLE_APPLICATION_CREDENTIALS is not configured.');
+    }
+
+    $json = json_decode((string)file_get_contents($credentialsPath), true);
+    if (!is_array($json)) {
+        throw new RuntimeException('Firebase service-account JSON is invalid.');
+    }
+
+    $creds = new ServiceAccountCredentials(
+        ['https://www.googleapis.com/auth/firebase.messaging'],
+        $json
+    );
+
+    $token = $creds->fetchAuthToken();
+    $access = trim((string)($token['access_token'] ?? ''));
+    if ($access === '') {
+        throw new RuntimeException('Unable to obtain Firebase access token.');
+    }
+
+    return $access;
+}
+
+function am_push_log_delivery(
+    PDO $pdo,
+    array $alert,
+    array $device,
+    string $pushId,
+    string $status,
+    ?string $messageName = null,
+    ?string $errorCode = null,
+    ?string $errorMessage = null
+): void {
+    $clock = am_staff_alert_clock();
+
+    $pdo->prepare("
+        INSERT INTO staff_push_deliveries (
+            alert_id, device_id, staff_id, push_id, delivery_status,
+            fcm_message_name, error_code, error_message,
+            sent_at_local, sent_at_utc, timezone_name
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ")->execute([
+        $alert['id'],
+        $device['id'],
+        $alert['staff_id'],
+        $pushId,
+        $status,
+        $messageName,
+        $errorCode,
+        $errorMessage ? mb_substr($errorMessage, 0, 500) : null,
+        $clock['local'],
+        $clock['utc'],
+        $clock['timezone'],
+    ]);
+}
+
+function am_push_disable_device(PDO $pdo, int $deviceId, string $reason): void
+{
+    $clock = am_staff_alert_clock();
+    $pdo->prepare("
+        UPDATE staff_push_devices
+        SET active = 0,
+            disabled_at_local = ?,
+            disabled_at_utc = ?,
+            disable_reason = ?
+        WHERE id = ?
+    ")->execute([
+        $clock['local'],
+        $clock['utc'],
+        mb_substr($reason, 0, 190),
+        $deviceId,
+    ]);
+}
+
+function am_push_send_alert(PDO $pdo, array $alert): array
+{
+    $projectId = trim((string)getenv('FIREBASE_PROJECT_ID'));
+    if ($projectId === '') {
+        throw new RuntimeException('FIREBASE_PROJECT_ID is not configured.');
+    }
+
+    $stmt = $pdo->prepare("
+        SELECT *
+        FROM staff_push_devices
+        WHERE staff_id = ?
+          AND active = 1
+        ORDER BY updated_at DESC
+    ");
+    $stmt->execute([(int)$alert['staff_id']]);
+    $devices = $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+    if (!$devices) {
+        return ['sent' => 0, 'failed' => 0, 'devices' => 0];
+    }
+
+    $accessToken = am_fcm_access_token();
+    $url = 'https://fcm.googleapis.com/v1/projects/' .
+        rawurlencode($projectId) . '/messages:send';
+
+    $pushId = implode(':', [
+        (string)$alert['id'],
+        (string)($alert['status'] ?? ''),
+        (string)($alert['postpone_count'] ?? 0),
+        (string)($alert['updated_at'] ?? microtime(true)),
+    ]);
+
+    $sent = 0;
+    $failed = 0;
+
+    foreach ($devices as $device) {
+        // Data-only message: Android app decides whether the logged-in Staff
+        // may display it, then immediately polls ERP for authoritative state.
+        $payload = [
+            'message' => [
+                'token' => $device['fcm_token'],
+                'data' => [
+                    'alert_id' => (string)$alert['id'],
+                    'push_id' => $pushId,
+                    'title' => (string)($alert['title'] ?? 'Assam Motors - Staff'),
+                    'message' => (string)($alert['message'] ?? 'Staff action pending'),
+                    'status' => (string)($alert['status'] ?? 'ACTIVE'),
+                    'postpone_count' => (string)($alert['postpone_count'] ?? 0),
+                    'open_view' => 'alerts',
+                    'alert_type' => (string)($alert['alert_type'] ?? ''),
+                    'target_type' => (string)($alert['target_type'] ?? ''),
+                    'target_key' => (string)($alert['target_key'] ?? ''),
+                ],
+                'android' => [
+                    'priority' => 'HIGH',
+                    'ttl' => '900s',
+                    'collapse_key' => 'staff_alert_' . $alert['id'],
+                ],
+            ],
+        ];
+
+        $ch = curl_init($url);
+        curl_setopt_array($ch, [
+            CURLOPT_POST => true,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_TIMEOUT => 20,
+            CURLOPT_HTTPHEADER => [
+                'Authorization: Bearer ' . $accessToken,
+                'Content-Type: application/json; charset=UTF-8',
+            ],
+            CURLOPT_POSTFIELDS => json_encode(
+                $payload,
+                JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES
+            ),
+        ]);
+
+        $raw = curl_exec($ch);
+        $http = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+        $curlError = curl_error($ch);
+        curl_close($ch);
+
+        $body = is_string($raw) ? json_decode($raw, true) : null;
+
+        if ($http >= 200 && $http < 300 && is_array($body)) {
+            $sent++;
+            am_push_log_delivery(
+                $pdo,
+                $alert,
+                $device,
+                $pushId,
+                'SENT',
+                $body['name'] ?? null
+            );
+            continue;
+        }
+
+        $failed++;
+        $errorText = trim($curlError . ' ' . (is_string($raw) ? $raw : ''));
+        $errorCode = is_array($body)
+            ? (string)($body['error']['status'] ?? $body['error']['code'] ?? $http)
+            : (string)$http;
+
+        am_push_log_delivery(
+            $pdo,
+            $alert,
+            $device,
+            $pushId,
+            'FAILED',
+            null,
+            $errorCode,
+            $errorText
+        );
+
+        // FCM marks stale/invalid registration tokens as UNREGISTERED.
+        if (str_contains(strtoupper($errorText), 'UNREGISTERED')) {
+            am_push_disable_device($pdo, (int)$device['id'], 'FCM_UNREGISTERED');
+        }
+    }
+
+    return [
+        'sent' => $sent,
+        'failed' => $failed,
+        'devices' => count($devices),
+        'push_id' => $pushId,
+    ];
+}
+
+/*
+Integration:
+
+1. Commit the alert/status DB transaction first.
+2. Reload the committed alert row.
+3. Call am_push_send_alert($pdo, $alert).
+4. Never roll back the business action because FCM delivery failed.
+5. Polling remains the fallback for delivery failure/offline devices.
+
+Recommended send points:
+- new alert inserted;
+- reminder becomes due;
+- escalation to ESCALATED;
+- Admin/business change that requires fresh Staff attention.
+*/

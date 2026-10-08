@@ -1,0 +1,141 @@
+<?php
+/**
+ * XLSX export example using PhpSpreadsheet.
+ *
+ * Use only if PhpSpreadsheet is already present or added via the ERP's normal
+ * Composer deployment. Do not copy vendor library files into this patch.
+ */
+
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
+use PhpOffice\PhpSpreadsheet\Style\Font;
+
+function am_alert_export_xlsx(array $summaryRows, array $detailRows): void
+{
+    if (!class_exists(Spreadsheet::class)) {
+        throw new RuntimeException(
+            'PhpSpreadsheet is not installed. Add it through the ERP Composer deployment before enabling XLSX export.'
+        );
+    }
+
+    $book = new Spreadsheet();
+
+    // Sheet 1: Staff Summary
+    $summary = $book->getActiveSheet();
+    $summary->setTitle('Staff Summary');
+
+    $summaryHeaders = [
+        'Staff Code','Staff Name','Active','Snoozed','Escalated','Under Review',
+        'Resolved in Period','Total Postponements','Oldest Pending Since',
+        'Oldest Pending Age','Avg Resolution Minutes','Max Resolution Minutes'
+    ];
+
+    foreach ($summaryHeaders as $i => $label) {
+        $summary->setCellValueByColumnAndRow($i + 1, 1, $label);
+    }
+
+    $rowNo = 2;
+    foreach ($summaryRows as $r) {
+        $values = [
+            $r['staff_code'] ?? '',
+            $r['staff_name'] ?? '',
+            (int)($r['active_count'] ?? 0),
+            (int)($r['snoozed_count'] ?? 0),
+            (int)($r['escalated_count'] ?? 0),
+            (int)($r['under_review_count'] ?? 0),
+            (int)($r['resolved_count'] ?? 0),
+            (int)($r['total_postponements'] ?? 0),
+            $r['oldest_pending_since'] ?? '',
+            $r['oldest_pending_age'] ?? '',
+            isset($r['avg_resolution_minutes']) ? (float)$r['avg_resolution_minutes'] : 0,
+            isset($r['max_resolution_minutes']) ? (float)$r['max_resolution_minutes'] : 0,
+        ];
+
+        foreach ($values as $i => $value) {
+            $summary->setCellValueByColumnAndRow($i + 1, $rowNo, $value);
+        }
+        $rowNo++;
+    }
+
+    // Sheet 2: Alert Detail
+    $detail = $book->createSheet();
+    $detail->setTitle('Alert Detail');
+
+    $detailHeaders = [
+        'Alert ID','Staff Code','Staff Name','Alert Type','Status','Target Type','Target Key',
+        'Job Card','Vehicle','ROT Session','Title','Message','First Triggered','Postpone Count',
+        'Next Reminder','Escalated At','Admin Reviewer','Admin Note','Resolved At','Resolved By',
+        'Resolution Note','Current Age Minutes','Resolution Minutes'
+    ];
+
+    foreach ($detailHeaders as $i => $label) {
+        $detail->setCellValueByColumnAndRow($i + 1, 1, $label);
+    }
+
+    $rowNo = 2;
+    foreach ($detailRows as $r) {
+        $values = [
+            (int)($r['id'] ?? 0),
+            $r['staff_code'] ?? '',
+            $r['staff_name'] ?? '',
+            $r['alert_type'] ?? '',
+            $r['status'] ?? '',
+            $r['target_type'] ?? '',
+            $r['target_key'] ?? '',
+            $r['job_card_no'] ?? '',
+            $r['vehicle_reg_no'] ?? '',
+            $r['rot_session_id'] ?? '',
+            $r['title'] ?? '',
+            $r['message'] ?? '',
+            $r['first_triggered_at_local'] ?? '',
+            (int)($r['postpone_count'] ?? 0),
+            $r['next_reminder_at_local'] ?? '',
+            $r['escalated_at_local'] ?? '',
+            $r['admin_reviewer'] ?? '',
+            $r['admin_note'] ?? '',
+            $r['resolved_at_local'] ?? '',
+            $r['resolved_by'] ?? '',
+            $r['resolution_note'] ?? '',
+            isset($r['current_age_minutes']) ? (int)$r['current_age_minutes'] : '',
+            isset($r['resolution_minutes']) ? (int)$r['resolution_minutes'] : '',
+        ];
+
+        foreach ($values as $i => $value) {
+            $detail->setCellValueByColumnAndRow($i + 1, $rowNo, $value);
+        }
+        $rowNo++;
+    }
+
+    foreach ([$summary, $detail] as $sheet) {
+        $lastColumn = $sheet->getHighestColumn();
+        $lastRow = $sheet->getHighestRow();
+
+        $sheet->freezePane('A2');
+        $sheet->setAutoFilter("A1:{$lastColumn}{$lastRow}");
+        $sheet->getStyle("A1:{$lastColumn}1")->getFont()->setBold(true);
+
+        foreach (range('A', $lastColumn) as $col) {
+            $sheet->getColumnDimension($col)->setAutoSize(true);
+        }
+    }
+
+    $filename = 'staff-alert-compliance-' .
+        (new DateTimeImmutable('now', new DateTimeZone('Asia/Kolkata')))->format('Y-m-d_Hi') .
+        '.xlsx';
+
+    header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Cache-Control: no-store, private');
+
+    $writer = new Xlsx($book);
+    $writer->save('php://output');
+    exit;
+}
+
+/*
+Important:
+- Build $detailRows with the same parameterized filters used on the Admin screen.
+- Build $summaryRows from that exact filtered detail population.
+- Keep date/time source in Asia/Kolkata for display.
+- Do not load unbounded history into memory; enforce a sensible export date range.
+*/

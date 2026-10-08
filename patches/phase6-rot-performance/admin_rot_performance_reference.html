@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Technician ROT Performance</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f3f6fa;color:#17344f;font-family:Arial,sans-serif}.wrap{max-width:1500px;margin:auto;padding:18px}
+.head{background:#0b315b;color:#fff;padding:18px;border-radius:14px}.head h1{margin:0;font-size:22px}.head p{margin:5px 0 0;opacity:.75;font-size:12px}
+.panel{background:#fff;border:1px solid #dbe4ee;border-radius:14px;padding:14px;margin-top:12px}.filters{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}
+label{font-size:10px;font-weight:800;color:#607387}input,select{width:100%;margin-top:5px;padding:9px;border:1px solid #cfdae6;border-radius:8px}
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);gap:9px}.metric{background:#fff;border:1px solid #dbe4ee;border-radius:12px;padding:12px;text-align:center}.metric span{font-size:9px;color:#73869a;font-weight:800}.metric b{display:block;font-size:20px;margin-top:5px}
+.table{overflow:auto}.table table{border-collapse:collapse;min-width:1300px;width:100%}th{background:#eaf2fb;text-align:left;font-size:10px;padding:10px}td{border-top:1px solid #e6edf4;padding:9px;font-size:10px}.over{color:#b42318;font-weight:900}.good{color:#168445;font-weight:900}
+@media(max-width:900px){.filters{grid-template-columns:repeat(2,1fr)}.metrics{grid-template-columns:repeat(2,1fr)}}
+</style></head><body><div class="wrap">
+<div class="head"><h1>Technician ROT Performance</h1><p>Waiting · Assigned · Running · Paused · Completed · Standard vs Actual</p></div>
+<div class="panel filters">
+<label>From<input type="date"></label><label>To<input type="date"></label><label>Technician<select><option>All Staff</option></select></label>
+<label>Status<select><option>All</option><option>Assigned</option><option>Running</option><option>Paused</option><option>Completed</option></select></label>
+<label>Job Card / Vehicle<input placeholder="Search"></label><label>ROT<input placeholder="Code / Description"></label>
+</div>
+<div class="panel metrics">
+<div class="metric"><span>ASSIGNED / WAITING</span><b>4</b></div><div class="metric"><span>RUNNING</span><b>2</b></div>
+<div class="metric"><span>PAUSED</span><b>1</b></div><div class="metric"><span>COMPLETED</span><b>18</b></div>
+<div class="metric"><span>STANDARD TIME</span><b>17h 00m</b></div><div class="metric"><span>ACTUAL / PRODUCTIVE</span><b>16h 36m</b></div>
+<div class="metric"><span>EFFICIENCY</span><b>102%</b></div><div class="metric"><span>OVER STANDARD</span><b class="over">5</b></div>
+</div>
+<div class="panel table"><table><thead><tr><th>Technician</th><th>Job Card</th><th>Vehicle</th><th>ROT</th><th>Status</th><th>Standard</th><th>Actual</th><th>Variance</th><th>Efficiency</th><th>Start</th><th>End</th><th>Pauses</th></tr></thead>
+<tbody><tr><td>Firajul</td><td>JC-1042</td><td>AS01AB1234</td><td>Front Brake Service</td><td>Completed</td><td>1h 00m</td><td>55m</td><td class="good">Saved 5m</td><td>109%</td><td>10:10 AM</td><td>11:05 AM</td><td>1</td></tr>
+<tr><td>Technician 2</td><td>JC-1045</td><td>AS01CD5678</td><td>Engine Diagnosis</td><td>Completed</td><td>45m</td><td>1h 02m</td><td class="over">Over 17m</td><td>73%</td><td>12:00 PM</td><td>1:12 PM</td><td>2</td></tr></tbody>
+</table></div></div></body></html>

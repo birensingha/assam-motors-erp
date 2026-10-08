@@ -1,0 +1,151 @@
+<?php
+/**
+ * Parts Purchase search reference.
+ *
+ * Adapt table/column names to the live ERP schema.
+ * This file intentionally does not claim these names match production.
+ */
+
+function am_search_term(string $raw): string
+{
+    return trim(preg_replace('/\s+/u', ' ', $raw) ?? '');
+}
+
+function am_normalized_ref(string $raw): string
+{
+    return strtoupper(
+        preg_replace('/[\s\-\.\/]+/u', '', trim($raw)) ?? ''
+    );
+}
+
+/**
+ * Example Part search.
+ *
+ * Expected live schema mapping:
+ * - part primary key
+ * - part code
+ * - part name
+ * - description
+ * - optional OEM/alternate no.
+ */
+function am_purchase_search_parts(PDO $pdo, string $rawQuery): array
+{
+    $q = am_search_term($rawQuery);
+    if (mb_strlen($q) < 2) return [];
+
+    $like = '%' . $q . '%';
+    $prefix = $q . '%';
+
+    // REPLACE the example identifiers below with actual live schema names.
+    $sql = "
+        SELECT
+            p.id,
+            p.part_code AS code,
+            p.part_name AS name,
+            p.description,
+            p.oem_no,
+            p.unit,
+            p.last_rate
+        FROM parts p
+        WHERE
+            p.part_code LIKE :like
+            OR p.part_name LIKE :like
+            OR p.description LIKE :like
+            OR p.oem_no LIKE :like
+        ORDER BY
+            CASE
+                WHEN UPPER(p.part_code) = UPPER(:exact) THEN 1
+                WHEN UPPER(p.part_code) LIKE UPPER(:prefix) THEN 2
+                WHEN UPPER(p.part_name) LIKE UPPER(:prefix) THEN 3
+                ELSE 4
+            END,
+            p.part_name ASC
+        LIMIT 20
+    ";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([
+        ':like' => $like,
+        ':exact' => $q,
+        ':prefix' => $prefix,
+    ]);
+
+    return $stmt->fetchAll(PDO::FETCH_ASSOC);
+}
+
+/**
+ * Example Job Card / Vehicle allocation search.
+ *
+ * The query starts from Job Card and LEFT JOINs vehicle/customer.
+ * This is intentional: a missing legacy vehicle relation must not hide a valid JC.
+ */
+function am_purchase_search_job_cards(PDO $pdo, string $rawQuery): array
+{
+    $q = am_search_term($rawQuery);
+    if (mb_strlen($q) < 2) return [];
+
+    $normalized = am_normalized_ref($q);
+    $contains = '%' . $q . '%';
+    $normalizedContains = '%' . $normalized . '%';
+
+    // Map identifiers/status values to live schema.
+    $sql = "
+        SELECT
+            jc.id AS job_card_id,
+            jc.job_card_no,
+            jc.status,
+            v.id AS vehicle_id,
+            v.registration_no AS vehicle_reg_no,
+            c.name AS customer_name,
+            c.mobile AS customer_mobile
+        FROM job_cards jc
+        LEFT JOIN vehicles v ON v.id = jc.vehicle_id
+        LEFT JOIN customers c ON c.id = jc.customer_id
+        WHERE
+            jc.job_card_no LIKE :contains
+            OR REPLACE(REPLACE(REPLACE(REPLACE(UPPER(jc.job_card_no), ' ', ''), '-', ''), '.', ''), '/', '')
+                LIKE :normalized
+            OR REPLACE(REPLACE(REPLACE(REPLACE(UPPER(COALESCE(v.registration_no,'')), ' ', ''), '-', ''), '.', ''), '/', '')
+                LIKE :normalized
+            OR c.name LIKE :contains
+            OR c.mobile LIKE :contains
+        ORDER BY
+            CASE
+                WHEN REPLACE(REPLACE(REPLACE(REPLACE(UPPER(jc.job_card_no), ' ', ''), '-', ''), '.', ''), '/', '') = :exact_norm THEN 1
+                WHEN REPLACE(REPLACE(REPLACE(REPLACE(UPPER(COALESCE(v.registration_no,'')), ' ', ''), '-', ''), '.', ''), '/', '') = :exact_norm THEN 2
+                ELSE 3
+            END,
+            jc.id DESC
+        LIMIT 30
+    ";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([
+        ':contains' => $contains,
+        ':normalized' => $normalizedContains,
+        ':exact_norm' => $normalized,
+    ]);
+
+    $openStatuses = [
+        'OPEN','DRAFT','WIP','IN PROGRESS','QC PENDING',
+        'QC PASSED','READY FOR DELIVERY'
+    ];
+
+    $rows = [];
+    foreach ($stmt->fetchAll(PDO::FETCH_ASSOC) as $r) {
+        $status = strtoupper(trim((string)($r['status'] ?? '')));
+        $selectable = in_array($status, $openStatuses, true);
+
+        $parts = array_filter([
+            $r['job_card_no'] ?? null,
+            $r['vehicle_reg_no'] ?? null,
+            $r['customer_name'] ?? null,
+        ]);
+
+        $r['selectable'] = $selectable;
+        $r['label'] = implode(' · ', $parts);
+        $rows[] = $r;
+    }
+
+    return $rows;
+}

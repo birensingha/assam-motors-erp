@@ -10,3 +10,16 @@ The prepared patch is conservative:
 - produces an audit report of mapped and unresolved modules.
 
 Initial targets: Booking & Orders, Users, Products, Staff, Job Applications, Staff Location, Service Reminder, Customer, Vendor Master, Part Master, Labour Master, Vehicle Master and Labour/Part Mapping.
+
+
+## Status
+
+**SUPERSEDED AS AN UMBRELLA PATCH — retained for history only.**
+
+The original navigation-cleanup intent has now been split into the more specific prepared packages:
+
+- `patches/phase1-customer-native-auth/`
+- `patches/native-master-pages/`
+- `patches/phase1-native-operations/`
+
+Do not deploy this folder as a separate fourth implementation layer. Use the specific packages above plus the current Integration Map.

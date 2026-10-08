@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Labour / Part Mapping — Assam Motors</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f3f6fa;color:#17344f;font-family:Arial,sans-serif}.wrap{max-width:1350px;margin:auto;padding:18px}.head{background:#0b315b;color:#fff;padding:18px;border-radius:14px}.head h1{margin:0;font-size:22px}.head p{margin:5px 0 0;font-size:12px;opacity:.8}.panel{background:#fff;border:1px solid #dbe4ee;border-radius:14px;padding:14px;margin-top:12px}.form{display:grid;grid-template-columns:2fr 2fr 1fr 1fr 2fr auto;gap:8px;align-items:end}label{font-size:10px;font-weight:800;color:#617487}input,select{width:100%;margin-top:5px;padding:9px;border:1px solid #ccd9e5;border-radius:8px}.btn{border:0;border-radius:8px;padding:10px 13px;font-weight:850}.save{background:#168445;color:#fff}.del{background:#dc2626;color:#fff}.search{margin-bottom:10px;max-width:430px}table{width:100%;border-collapse:collapse}th{background:#eaf2fb;text-align:left;font-size:10px;padding:9px}td{border-top:1px solid #e6edf4;padding:9px;font-size:11px}@media(max-width:900px){.form{grid-template-columns:1fr 1fr}}@media(max-width:560px){.form{grid-template-columns:1fr}}
+</style></head><body><div class="wrap">
+<div class="head"><h1>Labour / Part Mapping</h1><p>Map standard Parts to Labour / ROT operations</p></div>
+<div class="panel form">
+<label>Labour<input placeholder="Search labour code / description"></label>
+<label>Part<input placeholder="Search part code / name"></label>
+<label>Default Qty<input type="number" step="0.001" value="1"></label>
+<label>Type<select><option>REQUIRED</option><option>OPTIONAL</option></select></label>
+<label>Note<input placeholder="Optional mapping note"></label>
+<button class="btn save">+ Add Mapping</button>
+</div>
+<div class="panel">
+<input class="search" placeholder="Search Labour or Part">
+<table><thead><tr><th>Labour</th><th>Description</th><th>Part</th><th>Part Name</th><th>Default Qty</th><th>Type</th><th>Status</th><th></th></tr></thead>
+<tbody><tr><td>LAB-15</td><td>Front Brake Service</td><td>BP-100</td><td>Front Brake Pad</td><td>1</td><td>REQUIRED</td><td>Active</td><td><button class="btn del">Remove</button></td></tr></tbody></table>
+</div></div></body></html>

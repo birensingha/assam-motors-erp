@@ -1,0 +1,83 @@
+<?php
+/**
+ * JobCardInvoiceService reference.
+ *
+ * Adapt models/table names to the live Assam Motors ERP schema.
+ * This is an integration contract, not a drop-in production migration.
+ */
+
+use Illuminate\Support\Facades\DB;
+
+final class JobCardInvoiceService
+{
+    public function convert(int $jobCardId, int $authenticatedUserId)
+    {
+        return DB::transaction(function () use ($jobCardId, $authenticatedUserId) {
+            // Replace with the live Job Card model/table.
+            $jobCard = DB::table('job_cards')
+                ->where('id', $jobCardId)
+                ->lockForUpdate()
+                ->first();
+
+            abort_unless($jobCard, 404, 'Job Card not found.');
+
+            $status = strtoupper(trim((string)($jobCard->status ?? '')));
+
+            // Idempotent return: if already converted, return the existing invoice.
+            if (!empty($jobCard->invoice_id)) {
+                return DB::table('invoices')
+                    ->where('id', $jobCard->invoice_id)
+                    ->first();
+            }
+
+            if ($status !== 'CLOSED') {
+                throw new RuntimeException(
+                    'Only a Closed Job Card can be converted to Invoice.'
+                );
+            }
+
+            // Server-side validation examples:
+            //
+            // $this->assertNoRunningRot($jobCardId);
+            // $parts = $this->loadAndValidateParts($jobCardId);
+            // $labour = $this->loadAndValidateLabour($jobCardId);
+            // $totals = $this->calculateFinalTotals($parts, $labour, $jobCard);
+            // $invoiceNo = $this->allocateInvoiceNumberLocked();
+            //
+            // IMPORTANT:
+            // Do not accept client-calculated totals or invoice number.
+
+            throw new RuntimeException(
+                'Wire conversion to the live Invoice/Job Card schema before enabling this reference.'
+            );
+        }, 3);
+    }
+
+    /*
+    private function createInvoiceSnapshot(...)
+    {
+        // Insert customer/vehicle/header snapshot.
+        // Insert Parts snapshot rows.
+        // Insert Labour snapshot rows.
+        // Store final totals/tax.
+        // Link Job Card and Invoice.
+        // Update Job Card status to INVOICED.
+        // Write INVOICE_CONVERT audit.
+    }
+    */
+}
+
+/**
+ * Controller behaviour example:
+ *
+ * public function convertInvoice($id, JobCardInvoiceService $service)
+ * {
+ *     $invoice = $service->convert((int)$id, (int)auth()->id());
+ *
+ *     return redirect()
+ *         ->route('erp.invoices.show', $invoice->id)
+ *         ->with('success', 'Job Card converted to Invoice.');
+ * }
+ *
+ * Duplicate/retried POST should redirect to the SAME existing invoice.
+ */

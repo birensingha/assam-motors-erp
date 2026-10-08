@@ -1,0 +1,38 @@
+{
+  "release": "workshop-stack-20261008",
+  "mode": "staging-first",
+  "database": {
+    "policy": "backup-before-apply",
+    "migrations": [
+      "patches/phase3-job-card-edit/001_job_card_edit_audit.sql",
+      "patches/phase4-osl-purchase/001_osl_purchase_line_items.sql",
+      "patches/phase5-rot-backend/001_create_rot_event_audit.sql",
+      "patches/phase8-alert-compliance/001_staff_action_alerts.sql",
+      "patches/phase10-fcm-push/001_staff_push_devices.sql"
+    ]
+  },
+  "application_groups": [
+    "native-admin-navigation",
+    "payment-voucher",
+    "job-card-lifecycle",
+    "purchase-and-estimate",
+    "rot-audit-performance",
+    "staff-alert-compliance",
+    "fcm-server",
+    "staff-app-update-feed"
+  ],
+  "android_release": {
+    "branch": "release/v6.0.18-20261008",
+    "version_name": "6.0.18",
+    "version_code": 60018,
+    "package_id": "com.assammotors.staff",
+    "requires_existing_signing_identity": true,
+    "firebase_required_for_production": true
+  },
+  "integration_map": {
+    "document": "deployment/INTEGRATION_MAP.md",
+    "discovery_script": "deployment/source-discovery.sh",
+    "machine_map": "deployment/source-map.json",
+    "policy": "read-only discovery before live source edits"
+  }
+}

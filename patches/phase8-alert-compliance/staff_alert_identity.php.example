@@ -1,0 +1,90 @@
+<?php
+
+function am_staff_alert_clock(): array
+{
+    $localTz = new DateTimeZone('Asia/Kolkata');
+    $utcTz = new DateTimeZone('UTC');
+    $local = new DateTimeImmutable('now', $localTz);
+
+    return [
+        'local' => $local->format('Y-m-d H:i:s.v'),
+        'utc' => $local->setTimezone($utcTz)->format('Y-m-d H:i:s.v'),
+        'timezone' => 'Asia/Kolkata',
+    ];
+}
+
+function am_staff_alert_identity(
+    int $staffId,
+    string $alertType,
+    string $targetType,
+    string $targetKey
+): string {
+    return hash('sha256', implode('|', [
+        $staffId,
+        strtoupper(trim($alertType)),
+        strtoupper(trim($targetType)),
+        trim($targetKey),
+    ]));
+}
+
+/**
+ * Create the alert once, or refresh its message/reference fields if it already exists.
+ * Never resets postpone_count/status of an unresolved existing alert.
+ */
+function am_staff_alert_upsert(PDO $pdo, array $a): int
+{
+    $staffId = (int)($a['staff_id'] ?? 0);
+    $type = strtoupper(trim((string)($a['alert_type'] ?? '')));
+    $targetType = strtoupper(trim((string)($a['target_type'] ?? '')));
+    $targetKey = trim((string)($a['target_key'] ?? ''));
+
+    if ($staffId <= 0 || $type === '' || $targetType === '' || $targetKey === '') {
+        throw new InvalidArgumentException('Incomplete Staff alert identity.');
+    }
+
+    $identity = am_staff_alert_identity($staffId, $type, $targetType, $targetKey);
+    $clock = am_staff_alert_clock();
+
+    $sql = "
+        INSERT INTO staff_action_alerts (
+            identity_key, staff_id, alert_type, target_type, target_key,
+            job_card_id, job_card_no, rot_session_id, vehicle_reg_no,
+            title, message,
+            first_triggered_at_local, first_triggered_at_utc, timezone_name
+        ) VALUES (
+            :identity_key, :staff_id, :alert_type, :target_type, :target_key,
+            :job_card_id, :job_card_no, :rot_session_id, :vehicle_reg_no,
+            :title, :message,
+            :local_time, :utc_time, :timezone_name
+        )
+        ON DUPLICATE KEY UPDATE
+            job_card_id = VALUES(job_card_id),
+            job_card_no = VALUES(job_card_no),
+            rot_session_id = VALUES(rot_session_id),
+            vehicle_reg_no = VALUES(vehicle_reg_no),
+            title = VALUES(title),
+            message = VALUES(message),
+            updated_at = CURRENT_TIMESTAMP
+    ";
+
+    $pdo->prepare($sql)->execute([
+        ':identity_key' => $identity,
+        ':staff_id' => $staffId,
+        ':alert_type' => $type,
+        ':target_type' => $targetType,
+        ':target_key' => $targetKey,
+        ':job_card_id' => $a['job_card_id'] ?? null,
+        ':job_card_no' => $a['job_card_no'] ?? null,
+        ':rot_session_id' => $a['rot_session_id'] ?? null,
+        ':vehicle_reg_no' => $a['vehicle_reg_no'] ?? null,
+        ':title' => trim((string)($a['title'] ?? 'Action Required')),
+        ':message' => $a['message'] ?? null,
+        ':local_time' => $clock['local'],
+        ':utc_time' => $clock['utc'],
+        ':timezone_name' => $clock['timezone'],
+    ]);
+
+    $stmt = $pdo->prepare("SELECT id FROM staff_action_alerts WHERE identity_key = ?");
+    $stmt->execute([$identity]);
+    return (int)$stmt->fetchColumn();
+}

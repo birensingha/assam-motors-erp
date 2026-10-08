@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Staff Alert Compliance</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f3f6fa;color:#17344f;font-family:Arial,sans-serif}.wrap{max-width:1500px;margin:auto;padding:18px}
+.head{background:#0b315b;color:#fff;border-radius:14px;padding:18px;display:flex;justify-content:space-between;gap:12px;align-items:center}.head h1{margin:0;font-size:22px}.head p{margin:5px 0 0;font-size:12px;opacity:.76}
+.btn{border:0;border-radius:9px;padding:10px 13px;font-weight:800}.export{background:#168445;color:#fff}.review{background:#f59e0b;color:#fff}.note{background:#2563eb;color:#fff}.resolve{background:#168445;color:#fff}
+.panel{background:#fff;border:1px solid #dbe4ee;border-radius:14px;padding:14px;margin-top:12px}.filters{display:grid;grid-template-columns:repeat(6,1fr);gap:8px}label{font-size:10px;font-weight:800;color:#627588}input,select,textarea{width:100%;margin-top:5px;padding:9px;border:1px solid #cfdae6;border-radius:8px}
+.metrics{display:grid;grid-template-columns:repeat(5,1fr);gap:9px}.metric{text-align:center;border:1px solid #dbe4ee;border-radius:11px;padding:11px}.metric span{display:block;font-size:9px;color:#718498}.metric b{font-size:20px}.danger{color:#b42318}.warn{color:#a16207}
+.table{overflow:auto}.table table{width:100%;min-width:1450px;border-collapse:collapse}th{background:#eaf2fb;padding:10px;font-size:10px;text-align:left}td{padding:9px;border-top:1px solid #e7edf3;font-size:10px;vertical-align:top}.chip{border-radius:999px;padding:5px 8px;font-weight:900;background:#eef2f6}.chip.escalated{background:#fee2e2;color:#991b1b}.chip.review{background:#fef3c7;color:#92400e}
+.actions{display:flex;gap:5px}.timeline{font-size:9px;color:#65798e}.note-box{max-width:280px}
+@media(max-width:900px){.filters{grid-template-columns:repeat(2,1fr)}.metrics{grid-template-columns:repeat(2,1fr)}.head{align-items:flex-start;flex-direction:column}}
+</style></head><body><div class="wrap">
+<div class="head"><div><h1>Staff Alert Compliance</h1><p>Reminder control · Admin escalation · Review · Audit · Excel export</p></div><button class="btn export">⬇ Export Excel</button></div>
+<div class="panel filters">
+<label>From<input type="date"></label><label>To<input type="date"></label><label>Staff<select><option>All Staff</option></select></label>
+<label>Status<select><option>All</option><option>Escalated</option><option>Under Review</option><option>Active</option><option>Snoozed</option><option>Resolved</option></select></label>
+<label>Type<select><option>All Alert Types</option></select></label><label>Job / Vehicle<input placeholder="Search"></label>
+</div>
+<div class="panel metrics">
+<div class="metric"><span>ACTIVE</span><b>8</b></div><div class="metric"><span>SNOOZED</span><b>3</b></div>
+<div class="metric"><span>ESCALATED</span><b class="danger">4</b></div><div class="metric"><span>UNDER REVIEW</span><b class="warn">2</b></div>
+<div class="metric"><span>RESOLVED TODAY</span><b>11</b></div>
+</div>
+<div class="panel table"><table><thead><tr><th>Staff</th><th>Alert</th><th>Target</th><th>Status</th><th>Reminders</th><th>Triggered</th><th>Escalated</th><th>Admin Note</th><th>Timeline</th><th>Actions</th></tr></thead>
+<tbody>
+<tr><td>Firajul<br><small>STF-012</small></td><td><b>ROT Paused</b><br>Resume or complete ROT</td><td>JC-1042<br>AS01AB1234</td><td><span class="chip escalated">ESCALATED</span></td><td>3 / 3</td><td>08-Oct 10:15</td><td>08-Oct 10:45</td><td class="note-box">Supervisor checking parts delay.</td><td class="timeline">Triggered → Snooze 1 → Snooze 2 → Escalated</td><td><div class="actions"><button class="btn review">Review</button><button class="btn note">Note</button></div></td></tr>
+<tr><td>Staff 2<br><small>STF-018</small></td><td><b>Check-Out Pending</b></td><td>Attendance<br>2026-10-07</td><td><span class="chip review">UNDER REVIEW</span></td><td>3 / 3</td><td>07-Oct 19:10</td><td>07-Oct 19:40</td><td class="note-box">Attendance correction requested.</td><td class="timeline">Escalated → Admin Under Review</td><td><div class="actions"><button class="btn note">Note</button><button class="btn resolve">Verify & Resolve</button></div></td></tr>
+</tbody></table></div>
+</div></body></html>

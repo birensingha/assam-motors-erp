@@ -1,0 +1,102 @@
+<?php
+/**
+ * PaymentController::create / store reference.
+ *
+ * Adapt model/table names to live Assam Motors ERP schema.
+ * The objective is to eliminate fragile NULL/undefined-view-data assumptions.
+ */
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
+
+public function create()
+{
+    // IMPORTANT:
+    // Replace these queries with the application's existing models/schema.
+    // Every collection passed to Blade is initialized even when no rows exist.
+
+    $accounts = collect();
+    $vendors = collect();
+    $paymentModes = collect();
+    $defaultAccountId = null;
+
+    try {
+        // Example only:
+        // $accounts = Account::query()
+        //     ->where('is_active', 1)
+        //     ->orderBy('name')
+        //     ->get(['id','code','name','type']);
+        //
+        // $vendors = Vendor::query()
+        //     ->where('is_active', 1)
+        //     ->orderBy('name')
+        //     ->get(['id','name','mobile']);
+        //
+        // $paymentModes = PaymentMode::query()
+        //     ->where('is_active', 1)
+        //     ->orderBy('sort_order')
+        //     ->get(['id','code','name']);
+        //
+        // $defaultAccountId = optional(
+        //     $accounts->firstWhere('is_default_payment', 1)
+        // )->id;
+
+    } catch (Throwable $e) {
+        Log::error('Payment Voucher create lookup failed', [
+            'route' => request()->path(),
+            'admin_user_id' => auth()->id(),
+            'exception' => get_class($e),
+            'message' => $e->getMessage(),
+            'file' => $e->getFile(),
+            'line' => $e->getLine(),
+        ]);
+
+        // Do not convert a real schema/configuration fault into fake success.
+        // If these lookups are mandatory in the live application, rethrow after logging.
+        throw $e;
+    }
+
+    return view('erp.payments.create', [
+        'accounts' => $accounts,
+        'vendors' => $vendors,
+        'paymentModes' => $paymentModes,
+        'defaultAccountId' => $defaultAccountId,
+        'voucherDate' => now('Asia/Kolkata')->format('Y-m-d'),
+    ]);
+}
+
+public function store(Request $request)
+{
+    $data = $request->validate([
+        'voucher_date' => ['required','date'],
+        'account_id' => ['required','integer'],
+        'payee_type' => ['required','string','max:40'],
+        'payee_id' => ['nullable','integer'],
+        'payment_mode' => ['required','string','max:40'],
+        'reference_no' => ['nullable','string','max:100'],
+        'narration' => ['nullable','string','max:2000'],
+        'amount' => ['required','numeric','gt:0'],
+    ]);
+
+    $voucherId = DB::transaction(function () use ($data) {
+        // Re-query and validate the selected account/payee SERVER-SIDE.
+        // Never trust account name, balance, payee name or voucher number from browser.
+        //
+        // Recommended:
+        // 1. lock/validate source account;
+        // 2. generate voucher number using existing server sequence;
+        // 3. insert voucher header;
+        // 4. insert ledger/accounting entries;
+        // 5. write audit;
+        // 6. return voucher id.
+
+        throw new RuntimeException(
+            'Wire Payment Voucher store() to the live accounting schema before enabling POST.'
+        );
+    });
+
+    return redirect()
+        ->route('erp.payments.show', $voucherId)
+        ->with('success', 'Payment Voucher saved.');
+}
