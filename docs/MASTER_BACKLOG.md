@@ -199,7 +199,21 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 - [x] ERP/Android behind-main check — **0 / 0**
 - [x] Current consolidated PR mergeability — **TRUE / TRUE**
 - [x] Final GO/NO-GO report — **READY**
-- [ ] Owner approval to merge ERP PR #9 — **PENDING**
-- [ ] Owner approval to merge Android PR #5 — **PENDING**
+- [x] ERP PR #9 merged into main — **DONE / 3186eaa858a88b9f2fc8a4a1a00ad1276c636c28**
+- [x] Android PR #5 merged into main — **DONE / da053a79284c0bd39264af15b022aba5accb7d04**
 - [ ] Live staging deployment — **NO-GO UNTIL LIVE SOURCE AVAILABLE**
 - [ ] Final production-signed Android release — **NO-GO UNTIL FIREBASE/SERVER GATES PASS**
+
+
+## Phase 17 — Post-Merge Cleanup / Release Tagging
+
+- [x] ERP consolidated PR #9 merged — **DONE**
+- [x] Android consolidated PR #5 merged — **DONE**
+- [x] Old ERP stacked PRs #1–#8 closed as superseded — **DONE**
+- [x] Old Android stacked PRs #1–#4 closed as superseded — **DONE**
+- [x] Feature branches retained for audit/history — **DONE**
+- [x] ERP post-merge verification record — **DONE**
+- [x] Android post-merge verification record — **DONE**
+- [ ] Create ERP Git tag `workshop-stack-2026-10-08` — **CONNECTOR CAPABILITY BLOCKED**
+- [ ] Create Android Git tag `v6.0.18` — **CONNECTOR CAPABILITY BLOCKED**
+- [ ] Produce/publish final signed Android artifact — **STILL BLOCKED BY FIREBASE/SERVER GATES**
