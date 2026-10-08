@@ -126,9 +126,12 @@ Android v6.0.18 release-gate builds **Run #105 PASS** and **Run #106 PASS**.
 
 ## Additional UX / Distribution Items
 
-- [ ] Parts Purchase page readability / larger in-page presentation — **PARTIALLY COVERED / LIVE VIEW TUNING PENDING**
-- [ ] Estimate page readability / zoomed in-page presentation — **NOT YET PATCHED**
-- [ ] Keep Purchase/Estimate readable without separate large-window workflow — **NOT YET LIVE VERIFIED**
+- [ ] Parts Purchase page readability / larger in-page presentation — **PATCH READY / LIVE VIEW WIRING PENDING**
+- [ ] Estimate page readability / zoomed in-page presentation — **PATCH READY / LIVE VIEW WIRING PENDING**
+- [ ] Keep Purchase/Estimate readable without separate large-window workflow — **PATCH READY / LIVE VERIFICATION PENDING**
+  - same-page 100% / 115% / 125% controls prepared
+  - default comfortable view is 115%
+  - print/PDF scale remains independent
 - [ ] Final Staff APK licensing/distribution package — **NOT FINALIZED**
 
 ## Current hard blockers
