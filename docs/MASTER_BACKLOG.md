@@ -148,3 +148,16 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 2. **Firebase Android build secrets are not configured.**
 3. **FCM server service-account credentials/project configuration are not deployed.**
 4. **Final production-signed v6.0.18 should follow server deployment and end-to-end push verification.**
+
+
+## Phase 13 — Staging Deployment / Release Control
+
+- [x] Deployment order/runbook — **READY**
+- [x] Rollback matrix — **READY**
+- [x] Pre-deploy checklist — **READY**
+- [x] Read-only preflight checker — **READY / BASH SYNTAX PASS**
+- [x] Machine-readable release manifest — **READY**
+- [ ] Run preflight against actual staging APP_ROOT — **PENDING LIVE SOURCE**
+- [ ] Run read-only DB inspection against staging — **PENDING DB ACCESS**
+- [ ] Execute staging deployment — **PENDING**
+- [ ] Record smoke-test results and close rollback window — **PENDING**
