@@ -338,3 +338,21 @@ Do not ship the FCM production APK as "fully enabled" before:
 | Production signed Android v6.0.18 | NO-GO | Firebase/server/end-to-end gates remain pending |
 
 Final report: `deployment/FINAL_PRE_MERGE_GATE_20261008.md`
+
+
+---
+
+## Phase 17 — Post-Merge Cleanup
+
+| Item | Status | Evidence |
+|---|---|---|
+| ERP PR #9 | MERGED | merge commit `3186eaa858a88b9f2fc8a4a1a00ad1276c636c28` |
+| Android PR #5 | MERGED | merge commit `da053a79284c0bd39264af15b022aba5accb7d04` |
+| ERP stacked PRs #1–#8 | CLOSED / SUPERSEDED | consolidated into PR #9 |
+| Android stacked PRs #1–#4 | CLOSED / SUPERSEDED | consolidated into PR #5 |
+| ERP post-merge record | READY | `docs/POST_MERGE_VERIFICATION_20261008.md` |
+| Android post-merge record | READY | `POST_MERGE_VERIFICATION_V6.0.18.md` |
+| ERP desired tag | PENDING TOOL CAPABILITY | `workshop-stack-2026-10-08` |
+| Android desired tag | PENDING TOOL CAPABILITY | `v6.0.18` |
+| Staging deployment | NOT DONE | live Laravel/PHP source still unavailable |
+| Signed production APK | NOT DONE | Firebase/server gates still pending |
