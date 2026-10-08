@@ -1,0 +1,82 @@
+<?php
+/**
+ * AdminNativeModuleController — Customer Master integration example.
+ *
+ * Adapt model/table names to the live ERP schema.
+ * These methods rely on route middleware for authenticated Admin access.
+ */
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
+
+public function customers(Request $request)
+{
+    $q = trim((string)$request->query('q', ''));
+
+    $customers = DB::table('customers')
+        ->when($q !== '', function ($query) use ($q) {
+            $like = '%' . str_replace(['%','_'], ['\\%','\\_'], $q) . '%';
+
+            $query->where(function ($sub) use ($like) {
+                $sub->where('name', 'like', $like)
+                    ->orWhere('mobile', 'like', $like)
+                    ->orWhere('customer_code', 'like', $like);
+            });
+        })
+        ->orderByDesc('id')
+        ->paginate(50)
+        ->withQueryString();
+
+    return view('erp.native.customers.index', compact('customers', 'q'));
+}
+
+public function storeCustomer(Request $request)
+{
+    $data = $request->validate([
+        'name' => ['required','string','max:160'],
+        'mobile' => ['required','string','max:30'],
+        'whatsapp' => ['nullable','string','max:30'],
+        'email' => ['nullable','email','max:190'],
+        'address' => ['nullable','string','max:1000'],
+    ]);
+
+    $id = DB::transaction(function () use ($data) {
+        return DB::table('customers')->insertGetId([
+            ...$data,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    });
+
+    return redirect()
+        ->route('erp.native.customers')
+        ->with('success', 'Customer created successfully.');
+}
+
+public function updateCustomer(Request $request, $customer)
+{
+    $data = $request->validate([
+        'name' => ['required','string','max:160'],
+        'mobile' => ['required','string','max:30'],
+        'whatsapp' => ['nullable','string','max:30'],
+        'email' => ['nullable','email','max:190'],
+        'address' => ['nullable','string','max:1000'],
+    ]);
+
+    DB::transaction(function () use ($customer, $data) {
+        $exists = DB::table('customers')->where('id', $customer)->lockForUpdate()->first();
+        abort_unless($exists, 404);
+
+        DB::table('customers')
+            ->where('id', $customer)
+            ->update([
+                ...$data,
+                'updated_at' => now(),
+            ]);
+    });
+
+    return redirect()
+        ->route('erp.native.customers')
+        ->with('success', 'Customer updated successfully.');
+}
