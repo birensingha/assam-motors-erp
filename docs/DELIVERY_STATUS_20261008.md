@@ -290,3 +290,18 @@ Do not ship the FCM production APK as "fully enabled" before:
 | Read-only preflight checker | READY / SYNTAX VERIFIED | `deployment/preflight.sh`; Bash syntax check passed; no migration/write actions |
 | Machine-readable release manifest | READY | `deployment/release-manifest.json` |
 | Actual staging execution | PENDING | Requires live Laravel/PHP source, DB access and deployment environment |
+
+
+---
+
+## Phase 14 — Source Mapping / Live Integration Map
+
+| Item | Status | Note |
+|---|---|---|
+| Route/controller/view/API integration map | READY | `deployment/INTEGRATION_MAP.md` |
+| Android-to-server endpoint matrix | READY | Included in Integration Map |
+| DB concept-to-live-table worksheet | READY / TO BE FILLED ON STAGING | Customer/Vehicle/Part/Labour/Staff/JC/Invoice/Purchase mapping |
+| Route mapping worksheet | READY / TO BE FILLED ON STAGING | Live route/controller/view discovery table |
+| Read-only source discovery helper | READY / BASH SYNTAX PASS | `deployment/source-discovery.sh` |
+| Machine-readable source map | READY | `deployment/source-map.json` |
+| Actual live filename/table mapping | PENDING LIVE SOURCE | Requires staging application root |
