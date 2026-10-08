@@ -28,6 +28,7 @@ This branch consolidates the prepared Workshop/Staff implementation packages int
 - FCM Staff device registry, HTTP v1 sender and delivery audit
 - Polling fallback retained when push is unavailable
 - Staff Android production distribution/update-feed contract with trusted Assam Motors download host and checksum metadata
+- Staging deployment runbook, rollback matrix, checklist and read-only preflight checker
 
 ## Recommended database migration order
 
@@ -68,3 +69,14 @@ Deploy server-global Alerts and the Staff device-token endpoint before enabling 
 ## Current limitation
 
 These are deployment-ready integration packages/reference implementations. The actual live staging ERP PHP/Laravel source must be added or made available in the deployment workspace before the features can be wired live.
+
+
+## Deployment tooling
+
+- `deployment/STAGING_RUNBOOK.md`
+- `deployment/ROLLBACK_MATRIX.md`
+- `deployment/PRE_DEPLOY_CHECKLIST.md`
+- `deployment/preflight.sh`
+- `deployment/release-manifest.json`
+
+The preflight checker is read-only by design. It does not execute migrations, clear caches, write database rows or publish releases.
