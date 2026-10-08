@@ -1,0 +1,73 @@
+<?php
+/**
+ * OSL Purchase multi-line save example.
+ * Adapt table/header names to the live ERP schema.
+ */
+
+function am_osl_money(float $v): float {
+    return round($v, 2);
+}
+
+function am_osl_calculate_line(array $row): array
+{
+    $qty = max(0, (float)($row['qty'] ?? 0));
+    $rate = max(0, (float)($row['rate'] ?? 0));
+    $disc = min(100, max(0, (float)($row['discount_percent'] ?? 0)));
+    $tax = min(100, max(0, (float)($row['tax_percent'] ?? 0)));
+
+    $gross = $qty * $rate;
+    $discountAmount = $gross * $disc / 100;
+    $taxable = $gross - $discountAmount;
+    $taxAmount = $taxable * $tax / 100;
+    $lineTotal = $taxable + $taxAmount;
+
+    return [
+        'qty' => $qty,
+        'rate' => am_osl_money($rate),
+        'discount_percent' => $disc,
+        'tax_percent' => $tax,
+        'taxable_amount' => am_osl_money($taxable),
+        'tax_amount' => am_osl_money($taxAmount),
+        'line_total' => am_osl_money($lineTotal),
+    ];
+}
+
+function am_osl_validate_line(array $row): void
+{
+    if (trim((string)($row['osl_description'] ?? '')) === '') {
+        throw new InvalidArgumentException('OSL description is required.');
+    }
+    if ((float)($row['qty'] ?? 0) <= 0) {
+        throw new InvalidArgumentException('OSL quantity must be greater than zero.');
+    }
+    if ((float)($row['rate'] ?? 0) < 0) {
+        throw new InvalidArgumentException('OSL rate cannot be negative.');
+    }
+}
+
+/*
+Recommended transaction:
+
+$pdo->beginTransaction();
+try {
+    // validate vendor + invoice header
+    // create/update purchase header
+    // DELETE/soft-delete replaced line rows only according to existing ERP rules
+
+    foreach ($request['lines'] as $index => $row) {
+        am_osl_validate_line($row);
+        $calc = am_osl_calculate_line($row);
+
+        // insert/update line with ($index + 1) as line_no
+        // resolve job_card_id and vehicle_id on SERVER from selected references
+        // never trust client total
+    }
+
+    // recompute purchase subtotal/tax/grand total from saved rows
+    // write audit
+    $pdo->commit();
+} catch (Throwable $e) {
+    if ($pdo->inTransaction()) $pdo->rollBack();
+    throw $e;
+}
+*/
