@@ -1,0 +1,148 @@
+<?php
+/**
+ * Assam Motors ERP — Phase 5 ROT audit helper.
+ *
+ * Integration contract:
+ * - Call only AFTER the ROT state transition has successfully committed.
+ * - $pdo must be the same authenticated ERP database connection (PDO).
+ * - Do not trust staff_id from Android; always use authenticated server-side staff identity.
+ */
+
+function am_rot_event_clock(): array
+{
+    $kolkata = new DateTimeZone('Asia/Kolkata');
+    $utc = new DateTimeZone('UTC');
+    $local = new DateTimeImmutable('now', $kolkata);
+    return [
+        'local' => $local->format('Y-m-d H:i:s.v'),
+        'utc' => $local->setTimezone($utc)->format('Y-m-d H:i:s.v'),
+        'timezone' => 'Asia/Kolkata',
+    ];
+}
+
+function am_rot_request_key(
+    string $rotSessionId,
+    string $eventType,
+    ?int $staffId,
+    ?int $deviceRecordedAtMs
+): ?string {
+    // Android retries of the same user action carry the same device timestamp.
+    // If the client did not supply one, return NULL instead of inventing a key
+    // that could accidentally collapse two legitimate later actions.
+    if (!$deviceRecordedAtMs || $deviceRecordedAtMs <= 0) {
+        return null;
+    }
+
+    return hash('sha256', implode('|', [
+        trim($rotSessionId),
+        strtoupper(trim($eventType)),
+        (string)($staffId ?? 0),
+        (string)$deviceRecordedAtMs,
+    ]));
+}
+
+function am_rot_write_audit(PDO $pdo, array $event): void
+{
+    $clock = am_rot_event_clock();
+
+    $sessionId = trim((string)($event['rot_session_id'] ?? ''));
+    $eventType = strtoupper(trim((string)($event['event_type'] ?? '')));
+    if ($sessionId === '' || !in_array($eventType, ['START','PAUSE','RESUME','COMPLETE'], true)) {
+        throw new InvalidArgumentException('Invalid ROT audit event');
+    }
+
+    $staffId = isset($event['staff_id']) ? (int)$event['staff_id'] : null;
+    $deviceMs = isset($event['device_recorded_at_ms']) ? (int)$event['device_recorded_at_ms'] : null;
+    $requestKey = am_rot_request_key($sessionId, $eventType, $staffId, $deviceMs);
+
+    $payload = $event['payload_json'] ?? null;
+    if (is_array($payload) || is_object($payload)) {
+        $payload = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    }
+
+    $sql = "
+        INSERT IGNORE INTO rot_event_audit (
+            request_key, rot_session_id, staff_id, job_card_id, job_card_no, rot_code,
+            event_type, status_before, status_after,
+            pause_reason, pause_note,
+            event_at_local, event_at_utc, timezone_name,
+            device_recorded_at_ms, action_source, payload_json
+        ) VALUES (
+            :request_key, :rot_session_id, :staff_id, :job_card_id, :job_card_no, :rot_code,
+            :event_type, :status_before, :status_after,
+            :pause_reason, :pause_note,
+            :event_at_local, :event_at_utc, :timezone_name,
+            :device_recorded_at_ms, :action_source, :payload_json
+        )
+    ";
+
+    $stmt = $pdo->prepare($sql);
+    $stmt->execute([
+        ':request_key' => $requestKey,
+        ':rot_session_id' => $sessionId,
+        ':staff_id' => $staffId,
+        ':job_card_id' => isset($event['job_card_id']) ? (int)$event['job_card_id'] : null,
+        ':job_card_no' => $event['job_card_no'] ?? null,
+        ':rot_code' => $event['rot_code'] ?? null,
+        ':event_type' => $eventType,
+        ':status_before' => $event['status_before'] ?? null,
+        ':status_after' => $event['status_after'] ?? null,
+        ':pause_reason' => $eventType === 'PAUSE' ? ($event['pause_reason'] ?? null) : null,
+        ':pause_note' => $eventType === 'PAUSE' ? ($event['pause_note'] ?? null) : null,
+        ':event_at_local' => $clock['local'],
+        ':event_at_utc' => $clock['utc'],
+        ':timezone_name' => $clock['timezone'],
+        ':device_recorded_at_ms' => $deviceMs,
+        ':action_source' => $event['action_source'] ?? 'ERP',
+        ':payload_json' => $payload,
+    ]);
+}
+
+/*
+Example integration inside staff-rot-v3.php AFTER the state update succeeds:
+
+$request = json_decode(file_get_contents('php://input'), true) ?: [];
+$action = strtolower(trim((string)($request['action'] ?? '')));
+$sessionId = trim((string)($request['id'] ?? ''));
+
+// IMPORTANT:
+// $authenticatedStaffId must come from the verified bearer token/session.
+// $rotRow must come from the server-side ROT lookup.
+// Never accept staff/job ownership from request JSON.
+
+am_rot_write_audit($pdo, [
+    'rot_session_id' => $sessionId,
+    'staff_id' => $authenticatedStaffId,
+    'job_card_id' => $rotRow['job_card_id'] ?? null,
+    'job_card_no' => $rotRow['job_card_no'] ?? null,
+    'rot_code' => $rotRow['rot_code'] ?? null,
+    'event_type' => strtoupper($action),
+    'status_before' => $statusBefore,
+    'status_after' => $statusAfter,
+    'pause_reason' => trim((string)($request['pause_reason'] ?? '')),
+    'pause_note' => trim((string)($request['pause_note'] ?? '')),
+    'device_recorded_at_ms' => isset($request['device_recorded_at_ms'])
+        ? (int)$request['device_recorded_at_ms']
+        : null,
+    'action_source' => trim((string)($request['action_source'] ?? 'STAFF_PORTAL')),
+    'payload_json' => [
+        'client' => $request,
+        'server_result' => [
+            'status_before' => $statusBefore,
+            'status_after' => $statusAfter,
+        ],
+    ],
+]);
+
+Recommended list/history query:
+
+SELECT
+    id, rot_session_id, staff_id, job_card_id, job_card_no, rot_code,
+    event_type, status_before, status_after, pause_reason, pause_note,
+    event_at_local, timezone_name, action_source
+FROM rot_event_audit
+WHERE staff_id = :staff_id
+  AND event_at_local >= :from_date
+  AND event_at_local < :to_date
+ORDER BY event_at_utc DESC, id DESC;
+*/
