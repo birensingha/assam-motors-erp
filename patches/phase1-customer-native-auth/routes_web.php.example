@@ -1,0 +1,19 @@
+<?php
+// routes/web.php — integration example
+//
+// Use the ERP's EXISTING admin middleware names. The names below are placeholders
+// and must be replaced with the middleware already used by other native admin pages.
+
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\AdminNativeModuleController;
+
+Route::middleware(['auth', 'admin'])->prefix('erp/native')->group(function () {
+    Route::get('/customers', [AdminNativeModuleController::class, 'customers'])
+        ->name('erp.native.customers');
+
+    Route::post('/customers', [AdminNativeModuleController::class, 'storeCustomer'])
+        ->name('erp.native.customers.store');
+
+    Route::put('/customers/{customer}', [AdminNativeModuleController::class, 'updateCustomer'])
+        ->name('erp.native.customers.update');
+});
