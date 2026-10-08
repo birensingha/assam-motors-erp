@@ -57,3 +57,11 @@
 
 ## Phase 12 — Final Android synchronization
 - [ ] Final API sync and signed production APK
+
+## Parts Purchase — Search / Allocation
+- [ ] Part Code / Part Name autocomplete must return Part Master matches
+- [ ] Multi-line rows must keep independent autocomplete state
+- [ ] Purchase Against search must find Job Card No. and Vehicle Registration
+- [ ] Normalize spaces / dashes / case for Job Card and Vehicle search
+- [ ] Valid Job Card must not disappear because of missing optional Vehicle/Customer relation
+- [ ] Server must re-validate selected Job Card eligibility at Save time
