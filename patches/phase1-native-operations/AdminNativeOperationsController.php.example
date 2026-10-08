@@ -1,0 +1,172 @@
+<?php
+/**
+ * AdminNativeOperationsController reference.
+ *
+ * Adapt all table/column names to the live ERP schema.
+ * Keep behind existing ERP Admin authentication/permissions.
+ */
+
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+
+final class AdminNativeOperationsController
+{
+    public function bookingsOrders(Request $request)
+    {
+        $q = trim((string)$request->query('q', ''));
+        $status = trim((string)$request->query('status', ''));
+
+        $rows = DB::table('bookings')
+            ->when($q !== '', function ($query) use ($q) {
+                $like = '%' . $q . '%';
+                $query->where(function ($sub) use ($like) {
+                    $sub->where('booking_no', 'like', $like)
+                        ->orWhere('customer_name', 'like', $like)
+                        ->orWhere('mobile', 'like', $like)
+                        ->orWhere('product_name', 'like', $like);
+                });
+            })
+            ->when($status !== '', fn($query) => $query->where('status', $status))
+            ->orderByDesc('id')
+            ->paginate(50)
+            ->withQueryString();
+
+        return view('erp.native.bookings-orders.index', compact('rows', 'q', 'status'));
+    }
+
+    public function users(Request $request)
+    {
+        $q = trim((string)$request->query('q', ''));
+
+        $rows = DB::table('users')
+            ->when($q !== '', function ($query) use ($q) {
+                $like = '%' . $q . '%';
+                $query->where(function ($sub) use ($like) {
+                    $sub->where('name', 'like', $like)
+                        ->orWhere('email', 'like', $like)
+                        ->orWhere('username', 'like', $like);
+                });
+            })
+            ->orderBy('name')
+            ->paginate(50)
+            ->withQueryString();
+
+        return view('erp.native.users.index', compact('rows', 'q'));
+    }
+
+    public function products(Request $request)
+    {
+        $q = trim((string)$request->query('q', ''));
+
+        $rows = DB::table('products')
+            ->when($q !== '', function ($query) use ($q) {
+                $like = '%' . $q . '%';
+                $query->where(function ($sub) use ($like) {
+                    $sub->where('sku', 'like', $like)
+                        ->orWhere('name', 'like', $like)
+                        ->orWhere('brand', 'like', $like)
+                        ->orWhere('model', 'like', $like);
+                });
+            })
+            ->orderBy('name')
+            ->paginate(50)
+            ->withQueryString();
+
+        return view('erp.native.products.index', compact('rows', 'q'));
+    }
+
+    public function staff(Request $request)
+    {
+        $q = trim((string)$request->query('q', ''));
+
+        $rows = DB::table('staff')
+            ->when($q !== '', function ($query) use ($q) {
+                $like = '%' . $q . '%';
+                $query->where(function ($sub) use ($like) {
+                    $sub->where('staff_code', 'like', $like)
+                        ->orWhere('name', 'like', $like)
+                        ->orWhere('mobile', 'like', $like)
+                        ->orWhere('designation', 'like', $like);
+                });
+            })
+            ->orderBy('name')
+            ->paginate(50)
+            ->withQueryString();
+
+        return view('erp.native.staff.index', compact('rows', 'q'));
+    }
+
+    public function jobApplications(Request $request)
+    {
+        $q = trim((string)$request->query('q', ''));
+        $status = trim((string)$request->query('status', ''));
+
+        $rows = DB::table('job_applications')
+            ->when($q !== '', function ($query) use ($q) {
+                $like = '%' . $q . '%';
+                $query->where(function ($sub) use ($like) {
+                    $sub->where('name', 'like', $like)
+                        ->orWhere('mobile', 'like', $like)
+                        ->orWhere('email', 'like', $like)
+                        ->orWhere('position', 'like', $like);
+                });
+            })
+            ->when($status !== '', fn($query) => $query->where('status', $status))
+            ->orderByDesc('id')
+            ->paginate(50)
+            ->withQueryString();
+
+        return view('erp.native.job-applications.index', compact('rows', 'q', 'status'));
+    }
+
+    public function staffLocation(Request $request)
+    {
+        $staffId = $request->query('staff_id');
+
+        // Prefer an existing "latest location per Staff" view/query if available.
+        // Captured timestamps must come from the stored location record.
+        $rows = DB::table('staff_locations as l')
+            ->join('staff as s', 's.id', '=', 'l.staff_id')
+            ->when($staffId, fn($q) => $q->where('l.staff_id', $staffId))
+            ->select([
+                'l.*',
+                's.staff_code',
+                's.name as staff_name',
+            ])
+            ->orderByDesc('l.captured_at')
+            ->paginate(100)
+            ->withQueryString();
+
+        return view('erp.native.staff-location.index', compact('rows', 'staffId'));
+    }
+
+    public function serviceReminders(Request $request)
+    {
+        $q = trim((string)$request->query('q', ''));
+        $status = trim((string)$request->query('status', ''));
+
+        $rows = DB::table('service_reminders as r')
+            ->leftJoin('customers as c', 'c.id', '=', 'r.customer_id')
+            ->leftJoin('vehicles as v', 'v.id', '=', 'r.vehicle_id')
+            ->when($q !== '', function ($query) use ($q) {
+                $like = '%' . $q . '%';
+                $query->where(function ($sub) use ($like) {
+                    $sub->where('c.name', 'like', $like)
+                        ->orWhere('c.mobile', 'like', $like)
+                        ->orWhere('v.registration_no', 'like', $like);
+                });
+            })
+            ->when($status !== '', fn($query) => $query->where('r.status', $status))
+            ->select([
+                'r.*',
+                'c.name as customer_name',
+                'c.mobile as customer_mobile',
+                'v.registration_no as vehicle_reg_no',
+            ])
+            ->orderBy('r.next_service_date')
+            ->paginate(50)
+            ->withQueryString();
+
+        return view('erp.native.service-reminders.index', compact('rows', 'q', 'status'));
+    }
+}
