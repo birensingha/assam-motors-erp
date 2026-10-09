@@ -636,3 +636,13 @@ FIX22 scope:
 - direct deploy path: `deployment/live-fixes/FIX31_JOBCARD_FORM_LAYOUT_DROPDOWNS`
 - DB/controller/save logic: **UNCHANGED**
 - live apply: **PENDING**
+
+
+### Phase 32 — Staff reminder compliance
+
+- Android server-global reminder contract: **CONFIRMED**
+- Android max reminders: **3**
+- Android final state: **ADMIN ESCALATION**
+- live server reminder source: **REQUIRES READ-ONLY INSPECTION**
+- direct inspect path: `deployment/live-fixes/FIX32_REMINDER_COMPLIANCE/INSPECT.sh`
+- DB/source modification by inspector: **NONE**
