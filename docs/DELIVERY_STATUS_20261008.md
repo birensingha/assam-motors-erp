@@ -590,3 +590,15 @@ FIX22 scope:
 - DB/save calculations: **UNCHANGED**
 - direct deploy path: `deployment/live-fixes/FIX27_PURCHASE_ESTIMATE_READABILITY`
 - live apply: **PENDING**
+
+
+### Phase 28 — Staff ROT live progress
+
+- server response: **standard / remaining / overtime / progress / target-end / latest pause metadata READY**
+- Android ROT card: **Started / Target End / Ending Soon / Overtime / Pause remark READY**
+- Start/Pause/Resume/Complete workflow: **UNCHANGED**
+- DB migration: **NONE**
+- direct deploy path: `deployment/live-fixes/FIX28_ROT_LIVE_PROGRESS`
+- Android PR #6 head: `a3e1504c864e3b249a52bd339ca5886eb554966f`
+- Android CI Run #117: **QUEUED**
+- live staging apply: **PENDING**
