@@ -528,3 +528,19 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 - [ ] Redesign Job Card Parts block — **PENDING INSPECT OUTPUT**
 - [ ] Redesign Job Card Labour/ROT block — **PENDING INSPECT OUTPUT**
 - [ ] Browser + stock balance smoke test — **PENDING**
+
+
+## Phase 34 — Job Card Lifecycle: QC → Ready → Close → Invoice
+
+- [x] Required lifecycle confirmed from user workflow — **DONE**
+- [x] No direct Work Complete → Invoice jump — **RULE DEFINED**
+- [x] Read-only live route/controller/service/schema inspector — **READY**
+- [x] Existing Job Card audit table selected for reuse — **CONFIRMED**
+- [x] No DB/source modification in inspection step — **CONFIRMED**
+- [ ] Run FIX34 INSPECT on staging — **PENDING SERVER**
+- [ ] Map exact live QC/Ready/Close/Invoice fields/routes — **PENDING INSPECT OUTPUT**
+- [ ] Build controlled lifecycle transitions — **PENDING INSPECT OUTPUT**
+- [ ] Enforce Parts/Labour/ROT completion before QC — **PENDING INSPECT OUTPUT**
+- [ ] Enforce QC before Ready for Delivery — **PENDING INSPECT OUTPUT**
+- [ ] Enforce Close before Invoice conversion — **PENDING INSPECT OUTPUT**
+- [ ] Browser end-to-end smoke — **PENDING**
