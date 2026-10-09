@@ -513,3 +513,18 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 - [ ] Reconcile live snooze/escalation rules — **PENDING INSPECT OUTPUT**
 - [ ] Prepare exact FIX32 CHECK/APPLY/VERIFY — **PENDING INSPECT OUTPUT**
 - [ ] Device smoke reminder 1/3 → 3/3 → Admin — **PENDING**
+
+
+## Phase 33 — Job Card Part Stock Reversal + Parts/Labour UI
+
+- [x] User-facing delete-block behavior identified — **ISSUED/FITTED PART REQUIRES STOCK REVERSAL**
+- [x] Safety rule defined: no hard delete without stock reversal — **CONFIRMED**
+- [x] Read-only live source/schema inspector — **READY**
+- [x] Purchase line-item UI selected as visual reference — **CONFIRMED**
+- [x] No DB/source modification in inspection step — **CONFIRMED**
+- [ ] Run FIX33 INSPECT on staging — **PENDING SERVER**
+- [ ] Map exact stock issue/reversal service/table — **PENDING INSPECT OUTPUT**
+- [ ] Add transactional Reverse Stock & Remove action — **PENDING INSPECT OUTPUT**
+- [ ] Redesign Job Card Parts block — **PENDING INSPECT OUTPUT**
+- [ ] Redesign Job Card Labour/ROT block — **PENDING INSPECT OUTPUT**
+- [ ] Browser + stock balance smoke test — **PENDING**
