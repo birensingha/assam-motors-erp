@@ -1,0 +1,49 @@
+name: Assam Motors Staging Browser Smoke
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Assam Motors Staging SSH Control"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    env:
+      STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL || 'https://staging.assammotors.com' }}
+      STAGING_LOGIN_PATH: ${{ vars.STAGING_LOGIN_PATH || '/erp/login' }}
+      STAGING_ADMIN_LOGIN: ${{ secrets.STAGING_ADMIN_LOGIN }}
+      STAGING_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+      SMOKE_OUTPUT_DIR: browser-smoke-artifacts
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Playwright
+        shell: bash
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Run authenticated staging smoke
+        shell: bash
+        run: node deployment/browser-smoke.mjs
+
+      - name: Upload screenshots and result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: assam-motors-staging-browser-smoke
+          path: browser-smoke-artifacts/
+          if-no-files-found: warn
+          retention-days: 14
