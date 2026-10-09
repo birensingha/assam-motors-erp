@@ -431,3 +431,13 @@ Final report: `deployment/FINAL_PRE_MERGE_GATE_20261008.md`
 - DB migration: **NO**
 - revised combined staging package: **FIX20B READY**
 - staging apply: **NOT YET RUN**
+
+
+### Android compatibility build evidence
+
+- Staff App PR #6: **OPEN / DRAFT / MERGEABLE**
+- workflow Run #116: **SUCCESS**
+- Debug APK build: **PASS**
+- Unsigned Release APK build: **PASS**
+- APK artifact upload: **PASS**
+- merge remains gated on FIX20B staging apply + end-to-end smoke test
