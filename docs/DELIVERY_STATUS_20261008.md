@@ -521,3 +521,16 @@ FIX22 scope:
 - local PHP syntax: **PASS**
 - synthetic patch smoke: **PASS**
 - FIX22B SHA-256: `8c8615794a0129042a5850400ebcd1328719cea214c6d05754cbe07eaf213317`
+
+
+### Phase 23 — Native Customer + Vehicle
+
+- request: New Customer ke saath Vehicle add facility, Legacy-like
+- existing live tables reused: `am_customer_master`, `am_vehicle_master`, `am_vehicle_catalog_master`
+- Customer-only creation: **SUPPORTED**
+- Customer + 1–5 Vehicles same transaction: **READY**
+- duplicate Registration/Chassis/Engine protection: **READY**
+- active Vehicle Master selection validation: **READY**
+- database migration: **NONE**
+- FIX23 package SHA-256: `44e2df81d9c88a135fa9a6dd17ff89b334901bb3247b930b90a688fc8bfc4163`
+- staging apply: **PENDING SERVER CHECK**
