@@ -675,3 +675,12 @@ FIX22 scope:
 - ROT assignment rules: **MUST BE REUSED**
 - direct inspect path: `deployment/live-fixes/FIX35_JOBCARD_DIRECT_PARTS_LABOUR/INSPECT.sh`
 - DB/source modification by inspector: **NONE**
+
+
+### Fast Track — FIX32 to FIX35
+
+- one-command report: `deployment/live-fixes/FAST_TRACK_FIX32_35/RUN_ALL_INSPECTORS.sh`
+- includes installed-marker check for FIX26–FIX31
+- includes live inspection for FIX32–FIX35
+- staging source modification: **NONE**
+- database modification: **NONE**
