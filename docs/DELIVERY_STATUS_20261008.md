@@ -534,3 +534,20 @@ FIX22 scope:
 - database migration: **NONE**
 - FIX23 package SHA-256: `44e2df81d9c88a135fa9a6dd17ff89b334901bb3247b930b90a688fc8bfc4163`
 - staging apply: **PENDING SERVER CHECK**
+
+
+### Phase 24 — OSL Purchase = Parts Purchase style
+
+- live single-line OSL flow reviewed: **DONE**
+- existing batch-capable schema reused: **YES**
+- OSL shared supplier header: **READY**
+- multi-line OSL rows: **READY (max 50)**
+- per-line Job Card / Vehicle link: **READY**
+- per-line OSL Master/manual description: **READY**
+- purchase + customer billing preview: **READY**
+- transactional OSL batch save: **READY**
+- database migration: **NONE**
+- PHP syntax: **PASS**
+- browser JS syntax: **PASS**
+- CHECK/APPLY/VERIFY/ROLLBACK smoke: **PASS**
+- staging apply: **PENDING SERVER CHECK**
