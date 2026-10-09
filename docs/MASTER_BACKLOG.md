@@ -267,3 +267,17 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 - [ ] Apply FIX20 to staging — **WAIT FOR CHECK + DIAGNOSTIC REVIEW**
 - [ ] Staging smoke tests — **PENDING APPLY**
 - [ ] Android compatibility PR #6 build gate — **RUN #116 IN PROGRESS AT STATUS UPDATE**
+
+
+## Phase 20B — Payment Voucher 500 exact fix
+
+- [x] Read-only live diagnostic executed — **DONE**
+- [x] SQLSTATE 42000 / error 1055 root cause identified — **DONE**
+- [x] Safe query-only fix prepared — **DONE**
+- [x] SQL mode/schema left unchanged — **CONFIRMED**
+- [x] Payment service added to baseline SHA guard — **DONE**
+- [x] FIX20B combined package prepared — **READY**
+- [ ] Upload FIX20B to staging handoff folder — **PENDING SERVER**
+- [ ] Run FIX20B CHECK — **PENDING SERVER**
+- [ ] Apply FIX20B — **PENDING CHECK GO**
+- [ ] Confirm post-apply payableSources PASS + /erp/payments/create loads — **PENDING APPLY**
