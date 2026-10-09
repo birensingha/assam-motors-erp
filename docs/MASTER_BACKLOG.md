@@ -423,3 +423,17 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 - [ ] Run FIX26 CHECK/APPLY — **PENDING SERVER**
 - [ ] Browser verify Part Name search — **PENDING**
 - [ ] Browser verify JC No / Vehicle Reg search — **PENDING**
+
+
+## Phase 27 — Purchase / Estimate Same-Page Readability
+
+- [x] Purchase 100% / 115% / 125% view controls — **READY**
+- [x] Estimate 100% / 115% / 125% view controls — **READY**
+- [x] Default comfortable view 115% — **READY**
+- [x] Browser preference persistence — **READY**
+- [x] Print mode kept independent — **READY**
+- [x] No DB/controller/service calculation changes — **CONFIRMED**
+- [x] Direct GitHub CHECK/APPLY/VERIFY/ROLLBACK scripts — **READY**
+- [ ] Run FIX27 CHECK/APPLY on staging — **PENDING SERVER**
+- [ ] Browser verify Purchase readability — **PENDING**
+- [ ] Browser verify Estimate readability — **PENDING**
