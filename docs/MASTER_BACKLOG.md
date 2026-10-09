@@ -281,3 +281,17 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 - [ ] Run FIX20B CHECK — **PENDING SERVER**
 - [ ] Apply FIX20B — **PENDING CHECK GO**
 - [ ] Confirm post-apply payableSources PASS + /erp/payments/create loads — **PENDING APPLY**
+
+
+## Phase 20C — Hostinger-compatible apply
+
+- [x] FIX20B baseline check on live staging — **GO**
+- [x] Hostinger /dev/fd incompatibility identified — **DONE**
+- [x] Confirm failure occurred before backup/copy/install — **DONE**
+- [x] Remove process substitution from APPLY/ROLLBACK — **DONE**
+- [x] Bash syntax validation — **PASS**
+- [x] Target PHP lint — **PASS**
+- [x] FIX20C archive generated — **READY**
+- [ ] Upload FIX20C to staging handoff — **PENDING SERVER**
+- [ ] Run FIX20C CHECK — **PENDING SERVER**
+- [ ] Run FIX20C APPLY + read-only verify — **PENDING CHECK GO**
