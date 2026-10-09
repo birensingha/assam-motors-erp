@@ -693,3 +693,17 @@ FIX22 scope:
 - suspected failure modes: **staff identity mismatch / assignee-field mismatch / primary 200-empty**
 - direct inspect path: `deployment/live-fixes/FIX36_STAFF_INSPECTION_SYNC/INSPECT.sh`
 - live modification by inspector: **NONE**
+
+
+### Phase 36B — Vehicle Inspection end-to-end
+
+- root cause: **Android called missing legacy inspection compatibility endpoints**
+- Admin assignment display/action: **READY**
+- Staff Web pending inspection + checklist: **READY**
+- Android inspection checklist: **READY**
+- Job Card submitted inspector/time/report: **READY**
+- server direct deploy: `deployment/live-fixes/FIX36B_INSPECTION_END_TO_END`
+- DB migration: **NONE**
+- Android PR #6 head: `3995e0697125da62149c4f88041710432098b0ca`
+- Android CI Run #120: **IN PROGRESS at status update**
+- live staging apply: **PENDING**
