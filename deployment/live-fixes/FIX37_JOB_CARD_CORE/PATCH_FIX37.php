@@ -17,6 +17,58 @@ function insertBeforeOnce(string $path,string $marker,string $insert,string $id)
     file_put_contents($path,str_replace($marker,$insert.$marker,$c));
 }
 
+function replacePhpMethodOnce(string $source,string $methodName,string $replacement): string {
+    $needle='public function '.$methodName.'(';
+    $needlePos=strpos($source,$needle);
+    if ($needlePos===false) throw new RuntimeException($methodName." method start not found");
+
+    $lineStart=strrpos(substr($source,0,$needlePos),"\n");
+    $start=($lineStart===false)?0:$lineStart+1;
+    $open=strpos($source,'{',$needlePos);
+    if ($open===false) throw new RuntimeException($methodName." opening brace not found");
+
+    $len=strlen($source);
+    $depth=0;
+    $quote=null;
+    $escape=false;
+    $lineComment=false;
+    $blockComment=false;
+
+    for($i=$open;$i<$len;$i++){
+        $ch=$source[$i];
+        $nx=($i+1<$len)?$source[$i+1]:'';
+
+        if($lineComment){
+            if($ch==="\n") $lineComment=false;
+            continue;
+        }
+        if($blockComment){
+            if($ch==='*' && $nx==='/'){ $blockComment=false; $i++; }
+            continue;
+        }
+        if($quote!==null){
+            if($escape){ $escape=false; continue; }
+            if($ch==='\\'){ $escape=true; continue; }
+            if($ch===$quote) $quote=null;
+            continue;
+        }
+        if($ch==="'" || $ch==='"'){ $quote=$ch; continue; }
+        if($ch==='/' && $nx==='/'){ $lineComment=true; $i++; continue; }
+        if($ch==='/' && $nx==='*'){ $blockComment=true; $i++; continue; }
+
+        if($ch==='{') $depth++;
+        elseif($ch==='}'){
+            $depth--;
+            if($depth===0){
+                $end=$i+1;
+                while($end<$len && ($source[$end]==="\r" || $source[$end]==="\n")) $end++;
+                return substr($source,0,$start).rtrim($replacement,"\r\n")."\n\n".substr($source,$end);
+            }
+        }
+    }
+    throw new RuntimeException($methodName." closing brace not found");
+}
+
 $p="$root/app/Http/Controllers/Web/AdminJobCardPageController.php";
 $c=file_get_contents($p);
 if (!str_contains($c,'FIX37_JOB_CARD_CORE')) {
@@ -45,7 +97,6 @@ echo "PASS controller show() anchor patched\n";
 
 $c=file_get_contents($p);
 if (!str_contains($c,'FIX37_STOCK_SAFE_PART_DELETE')) {
-    $pattern='/    public function deletePart\(Request \$request, int \$job, int \$part\): RedirectResponse\n    \{.*?\n    \}\n\n    public function returnEstimateReview/s';
     $method=<<<'PHP'
     public function deletePart(Request $request, int $job, int $part): RedirectResponse
     {
@@ -136,8 +187,7 @@ if (!str_contains($c,'FIX37_STOCK_SAFE_PART_DELETE')) {
 
     public function returnEstimateReview
 PHP;
-    $new=preg_replace($pattern,$method,$c,1,$count);
-    if ($count!==1) throw new RuntimeException('deletePart function baseline not found');
+    $new=replacePhpMethodOnce($c,'deletePart',$method);
     file_put_contents($p,$new);
 }
 
