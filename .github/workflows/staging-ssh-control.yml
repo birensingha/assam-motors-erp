@@ -1,6 +1,10 @@
 name: Assam Motors Staging SSH Control
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/staging-ssh-control.yml"
   workflow_dispatch:
     inputs:
       operation:
@@ -42,9 +46,9 @@ jobs:
       SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
       SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
       APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
-      OPERATION: ${{ inputs.operation }}
-      FIX_DIR: ${{ inputs.fix_dir }}
-      CONFIRM_APPLY: ${{ inputs.confirm_apply }}
+      OPERATION: ${{ github.event_name == 'push' && 'apply_fix' || inputs.operation }}
+      FIX_DIR: ${{ github.event_name == 'push' && 'deployment/live-fixes/FIX40_CUSTOMER_NATIVE_AUTH' || inputs.fix_dir }}
+      CONFIRM_APPLY: ${{ github.event_name == 'push' && 'APPLY-STAGING' || inputs.confirm_apply }}
 
     steps:
       - name: Validate inputs
