@@ -389,3 +389,21 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 - [ ] Apply FIX24 — **PENDING CHECK GO**
 - [ ] Browser save 2+ OSL lines in one supplier bill — **PENDING**
 - [ ] Verify each OSL line linked to correct Job Card — **PENDING**
+
+
+## Phase 25 — Customer Ledger / Vehicles / Job Card Summary
+
+- [x] Old Customer Database UI mapped from supplied screenshots — **DONE**
+- [x] Customer profile + ledger page prepared — **READY**
+- [x] Add/Edit Vehicle from Customer Ledger — **READY**
+- [x] Unlimited linked vehicles — **READY**
+- [x] Vehicle-wise Job Card/service history — **READY**
+- [x] Customer invoice/ledger summary — **READY**
+- [x] Job Card Summary action/list redesign — **READY**
+- [x] PHP/Blade/Hostinger validation — **PASS**
+- [x] No DB migration — **CONFIRMED**
+- [ ] Run FIX25 CHECK on staging — **PENDING**
+- [ ] Apply FIX25 — **PENDING CHECK GO**
+- [ ] Browser verify Customer Database/Customer Ledger — **PENDING**
+- [ ] Browser verify Add/Edit Vehicle + service history — **PENDING**
+- [ ] Browser verify Job Card Summary page/list — **PENDING**
