@@ -33,7 +33,7 @@ $count=DB::table("job_cards")
   ->whereNotNull("technician_id")
   ->where(function($q){
     $q->whereNull("inspection_status")
-      ->orWhereRaw("LOWER(COALESCE(inspection_status,\"pending\")) NOT IN (\"completed\",\"skipped\")");
+      ->orWhereRaw("LOWER(COALESCE(inspection_status,'pending')) NOT IN ('completed','skipped')");
   })->count();
 echo "PASS pending assigned inspection rows=".$count.PHP_EOL;
 '
