@@ -23,6 +23,20 @@ for f in "${FILES[@]}"; do
   cp -p "$APP_ROOT/$f" "$BACKUP/$f"
 done
 
+OPTIONAL_EXISTING=(
+  public/legacy/api/staff-inspections.php
+  public/legacy/api/staff-inspection.php
+  resources/views/staff/inspection-work.blade.php
+)
+for f in "${OPTIONAL_EXISTING[@]}"; do
+  if [[ -f "$APP_ROOT/$f" ]]; then
+    mkdir -p "$BACKUP/$(dirname "$f")"
+    cp -p "$APP_ROOT/$f" "$BACKUP/$f"
+    mkdir -p "$BACKUP/.fix36b-preexisting"
+    printf '%s\n' "$f" >> "$BACKUP/.fix36b-preexisting/files.txt"
+  fi
+done
+
 echo "BACKUP: $BACKUP"
 
 php "$DIR/PATCH_FIX36B.php" "$APP_ROOT"
