@@ -313,3 +313,18 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 - [ ] Browser smoke: Job Card show Parts-before-Labour — **PENDING USER TEST**
 - [ ] Android smoke: login/reminder/ROT/FCM/update check — **PENDING DEVICE TEST**
 - [ ] Merge Android PR #6 — **WAIT FOR DEVICE/STAGING SMOKE**
+
+
+## Phase 21 — Auth redirect / browser 500
+
+- [x] Latest live exception captured — **Route [login] not defined**
+- [x] Common root cause identified — **Laravel guest redirect route missing**
+- [x] FIX21 minimal route-only package prepared — **READY**
+- [x] PHP/Bash syntax validation — **PASS**
+- [x] No DB migration — **CONFIRMED**
+- [ ] Run FIX21 CHECK — **PENDING SERVER**
+- [ ] Apply FIX21 — **PENDING CHECK GO**
+- [ ] HTTP unauth redirect verification — **PENDING APPLY**
+- [ ] Authenticated Payment browser render — **PENDING**
+- [ ] Authenticated Customer browser render — **PENDING**
+- [ ] Authenticated Job Card Create browser render — **PENDING**
