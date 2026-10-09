@@ -656,3 +656,12 @@ FIX22 scope:
 - live stock implementation: **READ-ONLY INSPECTION REQUIRED**
 - direct inspect path: `deployment/live-fixes/FIX33_JOB_CARD_PART_REVERSAL_UI/INSPECT.sh`
 - DB/source modification by inspector: **NONE**
+
+
+### Phase 34 — Job Card lifecycle
+
+- target workflow: **WIP → Work Complete → Quality Check → Ready for Delivery → Job Card Close → Invoice**
+- direct Work Complete → Invoice: **NOT ALLOWED**
+- live implementation: **READ-ONLY INSPECTION REQUIRED**
+- direct inspect path: `deployment/live-fixes/FIX34_JOBCARD_LIFECYCLE_QC_READY_INVOICE/INSPECT.sh`
+- DB/source modification by inspector: **NONE**
