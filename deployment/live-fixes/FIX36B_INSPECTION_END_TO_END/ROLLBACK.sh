@@ -18,9 +18,19 @@ for f in "${FILES[@]}"; do
   cp -p "$BACKUP/$f" "$APP_ROOT/$f"
 done
 
-rm -f "$APP_ROOT/public/legacy/api/staff-inspections.php"
-rm -f "$APP_ROOT/public/legacy/api/staff-inspection.php"
-rm -f "$APP_ROOT/resources/views/staff/inspection-work.blade.php"
+OPTIONAL=(
+  public/legacy/api/staff-inspections.php
+  public/legacy/api/staff-inspection.php
+  resources/views/staff/inspection-work.blade.php
+)
+for f in "${OPTIONAL[@]}"; do
+  if [[ -f "$BACKUP/$f" ]]; then
+    mkdir -p "$APP_ROOT/$(dirname "$f")"
+    cp -p "$BACKUP/$f" "$APP_ROOT/$f"
+  else
+    rm -f "$APP_ROOT/$f"
+  fi
+done
 
 cd "$APP_ROOT"
 php artisan view:clear >/dev/null 2>&1 || true
