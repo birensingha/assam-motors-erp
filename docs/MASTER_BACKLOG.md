@@ -467,3 +467,19 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 - [ ] Run FIX29 CHECK/APPLY on staging — **PENDING SERVER**
 - [ ] Browser verify Job Card button visible — **PENDING**
 - [ ] Browser verify converted estimate opens Supplementary mode — **PENDING**
+
+
+## Phase 30 — Supplementary Estimate / WIP Diagnosis Deadlock
+
+- [x] Exact live error guards located — **DONE**
+- [x] Initial/Revision diagnosis gate retained — **CONFIRMED**
+- [x] Supplementary eligibility separated from diagnosis re-completion — **READY**
+- [x] Prior SENT TO JOB CARD estimate required — **READY**
+- [x] WIP Job Card status preserved during supplementary draft — **READY**
+- [x] Existing supplementary DRAFT reopens correctly — **READY**
+- [x] Job Card UI shows Supplementary Ready instead of Complete Diagnosis — **READY**
+- [x] No DB migration — **CONFIRMED**
+- [x] Direct GitHub CHECK/APPLY/VERIFY/ROLLBACK — **READY**
+- [ ] Run FIX30 CHECK/APPLY on staging — **PENDING SERVER**
+- [ ] Browser verify Supplementary Estimate opens during WIP — **PENDING**
+- [ ] Save/send/approve Supplementary without reopening Diagnosis — **PENDING**
