@@ -483,3 +483,19 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 - [ ] Run FIX30 CHECK/APPLY on staging — **PENDING SERVER**
 - [ ] Browser verify Supplementary Estimate opens during WIP — **PENDING**
 - [ ] Save/send/approve Supplementary without reopening Diagnosis — **PENDING**
+
+
+## Phase 31 — Job Card Form Layout / Dropdowns
+
+- [x] Live Job Card form reviewed — **DONE**
+- [x] Desktop left/right two-column form layout — **READY**
+- [x] Mobile single-column fallback — **READY**
+- [x] Customer / Vehicle / Technician / Status native dropdown styling — **READY**
+- [x] Service Type converted from text input to dropdown — **READY**
+- [x] Existing custom Service Type value preservation — **READY**
+- [x] Long Complaint / Voice / Diagnosis fields full width — **READY**
+- [x] No DB/save/business logic change — **CONFIRMED**
+- [x] Direct GitHub CHECK/APPLY/VERIFY/ROLLBACK — **READY**
+- [ ] Run FIX31 CHECK/APPLY on staging — **PENDING SERVER**
+- [ ] Browser verify Job Card two-column entry UI — **PENDING**
+- [ ] Browser verify Service Type dropdown list — **PENDING**
