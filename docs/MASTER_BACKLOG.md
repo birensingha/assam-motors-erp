@@ -246,3 +246,24 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 - [ ] Implement Job Card Create/store wiring — **PENDING SOURCE REVIEW**
 - [ ] Resolve FCM token endpoint compatibility — **BLOCKER**
 - [ ] Resolve Staff app update endpoint compatibility — **BLOCKER**
+
+
+## Phase 20 — FIX20 Live Compatibility Package
+
+- [x] Targeted live source archive analyzed — **DONE**
+- [x] Native Customer/Master route gap confirmed — **DONE**
+- [x] Job Card Create/Store wiring gap confirmed — **DONE**
+- [x] Job Card display Parts-before-Labour patch prepared — **DONE**
+- [x] Legacy ROT pause reason/note compatibility patch prepared — **DONE**
+- [x] Server-authoritative legacy reminder snooze/escalation compatibility patch prepared — **DONE**
+- [x] Legacy Staff device-token endpoint prepared against existing `staff_devices` — **DONE**
+- [x] Safe Staff app-update feed endpoint prepared — **DONE**
+- [x] Firebase payload alias compatibility patch prepared — **DONE**
+- [x] FIX20 CHECK/APPLY/ROLLBACK scripts prepared — **DONE**
+- [x] Payment Voucher read-only diagnostic prepared — **DONE**
+- [x] FIX20 contains no DB migrations — **VERIFIED**
+- [ ] Run FIX20 baseline CHECK on staging — **PENDING SERVER**
+- [ ] Run Payment 500 read-only diagnostic — **PENDING SERVER**
+- [ ] Apply FIX20 to staging — **WAIT FOR CHECK + DIAGNOSTIC REVIEW**
+- [ ] Staging smoke tests — **PENDING APPLY**
+- [ ] Android compatibility PR #6 build gate — **RUN #116 IN PROGRESS AT STATUS UPDATE**
