@@ -25,3 +25,82 @@ jobs:
           bash -n deployment/live-fixes/FIX37_JOB_CARD_CORE/APPLY.sh
           bash -n deployment/live-fixes/FIX37_JOB_CARD_CORE/VERIFY.sh
           bash -n deployment/live-fixes/FIX37_JOB_CARD_CORE/ROLLBACK.sh
+
+      - name: Runtime self-test FIX37 patcher
+        run: |
+          T="$RUNNER_TEMP/fix37-fixture"
+          mkdir -p "$T/app/Http/Controllers/Web" "$T/resources/views/job-cards" "$T/routes"
+
+          cat > "$T/app/Http/Controllers/Web/AdminJobCardPageController.php" <<'PHP'
+          <?php
+          final class AdminJobCardPageController {
+              public function show() {
+                  $data=[];
+                  $data['staff']=Staff::query()->get();
+                  return view('job-cards.show',$data);
+              }
+              public function deletePart(Request $request, int $job, int $part): RedirectResponse
+              {
+                  return redirect('/');
+              }
+
+              public function returnEstimateReview(Request $request, int $job): RedirectResponse
+              {
+                  return redirect('/');
+              }
+
+              private function recalculateJobTotals(int $jobId): void
+              {
+              }
+
+              private function auditChange(int $jobId,string $entityType,?int $entityId,string $action,?array $before,?array $after,string $reason,ErpAuthUser $user): void
+              {
+              }
+
+              private function admin(Request $request): ErpAuthUser
+              {
+              }
+          }
+          PHP
+
+          cat > "$T/routes/web.php" <<'PHP'
+          <?php
+          Route::delete('/job-cards/{job}/parts/{part}', [AdminJobCardPageController::class,'deletePart'])->whereNumber('job')->whereNumber('part')->name('erp.job-cards.parts.delete');
+          PHP
+
+          cat > "$T/resources/views/job-cards/show.blade.php" <<'BLADE'
+          @section('content')
+          <div class="card section-gap">
+            <div class="section-head">
+              <div><h2 class="section-title">Parts</h2></div>
+            </div>
+            <table><tbody>
+            @forelse($parts as $p)
+              <tr><td>
+                <details class="action-pop">
+                  <summary class="btn small danger">🗑 Delete</summary>
+                  <form>
+                    <textarea placeholder="Why should this planned part be removed?"></textarea>
+                    <button>
+                      Confirm Delete
+                    </button>
+                  </form>
+                </details>
+              </td></tr>
+            @endforelse
+            </tbody></table>
+          </div>
+
+          <div class="card section-gap">
+            <div class="section-head"><div><h2 class="section-title">Labour / ROT Control</h2></div></div>
+          </div>
+          @endsection
+          BLADE
+
+          php -d display_errors=1 deployment/live-fixes/FIX37_JOB_CARD_CORE/PATCH_FIX37.php "$T"
+          php -l "$T/app/Http/Controllers/Web/AdminJobCardPageController.php"
+          php -l "$T/routes/web.php"
+          php -l "$T/resources/views/job-cards/show.blade.php"
+          grep -q 'FIX37_STOCK_SAFE_PART_DELETE' "$T/app/Http/Controllers/Web/AdminJobCardPageController.php"
+          grep -q 'erp.job-cards.parts.direct' "$T/routes/web.php"
+          grep -q 'FIX37_DIRECT_ENTRY_PANEL' "$T/resources/views/job-cards/show.blade.php"
