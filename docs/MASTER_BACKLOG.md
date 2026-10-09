@@ -407,3 +407,19 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 - [ ] Browser verify Customer Database/Customer Ledger — **PENDING**
 - [ ] Browser verify Add/Edit Vehicle + service history — **PENDING**
 - [ ] Browser verify Job Card Summary page/list — **PENDING**
+
+
+## Phase 26 — Parts Purchase Search / Allocation
+
+- [x] Current live purchase source reviewed — **DONE**
+- [x] Part Name / Code normalization patch — **READY**
+- [x] Per-line JC / Vehicle / Customer filter — **READY**
+- [x] Vehicle format normalization — **READY**
+- [x] Existing server save-time Job Card validation preserved — **CONFIRMED**
+- [x] Direct GitHub CHECK/APPLY/VERIFY/ROLLBACK workflow — **READY**
+- [x] PHP + JavaScript syntax validation — **PASS**
+- [x] No DB migration — **CONFIRMED**
+- [ ] One-time server GitHub deployment clone — **PENDING USER SERVER**
+- [ ] Run FIX26 CHECK/APPLY — **PENDING SERVER**
+- [ ] Browser verify Part Name search — **PENDING**
+- [ ] Browser verify JC No / Vehicle Reg search — **PENDING**
