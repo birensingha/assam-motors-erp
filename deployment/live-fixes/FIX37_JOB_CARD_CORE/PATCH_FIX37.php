@@ -20,16 +20,16 @@ function insertBeforeOnce(string $path,string $marker,string $insert,string $id)
 $p="$root/app/Http/Controllers/Web/AdminJobCardPageController.php";
 replaceOnce(
     $p,
-    "        $data['staff']=Staff::query()->whereRaw("LOWER(status)='active'")->orderBy('name')->get(['id','staff_code','name','role','department']);\n        return view('job-cards.show',$data);",
-    "        $data['staff']=Staff::query()->whereRaw("LOWER(status)='active'")->orderBy('name')->get(['id','staff_code','name','role','department']);\n".
+    "        \$data['staff']=Staff::query()->whereRaw(\"LOWER(status)='active'\")->orderBy('name')->get(['id','staff_code','name','role','department']);\n        return view('job-cards.show',\$data);",
+    "        \$data['staff']=Staff::query()->whereRaw(\"LOWER(status)='active'\")->orderBy('name')->get(['id','staff_code','name','role','department']);\n".
     "        // FIX37_JOB_CARD_CORE — direct Parts/Labour entry without Estimate.\n".
-    "        $data['partsMaster']=Schema::hasTable('parts_master')\n".
-    "            ? DB::table('parts_master')->orderBy('part_name')->limit(5000)->get()\n".
+    "        \$data['partsMaster']=Schema::hasTable('parts_master')\n".
+    "            ? DB::table('parts_master')->whereRaw(\"COALESCE(active,'Yes') <> 'No'\")->orderBy('part_name')->limit(5000)->get()\n".
     "            : collect();\n".
-    "        $data['labourMaster']=Schema::hasTable('labour_master')\n".
-    "            ? DB::table('labour_master')->orderBy('rot_code')->limit(5000)->get()\n".
+    "        \$data['labourMaster']=Schema::hasTable('labour_master')\n".
+    "            ? DB::table('labour_master')->whereRaw(\"COALESCE(active,'Yes') <> 'No'\")->orderBy('rot_code')->limit(5000)->get()\n".
     "            : collect();\n".
-    "        return view('job-cards.show',$data);",
+    "        return view('job-cards.show',\$data);",
     'show direct masters'
 );
 
