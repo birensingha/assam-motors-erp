@@ -328,3 +328,17 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 - [ ] Authenticated Payment browser render — **PENDING**
 - [ ] Authenticated Customer browser render — **PENDING**
 - [ ] Authenticated Job Card Create browser render — **PENDING**
+
+
+## Phase 22 — Customer Navigation + Job Card Create Button
+
+- [x] Live Customer sidebar legacy link identified — **DONE**
+- [x] Live Job Card index missing Create button identified — **DONE**
+- [x] Exact live SHA-256 baselines captured — **DONE**
+- [x] FIX22 two-file baseline-guarded package prepared — **READY**
+- [x] Bash syntax validation — **PASS**
+- [x] No DB migration / Payment change — **CONFIRMED**
+- [ ] Run FIX22 CHECK on staging — **PENDING SERVER**
+- [ ] Apply FIX22 — **PENDING CHECK GO**
+- [ ] Browser: sidebar Customer opens native page — **PENDING**
+- [ ] Browser: + Create Job Card visible and opens form — **PENDING**
