@@ -665,3 +665,13 @@ FIX22 scope:
 - live implementation: **READ-ONLY INSPECTION REQUIRED**
 - direct inspect path: `deployment/live-fixes/FIX34_JOBCARD_LIFECYCLE_QC_READY_INVOICE/INSPECT.sh`
 - DB/source modification by inspector: **NONE**
+
+
+### Phase 35 — Direct Parts / Labour Without Estimate
+
+- target behavior: **Admin can add Parts/Labour directly on Job Card**
+- Estimate workflow: **RETAINED / OPTIONAL FOR DIRECT ADD**
+- stock integrity: **MUST BE PRESERVED**
+- ROT assignment rules: **MUST BE REUSED**
+- direct inspect path: `deployment/live-fixes/FIX35_JOBCARD_DIRECT_PARTS_LABOUR/INSPECT.sh`
+- DB/source modification by inspector: **NONE**
