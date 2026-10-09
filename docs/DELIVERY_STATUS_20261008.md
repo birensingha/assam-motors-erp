@@ -388,3 +388,24 @@ Final report: `deployment/FINAL_PRE_MERGE_GATE_20261008.md`
 | Android update endpoint | Android expects `/legacy/api/staff-app-update.php`; file absent | **BLOCKER — TARGETED SOURCE REVIEW REQUIRED** |
 | Job Card Create | form view exists; create/store route not visible | **WIRING PENDING** |
 | Native Customer route | native controller/view exist; route not visible | **WIRING PENDING** |
+
+
+---
+
+## Phase 20 — FIX20 Live Compatibility
+
+| Item | Status | Note |
+|---|---|---|
+| Targeted live-source review | COMPLETE | Exact Laravel/Legacy source bundle analyzed |
+| Native Customer/Master routes | PATCH READY | Controller/views existed; route gap confirmed |
+| Job Card Create/Store | PATCH READY | Existing form reused; missing route/controller wiring confirmed |
+| Job Card Parts-before-Labour | PATCH READY | Live Job Card view reordered |
+| Legacy ROT pause metadata | PATCH READY | Existing legacy endpoint now accepts required reason + optional note |
+| Legacy reminder postpone/escalation | PATCH READY | Uses existing `staff_reminder_state`; no parallel tables |
+| Staff device-token compatibility | PATCH READY | Uses existing `staff_devices` registry |
+| Staff update-feed compatibility | PATCH READY / PUBLICATION DISABLED | update_available remains false without signed URL + SHA |
+| Firebase payload compatibility | PATCH READY | Existing outbox payload aligned with Android aliases |
+| Database migration | NONE | FIX20 does not create/alter tables |
+| Payment Voucher 500 | DIAGNOSTIC READY | Exact exception still must be captured; no guess-based accounting patch |
+| Staging applied | NO | Await baseline CHECK + diagnostic output |
+| Android PR | #6 DRAFT | Run #116 started |
