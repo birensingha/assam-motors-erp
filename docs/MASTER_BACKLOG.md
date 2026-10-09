@@ -586,3 +586,23 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 - [ ] Reconcile staff identity / Job Card assignee / endpoint filter — **PENDING OUTPUT**
 - [ ] Prepare exact sync APPLY patch — **PENDING OUTPUT**
 - [ ] Device smoke: assigned inspection visible in Firajul app — **PENDING**
+
+
+## Phase 36B — Vehicle Inspection End-to-End
+
+- [x] Root cause confirmed: Android legacy inspection endpoints absent — **DONE**
+- [x] Native Laravel inspection list/detail/save already reuses `job_cards.technician_id` — **CONFIRMED**
+- [x] Admin Job Card visible Vehicle Inspection assignment UI — **READY**
+- [x] Staff Web Portal pending Vehicle Inspection queue — **READY**
+- [x] Staff Web Portal inspection checklist submit — **READY**
+- [x] Android pending inspection list + checklist submit — **READY**
+- [x] Legacy Android inspection compatibility API — **READY**
+- [x] Job Card Submitted By / Submitted At / Report display — **READY**
+- [x] Actual inspector preserved via `inspection_submitted_by` — **READY**
+- [x] No DB migration; existing Job Card inspection tables reused — **CONFIRMED**
+- [x] Direct GitHub CHECK/APPLY/VERIFY/ROLLBACK — **READY**
+- [ ] Run FIX36B CHECK/APPLY on staging — **PENDING SERVER**
+- [ ] Browser verify assigned staff shown on Job Card — **PENDING**
+- [ ] Staff Portal smoke: assigned inspection appears + submit — **PENDING**
+- [ ] Android device smoke: assigned inspection appears + submit — **PENDING**
+- [ ] Admin Job Card smoke: COMPLETED + Submitted By + Report — **PENDING**
