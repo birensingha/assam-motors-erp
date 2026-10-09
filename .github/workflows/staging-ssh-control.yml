@@ -3,10 +3,6 @@ name: Assam Motors Staging SSH Control
 # AUTO_REPAIR_REV: 2
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/staging-ssh-control.yml"
   workflow_dispatch:
     inputs:
       operation:
@@ -49,11 +45,14 @@ jobs:
       SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
       SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
       APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
-      OPERATION: ${{ github.event_name == 'push' && 'repair_legacy_customer_served' || inputs.operation }}
+      OPERATION: ${{ inputs.operation }}
       FIX_DIR: ${{ inputs.fix_dir }}
       CONFIRM_APPLY: ${{ inputs.confirm_apply }}
 
     steps:
+      - name: Checkout control scripts
+        uses: actions/checkout@v4
+
       - name: Validate inputs
         shell: bash
         run: |
@@ -177,6 +176,39 @@ jobs:
               ;;
           esac
           REMOTE
+
+      - name: Set up Node for browser verification
+        if: env.OPERATION == 'repair_legacy_customer_served'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Chromium browser verifier
+        if: env.OPERATION == 'repair_legacy_customer_served'
+        shell: bash
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Browser verify repaired staging
+        if: env.OPERATION == 'repair_legacy_customer_served'
+        env:
+          STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL || 'https://staging.assammotors.com' }}
+          STAGING_LOGIN_PATH: ${{ vars.STAGING_LOGIN_PATH || '/erp/login' }}
+          STAGING_ADMIN_LOGIN: ${{ secrets.STAGING_ADMIN_LOGIN }}
+          STAGING_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+          SMOKE_OUTPUT_DIR: browser-smoke-artifacts
+        shell: bash
+        run: node deployment/browser-smoke.mjs
+
+      - name: Upload browser screenshots
+        if: always() && env.OPERATION == 'repair_legacy_customer_served'
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-repair-browser-proof
+          path: browser-smoke-artifacts/
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Remove runner SSH key
         if: always()
