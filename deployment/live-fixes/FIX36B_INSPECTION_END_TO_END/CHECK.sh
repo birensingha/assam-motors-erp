@@ -38,10 +38,23 @@ if grep -q "INSPECTION_TECHNICIAN_ASSIGNED" app/Http/Controllers/Web/AdminJobCar
   exit 5
 fi
 
-if [[ -f public/legacy/api/staff-inspections.php || -f public/legacy/api/staff-inspection.php ]]; then
-  echo "NO-GO: legacy inspection API file already exists; inspect before overwriting."
-  exit 4
-fi
+for name in staff-inspections.php staff-inspection.php; do
+  live="public/legacy/api/$name"
+  pkg="$DIR/files/public/legacy/api/$name"
+  if [[ -f "$live" ]]; then
+    if cmp -s "$live" "$pkg"; then
+      echo "PASS existing compatible legacy API: $live"
+    else
+      echo "NO-GO: existing legacy API differs: $live"
+      echo "LIVE:    $(sha256sum "$live" | awk '{print $1}')"
+      echo "PACKAGE: $(sha256sum "$pkg" | awk '{print $1}')"
+      echo "Run: bash INSPECT_EXISTING.sh $APP_ROOT"
+      exit 4
+    fi
+  else
+    echo "PASS legacy API absent and safe to install: $live"
+  fi
+done
 
 echo "PASS native inspection API already supports assignment/save"
 echo "PASS legacy Android inspection bridge is currently absent"
