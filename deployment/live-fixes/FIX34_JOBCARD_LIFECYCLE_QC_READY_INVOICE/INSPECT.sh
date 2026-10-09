@@ -53,62 +53,87 @@ fi
 echo
 
 echo "== SCHEMA: job_cards =="
-php -r '
+php <<'PHP' || true
+<?php
 require "vendor/autoload.php";
 $app=require "bootstrap/app.php";
-$app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 try {
-  $cols=DB::select("SHOW COLUMNS FROM job_cards");
-  foreach($cols as $c){ echo $c->Field." | ".$c->Type." | ".$c->Null." | ".($c->Default??"NULL").PHP_EOL; }
-} catch(Throwable $e){ echo "SCHEMA ERROR: ".$e->getMessage().PHP_EOL; }
-'
+    $cols=DB::select("SHOW COLUMNS FROM job_cards");
+    foreach($cols as $col){
+        echo $col->Field." | ".$col->Type." | ".$col->Null." | ".($col->Default??"NULL").PHP_EOL;
+    }
+} catch(Throwable $e){
+    echo "SCHEMA ERROR: ".$e->getMessage().PHP_EOL;
+}
+PHP
 echo
 
 echo "== CURRENT STATUS DISTRIBUTION (READ ONLY) =="
-php -r '
+php <<'PHP' || true
+<?php
 require "vendor/autoload.php";
 $app=require "bootstrap/app.php";
-$app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
-try {
-  foreach(["status","work_status","customer_public_status","inspection_status","diagnosis_status"] as $col){
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+foreach(["status","work_status","customer_public_status","inspection_status","diagnosis_status"] as $field){
     try{
-      $rows=DB::table("job_cards")->select($col,DB::raw("COUNT(*) c"))->groupBy($col)->orderByDesc("c")->get();
-      echo "-- ".$col." --".PHP_EOL;
-      foreach($rows as $r){ echo (($r->$col===null)?"NULL":$r->$col)." | ".$r->c.PHP_EOL; }
-    }catch(Throwable $e){}
-  }
-} catch(Throwable $e){ echo "STATUS ERROR: ".$e->getMessage().PHP_EOL; }
-'
+        if(!Illuminate\Support\Facades\Schema::hasColumn("job_cards",$field)){
+            echo "-- ".$field." -- MISSING".PHP_EOL;
+            continue;
+        }
+        $rows=DB::table("job_cards")->select($field,DB::raw("COUNT(*) c"))->groupBy($field)->orderByDesc("c")->get();
+        echo "-- ".$field." --".PHP_EOL;
+        foreach($rows as $row){
+            $v=$row->{$field};
+            echo (($v===null)?"NULL":$v)." | ".$row->c.PHP_EOL;
+        }
+    }catch(Throwable $e){
+        echo "-- ".$field." ERROR: ".$e->getMessage().PHP_EOL;
+    }
+}
+PHP
 echo
 
 echo "== RECENT JOBCARD STATE SAMPLE =="
-php -r '
+php <<'PHP' || true
+<?php
 require "vendor/autoload.php";
 $app=require "bootstrap/app.php";
-$app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 try {
-  $rows=DB::table("job_cards")->orderByDesc("id")->limit(12)->get();
-  foreach($rows as $r){
-    $a=(array)$r;
-    foreach(["id","job_no","status","work_status","customer_public_status","inspection_status","diagnosis_status","current_estimate_id","invoice_id","closed_at","completed_at","ready_at","updated_at"] as $k){
-      if(array_key_exists($k,$a)) echo $k."=".($a[$k]===null?"NULL":$a[$k])." ";
+    $rows=DB::table("job_cards")->orderByDesc("id")->limit(12)->get();
+    foreach($rows as $row){
+        $a=(array)$row;
+        foreach(["id","job_no","status","work_status","customer_public_status","inspection_status","diagnosis_status","current_estimate_id","invoice_id","closed_at","completed_at","ready_at","updated_at"] as $k){
+            if(array_key_exists($k,$a)) echo $k."=".($a[$k]===null?"NULL":$a[$k])." ";
+        }
+        echo PHP_EOL;
     }
-    echo PHP_EOL;
-  }
-} catch(Throwable $e){ echo "SAMPLE ERROR: ".$e->getMessage().PHP_EOL; }
-'
+} catch(Throwable $e){
+    echo "SAMPLE ERROR: ".$e->getMessage().PHP_EOL;
+}
+PHP
 echo
 
 echo "== JOBCARD AUDIT TABLE =="
-php -r '
+php <<'PHP' || true
+<?php
 require "vendor/autoload.php";
 $app=require "bootstrap/app.php";
-$app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
+$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 try {
-  $cols=DB::select("SHOW COLUMNS FROM job_card_change_audits");
-  foreach($cols as $c){ echo $c->Field." | ".$c->Type." | ".$c->Null." | ".($c->Default??"NULL").PHP_EOL; }
-} catch(Throwable $e){ echo "AUDIT SCHEMA ERROR: ".$e->getMessage().PHP_EOL; }
-'
+    if(!Illuminate\Support\Facades\Schema::hasTable("job_card_change_audits")){
+        echo "MISSING job_card_change_audits".PHP_EOL;
+    } else {
+        $cols=DB::select("SHOW COLUMNS FROM job_card_change_audits");
+        foreach($cols as $col){
+            echo $col->Field." | ".$col->Type." | ".$col->Null." | ".($col->Default??"NULL").PHP_EOL;
+        }
+    }
+} catch(Throwable $e){
+    echo "AUDIT SCHEMA ERROR: ".$e->getMessage().PHP_EOL;
+}
+PHP
 echo
 
 echo "== FILE HASHES =="
