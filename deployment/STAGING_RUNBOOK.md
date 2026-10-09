@@ -5,7 +5,7 @@ Android line: `release/v6.0.18-20261008`
 
 This runbook is conservative. It separates **database preparation**, **ERP application wiring**, **Android/Firebase enablement**, and **verification** so that one failure does not force a full rollback.
 
-> Current repository limitation: the actual live staging Laravel/PHP source is not present here. Therefore this runbook specifies what to verify and in what order, but does not claim staging has been changed.
+> Live staging inventory/schema discovery was completed on 09-Oct-2026. Exact source paths/tables are recorded in `deployment/LIVE_STAGING_MAP_20261009.md`. Targeted source contents are still pending review. This runbook does not claim staging has been changed.
 
 ## 0. Change window and freeze
 
@@ -99,31 +99,30 @@ MYSQL_PWD="$DB_PASSWORD" mysqldump \
 
 Never store DB dumps under public web root or in Git.
 
-## 4. Additive database preparation
+## 4. Database preparation — LIVE-SCHEMA OVERRIDE
 
-Prepared SQL currently creates new tables with `IF NOT EXISTS`.
+**Do not apply the five old reference SQL files by default.**
 
-Recommended order:
+The 09-Oct-2026 staging schema inventory showed existing live equivalents:
 
-1. `patches/phase3-job-card-edit/001_job_card_edit_audit.sql`
-2. `patches/phase4-osl-purchase/001_osl_purchase_line_items.sql`
-3. `patches/phase5-rot-backend/001_create_rot_event_audit.sql`
-4. `patches/phase8-alert-compliance/001_staff_action_alerts.sql`
-5. `patches/phase10-fcm-push/001_staff_push_devices.sql`
+| Reference patch | Live staging equivalent | Decision |
+|---|---|---|
+| Job Card edit audit | `job_card_change_audits` + existing migration | **DO NOT CREATE PARALLEL TABLE** |
+| OSL purchase line items | `workshop_purchase_batches` + `workshop_purchases` | **DO NOT CREATE PARALLEL TABLE** |
+| ROT event audit | `rot_session_events` + `rot_mechanic_segments` | **DO NOT CREATE PARALLEL TABLE** |
+| Staff action alerts | `staff_reminder_state` + reminder settings/engine | **DO NOT CREATE PARALLEL ALERT SYSTEM** |
+| Staff push devices | `staff_devices` + notification/Firebase service | **DO NOT CREATE PARALLEL DEVICE REGISTRY** |
 
-Before applying each file, compare its example ID types/charset/time precision with live schema. Apply one migration at a time.
+The old SQL files remain reference artifacts only.
 
-Expected new tables:
+Before any new migration:
+1. review `deployment/LIVE_STAGING_MAP_20261009.md`;
+2. inspect targeted live source;
+3. extend the existing live schema only when a concrete missing column/table is proven;
+4. create a new Laravel migration matching the real app conventions;
+5. backup staging first.
 
-```sql
-SHOW TABLES LIKE 'job_card_edit_audit';
-SHOW TABLES LIKE 'osl_purchase_line_items';
-SHOW TABLES LIKE 'rot_event_audit';
-SHOW TABLES LIKE 'staff_action_alerts';
-SHOW TABLES LIKE 'staff_action_alert_events';
-SHOW TABLES LIKE 'staff_push_devices';
-SHOW TABLES LIKE 'staff_push_deliveries';
-```
+No reference SQL migration should be executed merely because it exists under `patches/`.
 
 ## 5. Application wiring order
 
