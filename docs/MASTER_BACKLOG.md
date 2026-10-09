@@ -373,3 +373,19 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 - [ ] Run FIX23 CHECK on staging — **PENDING**
 - [ ] Apply FIX23 — **PENDING CHECK GO**
 - [ ] Browser create Customer + Vehicle smoke — **PENDING**
+
+
+## Phase 24 — OSL Purchase Multi-Line
+
+- [x] Live OSL controller/service/view reviewed — **DONE**
+- [x] Parts Purchase batch pattern mapped to OSL — **DONE**
+- [x] Multi-line OSL UI prepared — **READY**
+- [x] OSL batch transaction service prepared — **READY**
+- [x] Existing Job Card labour-link rules preserved — **READY**
+- [x] Existing purchase batch tables reused — **NO NEW DB TABLE**
+- [x] PHP/JS syntax validation — **PASS**
+- [x] Deployment + rollback smoke — **PASS**
+- [ ] Run FIX24 CHECK on staging — **PENDING**
+- [ ] Apply FIX24 — **PENDING CHECK GO**
+- [ ] Browser save 2+ OSL lines in one supplier bill — **PENDING**
+- [ ] Verify each OSL line linked to correct Job Card — **PENDING**
