@@ -544,3 +544,19 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 - [ ] Enforce QC before Ready for Delivery — **PENDING INSPECT OUTPUT**
 - [ ] Enforce Close before Invoice conversion — **PENDING INSPECT OUTPUT**
 - [ ] Browser end-to-end smoke — **PENDING**
+
+
+## Phase 35 — Direct Parts / Labour Without Estimate
+
+- [x] User requirement confirmed — **DONE**
+- [x] Existing Estimate flow retained — **RULE DEFINED**
+- [x] Direct Part add must respect stock rules — **RULE DEFINED**
+- [x] Direct Labour/ROT add must reuse Labour Master / ROT assignment — **RULE DEFINED**
+- [x] Audit marking for ADMIN DIRECT ADD required — **RULE DEFINED**
+- [x] Read-only live source/schema inspector — **READY**
+- [x] No DB/source modification in inspection step — **CONFIRMED**
+- [ ] Run FIX35 INSPECT on staging — **PENDING SERVER**
+- [ ] Map existing add/issue/ROT hooks — **PENDING INSPECT OUTPUT**
+- [ ] Build Direct Add Part action — **PENDING INSPECT OUTPUT**
+- [ ] Build Direct Add Labour/ROT action — **PENDING INSPECT OUTPUT**
+- [ ] Browser + stock + ROT smoke test — **PENDING**
