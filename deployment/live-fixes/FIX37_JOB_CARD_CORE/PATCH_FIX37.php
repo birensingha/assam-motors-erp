@@ -1,0 +1,339 @@
+<?php
+if ($argc < 2) { fwrite(STDERR,"Usage: php PATCH_FIX37.php /path/to/app\n"); exit(2); }
+$root=rtrim($argv[1],'/');
+
+function replaceOnce(string $path,string $old,string $new,string $label): void {
+    $c=file_get_contents($path);
+    if (str_contains($c,$new)) return;
+    $n=substr_count($c,$old);
+    if ($n!==1) throw new RuntimeException($label." marker count=".$n." in ".$path);
+    file_put_contents($path,str_replace($old,$new,$c));
+}
+function insertBeforeOnce(string $path,string $marker,string $insert,string $id): void {
+    $c=file_get_contents($path);
+    if (str_contains($c,$id)) return;
+    $n=substr_count($c,$marker);
+    if ($n!==1) throw new RuntimeException($id." marker count=".$n." in ".$path);
+    file_put_contents($path,str_replace($marker,$insert.$marker,$c));
+}
+
+$p="$root/app/Http/Controllers/Web/AdminJobCardPageController.php";
+replaceOnce(
+    $p,
+    "        $data['staff']=Staff::query()->whereRaw("LOWER(status)='active'")->orderBy('name')->get(['id','staff_code','name','role','department']);\n        return view('job-cards.show',$data);",
+    "        $data['staff']=Staff::query()->whereRaw("LOWER(status)='active'")->orderBy('name')->get(['id','staff_code','name','role','department']);\n".
+    "        // FIX37_JOB_CARD_CORE — direct Parts/Labour entry without Estimate.\n".
+    "        $data['partsMaster']=Schema::hasTable('parts_master')\n".
+    "            ? DB::table('parts_master')->whereRaw("COALESCE(active,'Yes') <> 'No'")->orderBy('part_name')->limit(5000)->get()\n".
+    "            : collect();\n".
+    "        $data['labourMaster']=Schema::hasTable('labour_master')\n".
+    "            ? DB::table('labour_master')->whereRaw("COALESCE(active,'Yes') <> 'No'")->orderBy('rot_code')->limit(5000)->get()\n".
+    "            : collect();\n".
+    "        return view('job-cards.show',$data);",
+    'show direct masters'
+);
+
+$c=file_get_contents($p);
+if (!str_contains($c,'FIX37_STOCK_SAFE_PART_DELETE')) {
+    $pattern='/    public function deletePart\(Request \$request, int \$job, int \$part\): RedirectResponse\n    \{.*?\n    \}\n\n    public function returnEstimateReview/s';
+    $method=<<<'PHP'
+    public function deletePart(Request $request, int $job, int $part): RedirectResponse
+    {
+        $user = $this->admin($request);
+        $data = $request->validate(['reason'=>['required','string','max:1000']]);
+
+        $result=DB::transaction(function () use ($job,$part,$data,$user) {
+            // FIX37_STOCK_SAFE_PART_DELETE
+            $card = JobCard::query()->lockForUpdate()->findOrFail($job);
+            if (in_array(strtolower((string)$card->status), ['closed','invoiced','cancelled'], true)) {
+                throw ValidationException::withMessages(['part'=>'Part cannot be deleted after Job Card is Closed / Invoiced / Cancelled.']);
+            }
+
+            $line = JobCardPart::query()->where('job_card_id',$job)->whereKey($part)->lockForUpdate()->firstOrFail();
+            $before = $line->toArray();
+            $issueStatus = strtolower(trim((string)($line->issue_status ?? 'planned')));
+            $planned = in_array($issueStatus,['','planned','pending','not issued','not_issued'],true);
+            $stockReversed=false;
+
+            if (!$planned) {
+                if (!Schema::hasTable('parts_master') || !Schema::hasTable('inventory_movements')) {
+                    throw ValidationException::withMessages(['part'=>'Stock reversal tables are unavailable. Part was NOT deleted.']);
+                }
+                $partMasterId=(int)($line->part_master_id ?? 0);
+                if ($partMasterId<=0) {
+                    throw ValidationException::withMessages(['part'=>'Issued/Fitted Part is not linked to Parts Master. Part was NOT deleted.']);
+                }
+
+                $master=DB::table('parts_master')->where('id',$partMasterId)->lockForUpdate()->first();
+                if (!$master) throw ValidationException::withMessages(['part'=>'Parts Master row not found. Part was NOT deleted.']);
+
+                $outMovement=DB::table('inventory_movements')
+                    ->where('part_master_id',$partMasterId)
+                    ->where('job_card_id',$job)
+                    ->where('qty_out','>',0)
+                    ->whereRaw("UPPER(COALESCE(movement_type,'')) NOT LIKE 'PURCHASE%'")
+                    ->orderByDesc('id')
+                    ->lockForUpdate()
+                    ->first();
+
+                if (!$outMovement) {
+                    throw ValidationException::withMessages([
+                        'part'=>'Issued/Fitted status exists but matching Job Card stock-out movement was not found. Part was NOT deleted to protect stock. Please correct Stock Issue history first.'
+                    ]);
+                }
+
+                $reference='JC-PART-'.$part.'-DELETE';
+                $already=DB::table('inventory_movements')
+                    ->where('part_master_id',$partMasterId)
+                    ->where('job_card_id',$job)
+                    ->where('movement_type','JOB_PART_DELETE_REVERSAL')
+                    ->where('reference_no',$reference)
+                    ->exists();
+                if ($already) throw ValidationException::withMessages(['part'=>'Stock reversal for this Job Card Part is already recorded. Refresh the Job Card.']);
+
+                $qty=round((float)$line->qty,3);
+                $beforeStock=(float)($master->stock_qty ?? 0);
+                $afterStock=round($beforeStock+$qty,3);
+                DB::table('parts_master')->where('id',$partMasterId)->update(['stock_qty'=>$afterStock]);
+                DB::table('inventory_movements')->insert([
+                    'part_master_id'=>$partMasterId,
+                    'job_card_id'=>$job,
+                    'movement_type'=>'JOB_PART_DELETE_REVERSAL',
+                    'qty_in'=>$qty,
+                    'qty_out'=>0,
+                    'balance_after'=>$afterStock,
+                    'reference_no'=>$reference,
+                    'note'=>'Job Card Part stock reversal before delete · '.$data['reason'],
+                    'created_at'=>now(),
+                ]);
+                $stockReversed=true;
+            }
+
+            DB::table('job_card_parts')->where('id',$part)->where('job_card_id',$job)->delete();
+            $this->recalculateJobTotals($job);
+            $this->auditChange(
+                $job,'JOB_CARD_PART',$part,$stockReversed?'STOCK_REVERSE_DELETE':'DELETE',
+                $before,null,$data['reason'],$user
+            );
+            return $stockReversed;
+        });
+
+        return redirect()->route('erp.job-cards.show',$job)->with(
+            'success',
+            $result ? 'Part stock reversed and Part removed from Job Card.' : 'Planned Part deleted from Job Card.'
+        );
+    }
+
+    public function returnEstimateReview
+PHP;
+    $new=preg_replace($pattern,$method,$c,1,$count);
+    if ($count!==1) throw new RuntimeException('deletePart function baseline not found');
+    file_put_contents($p,$new);
+}
+
+$methods=<<<'PHP'
+
+    // FIX37_DIRECT_JOB_CARD_LINES
+    public function addPartDirect(Request $request, int $job): RedirectResponse
+    {
+        $user=$this->admin($request);
+        $data=$request->validate([
+            'part_master_id'=>['required','integer','min:1'],
+            'qty'=>['required','numeric','gt:0'],
+            'rate'=>['nullable','numeric','min:0'],
+            'discount_percent'=>['nullable','numeric','between:0,100'],
+            'gst_percent'=>['nullable','numeric','between:0,100'],
+            'note'=>['nullable','string','max:1000'],
+        ]);
+
+        DB::transaction(function() use($job,$data,$user){
+            $card=JobCard::query()->lockForUpdate()->findOrFail($job);
+            if (in_array(strtolower((string)$card->status),['closed','invoiced','cancelled'],true)) {
+                throw ValidationException::withMessages(['part_master_id'=>'Locked Job Card cannot accept a new Part.']);
+            }
+            abort_unless(Schema::hasTable('parts_master'),404);
+            $part=DB::table('parts_master')->where('id',(int)$data['part_master_id'])->first();
+            if (!$part) throw ValidationException::withMessages(['part_master_id'=>'Selected Part not found in Parts Master.']);
+
+            $qty=round((float)$data['qty'],3);
+            $rate=round((float)($data['rate'] ?? $part->selling_price ?? 0),2);
+            $disc=min(100,max(0,(float)($data['discount_percent'] ?? 0)));
+            $gst=min(100,max(0,(float)($data['gst_percent'] ?? $part->gst_percent ?? 0)));
+            $gross=round($qty*$rate,2);
+            $discAmt=round($gross*$disc/100,2);
+            $net=round($gross-$discAmt,2);
+
+            $row=[
+                'job_card_id'=>$job,'part_master_id'=>(int)$part->id,'part_code'=>$part->part_code ?? '',
+                'part_name'=>$part->part_name ?? 'Part','part_number'=>$part->part_number ?? '',
+                'hsn_code'=>$part->hsn_code ?? '', 'qty'=>$qty,'rate'=>$rate,
+                'discount_percent'=>$disc,'discount_amount'=>$discAmt,'gst_percent'=>$gst,
+                'total'=>$net,'part_note'=>trim((string)($data['note'] ?? '')),
+                'source_estimate_item_id'=>null,'issue_status'=>'PLANNED',
+            ];
+            $row=array_filter($row,fn($v,$k)=>Schema::hasColumn('job_card_parts',$k),ARRAY_FILTER_USE_BOTH);
+            $id=(int)DB::table('job_card_parts')->insertGetId($row);
+            $this->recalculateJobTotals($job);
+            $after=(array)DB::table('job_card_parts')->where('id',$id)->first();
+            $this->auditChange($job,'JOB_CARD_PART',$id,'DIRECT_ADD',null,$after,'Admin Direct Add without Estimate',$user);
+        });
+        return redirect()->route('erp.job-cards.show',$job)->with('success','Part added directly to Job Card as PLANNED.');
+    }
+
+    public function addLabourDirect(Request $request, int $job): RedirectResponse
+    {
+        $user=$this->admin($request);
+        $data=$request->validate([
+            'labour_master_id'=>['required','integer','min:1'],
+            'standard_hours'=>['nullable','numeric','gt:0'],
+            'labour_rate'=>['nullable','numeric','min:0'],
+            'discount_percent'=>['nullable','numeric','between:0,100'],
+            'gst_percent'=>['nullable','numeric','between:0,100'],
+            'note'=>['nullable','string','max:1000'],
+        ]);
+
+        DB::transaction(function() use($job,$data,$user){
+            $card=JobCard::query()->lockForUpdate()->findOrFail($job);
+            if (in_array(strtolower((string)$card->status),['closed','invoiced','cancelled'],true)) {
+                throw ValidationException::withMessages(['labour_master_id'=>'Locked Job Card cannot accept Labour/ROT.']);
+            }
+            abort_unless(Schema::hasTable('labour_master'),404);
+            $lab=DB::table('labour_master')->where('id',(int)$data['labour_master_id'])->first();
+            if (!$lab) throw ValidationException::withMessages(['labour_master_id'=>'Selected Labour/ROT not found in Labour Master.']);
+
+            $hours=round((float)($data['standard_hours'] ?? $lab->standard_hours ?? 1),2);
+            $rate=round((float)($data['labour_rate'] ?? $lab->labour_rate ?? 0),2);
+            $disc=min(100,max(0,(float)($data['discount_percent'] ?? 0)));
+            $gst=min(100,max(0,(float)($data['gst_percent'] ?? $lab->gst_percent ?? 0)));
+            $gross=round($hours*$rate,2);
+            $discAmt=round($gross*$disc/100,2);
+            $net=round($gross-$discAmt,2);
+
+            $row=[
+                'job_card_id'=>$job,'rot_master_id'=>(int)$lab->id,'rot_code'=>$lab->rot_code ?? '',
+                'description'=>$lab->rot_description ?? 'Labour / ROT','standard_hours'=>$hours,
+                'labour_rate'=>$rate,'discount_percent'=>$disc,'discount_amount'=>$discAmt,
+                'gst_percent'=>$gst,'total'=>$net,'mechanic_id'=>0,'mechanic_name'=>'',
+                'rot_start'=>null,'rot_end'=>null,'total_hours'=>0,'productive_seconds'=>0,
+                'rot_note'=>trim((string)($data['note'] ?? '')),'source_estimate_item_id'=>null,
+                'execution_status'=>'PLANNED',
+            ];
+            $row=array_filter($row,fn($v,$k)=>Schema::hasColumn('job_card_labour',$k),ARRAY_FILTER_USE_BOTH);
+            $id=(int)DB::table('job_card_labour')->insertGetId($row);
+            $this->recalculateJobTotals($job);
+            $after=(array)DB::table('job_card_labour')->where('id',$id)->first();
+            $this->auditChange($job,'JOB_CARD_LABOUR',$id,'DIRECT_ADD',null,$after,'Admin Direct Add without Estimate',$user);
+        });
+        return redirect()->route('erp.job-cards.show',$job)->with('success','Labour/ROT added directly to Job Card as PLANNED. Assign mechanic when ready.');
+    }
+PHP;
+insertBeforeOnce($p,"    private function recalculateJobTotals(int $jobId): void
+",$methods."
+",'FIX37_DIRECT_JOB_CARD_LINES');
+
+$p="$root/routes/web.php";
+$routeMarker="    Route::delete('/job-cards/{job}/parts/{part}', [AdminJobCardPageController::class,'deletePart'])->whereNumber('job')->whereNumber('part')->name('erp.job-cards.parts.delete');
+";
+$routeAdd=$routeMarker.
+"    // FIX37_JOB_CARD_CORE — direct entries without Estimate.
+".
+"    Route::post('/job-cards/{job}/parts/direct', [AdminJobCardPageController::class,'addPartDirect'])->whereNumber('job')->name('erp.job-cards.parts.direct');
+".
+"    Route::post('/job-cards/{job}/labour/direct', [AdminJobCardPageController::class,'addLabourDirect'])->whereNumber('job')->name('erp.job-cards.labour.direct');
+";
+replaceOnce($p,$routeMarker,$routeAdd,'FIX37 direct routes');
+
+$p="$root/resources/views/job-cards/show.blade.php";
+$c=file_get_contents($p);
+if (!str_contains($c,'FIX37_JOB_CARD_CORE_UI')) {
+    $style=<<<'BLADE'
+<style id="FIX37_JOB_CARD_CORE_UI">
+.jc-direct-entry{border-top:4px solid #0b315b;background:linear-gradient(180deg,#fff,#f9fbfd)}
+.jc-direct-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.jc-entry-box{border:1px solid #d9e4ee;border-radius:14px;padding:14px;background:#fff}.jc-entry-box h3{margin:0 0 4px;color:#12395e}.jc-entry-box p{margin:0 0 12px}
+.jc-entry-form{display:grid;grid-template-columns:2fr .7fr 1fr;gap:9px;align-items:end}.jc-entry-form label{font-size:11px;font-weight:800;color:#53677d}.jc-entry-form select,.jc-entry-form input,.jc-entry-form textarea{width:100%;min-height:40px;margin-top:5px;border:1px solid #cfdae6;border-radius:9px;padding:8px;background:#fff}.jc-entry-form .wide{grid-column:1/-1}.jc-entry-form .actions{grid-column:1/-1;justify-content:flex-end}
+.jc-purchase-block{overflow:hidden;border-top:4px solid #1769aa}.jc-purchase-block>.section-head{padding:4px 2px 0}.jc-purchase-block .line-scroll{border:1px solid #dce5ef;border-radius:12px;overflow:auto}.jc-purchase-block .data-table{min-width:850px;border-collapse:separate;border-spacing:0}.jc-purchase-block .data-table thead th{position:sticky;top:0;background:#0b315b;color:#fff;padding:11px 10px;border:0;white-space:nowrap}.jc-purchase-block .data-table tbody td{padding:11px 10px;border-bottom:1px solid #e6edf4;background:#fff;vertical-align:top}.jc-purchase-block .data-table tbody tr:nth-child(even) td{background:#f8fbfd}.jc-parts-block{border-top-color:#168445}.jc-labour-block{border-top-color:#f59e0b}
+.jc-labour-block .rot-list{display:grid;gap:10px}.jc-labour-block .rot-card{border:1px solid #dce5ef!important;border-left:5px solid #f59e0b!important;border-radius:12px;background:#fff;box-shadow:0 2px 8px rgba(15,39,69,.04)}.jc-labour-block .rot-main{padding:12px 13px;background:#f9fbfd;border-radius:8px 8px 0 0}.jc-labour-block .rot-meta{padding:10px 13px;border-top:1px solid #e9eff5}.jc-labour-block .rot-actions{padding:10px 13px;border-top:1px solid #e9eff5}
+@media(max-width:860px){.jc-direct-grid{grid-template-columns:1fr}.jc-entry-form{grid-template-columns:1fr 1fr}.jc-entry-form .wide{grid-column:1/-1}}@media(max-width:560px){.jc-entry-form{grid-template-columns:1fr}}
+</style>
+BLADE;
+    $c=str_replace("@section('content')
+","@section('content')
+".$style."
+",$c,$count);
+    if ($count!==1) throw new RuntimeException('show content section marker not found');
+}
+
+if (!str_contains($c,'FIX37_DIRECT_ENTRY_PANEL')) {
+    $panel=<<<'BLADE'
+
+{{-- FIX37_DIRECT_ENTRY_PANEL --}}
+@if(!in_array(strtolower((string)$job->status),['closed','invoiced','cancelled']))
+<div class="card section-gap jc-direct-entry">
+  <div class="section-head"><div><h2 class="section-title">＋ Direct Job Card Entry</h2><p class="muted">Estimate ke bina approved/admin-required Part ya Labour/ROT directly add kijiye. Entry audit history me DIRECT_ADD ke roop me save hogi.</p></div></div>
+  <div class="jc-direct-grid">
+    <div class="jc-entry-box">
+      <h3>Parts</h3><p class="muted">Parts Master se PLANNED Part add hoga; stock issue is step par nahi hoga.</p>
+      <form method="post" action="{{ route('erp.job-cards.parts.direct',$job->id) }}" class="jc-entry-form">@csrf
+        <label class="wide">Part<select name="part_master_id" required><option value="">Select Part…</option>@foreach(($partsMaster ?? collect()) as $m)<option value="{{ $m->id }}">{{ $m->part_code }} · {{ $m->part_name }} · Stock {{ $m->stock_qty ?? 0 }}</option>@endforeach</select></label>
+        <label>Qty<input type="number" step="0.001" min="0.001" name="qty" value="1" required></label>
+        <label>Rate<input type="number" step="0.01" min="0" name="rate" placeholder="Master rate"></label>
+        <label>GST %<input type="number" step="0.01" min="0" max="100" name="gst_percent" placeholder="Master GST"></label>
+        <label class="wide">Note<input name="note" placeholder="Reason / work note (optional)"></label>
+        <div class="actions"><button class="btn primary">＋ Add Part to Job Card</button></div>
+      </form>
+    </div>
+    <div class="jc-entry-box">
+      <h3>Labour / ROT</h3><p class="muted">Labour Master se PLANNED line add hogi; mechanic assignment existing ROT control se hoga.</p>
+      <form method="post" action="{{ route('erp.job-cards.labour.direct',$job->id) }}" class="jc-entry-form">@csrf
+        <label class="wide">Labour / ROT<select name="labour_master_id" required><option value="">Select Labour / ROT…</option>@foreach(($labourMaster ?? collect()) as $m)<option value="{{ $m->id }}">{{ $m->rot_code }} · {{ $m->rot_description }}</option>@endforeach</select></label>
+        <label>Std Hours<input type="number" step="0.01" min="0.01" name="standard_hours" placeholder="Master hours"></label>
+        <label>Rate<input type="number" step="0.01" min="0" name="labour_rate" placeholder="Master rate"></label>
+        <label>GST %<input type="number" step="0.01" min="0" max="100" name="gst_percent" placeholder="Master GST"></label>
+        <label class="wide">Note<input name="note" placeholder="Work note (optional)"></label>
+        <div class="actions"><button class="btn primary">＋ Add Labour / ROT</button></div>
+      </form>
+    </div>
+  </div>
+</div>
+@endif
+
+BLADE;
+    $marker='<div class="card section-gap">'."
+".'  <div class="section-head">'."
+".'    <div>'."
+".'      <h2 class="section-title">Parts</h2>';
+    $pos=strpos($c,$marker);
+    if ($pos===false) throw new RuntimeException('Parts block marker not found');
+    $c=substr($c,0,$pos).$panel.substr($c,$pos);
+}
+
+$c=str_replace('<div class="card section-gap">'."
+".'  <div class="section-head">'."
+".'    <div>'."
+".'      <h2 class="section-title">Parts</h2>', '<div class="card section-gap jc-purchase-block jc-parts-block">'."
+".'  <div class="section-head">'."
+".'    <div>'."
+".'      <h2 class="section-title">Parts</h2>', $c);
+$c=str_replace('<div class="card section-gap">'."
+".'  <div class="section-head"><div><h2 class="section-title">Labour / ROT Control</h2>', '<div class="card section-gap jc-purchase-block jc-labour-block">'."
+".'  <div class="section-head"><div><h2 class="section-title">Labour / ROT Control</h2>', $c);
+
+if (!str_contains($c,'FIX37_PART_DELETE_LABEL')) {
+    $c=str_replace(
+        '    @forelse($parts as $p)'."
+".'      <tr>',
+        '    @forelse($parts as $p)'."
+".'      @php($fix37Issued=!in_array(strtolower(trim((string)($p->issue_status ?? 'planned'))),['','planned','pending','not issued','not_issued'],true))'."
+".'      {{-- FIX37_PART_DELETE_LABEL --}}'."
+".'      <tr>',
+        $c
+    );
+    $c=str_replace('<summary class="btn small danger">🗑 Delete</summary>','<summary class="btn small danger">{{ $fix37Issued ? '↩ Reverse Stock & Delete' : '🗑 Delete' }}</summary>',$c);
+    $c=str_replace('placeholder="Why should this planned part be removed?"','placeholder="Reason for removing this Part from the Job Card"',$c);
+    $c=str_replace('Confirm Delete'."
+".'              </button>','{{ $fix37Issued ? 'Reverse Stock & Delete' : 'Confirm Delete' }}'."
+".'              </button>',$c);
+}
+
+file_put_contents($p,$c);
+echo "FIX37 patch applied.\n";
