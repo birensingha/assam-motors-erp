@@ -573,3 +573,16 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 - [x] Read-only / no staging DB or source modification — **CONFIRMED**
 - [ ] Run combined report on staging — **PENDING USER SERVER**
 - [ ] Build final batch APPLY patches from report — **PENDING REPORT**
+
+
+## Phase 36 — Staff Inspection Assignment Sync
+
+- [x] Android inspection endpoint order reviewed — **DONE**
+- [x] Primary endpoint is `/staff-inspections.php`; fallback only on HTTP 404 — **CONFIRMED**
+- [x] Potential 200-empty masking condition identified — **CONFIRMED AS POSSIBLE**
+- [x] Focused live assignment/API inspector — **READY**
+- [x] No DB/source modification in inspection step — **CONFIRMED**
+- [ ] Run FIX36 INSPECT for Firajul — **PENDING SERVER**
+- [ ] Reconcile staff identity / Job Card assignee / endpoint filter — **PENDING OUTPUT**
+- [ ] Prepare exact sync APPLY patch — **PENDING OUTPUT**
+- [ ] Device smoke: assigned inspection visible in Firajul app — **PENDING**
