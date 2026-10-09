@@ -237,9 +237,12 @@ $methods=<<<'PHP'
         return redirect()->route('erp.job-cards.show',$job)->with('success','Labour/ROT added directly to Job Card as PLANNED. Assign mechanic when ready.');
     }
 PHP;
-insertBeforeOnce($p,"    private function recalculateJobTotals(int $jobId): void
-",$methods."
-",'FIX37_DIRECT_JOB_CARD_LINES');
+insertBeforeOnce(
+    $p,
+    '    private function recalculateJobTotals(int $jobId): void'."\n",
+    $methods."\n",
+    'FIX37_DIRECT_JOB_CARD_LINES'
+);
 
 $p="$root/routes/web.php";
 $routeMarker="    Route::delete('/job-cards/{job}/parts/{part}', [AdminJobCardPageController::class,'deletePart'])->whereNumber('job')->whereNumber('part')->name('erp.job-cards.parts.delete');
