@@ -409,3 +409,13 @@ Final report: `deployment/FINAL_PRE_MERGE_GATE_20261008.md`
 | Payment Voucher 500 | DIAGNOSTIC READY | Exact exception still must be captured; no guess-based accounting patch |
 | Staging applied | NO | Await baseline CHECK + diagnostic output |
 | Android PR | #6 DRAFT | Run #116 started |
+
+
+### FIX20 validation addendum
+
+- package Bash syntax: **PASS**
+- patched/new PHP syntax: **PASS**
+- uploaded live-source baseline SHA-256 match: **PASS**
+- native route-name contract check: **PASS**
+- local CHECK → APPLY → ROLLBACK script smoke: **PASS**
+- live staging apply: **NOT RUN**
