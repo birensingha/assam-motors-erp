@@ -1,0 +1,149 @@
+name: Assam Motors Staging SSH Control
+
+on:
+  workflow_dispatch:
+    inputs:
+      operation:
+        description: "Choose staging operation"
+        required: true
+        type: choice
+        options:
+          - status
+          - optimize_clear
+          - check_fix
+          - inspect_fix
+          - apply_fix
+          - verify_fix
+      fix_dir:
+        description: "Example: deployment/live-fixes/FIX37_JOB_CARD_CORE"
+        required: false
+        default: ""
+        type: string
+      confirm_apply:
+        description: "For apply_fix only type APPLY-STAGING"
+        required: false
+        default: ""
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+
+jobs:
+  control:
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+      OPERATION: ${{ inputs.operation }}
+      FIX_DIR: ${{ inputs.fix_dir }}
+      CONFIRM_APPLY: ${{ inputs.confirm_apply }}
+
+    steps:
+      - name: Validate inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" || { echo "Missing STAGING_SSH_HOST"; exit 1; }
+          test -n "$SSH_PORT" || { echo "Missing STAGING_SSH_PORT"; exit 1; }
+          test -n "$SSH_USER" || { echo "Missing STAGING_SSH_USER"; exit 1; }
+          test -n "$SSH_PRIVATE_KEY" || { echo "Missing STAGING_SSH_PRIVATE_KEY"; exit 1; }
+
+          case "$OPERATION" in
+            status|optimize_clear) ;;
+            check_fix|inspect_fix|apply_fix|verify_fix)
+              [[ "$FIX_DIR" =~ ^deployment/live-fixes/[A-Za-z0-9_.-]+$ ]] || {
+                echo "Invalid fix_dir"
+                exit 1
+              }
+              ;;
+            *) echo "Unsupported operation"; exit 1 ;;
+          esac
+
+          if [ "$OPERATION" = "apply_fix" ] && [ "$CONFIRM_APPLY" != "APPLY-STAGING" ]; then
+            echo "apply_fix requires confirm_apply=APPLY-STAGING"
+            exit 1
+          fi
+
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts
+
+      - name: Execute staging operation
+        shell: bash
+        run: |
+          set -euo pipefail
+          ssh -i ~/.ssh/id_ed25519 -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+            "bash -s -- '$OPERATION' '$FIX_DIR' '$CONFIRM_APPLY' '$APP_ROOT'" <<'REMOTE'
+          set -euo pipefail
+
+          OPERATION="$1"
+          FIX_DIR="$2"
+          CONFIRM_APPLY="$3"
+          APP_ROOT="$4"
+          DEPLOY_ROOT="$HOME/assam-motors-deploy"
+
+          test -d "$APP_ROOT" || { echo "APP_ROOT not found: $APP_ROOT"; exit 1; }
+          test -f "$APP_ROOT/artisan" || { echo "artisan not found in APP_ROOT"; exit 1; }
+
+          echo "== ASSAM MOTORS STAGING CONTROL =="
+          echo "Operation: $OPERATION"
+          echo "App: $APP_ROOT"
+          date
+
+          case "$OPERATION" in
+            status)
+              cd "$APP_ROOT"
+              php artisan about 2>/dev/null || true
+              php artisan route:list 2>/dev/null | head -100 || true
+              ;;
+            optimize_clear)
+              cd "$APP_ROOT"
+              php artisan optimize:clear
+              ;;
+            check_fix|inspect_fix|apply_fix|verify_fix)
+              test -d "$DEPLOY_ROOT/.git" || {
+                echo "Missing deployment checkout: $DEPLOY_ROOT"
+                exit 1
+              }
+              cd "$DEPLOY_ROOT"
+              git fetch origin main
+              git checkout main
+              git pull --ff-only origin main
+              TARGET="$DEPLOY_ROOT/$FIX_DIR"
+              test -d "$TARGET" || { echo "Fix directory missing: $TARGET"; exit 1; }
+              cd "$TARGET"
+
+              if [ "$OPERATION" = "check_fix" ]; then
+                test -f CHECK.sh
+                bash CHECK.sh "$APP_ROOT"
+              elif [ "$OPERATION" = "inspect_fix" ]; then
+                test -f INSPECT.sh
+                bash INSPECT.sh "$APP_ROOT"
+              elif [ "$OPERATION" = "verify_fix" ]; then
+                test -f VERIFY.sh
+                bash VERIFY.sh "$APP_ROOT"
+              else
+                test "$CONFIRM_APPLY" = "APPLY-STAGING"
+                test -f APPLY.sh
+                bash APPLY.sh "$APP_ROOT"
+              fi
+              ;;
+          esac
+          REMOTE
+
+      - name: Remove runner SSH key
+        if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519
