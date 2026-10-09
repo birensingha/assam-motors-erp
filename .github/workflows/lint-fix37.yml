@@ -1,0 +1,27 @@
+name: Lint FIX37 Job Card Core
+
+on:
+  push:
+    paths:
+      - 'deployment/live-fixes/FIX37_JOB_CARD_CORE/**'
+      - '.github/workflows/lint-fix37.yml'
+  workflow_dispatch:
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+      - name: PHP lint FIX37 patcher
+        run: php -l deployment/live-fixes/FIX37_JOB_CARD_CORE/PATCH_FIX37.php
+      - name: Bash syntax
+        run: |
+          bash -n deployment/live-fixes/FIX37_JOB_CARD_CORE/CHECK.sh
+          bash -n deployment/live-fixes/FIX37_JOB_CARD_CORE/APPLY.sh
+          bash -n deployment/live-fixes/FIX37_JOB_CARD_CORE/VERIFY.sh
+          bash -n deployment/live-fixes/FIX37_JOB_CARD_CORE/ROLLBACK.sh
