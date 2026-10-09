@@ -1,0 +1,10 @@
+BACKUP_CREATED=yes
+PATCH_APPLIED=yes
+DIRECT_HTTP_CODE=401
+DIRECT_LOCATION=none
+ROLLBACK=yes
+ERROR: direct legacy customer URL did not return 302
+exit_code=1
+
+browser_outcome=skipped
+workflow_commit=cafe4f075098a9c98c95bb94f759876c00a00a01
