@@ -441,3 +441,17 @@ Final report: `deployment/FINAL_PRE_MERGE_GATE_20261008.md`
 - Unsigned Release APK build: **PASS**
 - APK artifact upload: **PASS**
 - merge remains gated on FIX20B staging apply + end-to-end smoke test
+
+
+### Phase 20C — Hostinger shell compatibility
+
+- FIX20B live CHECK: **GO**
+- FIX20B APPLY: **STOPPED BEFORE BACKUP/COPY**
+- failure: Hostinger shell does not expose `/dev/fd` for Bash process substitution used by APPLY script
+- staging source modification from failed FIX20B apply: **NONE (failure occurred before backup mkdir/copy/install)**
+- FIX20C: **READY**
+- APPLY/ROLLBACK process substitution: **REMOVED**
+- replacement mechanism: temporary file lists under `/tmp`
+- Bash syntax: **PASS**
+- target PHP lint: **PASS (10 files)**
+- FIX20C SHA-256: `43bc2651e987a90270f90a0d61451f2f0a032c2e30dc41f329462df9fe1a41f3`
