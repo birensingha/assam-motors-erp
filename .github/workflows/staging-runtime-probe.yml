@@ -61,41 +61,43 @@ jobs:
           echo
           echo "Generated: $(date -Is)"
           echo
-          echo "## App target"
-          echo "- APP_ROOT: `$APP_ROOT`"
-          echo "- Target exists: $(test -f "$TARGET" && echo yes || echo no)"
-          if [ -f "$TARGET" ]; then
-            echo "- Target realpath: `$(readlink -f "$TARGET")`"
-            echo "- FIX40 marker: $(grep -q 'FIX40_DIRECT_BROWSER_REDIRECT' "$TARGET" && echo present || echo missing)"
-            echo "- SHA256: `$(sha256sum "$TARGET" | awk '{print $1}')`"
-          fi
-          echo
-          echo "## Candidate legacy customer files"
-          find "$HOME/domains/assammotors.com" -type f -path '*/legacy/workshop/customers.php' -print 2>/dev/null | head -20 | while read -r f; do
-            echo "- `$f`"
-            echo "  - realpath: `$(readlink -f "$f")`"
-            echo "  - FIX40: $(grep -q 'FIX40_DIRECT_BROWSER_REDIRECT' "$f" && echo present || echo missing)"
-            echo "  - SHA256: `$(sha256sum "$f" | awk '{print $1}')`"
-          done
-          echo
-          echo "## Public webroot hints"
-          for d in "$HOME/domains/assammotors.com/public_html" "$HOME/domains/assammotors.com/assam-erp-staging/public"; do
-            if [ -e "$d" ]; then
-              echo "- `$d` -> `$(readlink -f "$d")`"
+          echo "APP_TARGET_EXISTS=$(test -f "$TARGET" && echo yes || echo no)"
+          echo "APP_TARGET_FIX40=$(test -f "$TARGET" && grep -q 'FIX40_DIRECT_BROWSER_REDIRECT' "$TARGET" && echo present || echo missing)"
+
+          mapfile -t FILES < <(find "$HOME/domains/assammotors.com" -type f -path '*/legacy/workshop/customers.php' -print 2>/dev/null | head -20)
+          echo "CANDIDATE_COUNT=${#FILES[@]}"
+
+          PROBE="am-staging-path-probe-$$.txt"
+          created=()
+          idx=0
+          for f in "${FILES[@]}"; do
+            idx=$((idx+1))
+            d="$(dirname "$f")"
+            rel="${f#"$HOME/domains/assammotors.com/"}"
+            marker="$(grep -q 'FIX40_DIRECT_BROWSER_REDIRECT' "$f" && echo present || echo missing)"
+            echo "CANDIDATE_${idx}_REL=${rel}"
+            echo "CANDIDATE_${idx}_FIX40=${marker}"
+            if [ -w "$d" ]; then
+              printf 'CANDIDATE_%s' "$idx" > "$d/$PROBE"
+              created+=("$d/$PROBE")
             fi
           done
-          echo
-          echo "## HTTP legacy URL"
+
+          served="$(curl -fsS --max-time 15 "$BASE/legacy/workshop/$PROBE" 2>/dev/null || true)"
+          echo "SERVED_CANDIDATE=${served:-not_found}"
+
+          for p in "${created[@]}"; do rm -f "$p"; done
+
           TMPH="$(mktemp)"
           TMPB="$(mktemp)"
-          code="$(curl -sS -L --max-redirs 0 -D "$TMPH" -o "$TMPB" -w '%{http_code}' "$BASE/legacy/workshop/customers.php" || true)"
-          echo "- HTTP code without following redirect: `$code`"
-          loc="$(awk 'BEGIN{IGNORECASE=1} /^Location:/{gsub(/\r/,""); sub(/^Location:[[:space:]]*/,""); print; exit}' "$TMPH")"
-          if [ -n "$loc" ]; then echo "- Location: `$loc`"; fi
+          code="$(curl -sS --max-redirs 0 -D "$TMPH" -o "$TMPB" -w '%{http_code}' "$BASE/legacy/workshop/customers.php" || true)"
+          echo "LEGACY_HTTP_CODE=$code"
+          loc="$(awk 'BEGIN{IGNORECASE=1} /^Location:/{gsub(/\\r/,""); sub(/^Location:[[:space:]]*/,""); print; exit}' "$TMPH")"
+          echo "LEGACY_LOCATION=${loc:-none}"
           if grep -qi 'Admin login required' "$TMPB"; then
-            echo "- Body contains Admin login required: yes"
+            echo "LEGACY_ADMIN_LOGIN_ERROR=yes"
           else
-            echo "- Body contains Admin login required: no"
+            echo "LEGACY_ADMIN_LOGIN_ERROR=no"
           fi
           rm -f "$TMPH" "$TMPB"
           REMOTE
