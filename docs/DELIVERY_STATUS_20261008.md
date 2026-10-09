@@ -578,3 +578,15 @@ FIX22 scope:
 - JavaScript syntax: **PASS**
 - DB migration: **NONE**
 - live apply: **PENDING**
+
+
+### Phase 27 — Purchase / Estimate readability
+
+- same-page controls: **100% / 115% / 125%**
+- default: **115%**
+- separate large window: **NOT USED**
+- browser preference persistence: **READY**
+- print/PDF layout scaling: **NOT COUPLED TO VIEW CONTROL**
+- DB/save calculations: **UNCHANGED**
+- direct deploy path: `deployment/live-fixes/FIX27_PURCHASE_ESTIMATE_READABILITY`
+- live apply: **PENDING**
