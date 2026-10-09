@@ -1,33 +1,30 @@
-# FIX39 — OSL Purchase Multi-Line
+# FIX39 — OSL Purchase Multi-Line / Parts-style UI
 
-Read-only live-staging discovery for rebuilding OSL Purchase in the same visual/transaction pattern as Parts Purchase.
+Staging inspection confirmed the core OSL multi-line implementation is already present:
+- `PurchaseService::saveOslBatch()`
+- up to 50 OSL lines
+- one transaction
+- `purchase_batch_no` / `purchase_line_no`
+- `workshop_purchase_batches`
+- line-wise Job Card linkage
+- vendor rate / discount / GST
+- customer rate / customer GST
+- existing OSL-to-Job-Card Labour billing linkage
 
-This inspector maps:
-- OSL routes and controller methods;
-- PurchaseService OSL save rules;
-- current OSL form;
-- current Parts Purchase multi-line UI;
-- existing batch/header tables;
-- Job Card / Vehicle allocation/search fields;
-- live table schemas and recent OSL rows.
+FIX39 therefore does **not** replace the working backend.
 
-No source file or database row is modified.
+It only closes the remaining Parts Purchase parity gap:
+- JC / Vehicle / Customer text filter per OSL line
+- Enter-to-select when one JC match remains
+- 100% / 115% / 125% readability buttons
+- Parts-Purchase-like blue/green/amber/red visual treatment
+- larger readable controls
+- safe horizontal table handling
 
-Run:
+No DB migration.
+
+Apply:
 
 ```bash
-bash INSPECT.sh /home/u956497103/domains/assammotors.com/assam-erp-staging
+bash APPLY.sh /home/u956497103/domains/assammotors.com/assam-erp-staging
 ```
-
-Target guarded apply package:
-- one Vendor / Bill / Purchase Date header;
-- 10–50 OSL lines;
-- OSL code/description search;
-- line-wise Job Card / Vehicle allocation;
-- Qty, Vendor Rate, Discount, Purchase GST;
-- Customer Rate / Customer GST where live schema supports it;
-- line totals + document total;
-- Add / Remove line;
-- one DB transaction;
-- server calculation authoritative;
-- Parts Purchase-like readable blue/green/amber/red UI.
