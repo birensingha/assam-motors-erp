@@ -1,0 +1,125 @@
+name: Assam Motors FIX41 Webroot Redirect
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/staging-fix41-webroot.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fix41:
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+      STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL || 'https://staging.assammotors.com' }}
+      STAGING_LOGIN_PATH: ${{ vars.STAGING_LOGIN_PATH || '/erp/login' }}
+      STAGING_ADMIN_LOGIN: ${{ secrets.STAGING_ADMIN_LOGIN }}
+      STAGING_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+      SMOKE_OUTPUT_DIR: browser-smoke-artifacts
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+
+      - name: Apply FIX41 on staging
+        id: remote
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p deployment/runtime
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH_CMD=(ssh -i ~/.ssh/id_ed25519 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH_CMD=(sshpass -e ssh -p "$SSH_PORT")
+          fi
+
+          set +e
+          "${SSH_CMD[@]}" "$SSH_USER@$SSH_HOST" "bash -s -- '$APP_ROOT' '$STAGING_BASE_URL'" \
+            < deployment/fix41-legacy-customer-webroot.sh \
+            > deployment/runtime/FIX41_REMOTE_RESULT.txt 2>&1
+          rc=$?
+          set -e
+          echo "exit_code=$rc" >> deployment/runtime/FIX41_REMOTE_RESULT.txt
+          echo "rc=$rc" >> "$GITHUB_OUTPUT"
+          cat deployment/runtime/FIX41_REMOTE_RESULT.txt
+
+      - name: Set up Node
+        if: steps.remote.outputs.rc == '0'
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Playwright
+        if: steps.remote.outputs.rc == '0'
+        shell: bash
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Browser smoke
+        id: smoke
+        if: steps.remote.outputs.rc == '0'
+        continue-on-error: true
+        shell: bash
+        run: node deployment/browser-smoke.mjs
+
+      - name: Upload browser proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: fix41-browser-proof
+          path: browser-smoke-artifacts/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Publish sanitized FIX41 result
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p deployment/runtime
+          {
+            echo
+            echo "browser_outcome=${{ steps.smoke.outcome }}"
+            echo "workflow_commit=$GITHUB_SHA"
+          } >> deployment/runtime/FIX41_REMOTE_RESULT.txt
+
+          git config user.name "assam-motors-staging-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git pull --rebase origin main
+          git add deployment/runtime/FIX41_REMOTE_RESULT.txt
+          if ! git diff --cached --quiet; then
+            git commit -m "runtime: record FIX41 staging result [skip ci]"
+            git push origin HEAD:main
+          fi
+
+      - name: Final gate
+        if: always()
+        shell: bash
+        run: |
+          test "${{ steps.remote.outputs.rc }}" = "0"
+          test "${{ steps.smoke.outcome }}" = "success"
