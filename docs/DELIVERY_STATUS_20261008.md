@@ -488,3 +488,19 @@ Status: **STAGING CODE APPLY COMPLETE; MANUAL UI/DEVICE SMOKE TEST PENDING.**
 - FIX21 scope: **routes/web.php only**
 - database/schema change: **NONE**
 - browser PASS criteria: **actual HTTP/browser request after authenticated ERP login**
+
+
+### Phase 22 — Customer Navigation + Create Job Card UI
+
+Live evidence from 09-Oct-2026:
+- ERP sidebar Customer link still points to `/legacy/workshop/customers.php`
+- native Customer route `erp.customers` exists
+- Job Card index has only `Estimate Register` in page header
+- native Job Card Create route `erp.job-cards.create` exists and opens
+
+FIX22 scope:
+- `resources/views/layouts/erp.blade.php`: Customer → native `erp.customers`
+- `resources/views/job-cards/index.blade.php`: add visible `+ Create Job Card` button
+- baseline SHA guards: **ENABLED**
+- database migration: **NONE**
+- Payment module: **NOT TOUCHED**
