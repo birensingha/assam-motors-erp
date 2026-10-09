@@ -611,3 +611,15 @@ FIX22 scope:
 - direct deploy path: `deployment/live-fixes/FIX29_SUPPLEMENTARY_ESTIMATE_BUTTON`
 - DB/controller/service changes: **NONE**
 - live apply: **PENDING**
+
+
+### Phase 30 — Supplementary Estimate / WIP diagnosis deadlock
+
+- root cause: **Supplementary reused Initial Estimate diagnosis eligibility guard**
+- WIP Diagnosis completion restriction: **RETAINED**
+- Supplementary after prior work release: **SEPARATE ELIGIBILITY READY**
+- WIP status preservation during draft: **READY**
+- UI Complete Diagnosis dead-end: **REPLACED BY Supplementary Ready state**
+- direct deploy path: `deployment/live-fixes/FIX30_SUPPLEMENTARY_WIP_DEADLOCK`
+- DB migration: **NONE**
+- live apply: **PENDING**
