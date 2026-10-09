@@ -566,3 +566,15 @@ FIX22 scope:
 - DB migration — **NONE**
 - PHP / Blade / Hostinger validation — **PASS**
 - staging apply — **PENDING SERVER CHECK**
+
+
+### Phase 26 — Direct Deploy / Parts Purchase Search
+
+- tar.gz handoff workflow: **REPLACED FOR NEW FIXES**
+- direct deployment root: `deployment/live-fixes/`
+- FIX26 Part Name/Code search normalization: **READY**
+- FIX26 Job Card/Vehicle per-line filter: **READY**
+- PHP lint: **PASS**
+- JavaScript syntax: **PASS**
+- DB migration: **NONE**
+- live apply: **PENDING**
