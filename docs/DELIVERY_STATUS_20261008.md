@@ -478,3 +478,13 @@ Evidence from Hostinger staging apply:
 - rollback backup: `ASSAM_MOTORS_FIX20C_BACKUP_20261009_042027`
 
 Status: **STAGING CODE APPLY COMPLETE; MANUAL UI/DEVICE SMOKE TEST PENDING.**
+
+
+### Phase 21 — Three-page browser 500 common root cause
+
+- Payment/Customer/Job Card browser smoke after FIX20C: **FAIL**
+- latest common exception: **Route [login] not defined**
+- Payment `ONLY_FULL_GROUP_BY` entry in log: **historical; backend probe now passes**
+- FIX21 scope: **routes/web.php only**
+- database/schema change: **NONE**
+- browser PASS criteria: **actual HTTP/browser request after authenticated ERP login**
