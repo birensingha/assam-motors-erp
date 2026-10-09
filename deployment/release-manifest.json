@@ -2,13 +2,35 @@
   "release": "workshop-stack-20261008",
   "mode": "staging-first",
   "database": {
-    "policy": "backup-before-apply",
-    "migrations": [
-      "patches/phase3-job-card-edit/001_job_card_edit_audit.sql",
-      "patches/phase4-osl-purchase/001_osl_purchase_line_items.sql",
-      "patches/phase5-rot-backend/001_create_rot_event_audit.sql",
-      "patches/phase8-alert-compliance/001_staff_action_alerts.sql",
-      "patches/phase10-fcm-push/001_staff_push_devices.sql"
+    "policy": "backup-before-any-live-schema-change",
+    "live_schema_discovered_at": "2026-10-09",
+    "live_map": "deployment/LIVE_STAGING_MAP_20261009.md",
+    "reference_migrations": [
+      {
+        "path": "patches/phase3-job-card-edit/001_job_card_edit_audit.sql",
+        "status": "REFERENCE_ONLY_DO_NOT_APPLY",
+        "live_equivalent": "job_card_change_audits"
+      },
+      {
+        "path": "patches/phase4-osl-purchase/001_osl_purchase_line_items.sql",
+        "status": "REFERENCE_ONLY_DO_NOT_APPLY",
+        "live_equivalent": "workshop_purchase_batches + workshop_purchases"
+      },
+      {
+        "path": "patches/phase5-rot-backend/001_create_rot_event_audit.sql",
+        "status": "REFERENCE_ONLY_DO_NOT_APPLY",
+        "live_equivalent": "rot_session_events + rot_mechanic_segments"
+      },
+      {
+        "path": "patches/phase8-alert-compliance/001_staff_action_alerts.sql",
+        "status": "REFERENCE_ONLY_DO_NOT_APPLY",
+        "live_equivalent": "staff_reminder_state + reminder engine"
+      },
+      {
+        "path": "patches/phase10-fcm-push/001_staff_push_devices.sql",
+        "status": "REFERENCE_ONLY_DO_NOT_APPLY",
+        "live_equivalent": "staff_devices + notification/Firebase service"
+      }
     ]
   },
   "application_groups": [
@@ -41,5 +63,10 @@
     "schema_probe": "deployment/db-schema-probe.php",
     "output": "assam-motors-live-handoff-<timestamp>.tar.gz",
     "policy": "read-only sanitized discovery; no .env, source contents or business rows"
+  },
+  "targeted_source_handoff": {
+    "guide": "deployment/TARGET_SOURCE_HANDOFF.md",
+    "collector": "deployment/collect-targeted-live-source.sh",
+    "status": "PENDING_SERVER_RUN"
   }
 }
