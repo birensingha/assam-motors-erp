@@ -231,3 +231,18 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 - [ ] Upload generated handoff archive — **PENDING**
 - [ ] Fill exact live route/controller/view/table Integration Map — **PENDING HANDOFF**
 - [ ] Begin controlled staging wiring — **PENDING SOURCE MAP**
+
+
+## Phase 19 — Live Schema Reconciliation / Targeted Source
+
+- [x] Sanitized staging archive analyzed — **DONE**
+- [x] Exact live route/controller/view/model/table inventory — **RECORDED**
+- [x] Old reference migration plan reconciled — **DO NOT APPLY PARALLEL TABLES**
+- [x] Android/staging endpoint mismatch identified — **2 MISSING LEGACY ENDPOINTS**
+- [x] Targeted source collector prepared — **READY**
+- [ ] Run targeted source collector on staging — **PENDING SERVER SHELL**
+- [ ] Inspect real controller/service/legacy API contents — **PENDING UPLOAD**
+- [ ] Implement native Customer route/auth correction — **PENDING SOURCE REVIEW**
+- [ ] Implement Job Card Create/store wiring — **PENDING SOURCE REVIEW**
+- [ ] Resolve FCM token endpoint compatibility — **BLOCKER**
+- [ ] Resolve Staff app update endpoint compatibility — **BLOCKER**
