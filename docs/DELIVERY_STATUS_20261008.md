@@ -623,3 +623,16 @@ FIX22 scope:
 - direct deploy path: `deployment/live-fixes/FIX30_SUPPLEMENTARY_WIP_DEADLOCK`
 - DB migration: **NONE**
 - live apply: **PENDING**
+
+
+### Phase 31 — Job Card form layout / dropdowns
+
+- current Service Type control: **plain text input confirmed**
+- desktop layout target: **2-column left/right**
+- mobile layout: **single-column**
+- Service Type dropdown: **READY**
+- native select styling: **READY**
+- long text areas: **full width**
+- direct deploy path: `deployment/live-fixes/FIX31_JOBCARD_FORM_LAYOUT_DROPDOWNS`
+- DB/controller/save logic: **UNCHANGED**
+- live apply: **PENDING**
