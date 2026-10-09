@@ -24,10 +24,10 @@ replaceOnce(
     "        $data['staff']=Staff::query()->whereRaw("LOWER(status)='active'")->orderBy('name')->get(['id','staff_code','name','role','department']);\n".
     "        // FIX37_JOB_CARD_CORE — direct Parts/Labour entry without Estimate.\n".
     "        $data['partsMaster']=Schema::hasTable('parts_master')\n".
-    "            ? DB::table('parts_master')->whereRaw("COALESCE(active,'Yes') <> 'No'")->orderBy('part_name')->limit(5000)->get()\n".
+    "            ? DB::table('parts_master')->orderBy('part_name')->limit(5000)->get()\n".
     "            : collect();\n".
     "        $data['labourMaster']=Schema::hasTable('labour_master')\n".
-    "            ? DB::table('labour_master')->whereRaw("COALESCE(active,'Yes') <> 'No'")->orderBy('rot_code')->limit(5000)->get()\n".
+    "            ? DB::table('labour_master')->orderBy('rot_code')->limit(5000)->get()\n".
     "            : collect();\n".
     "        return view('job-cards.show',$data);",
     'show direct masters'
@@ -319,20 +319,42 @@ $c=str_replace('<div class="card section-gap">'."
 ".'  <div class="section-head"><div><h2 class="section-title">Labour / ROT Control</h2>', $c);
 
 if (!str_contains($c,'FIX37_PART_DELETE_LABEL')) {
+    $oldRows=<<<'BLADE'
+    @forelse($parts as $p)
+      <tr>
+BLADE;
+    $newRows=<<<'BLADE'
+    @forelse($parts as $p)
+      @php($fix37Issued=!in_array(strtolower(trim((string)($p->issue_status ?? 'planned'))),['','planned','pending','not issued','not_issued'],true))
+      {{-- FIX37_PART_DELETE_LABEL --}}
+      <tr>
+BLADE;
+    $c=str_replace($oldRows,$newRows,$c,$rowCount);
+    if ($rowCount!==1) throw new RuntimeException('Parts row marker count='.$rowCount);
+
+    $oldSummary=<<<'BLADE'
+<summary class="btn small danger">🗑 Delete</summary>
+BLADE;
+    $newSummary=<<<'BLADE'
+<summary class="btn small danger">{{ $fix37Issued ? '↩ Reverse Stock & Delete' : '🗑 Delete' }}</summary>
+BLADE;
+    $c=str_replace($oldSummary,$newSummary,$c);
+
     $c=str_replace(
-        '    @forelse($parts as $p)'."
-".'      <tr>',
-        '    @forelse($parts as $p)'."
-".'      @php($fix37Issued=!in_array(strtolower(trim((string)($p->issue_status ?? 'planned'))),['','planned','pending','not issued','not_issued'],true))'."
-".'      {{-- FIX37_PART_DELETE_LABEL --}}'."
-".'      <tr>',
+        'placeholder="Why should this planned part be removed?"',
+        'placeholder="Reason for removing this Part from the Job Card"',
         $c
     );
-    $c=str_replace('<summary class="btn small danger">🗑 Delete</summary>','<summary class="btn small danger">{{ $fix37Issued ? '↩ Reverse Stock & Delete' : '🗑 Delete' }}</summary>',$c);
-    $c=str_replace('placeholder="Why should this planned part be removed?"','placeholder="Reason for removing this Part from the Job Card"',$c);
-    $c=str_replace('Confirm Delete'."
-".'              </button>','{{ $fix37Issued ? 'Reverse Stock & Delete' : 'Confirm Delete' }}'."
-".'              </button>',$c);
+
+    $oldButton=<<<'BLADE'
+Confirm Delete
+              </button>
+BLADE;
+    $newButton=<<<'BLADE'
+{{ $fix37Issued ? 'Reverse Stock & Delete' : 'Confirm Delete' }}
+              </button>
+BLADE;
+    $c=str_replace($oldButton,$newButton,$c);
 }
 
 file_put_contents($p,$c);
