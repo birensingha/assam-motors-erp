@@ -684,3 +684,12 @@ FIX22 scope:
 - includes live inspection for FIX32–FIX35
 - staging source modification: **NONE**
 - database modification: **NONE**
+
+
+### Phase 36 — Staff inspection assignment sync
+
+- Android inspection list order: **staff-inspections.php first**
+- fallback behavior: **only on HTTP 404**
+- suspected failure modes: **staff identity mismatch / assignee-field mismatch / primary 200-empty**
+- direct inspect path: `deployment/live-fixes/FIX36_STAFF_INSPECTION_SYNC/INSPECT.sh`
+- live modification by inspector: **NONE**
