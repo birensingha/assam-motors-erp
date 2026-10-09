@@ -26,10 +26,10 @@ if (!str_contains($c,'FIX37_JOB_CARD_CORE')) {
         if(str_contains($line,"$"."data['staff']")){
             $block=[
                 "        // FIX37_JOB_CARD_CORE — direct Parts/Labour entry without Estimate.",
-                "        $"+"data['partsMaster']=Schema::hasTable('parts_master')",
+                "        \$data['partsMaster']=Schema::hasTable('parts_master')",
                 "            ? DB::table('parts_master')->orderBy('part_name')->limit(5000)->get()",
                 "            : collect();",
-                "        $"+"data['labourMaster']=Schema::hasTable('labour_master')",
+                "        \$data['labourMaster']=Schema::hasTable('labour_master')",
                 "            ? DB::table('labour_master')->orderBy('rot_code')->limit(5000)->get()",
                 "            : collect();",
             ];
