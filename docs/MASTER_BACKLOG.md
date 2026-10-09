@@ -499,3 +499,17 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 - [ ] Run FIX31 CHECK/APPLY on staging — **PENDING SERVER**
 - [ ] Browser verify Job Card two-column entry UI — **PENDING**
 - [ ] Browser verify Service Type dropdown list — **PENDING**
+
+
+## Phase 32 — Staff Reminder Compliance / 3-Reminder Escalation
+
+- [x] Android reminder contract reviewed — **DONE**
+- [x] Android server-global postpone count support — **CONFIRMED**
+- [x] Android 1/3 → 2/3 → 3/3 display — **CONFIRMED**
+- [x] Android Admin escalation display after limit — **CONFIRMED**
+- [x] Live reminder engine read-only inspector — **READY**
+- [x] No DB/source change in inspection step — **CONFIRMED**
+- [ ] Run FIX32 INSPECT on staging — **PENDING SERVER**
+- [ ] Reconcile live snooze/escalation rules — **PENDING INSPECT OUTPUT**
+- [ ] Prepare exact FIX32 CHECK/APPLY/VERIFY — **PENDING INSPECT OUTPUT**
+- [ ] Device smoke reminder 1/3 → 3/3 → Admin — **PENDING**
