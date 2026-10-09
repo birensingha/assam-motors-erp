@@ -560,3 +560,16 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 - [ ] Build Direct Add Part action — **PENDING INSPECT OUTPUT**
 - [ ] Build Direct Add Labour/ROT action — **PENDING INSPECT OUTPUT**
 - [ ] Browser + stock + ROT smoke test — **PENDING**
+
+
+## Fast Track — Pending FIX32 to FIX35
+
+- [x] One-command combined live inspector — **READY**
+- [x] FIX26–FIX31 installed-marker quick check — **READY**
+- [x] FIX32 Reminder inspection included — **READY**
+- [x] FIX33 Part reversal/UI inspection included — **READY**
+- [x] FIX34 Lifecycle inspection included — **READY**
+- [x] FIX35 Direct Parts/Labour inspection included — **READY**
+- [x] Read-only / no staging DB or source modification — **CONFIRMED**
+- [ ] Run combined report on staging — **PENDING USER SERVER**
+- [ ] Build final batch APPLY patches from report — **PENDING REPORT**
