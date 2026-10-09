@@ -245,47 +245,63 @@ insertBeforeOnce(
 );
 
 $p="$root/routes/web.php";
-$routeMarker="    Route::delete('/job-cards/{job}/parts/{part}', [AdminJobCardPageController::class,'deletePart'])->whereNumber('job')->whereNumber('part')->name('erp.job-cards.parts.delete');
-";
-$routeAdd=$routeMarker.
-"    // FIX37_JOB_CARD_CORE — direct entries without Estimate.
-".
-"    Route::post('/job-cards/{job}/parts/direct', [AdminJobCardPageController::class,'addPartDirect'])->whereNumber('job')->name('erp.job-cards.parts.direct');
-".
-"    Route::post('/job-cards/{job}/labour/direct', [AdminJobCardPageController::class,'addLabourDirect'])->whereNumber('job')->name('erp.job-cards.labour.direct');
-";
-replaceOnce($p,$routeMarker,$routeAdd,'FIX37 direct routes');
+$r=file_get_contents($p);
+if (!str_contains($r,'erp.job-cards.parts.direct')) {
+    $lines=preg_split('/\\R/',$r);
+    $inserted=false;
+    foreach($lines as $i=>$line){
+        if(str_contains($line,"name('erp.job-cards.parts.delete')")){
+            $block=[
+                "    // FIX37_JOB_CARD_CORE — direct entries without Estimate.",
+                "    Route::post('/job-cards/{job}/parts/direct', [AdminJobCardPageController::class,'addPartDirect'])->whereNumber('job')->name('erp.job-cards.parts.direct');",
+                "    Route::post('/job-cards/{job}/labour/direct', [AdminJobCardPageController::class,'addLabourDirect'])->whereNumber('job')->name('erp.job-cards.labour.direct');",
+            ];
+            array_splice($lines,$i+1,0,$block);
+            $inserted=true;
+            break;
+        }
+    }
+    if(!$inserted) throw new RuntimeException("Job Card part delete route anchor not found");
+    file_put_contents($p,implode("\n",$lines));
+}
+echo "PASS direct routes patched\n";
 
 $p="$root/resources/views/job-cards/show.blade.php";
-$c=file_get_contents($p);
-if (!str_contains($c,'FIX37_JOB_CARD_CORE_UI')) {
+$v=file_get_contents($p);
+
+if (!str_contains($v,'FIX37_JOB_CARD_CORE_UI')) {
     $style=<<<'BLADE'
 <style id="FIX37_JOB_CARD_CORE_UI">
 .jc-direct-entry{border-top:4px solid #0b315b;background:linear-gradient(180deg,#fff,#f9fbfd)}
 .jc-direct-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}.jc-entry-box{border:1px solid #d9e4ee;border-radius:14px;padding:14px;background:#fff}.jc-entry-box h3{margin:0 0 4px;color:#12395e}.jc-entry-box p{margin:0 0 12px}
-.jc-entry-form{display:grid;grid-template-columns:2fr .7fr 1fr;gap:9px;align-items:end}.jc-entry-form label{font-size:11px;font-weight:800;color:#53677d}.jc-entry-form select,.jc-entry-form input,.jc-entry-form textarea{width:100%;min-height:40px;margin-top:5px;border:1px solid #cfdae6;border-radius:9px;padding:8px;background:#fff}.jc-entry-form .wide{grid-column:1/-1}.jc-entry-form .actions{grid-column:1/-1;justify-content:flex-end}
-.jc-purchase-block{overflow:hidden;border-top:4px solid #1769aa}.jc-purchase-block>.section-head{padding:4px 2px 0}.jc-purchase-block .line-scroll{border:1px solid #dce5ef;border-radius:12px;overflow:auto}.jc-purchase-block .data-table{min-width:850px;border-collapse:separate;border-spacing:0}.jc-purchase-block .data-table thead th{position:sticky;top:0;background:#0b315b;color:#fff;padding:11px 10px;border:0;white-space:nowrap}.jc-purchase-block .data-table tbody td{padding:11px 10px;border-bottom:1px solid #e6edf4;background:#fff;vertical-align:top}.jc-purchase-block .data-table tbody tr:nth-child(even) td{background:#f8fbfd}.jc-parts-block{border-top-color:#168445}.jc-labour-block{border-top-color:#f59e0b}
-.jc-labour-block .rot-list{display:grid;gap:10px}.jc-labour-block .rot-card{border:1px solid #dce5ef!important;border-left:5px solid #f59e0b!important;border-radius:12px;background:#fff;box-shadow:0 2px 8px rgba(15,39,69,.04)}.jc-labour-block .rot-main{padding:12px 13px;background:#f9fbfd;border-radius:8px 8px 0 0}.jc-labour-block .rot-meta{padding:10px 13px;border-top:1px solid #e9eff5}.jc-labour-block .rot-actions{padding:10px 13px;border-top:1px solid #e9eff5}
-@media(max-width:860px){.jc-direct-grid{grid-template-columns:1fr}.jc-entry-form{grid-template-columns:1fr 1fr}.jc-entry-form .wide{grid-column:1/-1}}@media(max-width:560px){.jc-entry-form{grid-template-columns:1fr}}
+.jc-entry-form{display:grid;grid-template-columns:2fr .7fr 1fr;gap:9px;align-items:end}.jc-entry-form label{font-size:11px;font-weight:800;color:#53677d}.jc-entry-form select,.jc-entry-form input{width:100%;min-height:40px;margin-top:5px;border:1px solid #cfdae6;border-radius:9px;padding:8px;background:#fff}.jc-entry-form .wide{grid-column:1/-1}.jc-entry-form .actions{grid-column:1/-1;justify-content:flex-end}
+.jc-purchase-block{overflow:hidden}.jc-purchase-block .line-scroll{border:1px solid #dce5ef;border-radius:12px;overflow:auto}.jc-purchase-block .data-table{min-width:850px;border-collapse:separate;border-spacing:0}.jc-purchase-block .data-table thead th{position:sticky;top:0;background:#0b315b;color:#fff;padding:11px 10px;white-space:nowrap}.jc-purchase-block .data-table tbody td{padding:11px 10px;border-bottom:1px solid #e6edf4;background:#fff;vertical-align:top}.jc-purchase-block .data-table tbody tr:nth-child(even) td{background:#f8fbfd}.jc-parts-block{border-top:4px solid #168445}.jc-labour-block{border-top:4px solid #f59e0b}
+.jc-labour-block .rot-card{border-left:5px solid #f59e0b!important;box-shadow:0 2px 8px rgba(15,39,69,.04)}
+@media(max-width:860px){.jc-direct-grid{grid-template-columns:1fr}.jc-entry-form{grid-template-columns:1fr 1fr}}@media(max-width:560px){.jc-entry-form{grid-template-columns:1fr}.jc-entry-form .wide{grid-column:1}}
 </style>
 BLADE;
-    $c=str_replace("@section('content')
-","@section('content')
-".$style."
-",$c,$count);
-    if ($count!==1) throw new RuntimeException('show content section marker not found');
+    $lines=preg_split('/\\R/',$v);
+    $inserted=false;
+    foreach($lines as $i=>$line){
+        if(trim($line)==="@section('content')"){
+            array_splice($lines,$i+1,0,preg_split('/\\R/',rtrim($style,"\r\n")));
+            $inserted=true;
+            break;
+        }
+    }
+    if(!$inserted) throw new RuntimeException("Job Card content section anchor not found");
+    $v=implode("\n",$lines);
 }
 
-if (!str_contains($c,'FIX37_DIRECT_ENTRY_PANEL')) {
+if (!str_contains($v,'FIX37_DIRECT_ENTRY_PANEL')) {
     $panel=<<<'BLADE'
-
 {{-- FIX37_DIRECT_ENTRY_PANEL --}}
 @if(!in_array(strtolower((string)$job->status),['closed','invoiced','cancelled']))
 <div class="card section-gap jc-direct-entry">
-  <div class="section-head"><div><h2 class="section-title">＋ Direct Job Card Entry</h2><p class="muted">Estimate ke bina approved/admin-required Part ya Labour/ROT directly add kijiye. Entry audit history me DIRECT_ADD ke roop me save hogi.</p></div></div>
+  <div class="section-head"><div><h2 class="section-title">＋ Direct Job Card Entry</h2><p class="muted">Estimate ke bina Part ya Labour / ROT directly add kijiye. Entry audit history me DIRECT_ADD ke roop me save hogi.</p></div></div>
   <div class="jc-direct-grid">
     <div class="jc-entry-box">
-      <h3>Parts</h3><p class="muted">Parts Master se PLANNED Part add hoga; stock issue is step par nahi hoga.</p>
+      <h3>Parts</h3><p class="muted">Parts Master se PLANNED line add hogi. Stock issue is step par nahi hoga.</p>
       <form method="post" action="{{ route('erp.job-cards.parts.direct',$job->id) }}" class="jc-entry-form">@csrf
         <label class="wide">Part<select name="part_master_id" required><option value="">Select Part…</option>@foreach(($partsMaster ?? collect()) as $m)<option value="{{ $m->id }}">{{ $m->part_code }} · {{ $m->part_name }} · Stock {{ $m->stock_qty ?? 0 }}</option>@endforeach</select></label>
         <label>Qty<input type="number" step="0.001" min="0.001" name="qty" value="1" required></label>
@@ -296,7 +312,7 @@ if (!str_contains($c,'FIX37_DIRECT_ENTRY_PANEL')) {
       </form>
     </div>
     <div class="jc-entry-box">
-      <h3>Labour / ROT</h3><p class="muted">Labour Master se PLANNED line add hogi; mechanic assignment existing ROT control se hoga.</p>
+      <h3>Labour / ROT</h3><p class="muted">Labour Master se PLANNED line add hogi. Mechanic existing ROT control se assign hoga.</p>
       <form method="post" action="{{ route('erp.job-cards.labour.direct',$job->id) }}" class="jc-entry-form">@csrf
         <label class="wide">Labour / ROT<select name="labour_master_id" required><option value="">Select Labour / ROT…</option>@foreach(($labourMaster ?? collect()) as $m)<option value="{{ $m->id }}">{{ $m->rot_code }} · {{ $m->rot_description }}</option>@endforeach</select></label>
         <label>Std Hours<input type="number" step="0.01" min="0.01" name="standard_hours" placeholder="Master hours"></label>
@@ -309,66 +325,77 @@ if (!str_contains($c,'FIX37_DIRECT_ENTRY_PANEL')) {
   </div>
 </div>
 @endif
-
 BLADE;
-    $marker='<div class="card section-gap">'."
-".'  <div class="section-head">'."
-".'    <div>'."
-".'      <h2 class="section-title">Parts</h2>';
-    $pos=strpos($c,$marker);
-    if ($pos===false) throw new RuntimeException('Parts block marker not found');
-    $c=substr($c,0,$pos).$panel.substr($c,$pos);
+    $lines=preg_split('/\\R/',$v);
+    $partsHeading=-1;
+    foreach($lines as $i=>$line){
+        if(str_contains($line,'<h2 class="section-title">Parts</h2>')){$partsHeading=$i;break;}
+    }
+    if($partsHeading<0) throw new RuntimeException("Parts heading not found");
+    $insertAt=-1;
+    for($i=$partsHeading;$i>=0;$i--){
+        if(str_contains($lines[$i],'<div class="card section-gap')){$insertAt=$i;break;}
+    }
+    if($insertAt<0) throw new RuntimeException("Parts card start not found");
+    array_splice($lines,$insertAt,0,preg_split('/\\R/',rtrim($panel,"\r\n")));
+    $v=implode("\n",$lines);
 }
 
-$c=str_replace('<div class="card section-gap">'."
-".'  <div class="section-head">'."
-".'    <div>'."
-".'      <h2 class="section-title">Parts</h2>', '<div class="card section-gap jc-purchase-block jc-parts-block">'."
-".'  <div class="section-head">'."
-".'    <div>'."
-".'      <h2 class="section-title">Parts</h2>', $c);
-$c=str_replace('<div class="card section-gap">'."
-".'  <div class="section-head"><div><h2 class="section-title">Labour / ROT Control</h2>', '<div class="card section-gap jc-purchase-block jc-labour-block">'."
-".'  <div class="section-head"><div><h2 class="section-title">Labour / ROT Control</h2>', $c);
+$lines=preg_split('/\\R/',$v);
+$partsHeading=-1;$labourHeading=-1;
+foreach($lines as $i=>$line){
+    if($partsHeading<0 && str_contains($line,'<h2 class="section-title">Parts</h2>')) $partsHeading=$i;
+    if($labourHeading<0 && str_contains($line,'<h2 class="section-title">Labour / ROT Control</h2>')) $labourHeading=$i;
+}
+if($partsHeading<0 || $labourHeading<0) throw new RuntimeException("Parts/Labour headings not found");
+foreach([[$partsHeading,'jc-purchase-block jc-parts-block'],[$labourHeading,'jc-purchase-block jc-labour-block']] as [$heading,$classes]){
+    for($i=$heading;$i>=0;$i--){
+        if(str_contains($lines[$i],'<div class="card section-gap')){
+            if(!str_contains($lines[$i],$classes)){
+                $lines[$i]=preg_replace('/class="card section-gap([^\"]*)"/','class="card section-gap$1 '.$classes.'"',$lines[$i],1);
+            }
+            break;
+        }
+    }
+}
+$v=implode("\n",$lines);
 
-if (!str_contains($c,'FIX37_PART_DELETE_LABEL')) {
-    $oldRows=<<<'BLADE'
-    @forelse($parts as $p)
-      <tr>
-BLADE;
-    $newRows=<<<'BLADE'
-    @forelse($parts as $p)
-      @php($fix37Issued=!in_array(strtolower(trim((string)($p->issue_status ?? 'planned'))),['','planned','pending','not issued','not_issued'],true))
-      {{-- FIX37_PART_DELETE_LABEL --}}
-      <tr>
-BLADE;
-    $c=str_replace($oldRows,$newRows,$c,$rowCount);
-    if ($rowCount!==1) throw new RuntimeException('Parts row marker count='.$rowCount);
-
-    $oldSummary=<<<'BLADE'
-<summary class="btn small danger">🗑 Delete</summary>
-BLADE;
-    $newSummary=<<<'BLADE'
-<summary class="btn small danger">{{ $fix37Issued ? '↩ Reverse Stock & Delete' : '🗑 Delete' }}</summary>
-BLADE;
-    $c=str_replace($oldSummary,$newSummary,$c);
-
-    $c=str_replace(
-        'placeholder="Why should this planned part be removed?"',
-        'placeholder="Reason for removing this Part from the Job Card"',
-        $c
-    );
-
-    $oldButton=<<<'BLADE'
-Confirm Delete
-              </button>
-BLADE;
-    $newButton=<<<'BLADE'
-{{ $fix37Issued ? 'Reverse Stock & Delete' : 'Confirm Delete' }}
-              </button>
-BLADE;
-    $c=str_replace($oldButton,$newButton,$c);
+if (!str_contains($v,'FIX37_PART_DELETE_LABEL')) {
+    $lines=preg_split('/\\R/',$v);
+    $inserted=false;
+    foreach($lines as $i=>$line){
+        if(str_contains($line,'@forelse($parts as $p)')){
+            $block=[
+                "      @php(\$fix37Issued=!in_array(strtolower(trim((string)(\$p->issue_status ?? 'planned'))),['','planned','pending','not issued','not_issued'],true))",
+                "      {{-- FIX37_PART_DELETE_LABEL --}}",
+            ];
+            array_splice($lines,$i+1,0,$block);
+            $inserted=true;
+            break;
+        }
+    }
+    if(!$inserted) throw new RuntimeException("Parts loop anchor not found");
+    $v=implode("\n",$lines);
 }
 
-file_put_contents($p,$c);
+$v=str_replace(
+    '<summary class="btn small danger">🗑 Delete</summary>',
+    '<summary class="btn small danger">{{ $fix37Issued ? \'↩ Reverse Stock & Remove\' : \'🗑 Delete\' }}</summary>',
+    $v
+);
+$v=str_replace(
+    'placeholder="Why should this planned part be removed?"',
+    'placeholder="Reason for removing this Part from the Job Card"',
+    $v
+);
+$v=preg_replace(
+    '/(^\\s*)Confirm Delete\\s*$/m',
+    '$1{{ $fix37Issued ? \'Reverse Stock & Remove\' : \'Confirm Delete\' }}',
+    $v,
+    1
+);
+
+file_put_contents($p,$v);
+echo "PASS Job Card UI patched\n";
 echo "FIX37 patch applied.\n";
+
