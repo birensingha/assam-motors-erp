@@ -455,3 +455,15 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 - [ ] Run FIX28 CHECK/APPLY on staging — **PENDING SERVER**
 - [ ] Android Run #117 — **QUEUED**
 - [ ] Device smoke: live timer / ending soon / overtime / pause remark — **PENDING**
+
+
+## Phase 29 — Job Card Supplementary Estimate Shortcut
+
+- [x] Live estimate create/store route already exists — **CONFIRMED**
+- [x] Job Card detail missing visible estimate/supplementary action — **CONFIRMED**
+- [x] UI-only shortcut patch prepared — **READY**
+- [x] No DB / estimate calculation / approval logic changes — **CONFIRMED**
+- [x] Direct GitHub CHECK/APPLY/VERIFY/ROLLBACK scripts — **READY**
+- [ ] Run FIX29 CHECK/APPLY on staging — **PENDING SERVER**
+- [ ] Browser verify Job Card button visible — **PENDING**
+- [ ] Browser verify converted estimate opens Supplementary mode — **PENDING**
