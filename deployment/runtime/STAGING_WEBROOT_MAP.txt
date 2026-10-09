@@ -1,0 +1,211 @@
+ASSAM MOTORS STAGING WEBROOT MAP
+DATE=2026-10-09T18:54:44+00:00
+APP_ROOT=/home/u956497103/domains/assammotors.com/assam-erp-staging
+APP_ROOT_REAL=/home/u956497103/domains/assammotors.com/assam-erp-staging
+
+[TOP LEVEL]
+d ~/domains/assammotors.com/assam-erp-staging -> 
+d ~/domains/assammotors.com/assam-erp-staging/android-staff-app -> 
+d ~/domains/assammotors.com/assam-erp-staging/app -> 
+d ~/domains/assammotors.com/assam-erp-staging/bootstrap -> 
+d ~/domains/assammotors.com/assam-erp-staging/config -> 
+d ~/domains/assammotors.com/assam-erp-staging/database -> 
+d ~/domains/assammotors.com/assam-erp-staging/deployment -> 
+d ~/domains/assammotors.com/assam-erp-staging/hotfix -> 
+d ~/domains/assammotors.com/assam-erp-staging/migration -> 
+d ~/domains/assammotors.com/assam-erp-staging/public -> 
+d ~/domains/assammotors.com/assam-erp-staging/resources -> 
+d ~/domains/assammotors.com/assam-erp-staging/routes -> 
+d ~/domains/assammotors.com/assam-erp-staging/storage -> 
+d ~/domains/assammotors.com/assam-erp-staging/testing -> 
+d ~/domains/assammotors.com/assam-erp-staging/tools -> 
+d ~/domains/assammotors.com/assam-erp-staging/vendor -> 
+d ~/domains/assammotors.com/assam-handoff -> 
+d ~/domains/assammotors.com/assam-handoff/ASSAM_MOTORS_FIX24B_OSL_LINEBOX_HEIGHT -> 
+d ~/domains/assammotors.com/assam-handoff/ASSAM_MOTORS_FIX24_OSL_MULTILINE_PURCHASE -> 
+d ~/domains/assammotors.com/assam-handoff/ASSAM_MOTORS_FIX25_CUSTOMER_LEDGER_JOBCARD_UI -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX20C_BACKUP_20261009_042027 -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX20C_BACKUP_20261009_042027/app -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX20C_BACKUP_20261009_042027/public -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX20C_BACKUP_20261009_042027/resources -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX20C_BACKUP_20261009_042027/routes -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX21_BACKUP_20261009_043941 -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX21_BACKUP_20261009_043941/routes -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX22_BACKUP_20261009_052456 -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX22_BACKUP_20261009_052456/resources -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX22_BACKUP_20261009_052507 -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX22_BACKUP_20261009_052507/resources -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX22B_BACKUP_20261009_053703 -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX22B_BACKUP_20261009_053703/resources -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX23_BACKUP_20261009_054517 -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX23_BACKUP_20261009_054517/app -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX23_BACKUP_20261009_054517/resources -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX24_BACKUP_20261009_060008 -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX24_BACKUP_20261009_060008/app -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX24_BACKUP_20261009_060008/resources -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX24B_BACKUP_20261009_062918 -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX24B_BACKUP_20261009_062918/resources -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX25_BACKUP_20261009_062117 -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX25_BACKUP_20261009_062117/app -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX25_BACKUP_20261009_062117/resources -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX25_BACKUP_20261009_062117/routes -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX26_BACKUP_20261009_071704 -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX26_BACKUP_20261009_071704/app -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX26_BACKUP_20261009_071704/public -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX26_BACKUP_20261009_071704/resources -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX27_BACKUP_20261009_072535 -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX27_BACKUP_20261009_072535/resources -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX28_BACKUP_20261009_075854 -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX28_BACKUP_20261009_075854/public -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX29_BACKUP_20261009_080313 -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX29_BACKUP_20261009_080313/resources -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX30_BACKUP_20261009_081900 -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX30_BACKUP_20261009_081900/app -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX30_BACKUP_20261009_081900/resources -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX31_BACKUP_20261009_094126 -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX31_BACKUP_20261009_094126/resources -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX37_BACKUP_20261009_123057 -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX37_BACKUP_20261009_123057/app -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX37_BACKUP_20261009_123057/resources -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX37_BACKUP_20261009_123057/routes -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX38_BACKUP_20261009_144856 -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX38_BACKUP_20261009_144856/resources -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX39_BACKUP_20261009_142616 -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX39_BACKUP_20261009_142616/resources -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX40_BACKUP_20261009_143619 -> 
+d ~/domains/assammotors.com/ASSAM_MOTORS_FIX40_BACKUP_20261009_143619/public -> 
+d ~/domains/assammotors.com/private -> 
+d ~/domains/assammotors.com/public_html -> 
+d ~/domains/assammotors.com/public_html/admin -> 
+d ~/domains/assammotors.com/public_html/api -> 
+d ~/domains/assammotors.com/public_html/hiring -> 
+d ~/domains/assammotors.com/public_html/images -> 
+d ~/domains/assammotors.com/public_html/staging -> 
+d ~/domains/assammotors.com/public_html/workshop -> 
+d ~/domains/assammotors.com/.trash -> 
+f ~/domains/assammotors.com/assam-erp-staging/, -> 
+f ~/domains/assammotors.com/assam-erp-staging/- -> 
+f ~/domains/assammotors.com/assam-erp-staging/] -> 
+f ~/domains/assammotors.com/assam-erp-staging/[0]- -> 
+f ~/domains/assammotors.com/assam-erp-staging/0, -> 
+f ~/domains/assammotors.com/assam-erp-staging/250, -> 
+f ~/domains/assammotors.com/assam-erp-staging/artisan -> 
+f ~/domains/assammotors.com/assam-erp-staging/Auto-created from OSL Purchase for customer billing, -> 
+f ~/domains/assammotors.com/assam-erp-staging/composer.json -> 
+f ~/domains/assammotors.com/assam-erp-staging/composer.lock -> 
+f ~/domains/assammotors.com/assam-erp-staging/.env -> 
+f ~/domains/assammotors.com/assam-erp-staging/.env.example -> 
+f ~/domains/assammotors.com/assam-erp-staging/error_log -> 
+f ~/domains/assammotors.com/assam-erp-staging/.gitignore -> 
+f ~/domains/assammotors.com/assam-erp-staging/[gst], -> 
+f ~/domains/assammotors.com/assam-erp-staging/id, -> 
+f ~/domains/assammotors.com/assam-erp-staging/job_no, -> 
+f ~/domains/assammotors.com/assam-erp-staging/[nullable,integer,min:1], -> 
+f ~/domains/assammotors.com/assam-erp-staging/[nullable,numeric,between:0,100], -> 
+f ~/domains/assammotors.com/assam-erp-staging/[nullable,numeric,min:0,max:100], -> 
+f ~/domains/assammotors.com/assam-erp-staging/[nullable,string,max:100], -> 
+f ~/domains/assammotors.com/assam-erp-staging/[nullable,string,max:800], -> 
+f ~/domains/assammotors.com/assam-erp-staging/OSL, -> 
+f ~/domains/assammotors.com/assam-erp-staging/README_PHASE10.md -> 
+f ~/domains/assammotors.com/assam-erp-staging/README_PHASE1.md -> 
+f ~/domains/assammotors.com/assam-erp-staging/README_PHASE2.md -> 
+f ~/domains/assammotors.com/assam-erp-staging/README_PHASE3.md -> 
+f ~/domains/assammotors.com/assam-erp-staging/README_PHASE4.md -> 
+f ~/domains/assammotors.com/assam-erp-staging/README_PHASE5.md -> 
+f ~/domains/assammotors.com/assam-erp-staging/README_PHASE6.md -> 
+f ~/domains/assammotors.com/assam-erp-staging/README_PHASE7.md -> 
+f ~/domains/assammotors.com/assam-erp-staging/README_PHASE8.md -> 
+f ~/domains/assammotors.com/assam-erp-staging/README_PHASE9.md -> 
+f ~/domains/assammotors.com/assam-erp-staging/[required,array,min:1,max:100], -> 
+f ~/domains/assammotors.com/assam-erp-staging/[required,date], -> 
+f ~/domains/assammotors.com/assam-erp-staging/[required,in:STOCK,JOB], -> 
+f ~/domains/assammotors.com/assam-erp-staging/[required,integer,min:1], -> 
+f ~/domains/assammotors.com/assam-erp-staging/[required,numeric,gt:0], -> 
+f ~/domains/assammotors.com/assam-erp-staging/[required,numeric,min:0], -> 
+f ~/domains/assammotors.com/assam-erp-staging/stock_qty -> 
+f ~/domains/assammotors.com/assam-erp-staging/[taxable], -> 
+f ~/domains/assammotors.com/assam-erp-staging/[total], -> 
+f ~/domains/assammotors.com/assam-erp-staging/vendor_name, -> 
+f ~/domains/assammotors.com/assam-handoff/ASSAM_MOTORS_FIX24B_OSL_LINEBOX_HEIGHT.tar.gz -> 
+f ~/domains/assammotors.com/assam-handoff/ASSAM_MOTORS_FIX24_OSL_MULTILINE_PURCHASE.tar.gz -> 
+f ~/domains/assammotors.com/assam-handoff/ASSAM_MOTORS_FIX25_CUSTOMER_LEDGER_JOBCARD_UI.tar.gz -> 
+f ~/domains/assammotors.com/assam-handoff/assam-motors-live-handoff-20261009_025036.tar.gz -> 
+f ~/domains/assammotors.com/assam-handoff/assam-motors-target-source-20261009_034815.tar.gz -> 
+f ~/domains/assammotors.com/DO_NOT_UPLOAD_HERE -> 
+f ~/domains/assammotors.com/private/firebase-service-account.json -> 
+f ~/domains/assammotors.com/public_html/contact.html -> 
+f ~/domains/assammotors.com/public_html/customer-access.php -> 
+f ~/domains/assammotors.com/public_html/erp-mobile-ui.css -> 
+f ~/domains/assammotors.com/public_html/erp-mobile-ui.js -> 
+f ~/domains/assammotors.com/public_html/erp-ui-scale.js -> 
+f ~/domains/assammotors.com/public_html/faq.html -> 
+f ~/domains/assammotors.com/public_html/index.html -> 
+f ~/domains/assammotors.com/public_html/pdi.css -> 
+f ~/domains/assammotors.com/public_html/pdi.html -> 
+f ~/domains/assammotors.com/public_html/pdi.js -> 
+f ~/domains/assammotors.com/public_html/privacy-policy.html -> 
+f ~/domains/assammotors.com/public_html/returns-refund.html -> 
+f ~/domains/assammotors.com/public_html/script.js -> 
+f ~/domains/assammotors.com/public_html/sitemap.html -> 
+f ~/domains/assammotors.com/public_html/staff.css -> 
+f ~/domains/assammotors.com/public_html/staff.css.bak_MOBILE_FIX_20261008_084540 -> 
+f ~/domains/assammotors.com/public_html/staff.html -> 
+f ~/domains/assammotors.com/public_html/staff.html.bak_MOBILE_FIX_20261008_084540 -> 
+f ~/domains/assammotors.com/public_html/staff.js -> 
+f ~/domains/assammotors.com/public_html/staff.js.bak_MOBILE_FIX_20261008_084540 -> 
+f ~/domains/assammotors.com/public_html/style.css -> 
+f ~/domains/assammotors.com/public_html/support-pages.css -> 
+f ~/domains/assammotors.com/public_html/terms-conditions.html -> 
+f ~/domains/assammotors.com/public_html/track-order.html -> 
+
+[SYMLINKS]
+
+[CUSTOMER ENDPOINT CANDIDATES]
+ASSAM_MOTORS_FIX40_BACKUP_20261009_143619/public/legacy/workshop/customers.php | MARKER=missing | REAL=~/domains/assammotors.com/ASSAM_MOTORS_FIX40_BACKUP_20261009_143619/public/legacy/workshop/customers.php
+public_html/staging/legacy/workshop/customers.php | MARKER=missing | REAL=~/domains/assammotors.com/public_html/staging/legacy/workshop/customers.php
+assam-erp-staging/public/legacy/workshop/customers.php | MARKER=present | REAL=~/domains/assammotors.com/assam-erp-staging/public/legacy/workshop/customers.php
+ASSAM_MOTORS_FIX20C_BACKUP_20261009_042027/public/legacy/workshop/customers.php | MARKER=missing | REAL=~/domains/assammotors.com/ASSAM_MOTORS_FIX20C_BACKUP_20261009_042027/public/legacy/workshop/customers.php
+
+[HTACCESS / INDEX HINTS]
+~/domains/assammotors.com/assam-erp-staging/public/.htaccess
+~/domains/assammotors.com/assam-erp-staging/public/index.php
+~/domains/assammotors.com/public_html/staging/.htaccess
+~/domains/assammotors.com/public_html/staging/index.php
+
+[HTTP HEADERS LEGACY]
+HTTP/2 401 
+date: Fri, 09 Oct 2026 18:54:44 GMT
+content-type: application/json; charset=UTF-8
+vary: Accept-Encoding
+x-powered-by: PHP/8.4.26
+access-control-allow-origin: *
+access-control-allow-methods: GET, POST, PUT, DELETE, OPTIONS
+access-control-allow-headers: Content-Type, Authorization, X-Admin-Token
+platform: hostinger
+panel: hpanel
+content-security-policy: upgrade-insecure-requests
+server: hcdn
+alt-svc: h3=":443"; ma=86400
+x-hcdn-request-id: 653fecb7bb385966d48c7485674c672f-mum-edge6
+
+
+[HTTP HEADERS ERP]
+HTTP/2 302 
+date: Fri, 09 Oct 2026 18:54:44 GMT
+content-type: text/html; charset=utf-8
+location: https://staging.assammotors.com/login
+vary: Accept-Encoding
+x-powered-by: PHP/8.4.26
+cache-control: no-cache, no-store, must-revalidate, max-age=0
+set-cookie: XSRF-TOKEN=eyJpdiI6IlA5TWpJL1hsQnNyMzVTMTgvbm9velE9PSIsInZhbHVlIjoib0QwaHR1Y3I4UlVJelQwUWphV1VkZVZhUkJ5Qkw2T05CUVJYZjBuMXZNMmRYeTRNcmdURkNFVjZmUWtITFBJanYvWlYvNW10aEc0cEtrQzErTnQrUGhQeXoxYWJ2K2Z2Z2FySE9oMlU5ZUMrK3BodUthWjExaGZFeHVTZTRwOU0iLCJtYWMiOiJhNzYyNWU5Y2RlODU5YWExNzJhZTExZGM1ODIwZjY1MGQyM2Q5ODVlNWFmNDVhMDA4ZWY1Yjg3OWZiMTVhYzIzIiwidGFnIjoiIn0%3D; expires=Fri, 09 Oct 2026 22:54:44 GMT; Max-Age=14400; path=/; secure; samesite=lax
+set-cookie: assam_motors_erp_staging_session=eyJpdiI6ImMxbjgzR0RQYlk5UGpsNUN1d3Aramc9PSIsInZhbHVlIjoiTUxSelQxcnNndWwyWWw3NC83bTcvRXk2THVadS9Kazk0YjRzTTZPaGJqS2JhYy91aC9jeUQ0ZmtiMGUzNXFnbVhHV1p5blJkY29zSmdJdk02eittRFJ6R3h0Ukt0VkhNNFBYSUlDRGpWZHVzWjlwVzZFNjdoM2VobEdZRVMyVFAiLCJtYWMiOiIzYzM1YzJkZDQ4YmUzZTQ1NWI2MjlmZmZmN2NlZWJlOThjNjcxODA1Y2M3NjgxYWRlZDZiNTM3YzNlMjVhMTk5IiwidGFnIjoiIn0%3D; expires=Fri, 09 Oct 2026 22:54:44 GMT; Max-Age=14400; path=/; secure; httponly; samesite=lax
+platform: hostinger
+panel: hpanel
+content-security-policy: upgrade-insecure-requests
+server: hcdn
+alt-svc: h3=":443"; ma=86400
+x-hcdn-request-id: 867ecceb0839b86143f39fae16aa0ebe-mum-edge10
+x-hcdn-cache-status: MISS
+x-hcdn-upstream-rt: 0.190
+
+SSH_EXIT=0
