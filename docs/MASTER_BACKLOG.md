@@ -295,3 +295,21 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 - [ ] Upload FIX20C to staging handoff — **PENDING SERVER**
 - [ ] Run FIX20C CHECK — **PENDING SERVER**
 - [ ] Run FIX20C APPLY + read-only verify — **PENDING CHECK GO**
+
+
+## Phase 20C — Live apply result
+
+- [x] FIX20C CHECK on live staging — **GO**
+- [x] Backup created — **DONE**
+- [x] FIX20C installed on live staging — **DONE**
+- [x] Live PHP syntax verification — **PASS**
+- [x] Native master routes verified — **PASS**
+- [x] Job Card Create/Store routes verified — **PASS**
+- [x] Payment Voucher backend probe — **PASS (count=10)**
+- [x] No database migration — **CONFIRMED**
+- [ ] Browser smoke: Payment Voucher Create — **PENDING USER TEST**
+- [ ] Browser smoke: Native Customer page — **PENDING USER TEST**
+- [ ] Browser smoke: Job Card Create + Save — **PENDING USER TEST**
+- [ ] Browser smoke: Job Card show Parts-before-Labour — **PENDING USER TEST**
+- [ ] Android smoke: login/reminder/ROT/FCM/update check — **PENDING DEVICE TEST**
+- [ ] Merge Android PR #6 — **WAIT FOR DEVICE/STAGING SMOKE**
