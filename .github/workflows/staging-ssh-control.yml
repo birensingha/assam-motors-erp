@@ -40,6 +40,7 @@ jobs:
       SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
       SSH_USER: ${{ secrets.STAGING_SSH_USER }}
       SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
       APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
       OPERATION: ${{ inputs.operation }}
       FIX_DIR: ${{ inputs.fix_dir }}
@@ -53,7 +54,10 @@ jobs:
           test -n "$SSH_HOST" || { echo "Missing STAGING_SSH_HOST"; exit 1; }
           test -n "$SSH_PORT" || { echo "Missing STAGING_SSH_PORT"; exit 1; }
           test -n "$SSH_USER" || { echo "Missing STAGING_SSH_USER"; exit 1; }
-          test -n "$SSH_PRIVATE_KEY" || { echo "Missing STAGING_SSH_PRIVATE_KEY"; exit 1; }
+          if [ -z "$SSH_PRIVATE_KEY" ] && [ -z "$SSH_PASSWORD" ]; then
+            echo "Configure either STAGING_SSH_PRIVATE_KEY or STAGING_SSH_PASSWORD"
+            exit 1
+          fi
 
           case "$OPERATION" in
             status|optimize_clear) ;;
@@ -76,15 +80,28 @@ jobs:
         run: |
           set -euo pipefail
           install -d -m 700 ~/.ssh
-          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
           ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts
+
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
 
       - name: Execute staging operation
         shell: bash
         run: |
           set -euo pipefail
-          ssh -i ~/.ssh/id_ed25519 -p "$SSH_PORT" "$SSH_USER@$SSH_HOST" \
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH_CMD=(ssh -i ~/.ssh/id_ed25519 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH_CMD=(sshpass -e ssh -p "$SSH_PORT")
+          fi
+
+          "${SSH_CMD[@]}" "$SSH_USER@$SSH_HOST" \
             "bash -s -- '$OPERATION' '$FIX_DIR' '$CONFIRM_APPLY' '$APP_ROOT'" <<'REMOTE'
           set -euo pipefail
 
