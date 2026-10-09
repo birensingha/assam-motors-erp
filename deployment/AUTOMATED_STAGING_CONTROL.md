@@ -28,20 +28,23 @@ Add:
 - `STAGING_SSH_HOST`
 - `STAGING_SSH_PORT`
 - `STAGING_SSH_USER`
-- `STAGING_SSH_PRIVATE_KEY`
+- `STAGING_SSH_PRIVATE_KEY` **or** `STAGING_SSH_PASSWORD`
 - `STAGING_ADMIN_LOGIN`
 - `STAGING_ADMIN_PASSWORD`
 
 Do not put these values in Git, issues, release notes, screenshots or chat messages.
 
-## SSH key rule
+## SSH authentication
 
-Use a dedicated staging deployment key.
+Preferred: use a dedicated staging deployment key.
 
 1. Generate a dedicated ED25519 key pair on a trusted machine.
 2. Put the PUBLIC key in the Hostinger SSH account's `~/.ssh/authorized_keys`.
 3. Put only the PRIVATE key in GitHub secret `STAGING_SSH_PRIVATE_KEY`.
-4. Do not reuse a personal workstation private key if a dedicated deployment key can be used.
+
+Fallback: if key setup is inconvenient, store the existing staging SSH password only in GitHub secret `STAGING_SSH_PASSWORD`.
+
+Do not put the SSH password/private key in Git, issues, screenshots or chat messages.
 
 ## Optional GitHub Actions variables
 
