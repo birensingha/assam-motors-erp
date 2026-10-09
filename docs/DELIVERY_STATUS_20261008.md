@@ -371,3 +371,20 @@ Final report: `deployment/FINAL_PRE_MERGE_GATE_20261008.md`
 | .env / credential collection | DISABLED BY DESIGN | Secret scan blocks archive on obvious key/password patterns |
 | Business-row collection | DISABLED BY DESIGN | DB probe reads information_schema metadata only |
 | Actual staging collection | PENDING | Run on the real staging APP_ROOT and upload generated tar.gz |
+
+
+---
+
+## Phase 19 — Live Schema Reconciliation
+
+| Area | Live finding | Decision |
+|---|---|---|
+| Job Card audit | `job_card_change_audits` already live | Reference audit SQL **DO NOT APPLY** |
+| OSL/Purchase | `workshop_purchase_batches` + `workshop_purchases` already normalized | Reference OSL line-table SQL **DO NOT APPLY** |
+| ROT audit/performance | `rot_sessions`, `rot_session_events`, `rot_mechanic_segments` live | Reference ROT audit SQL **DO NOT APPLY** |
+| Staff reminders | `staff_reminder_state` + engine/settings live | Reference Staff action-alert tables **DO NOT APPLY** |
+| FCM/device registry | `staff_devices` + Firebase service/outbox source live | Reference push-device SQL **DO NOT APPLY** |
+| Android FCM token endpoint | Android expects `/legacy/api/staff-device-token.php`; file absent | **BLOCKER — TARGETED SOURCE REVIEW REQUIRED** |
+| Android update endpoint | Android expects `/legacy/api/staff-app-update.php`; file absent | **BLOCKER — TARGETED SOURCE REVIEW REQUIRED** |
+| Job Card Create | form view exists; create/store route not visible | **WIRING PENDING** |
+| Native Customer route | native controller/view exist; route not visible | **WIRING PENDING** |
