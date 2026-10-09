@@ -18,6 +18,7 @@ on:
           - inspect_fix
           - apply_fix
           - verify_fix
+          - repair_legacy_customer_served
       fix_dir:
         description: "Example: deployment/live-fixes/FIX37_JOB_CARD_CORE"
         required: false
@@ -46,9 +47,9 @@ jobs:
       SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
       SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
       APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
-      OPERATION: ${{ github.event_name == 'push' && 'apply_fix' || inputs.operation }}
-      FIX_DIR: ${{ github.event_name == 'push' && 'deployment/live-fixes/FIX40_CUSTOMER_NATIVE_AUTH' || inputs.fix_dir }}
-      CONFIRM_APPLY: ${{ github.event_name == 'push' && 'APPLY-STAGING' || inputs.confirm_apply }}
+      OPERATION: ${{ github.event_name == 'push' && 'repair_legacy_customer_served' || inputs.operation }}
+      FIX_DIR: ${{ inputs.fix_dir }}
+      CONFIRM_APPLY: ${{ inputs.confirm_apply }}
 
     steps:
       - name: Validate inputs
@@ -64,7 +65,7 @@ jobs:
           fi
 
           case "$OPERATION" in
-            status|optimize_clear) ;;
+            status|optimize_clear|repair_legacy_customer_served) ;;
             check_fix|inspect_fix|apply_fix|verify_fix)
               [[ "$FIX_DIR" =~ ^deployment/live-fixes/[A-Za-z0-9_.-]+$ ]] || {
                 echo "Invalid fix_dir"
@@ -132,6 +133,17 @@ jobs:
             optimize_clear)
               cd "$APP_ROOT"
               php artisan optimize:clear
+              ;;
+            repair_legacy_customer_served)
+              test -d "$DEPLOY_ROOT/.git" || {
+                echo "Missing deployment checkout: $DEPLOY_ROOT"
+                exit 1
+              }
+              cd "$DEPLOY_ROOT"
+              git fetch origin main
+              git checkout main
+              git pull --ff-only origin main
+              bash deployment/repair-live-legacy-customer.sh "$APP_ROOT" "https://staging.assammotors.com"
               ;;
             check_fix|inspect_fix|apply_fix|verify_fix)
               test -d "$DEPLOY_ROOT/.git" || {
