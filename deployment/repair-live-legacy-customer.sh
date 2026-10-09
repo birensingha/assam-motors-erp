@@ -8,32 +8,32 @@ DOMAIN_ROOT="$HOME/domains/assammotors.com"
 test -d "$DOMAIN_ROOT" || { echo "Domain root missing"; exit 1; }
 test -f "$APP_ROOT/artisan" || { echo "Laravel APP_ROOT invalid"; exit 1; }
 
-mapfile -t CANDIDATES < <(find -L "$DOMAIN_ROOT" -type f -path '*/legacy/workshop/customers.php' -print 2>/dev/null | head -30)
-(("${#CANDIDATES[@]}" > 0)) || { echo "No legacy customers.php candidates found"; exit 1; }
-
-PROBE="am-staging-served-probe-$$.txt"
+PROBE="am-staging-served-probe-$RANDOM-$$.php"
+MANIFEST="$(mktemp)"
 declare -a PROBES=()
-declare -A TOKEN_TO_FILE=()
 
 cleanup() {
   for p in "${PROBES[@]:-}"; do rm -f "$p" 2>/dev/null || true; done
+  rm -f "$MANIFEST" 2>/dev/null || true
 }
 trap cleanup EXIT
 
 idx=0
-for file in "${CANDIDATES[@]}"; do
+while IFS= read -r -d '' file; do
   idx=$((idx+1))
   dir="$(dirname "$file")"
   [ -w "$dir" ] || continue
-  token="AM_STAGING_CANDIDATE_${idx}_$$"
+  token="AM_STAGING_CANDIDATE_${idx}_$RANDOM"
   probe="$dir/$PROBE"
-  printf '%s' "$token" > "$probe"
+  printf "<?php header('Content-Type: text/plain'); echo '%s';\n" "$token" > "$probe"
   PROBES+=("$probe")
-  TOKEN_TO_FILE["$token"]="$file"
-done
+  printf '%s|%s\n' "$token" "$file" >> "$MANIFEST"
+done < <(find -L "$DOMAIN_ROOT" -type f -path '*/legacy/workshop/customers.php' -print0 2>/dev/null)
 
-served_token="$(curl -fsS --max-time 15 "$BASE_URL/legacy/workshop/$PROBE" 2>/dev/null || true)"
-served_file="${TOKEN_TO_FILE[$served_token]:-}"
+test -s "$MANIFEST" || { echo "No writable legacy customers.php candidates found"; exit 1; }
+
+served_token="$(curl -fsS --max-time 15 "$BASE_URL/legacy/workshop/$PROBE?ts=$(date +%s)" 2>/dev/null || true)"
+served_file="$(awk -F'|' -v token="$served_token" '$1==token {sub(/^[^|]*\|/,""); print; exit}' "$MANIFEST")"
 
 if [ -z "$served_file" ] || [ ! -f "$served_file" ]; then
   echo "Unable to identify the file actually served by staging URL"
