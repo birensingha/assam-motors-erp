@@ -419,3 +419,15 @@ Final report: `deployment/FINAL_PRE_MERGE_GATE_20261008.md`
 - native route-name contract check: **PASS**
 - local CHECK → APPLY → ROLLBACK script smoke: **PASS**
 - live staging apply: **NOT RUN**
+
+
+### Phase 20B — Payment Voucher 500 exact diagnosis
+
+- live diagnostic: **CONFIRMED SQLSTATE 42000 / error 1055**
+- failing method: `ExpensePaymentService::payableSources()`
+- cause: Parts Purchase aggregation rejected by `ONLY_FULL_GROUP_BY`
+- fix: derived-table `src_ref` + outer aggregation
+- DB SQL mode change: **NO**
+- DB migration: **NO**
+- revised combined staging package: **FIX20B READY**
+- staging apply: **NOT YET RUN**
