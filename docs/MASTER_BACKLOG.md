@@ -357,3 +357,19 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 - [ ] Apply FIX22B — **PENDING CHECK GO**
 - [ ] Browser verify Customer native navigation — **PENDING**
 - [ ] Browser verify + Create Job Card button — **PENDING**
+
+
+## Phase 23 — New Customer + Vehicle
+
+- [x] Legacy Customer + Vehicle flow reviewed — **DONE**
+- [x] Live Customer/Vehicle schema mapped — **DONE**
+- [x] Native Customer form vehicle section prepared — **READY**
+- [x] Up to 5 vehicles in one Customer save — **READY**
+- [x] Transactional Customer + Vehicle persistence — **READY**
+- [x] Duplicate vehicle identity validation — **READY**
+- [x] Vehicle catalogue validation — **READY**
+- [x] Bash/PHP syntax validation — **PASS**
+- [x] No DB migration — **CONFIRMED**
+- [ ] Run FIX23 CHECK on staging — **PENDING**
+- [ ] Apply FIX23 — **PENDING CHECK GO**
+- [ ] Browser create Customer + Vehicle smoke — **PENDING**
