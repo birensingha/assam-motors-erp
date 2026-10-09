@@ -646,3 +646,13 @@ FIX22 scope:
 - live server reminder source: **REQUIRES READ-ONLY INSPECTION**
 - direct inspect path: `deployment/live-fixes/FIX32_REMINDER_COMPLIANCE/INSPECT.sh`
 - DB/source modification by inspector: **NONE**
+
+
+### Phase 33 — Job Card Part stock reversal + Parts/Labour UI
+
+- current issued/fitted delete behavior: **BLOCKED UNTIL STOCK REVERSAL**
+- desired action: **transactional Reverse Stock & Remove**
+- visual target: **Parts Purchase-style line-item blocks**
+- live stock implementation: **READ-ONLY INSPECTION REQUIRED**
+- direct inspect path: `deployment/live-fixes/FIX33_JOB_CARD_PART_REVERSAL_UI/INSPECT.sh`
+- DB/source modification by inspector: **NONE**
