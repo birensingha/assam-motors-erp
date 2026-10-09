@@ -602,3 +602,12 @@ FIX22 scope:
 - Android PR #6 head: `a3e1504c864e3b249a52bd339ca5886eb554966f`
 - Android CI Run #117: **QUEUED**
 - live staging apply: **PENDING**
+
+
+### Phase 29 — Supplementary Estimate shortcut
+
+- existing route: `erp.estimates.create` — **CONFIRMED**
+- Job Card visible shortcut: **READY**
+- direct deploy path: `deployment/live-fixes/FIX29_SUPPLEMENTARY_ESTIMATE_BUTTON`
+- DB/controller/service changes: **NONE**
+- live apply: **PENDING**
