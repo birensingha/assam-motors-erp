@@ -455,3 +455,26 @@ Final report: `deployment/FINAL_PRE_MERGE_GATE_20261008.md`
 - Bash syntax: **PASS**
 - target PHP lint: **PASS (10 files)**
 - FIX20C SHA-256: `43bc2651e987a90270f90a0d61451f2f0a032c2e30dc41f329462df9fe1a41f3`
+
+
+---
+
+## Phase 20C — LIVE STAGING APPLY SUCCESS (09-Oct-2026)
+
+Evidence from Hostinger staging apply:
+
+- `CHECK_FIX20C_STAGING.sh`: **GO**
+- target PHP syntax precheck: **PASS**
+- live file backup: **CREATED**
+- patched files installed: **10**
+- live PHP syntax verification: **PASS**
+- route cache clear: **SUCCESS**
+- native Customer routes: **PRESENT**
+- native Parts/Labour/Vehicle/Mapping routes: **PRESENT**
+- Job Card Create/Store routes: **PRESENT**
+- post-apply read-only verification: **PASS**
+- `ExpensePaymentService::payableSources()`: **PASS (count=10)**
+- database migration: **NONE**
+- rollback backup: `ASSAM_MOTORS_FIX20C_BACKUP_20261009_042027`
+
+Status: **STAGING CODE APPLY COMPLETE; MANUAL UI/DEVICE SMOKE TEST PENDING.**
