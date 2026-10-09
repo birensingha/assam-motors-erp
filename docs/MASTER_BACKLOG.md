@@ -342,3 +342,18 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 - [ ] Apply FIX22 — **PENDING CHECK GO**
 - [ ] Browser: sidebar Customer opens native page — **PENDING**
 - [ ] Browser: + Create Job Card visible and opens form — **PENDING**
+
+
+## Phase 22B — Hostinger-compatible Customer/Job Card UI apply
+
+- [x] FIX22 CHECK on live staging — **GO**
+- [x] python3 dependency failure identified — **DONE**
+- [x] Confirm failed FIX22 stopped before source modification — **DONE**
+- [x] Replace Python patcher with PHP CLI patcher — **DONE**
+- [x] Bash/PHP syntax validation — **PASS**
+- [x] Synthetic Customer + Create-button patch smoke — **PASS**
+- [x] FIX22B archive prepared — **READY**
+- [ ] Run FIX22B CHECK — **PENDING SERVER**
+- [ ] Apply FIX22B — **PENDING CHECK GO**
+- [ ] Browser verify Customer native navigation — **PENDING**
+- [ ] Browser verify + Create Job Card button — **PENDING**
