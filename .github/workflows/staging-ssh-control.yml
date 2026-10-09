@@ -1,5 +1,7 @@
 name: Assam Motors Staging SSH Control
 
+# AUTO_REPAIR_REV: 2
+
 on:
   push:
     branches: [main]
