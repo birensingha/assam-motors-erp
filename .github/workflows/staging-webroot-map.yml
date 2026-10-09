@@ -1,0 +1,114 @@
+name: Assam Motors Staging Webroot Map
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/staging-webroot-map.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  map:
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+      BASE_URL: ${{ vars.STAGING_BASE_URL || 'https://staging.assammotors.com' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+
+      - name: Collect read-only webroot map
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p deployment/runtime
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH_CMD=(ssh -i ~/.ssh/id_ed25519 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH_CMD=(sshpass -e ssh -p "$SSH_PORT")
+          fi
+
+          set +e
+          "${SSH_CMD[@]}" "$SSH_USER@$SSH_HOST" "bash -s -- '$APP_ROOT' '$BASE_URL'" > deployment/runtime/STAGING_WEBROOT_MAP.txt 2>&1 <<'REMOTE'
+          set +e
+          APP_ROOT="$1"
+          BASE_URL="$2"
+          ROOT="$HOME/domains/assammotors.com"
+
+          echo "ASSAM MOTORS STAGING WEBROOT MAP"
+          echo "DATE=$(date -Is)"
+          echo "APP_ROOT=$APP_ROOT"
+          echo "APP_ROOT_REAL=$(readlink -f "$APP_ROOT" 2>/dev/null)"
+          echo
+
+          echo "[TOP LEVEL]"
+          find "$ROOT" -maxdepth 2 -mindepth 1 -printf '%y %p -> %l\n' 2>/dev/null | sed "s#$HOME#~#g" | sort | head -200
+          echo
+
+          echo "[SYMLINKS]"
+          find "$ROOT" -maxdepth 5 -type l -printf '%p -> %l\n' 2>/dev/null | sed "s#$HOME#~#g" | sort | head -200
+          echo
+
+          echo "[CUSTOMER ENDPOINT CANDIDATES]"
+          find "$ROOT" -type f -path '*/legacy/workshop/customers.php' -print 2>/dev/null | while read -r f; do
+            rel="${f#"$ROOT/"}"
+            marker="missing"
+            grep -q 'FIX40_DIRECT_BROWSER_REDIRECT\|FIX41_STAGING_SERVED_CUSTOMER_REDIRECT' "$f" 2>/dev/null && marker="present"
+            echo "$rel | MARKER=$marker | REAL=$(readlink -f "$f" 2>/dev/null | sed "s#$HOME#~#g")"
+          done
+          echo
+
+          echo "[HTACCESS / INDEX HINTS]"
+          find "$ROOT" -maxdepth 5 \( -name .htaccess -o -name index.php \) -print 2>/dev/null | sed "s#$HOME#~#g" | sort | head -200
+          echo
+
+          echo "[HTTP HEADERS LEGACY]"
+          curl -sS -I --max-time 20 "$BASE_URL/legacy/workshop/customers.php" | head -40
+          echo
+
+          echo "[HTTP HEADERS ERP]"
+          curl -sS -I --max-time 20 "$BASE_URL/erp/customers" | head -40
+          REMOTE
+          rc=$?
+          set -e
+          echo "SSH_EXIT=$rc" >> deployment/runtime/STAGING_WEBROOT_MAP.txt
+
+      - name: Publish report branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "assam-motors-staging-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git checkout --orphan staging-runtime-report
+          git rm -rf . >/dev/null 2>&1 || true
+          mkdir -p deployment/runtime
+          cp "$GITHUB_WORKSPACE/deployment/runtime/STAGING_WEBROOT_MAP.txt" /tmp/STAGING_WEBROOT_MAP.txt
+          rm -rf ./* ./.github 2>/dev/null || true
+          mkdir -p deployment/runtime
+          cp /tmp/STAGING_WEBROOT_MAP.txt deployment/runtime/STAGING_WEBROOT_MAP.txt
+          git add deployment/runtime/STAGING_WEBROOT_MAP.txt
+          git commit -m "runtime: staging webroot map"
+          git push --force origin staging-runtime-report
