@@ -1,16 +1,20 @@
-# FIX40 — Legacy Customer Auth → Native Customer Master
+# FIX40 — Legacy Customer Direct Navigation → Native Customer Master
 
-Problem:
-`/legacy/workshop/customers.php` returns `{"error":"Admin login required"}` even when the user is logged into the Laravel ERP.
+Staging inspection confirmed:
 
-Security rule:
-- do **not** bypass authentication;
-- do **not** copy Laravel auth into a Legacy PHP session;
-- do **not** use unsigned query-string admin flags/tokens.
+- native authenticated Customer Master exists at `GET /erp/customers`;
+- legacy `customers.php` still serves many `?action=...` JSON requests used by Workshop JavaScript;
+- therefore replacing the whole legacy file with a redirect would break Job Card / Customer workflows.
 
-Target:
-- use the existing authenticated native Customer Master route if present;
-- update ERP navigation to that native route;
-- keep the legacy URL only as a compatibility redirect after confirming it is not used as an AJAX/API endpoint.
+FIX40 adds only an early guard:
 
-This package is read-only. It maps the exact current staging baseline before the guarded apply package is created.
+- direct `GET/HEAD /legacy/workshop/customers.php` with **no action** → HTTP 302 `/erp/customers`;
+- `customers.php?action=...` continues into the existing legacy endpoint unchanged;
+- Laravel remains responsible for authentication on `/erp/customers`;
+- no auth bypass, token handoff, or DB migration.
+
+Apply with:
+
+```bash
+bash APPLY.sh /home/u956497103/domains/assammotors.com/assam-erp-staging
+```
