@@ -437,3 +437,21 @@ Android v6.0.18 release-gate builds **Run #105 PASS**, **Run #106 PASS**, and la
 - [ ] Run FIX27 CHECK/APPLY on staging — **PENDING SERVER**
 - [ ] Browser verify Purchase readability — **PENDING**
 - [ ] Browser verify Estimate readability — **PENDING**
+
+
+## Phase 28 — Staff ROT Live Progress
+
+- [x] Live legacy ROT endpoint reviewed against Android — **DONE**
+- [x] Server standard/remaining/overtime/progress fields — **READY**
+- [x] Server target-end / ending-soon flag — **READY**
+- [x] Latest pause reason/note exposure — **READY**
+- [x] Android Started / Target End display — **READY**
+- [x] Android Ending Soon / Overtime notice — **READY**
+- [x] Android latest Pause reason/note display — **READY**
+- [x] Existing Start/Pause/Resume/Complete rules preserved — **CONFIRMED**
+- [x] No DB migration — **CONFIRMED**
+- [x] Direct GitHub CHECK/APPLY/VERIFY/ROLLBACK scripts — **READY**
+- [x] Android PR #6 updated — **READY**
+- [ ] Run FIX28 CHECK/APPLY on staging — **PENDING SERVER**
+- [ ] Android Run #117 — **QUEUED**
+- [ ] Device smoke: live timer / ending soon / overtime / pause remark — **PENDING**
