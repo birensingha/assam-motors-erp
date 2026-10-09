@@ -551,3 +551,18 @@ FIX22 scope:
 - browser JS syntax: **PASS**
 - CHECK/APPLY/VERIFY/ROLLBACK smoke: **PASS**
 - staging apply: **PENDING SERVER CHECK**
+
+
+### Phase 25 — Legacy-style Customer Ledger + Job Card Summary
+
+- Customer Database screenshot/workflow mapped — **DONE**
+- Customer full ledger/profile UI — **READY**
+- unlimited Customer Vehicles after creation — **READY**
+- Vehicle Add/Edit — **READY**
+- vehicle-wise service history — **READY**
+- Customer Job Card summary — **READY**
+- invoice/account ledger summary — **READY**
+- Job Card register summary counters/actions — **READY**
+- DB migration — **NONE**
+- PHP / Blade / Hostinger validation — **PASS**
+- staging apply — **PENDING SERVER CHECK**
