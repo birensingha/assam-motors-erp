@@ -1,28 +1,16 @@
-# FIX38 — Job Card Edit
+# FIX38 — Job Card Edit consistency
 
-Read-only discovery package for the live staging Job Card Edit workflow.
+Staging inspection confirmed the main edit process already exists:
+- Edit route and PUT update route;
+- Edit button on Job Card list;
+- Edit Job Card button on Job Card Summary;
+- dedicated edit page with mandatory Modification Reason;
+- closed/invoiced/cancelled locking;
+- `job_card_change_audits` backend;
+- Part price/qty edit with reason and stock-safe delete.
 
-It maps:
-- existing Job Card edit/update/show/index routes;
-- current AdminJobCardPageController edit/update capabilities;
-- Job Card header fields and schema;
-- Parts/Labour schemas after FIX37;
-- current list/show UI and any Edit button;
-- audit support and locking markers.
+FIX38 therefore avoids rewriting the controller. It only makes the shared rich Job Card form safe when rendered in edit mode:
+- adds PUT method spoofing;
+- adds mandatory Modification Reason.
 
-No source file or database row is modified.
-
-Run:
-
-```bash
-bash INSPECT.sh /home/u956497103/domains/assammotors.com/assam-erp-staging
-```
-
-The output is used to build the guarded apply package for:
-- Edit button from Job Card list/show;
-- editable header fields;
-- Parts above Labour;
-- direct Parts/Labour editing;
-- server-side recalculation;
-- audit history;
-- lock after Close/Invoiced according to the live workflow.
+No DB migration.
