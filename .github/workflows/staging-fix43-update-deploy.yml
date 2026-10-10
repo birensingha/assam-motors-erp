@@ -72,7 +72,7 @@ jobs:
             SCP_CMD=(sshpass -e scp -P "$SSH_PORT")
           fi
 
-          REMOTE_PAYLOAD="$HOME/assam-motors-deploy/deployment/live-fixes/FIX43_STAFF_APP_UPDATE_CHANNEL/payload"
+          REMOTE_PAYLOAD="/home/$SSH_USER/assam-motors-deploy/deployment/live-fixes/FIX43_STAFF_APP_UPDATE_CHANNEL/payload"
 
           "${SSH_CMD[@]}" "$SSH_USER@$SSH_HOST" "set -e;
             cd ~/assam-motors-deploy;
