@@ -57,33 +57,33 @@ jobs:
           set -euo pipefail
           if [ -n "$SSH_PRIVATE_KEY" ]; then
             SSH_CMD=(ssh -i ~/.ssh/id_ed25519 -p "$SSH_PORT")
-            SCP_CMD=(scp -i ~/.ssh/id_ed25519 -P "$SSH_PORT")
           else
             export SSHPASS="$SSH_PASSWORD"
             SSH_CMD=(sshpass -e ssh -p "$SSH_PORT")
-            SCP_CMD=(sshpass -e scp -P "$SSH_PORT")
           fi
 
           REMOTE_ROOT="/home/$SSH_USER/domains/assammotors.com/public_html/staging/staff-app"
           APK="Assam-Motors-Staff-v6.0.25-FRESH-PRODUCTION.apk"
 
-          "${SSH_CMD[@]}" "$SSH_USER@$SSH_HOST" "set -e;
+          "${SSH_CMD[@]}" "$SSH_USER@$SSH_HOST" "set -euo pipefail;
+            TMP=\$(mktemp -d);
+            trap 'rm -rf \"\$TMP\"' EXIT;
+            curl -fsSL --retry 3 '$ARTIFACT_URL' -o \"\$TMP/release.zip\";
+            unzip -q \"\$TMP/release.zip\" -d \"\$TMP/files\";
+            test -f \"\$TMP/files/$APK\";
+            test -f \"\$TMP/files/latest.json\";
             mkdir -p '$REMOTE_ROOT/private';
             test -f '/home/$SSH_USER/domains/assammotors.com/public_html/staging/legacy/api/staff-app-update.php';
             test -f '/home/$SSH_USER/domains/assammotors.com/public_html/staging/legacy/api/staff-app-download.php';
-            test -f '$REMOTE_ROOT/private/.htaccess'"
-
-          "${SCP_CMD[@]}"             "/tmp/am-v6025/files/$APK"             "$SSH_USER@$SSH_HOST:$REMOTE_ROOT/private/$APK"
-
-          "${SCP_CMD[@]}"             /tmp/am-v6025/files/latest.json             "$SSH_USER@$SSH_HOST:$REMOTE_ROOT/latest.json"
-
-          "${SSH_CMD[@]}" "$SSH_USER@$SSH_HOST" "set -e;
-            chmod 0644 '$REMOTE_ROOT/private/$APK' '$REMOTE_ROOT/latest.json';
-            EXPECTED=\$(php -r '\$m=json_decode(file_get_contents(\$argv[1]),true); echo strtolower((string)(\$m["sha256"]??""));' '$REMOTE_ROOT/latest.json');
-            ACTUAL=\$(sha256sum '$REMOTE_ROOT/private/$APK' | awk '{print \$1}');
+            test -f '$REMOTE_ROOT/private/.htaccess';
+            EXPECTED=\$(php -r '\$m=json_decode(file_get_contents(\$argv[1]),true); echo strtolower((string)(\$m["sha256"]??""));' \"\$TMP/files/latest.json\");
+            ACTUAL=\$(sha256sum \"\$TMP/files/$APK\" | awk '{print \$1}');
             test -n \"\$EXPECTED\";
             test \"\$EXPECTED\" = \"\$ACTUAL\";
-            echo 'Server checksum: PASS'"
+            cp \"\$TMP/files/$APK\" '$REMOTE_ROOT/private/$APK';
+            cp \"\$TMP/files/latest.json\" '$REMOTE_ROOT/latest.json';
+            chmod 0644 '$REMOTE_ROOT/private/$APK' '$REMOTE_ROOT/latest.json';
+            echo 'Server publish + checksum: PASS'"
 
       - name: External update-channel smoke
         shell: bash
