@@ -57,20 +57,28 @@ if (!is_file($metaPath)) {
     sendJson(['error' => 'Update metadata not published'], 503);
 }
 
-$raw = file_get_contents($metaPath);
-$meta = json_decode((string)$raw, true);
+$meta = json_decode((string)file_get_contents($metaPath), true);
 if (!is_array($meta)) {
     sendJson(['error' => 'Invalid update metadata'], 503);
 }
 
 $latestBuild = max(0, (int)($meta['version_code'] ?? 0));
 $versionName = trim((string)($meta['version_name'] ?? ''));
-$downloadUrl = trim((string)($meta['download_url'] ?? ''));
+$apkFile = basename(trim((string)($meta['apk_file'] ?? '')));
 $sha256 = strtolower(trim((string)($meta['sha256'] ?? '')));
 
-if ($latestBuild <= 0 || $versionName === '' || $downloadUrl === '') {
+if ($latestBuild <= 0 || $versionName === '' || $apkFile === '' || $sha256 === '') {
     sendJson(['error' => 'Incomplete update metadata'], 503);
 }
+
+$expires = time() + 900;
+$signature = hash_hmac('sha256', $apkFile.'|'.$expires, JWT_SECRET);
+$scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'https';
+$host = (string)($_SERVER['HTTP_HOST'] ?? 'staging.assammotors.com');
+$downloadUrl = $scheme.'://'.$host.'/legacy/api/staff-app-download.php?file='
+    .rawurlencode($apkFile)
+    .'&expires='.$expires
+    .'&sig='.$signature;
 
 $latest = [
     'package_id' => (string)($meta['package_id'] ?? 'com.assammotors.staff'),
