@@ -42,7 +42,6 @@ jobs:
         run: |
           set -euo pipefail
           install -d -m 700 ~/.ssh
-          ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts
           if [ -n "$SSH_PRIVATE_KEY" ]; then
             printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
             chmod 600 ~/.ssh/id_ed25519
@@ -56,10 +55,10 @@ jobs:
         run: |
           set -euo pipefail
           if [ -n "$SSH_PRIVATE_KEY" ]; then
-            SSH_CMD=(ssh -i ~/.ssh/id_ed25519 -p "$SSH_PORT")
+            SSH_CMD=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=20 -i ~/.ssh/id_ed25519 -p "$SSH_PORT")
           else
             export SSHPASS="$SSH_PASSWORD"
-            SSH_CMD=(sshpass -e ssh -p "$SSH_PORT")
+            SSH_CMD=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=20 -p "$SSH_PORT")
           fi
 
           REMOTE_ROOT="/home/$SSH_USER/domains/assammotors.com/public_html/staging/staff-app"
