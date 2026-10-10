@@ -1,0 +1,107 @@
+name: Assam Motors FIX41 Diagnostic Report
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/staging-fix41-diagnostic.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+      BASE_URL: ${{ vars.STAGING_BASE_URL || 'https://staging.assammotors.com' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+
+      - name: Capture exact FIX41 remote diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p deployment/runtime
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH_CMD=(ssh -i ~/.ssh/id_ed25519 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH_CMD=(sshpass -e ssh -p "$SSH_PORT")
+          fi
+
+          set +e
+          "${SSH_CMD[@]}" "$SSH_USER@$SSH_HOST" "bash -s -- '$APP_ROOT' '$BASE_URL'" > deployment/runtime/FIX41_DIAGNOSTIC.txt 2>&1 <<'REMOTE'
+          set +e
+          APP_ROOT="$1"
+          BASE_URL="$2"
+          HTACCESS="$APP_ROOT/public/.htaccess"
+
+          echo "FIX41 DIAGNOSTIC"
+          echo "DATE=$(date -Is)"
+          echo "APP_ROOT_EXISTS=$(test -d "$APP_ROOT" && echo yes || echo no)"
+          echo "ARTISAN_EXISTS=$(test -f "$APP_ROOT/artisan" && echo yes || echo no)"
+          echo "PUBLIC_EXISTS=$(test -d "$APP_ROOT/public" && echo yes || echo no)"
+          echo "HTACCESS_EXISTS=$(test -f "$HTACCESS" && echo yes || echo no)"
+          if [ -f "$HTACCESS" ]; then
+            echo "HTACCESS_FIX41=$(grep -q 'FIX41_LEGACY_CUSTOMER_WEBROOT_REDIRECT' "$HTACCESS" && echo present || echo missing)"
+          fi
+
+          echo
+          echo "[DIRECT URL]"
+          curl -sS -o /tmp/f41_body -D /tmp/f41_head --max-redirs 0 -w 'HTTP_CODE=%{http_code}\n' "$BASE_URL/legacy/workshop/customers.php"
+          awk 'BEGIN{IGNORECASE=1} /^Location:/{gsub(/\r/,""); print "LOCATION="$0}' /tmp/f41_head
+          grep -qi 'Admin login required' /tmp/f41_body && echo "ADMIN_LOGIN_ERROR=yes" || echo "ADMIN_LOGIN_ERROR=no"
+
+          echo
+          echo "[ACTION URL]"
+          curl -sS -o /tmp/f41_action_body -D /tmp/f41_action_head --max-redirs 0 -w 'HTTP_CODE=%{http_code}\n' "$BASE_URL/legacy/workshop/customers.php?action=__probe__"
+          awk 'BEGIN{IGNORECASE=1} /^Location:/{gsub(/\r/,""); print "LOCATION="$0}' /tmp/f41_action_head
+
+          echo
+          echo "[CANDIDATE CUSTOMERS FILES]"
+          find "$HOME/domains/assammotors.com" -type f -path '*/legacy/workshop/customers.php' -print 2>/dev/null | sed "s#$HOME#~#g" | head -30
+
+          echo
+          echo "[CANDIDATE HTACCESS FILES]"
+          find "$HOME/domains/assammotors.com" -type f -name .htaccess -print 2>/dev/null | sed "s#$HOME#~#g" | head -50
+
+          rm -f /tmp/f41_body /tmp/f41_head /tmp/f41_action_body /tmp/f41_action_head
+          REMOTE
+          rc=$?
+          set -e
+          echo "SSH_EXIT=$rc" >> deployment/runtime/FIX41_DIAGNOSTIC.txt
+
+      - name: Commit diagnostic report
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "assam-motors-staging-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git pull --rebase origin main
+          git add deployment/runtime/FIX41_DIAGNOSTIC.txt
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "runtime: capture FIX41 diagnostic [skip ci]"
+          git push origin HEAD:main
