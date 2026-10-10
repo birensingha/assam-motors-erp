@@ -1,0 +1,111 @@
+name: Publish Staff App v6.0.25 Update
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/publish-staff-v6025.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ARTIFACT_URL: 'https://sdmntprindiasocentral.oaiusercontent.com/files/00000000-c2c0-8211-9bfd-50ea4681e970/raw?se=2026-10-10T18%3A07%3A00Z&sp=r&sv=2026-02-06&sr=b&scid=b10553d1-a658-56f9-91f7-d4615db95813&skoid=a3d7d4f3-706d-48bc-8860-17488c12cb39&sktid=a48cca56-e6da-484e-a814-9c849652bcb3&skt=2026-10-10T01%3A49%3A33Z&ske=2026-10-11T01%3A49%3A33Z&sks=b&skv=2026-02-06&sig=dtTRJKfthyRLOBkIiahoMMUaaXl00azKVgY/2U/vx/E%3D'
+
+    steps:
+      - name: Fetch production-signed v6.0.25
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/am-v6025
+          curl -fsSL --retry 3 "$ARTIFACT_URL" -o /tmp/am-v6025/release.zip
+          unzip -q /tmp/am-v6025/release.zip -d /tmp/am-v6025/files
+          APK="/tmp/am-v6025/files/Assam-Motors-Staff-v6.0.25-FRESH-PRODUCTION.apk"
+          META="/tmp/am-v6025/files/latest.json"
+          test -f "$APK"
+          test -f "$META"
+          EXPECTED="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["sha256"])' "$META")"
+          ACTUAL="$(sha256sum "$APK" | awk '{print $1}')"
+          test "$EXPECTED" = "$ACTUAL"
+          echo "v6.0.25 release integrity: PASS"
+
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+
+      - name: Publish official update files
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH_CMD=(ssh -i ~/.ssh/id_ed25519 -p "$SSH_PORT")
+            SCP_CMD=(scp -i ~/.ssh/id_ed25519 -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH_CMD=(sshpass -e ssh -p "$SSH_PORT")
+            SCP_CMD=(sshpass -e scp -P "$SSH_PORT")
+          fi
+
+          REMOTE_ROOT="/home/$SSH_USER/domains/assammotors.com/public_html/staging/staff-app"
+          APK="Assam-Motors-Staff-v6.0.25-FRESH-PRODUCTION.apk"
+
+          "${SSH_CMD[@]}" "$SSH_USER@$SSH_HOST" "set -e;
+            mkdir -p '$REMOTE_ROOT/private';
+            test -f '/home/$SSH_USER/domains/assammotors.com/public_html/staging/legacy/api/staff-app-update.php';
+            test -f '/home/$SSH_USER/domains/assammotors.com/public_html/staging/legacy/api/staff-app-download.php';
+            test -f '$REMOTE_ROOT/private/.htaccess'"
+
+          "${SCP_CMD[@]}"             "/tmp/am-v6025/files/$APK"             "$SSH_USER@$SSH_HOST:$REMOTE_ROOT/private/$APK"
+
+          "${SCP_CMD[@]}"             /tmp/am-v6025/files/latest.json             "$SSH_USER@$SSH_HOST:$REMOTE_ROOT/latest.json"
+
+          "${SSH_CMD[@]}" "$SSH_USER@$SSH_HOST" "set -e;
+            chmod 0644 '$REMOTE_ROOT/private/$APK' '$REMOTE_ROOT/latest.json';
+            EXPECTED=\$(php -r '\$m=json_decode(file_get_contents(\$argv[1]),true); echo strtolower((string)(\$m["sha256"]??""));' '$REMOTE_ROOT/latest.json');
+            ACTUAL=\$(sha256sum '$REMOTE_ROOT/private/$APK' | awk '{print \$1}');
+            test -n \"\$EXPECTED\";
+            test \"\$EXPECTED\" = \"\$ACTUAL\";
+            echo 'Server checksum: PASS'"
+
+      - name: External update-channel smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          META_CODE="$(curl -sS -o /tmp/latest -w '%{http_code}' 'https://staging.assammotors.com/staff-app/latest.json')"
+          test "$META_CODE" = "200"
+          grep -q '"version_code": 60025' /tmp/latest
+          grep -q '"version_name": "6.0.25"' /tmp/latest
+
+          API_CODE="$(curl -sS -o /tmp/update-api -w '%{http_code}' 'https://staging.assammotors.com/legacy/api/staff-app-update.php?platform=android&version_code=60024')"
+          test "$API_CODE" = "401"
+
+          PRIVATE_CODE="$(curl -sS -o /dev/null -w '%{http_code}' 'https://staging.assammotors.com/staff-app/private/Assam-Motors-Staff-v6.0.25-FRESH-PRODUCTION.apk')"
+          case "$PRIVATE_CODE" in
+            401|403|404) ;;
+            *) echo "Private APK unexpectedly public: HTTP $PRIVATE_CODE"; exit 1 ;;
+          esac
+
+          echo "v6.0.25 update channel smoke: PASS"
+
+      - name: Remove SSH key
+        if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519
