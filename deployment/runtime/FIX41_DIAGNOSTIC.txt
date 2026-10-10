@@ -1,0 +1,26 @@
+FIX41 DIAGNOSTIC
+DATE=2026-10-10T03:15:52+00:00
+APP_ROOT_EXISTS=yes
+ARTISAN_EXISTS=yes
+PUBLIC_EXISTS=yes
+HTACCESS_EXISTS=yes
+HTACCESS_FIX41=missing
+
+[DIRECT URL]
+HTTP_CODE=401
+ADMIN_LOGIN_ERROR=yes
+
+[ACTION URL]
+HTTP_CODE=401
+
+[CANDIDATE CUSTOMERS FILES]
+~/domains/assammotors.com/ASSAM_MOTORS_FIX40_BACKUP_20261009_143619/public/legacy/workshop/customers.php
+~/domains/assammotors.com/public_html/staging/legacy/workshop/customers.php
+~/domains/assammotors.com/assam-erp-staging/public/legacy/workshop/customers.php
+~/domains/assammotors.com/ASSAM_MOTORS_FIX20C_BACKUP_20261009_042027/public/legacy/workshop/customers.php
+
+[CANDIDATE HTACCESS FILES]
+~/domains/assammotors.com/public_html/staging/.htaccess
+~/domains/assammotors.com/assam-erp-staging/storage/app/fix41-backups/20261009_185611/.htaccess
+~/domains/assammotors.com/assam-erp-staging/public/.htaccess
+SSH_EXIT=0
