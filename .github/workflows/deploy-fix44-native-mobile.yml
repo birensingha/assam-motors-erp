@@ -50,14 +50,25 @@ jobs:
           fi
 
           tar -C "$PKG" -czf /tmp/fix44.tgz .
-          cat /tmp/fix44.tgz | "${SSH[@]}" "$SSH_USER@$SSH_HOST" "bash -s -- '$APP_ROOT'" <<'REMOTE'
+
+          REMOTE_TGZ="/tmp/assam-motors-fix44-${GITHUB_RUN_ID}.tgz"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            scp -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -P "$SSH_PORT" \
+              /tmp/fix44.tgz "$SSH_USER@$SSH_HOST:$REMOTE_TGZ"
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            sshpass -e scp -q -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P "$SSH_PORT" \
+              /tmp/fix44.tgz "$SSH_USER@$SSH_HOST:$REMOTE_TGZ"
+          fi
+
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "bash -s -- '$APP_ROOT' '$REMOTE_TGZ'" <<'REMOTE'
           set -euo pipefail
           APP_ROOT="$1"
+          REMOTE_TGZ="$2"
           TMP="$(mktemp -d)"
-          trap 'rm -rf "$TMP"' EXIT
-          cat > "$TMP/fix44.tgz"
+          trap 'rm -rf "$TMP"; rm -f "$REMOTE_TGZ"' EXIT
           mkdir -p "$TMP/pkg"
-          tar -C "$TMP/pkg" -xzf "$TMP/fix44.tgz"
+          tar -C "$TMP/pkg" -xzf "$REMOTE_TGZ"
           bash "$TMP/pkg/CHECK_FIX44_STAGING.sh" "$APP_ROOT"
           bash "$TMP/pkg/APPLY_FIX44_STAGING.sh" "$APP_ROOT"
           bash "$TMP/pkg/VERIFY_FIX44_STAGING.sh" "$APP_ROOT"
