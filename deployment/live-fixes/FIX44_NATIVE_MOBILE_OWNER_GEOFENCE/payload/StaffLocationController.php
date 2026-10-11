@@ -51,7 +51,7 @@ final class StaffLocationController extends Controller
             return response()->json(['message' => 'No active duty attendance.', 'reason' => 'NO_DUTY_ATTENDANCE'], 409);
         }
 
-        $recordedAt = CarbonImmutable::createFromTimestampMs((int)$data['location_time_ms'], 'Asia/Kolkata');
+        $recordedAt = CarbonImmutable::createFromTimestamp((int)floor(((int)$data['location_time_ms']) / 1000), 'Asia/Kolkata');
         if ($recordedAt->lt(CarbonImmutable::parse($attendance->check_in, 'Asia/Kolkata')->subMinutes(5))) {
             return response()->json(['message' => 'Location sample is outside duty window.', 'reason' => 'OUTSIDE_DUTY_WINDOW'], 409);
         }
