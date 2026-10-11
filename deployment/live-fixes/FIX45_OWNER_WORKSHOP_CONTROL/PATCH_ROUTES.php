@@ -44,6 +44,8 @@ $routes=<<<'PHPROUTES'
             Route::post('/admin/mobile/parts-requests/{requestId}/status', [OwnerWorkshopController::class, 'partsRequestStatus'])->whereNumber('requestId');
             Route::get('/admin/mobile/osl', [OwnerWorkshopController::class, 'osl']);
             Route::get('/admin/mobile/job-cards/{job}/osl', [OwnerWorkshopController::class, 'osl'])->whereNumber('job');
+            Route::post('/admin/mobile/job-cards/{job}/osl/request', [OwnerWorkshopController::class, 'requestOsl'])->whereNumber('job');
+            Route::post('/admin/mobile/osl-requests/{requestId}/status', [OwnerWorkshopController::class, 'oslRequestStatus'])->whereNumber('requestId');
             Route::post('/admin/mobile/osl/{osl}/status', [OwnerWorkshopController::class, 'oslStatus'])->whereNumber('osl');
             Route::get('/admin/mobile/staff/{staff}/attendance', [OwnerWorkshopController::class, 'staffAttendance'])->whereNumber('staff');
             Route::post('/admin/mobile/job-cards/{job}/qc', [OwnerWorkshopController::class, 'qc'])->whereNumber('job');
@@ -78,6 +80,18 @@ $c=ensureRouteAfter(
     "            Route::get('/admin/mobile/job-cards/{job}/osl', [OwnerWorkshopController::class, 'osl'])->whereNumber('job');",
     "            Route::post('/admin/mobile/osl/{osl}/status', [OwnerWorkshopController::class, 'oslStatus'])->whereNumber('osl');",
     'FIX45_OSL_STATUS_ROUTE'
+);
+$c=ensureRouteAfter(
+    $c,
+    "            Route::get('/admin/mobile/job-cards/{job}/osl', [OwnerWorkshopController::class, 'osl'])->whereNumber('job');",
+    "            Route::post('/admin/mobile/job-cards/{job}/osl/request', [OwnerWorkshopController::class, 'requestOsl'])->whereNumber('job');",
+    'FIX45_OSL_REQUEST_ROUTE'
+);
+$c=ensureRouteAfter(
+    $c,
+    "            Route::post('/admin/mobile/job-cards/{job}/osl/request', [OwnerWorkshopController::class, 'requestOsl'])->whereNumber('job');",
+    "            Route::post('/admin/mobile/osl-requests/{requestId}/status', [OwnerWorkshopController::class, 'oslRequestStatus'])->whereNumber('requestId');",
+    'FIX45_OSL_REQUEST_STATUS_ROUTE'
 );
 $c=ensureRouteAfter(
     $c,
