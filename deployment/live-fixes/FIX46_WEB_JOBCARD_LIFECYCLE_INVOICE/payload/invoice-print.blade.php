@@ -1,0 +1,40 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>{{ $inv->invoice_no }}</title>
+<style>
+body{font:13px Arial;color:#111;margin:22px}.head{display:flex;justify-content:space-between;border-bottom:3px solid #173c72;padding-bottom:12px}.head h1{margin:0;color:#173c72}.meta{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin:14px 0}.meta div{border:1px solid #ccc;padding:8px}.meta span{display:block;font-size:9px;text-transform:uppercase;color:#666}h2{font-size:14px;margin:18px 0 8px}table{width:100%;border-collapse:collapse}th,td{border:1px solid #bbb;padding:7px}th{background:#eee;text-align:left}.num{text-align:right}.tot{width:380px;margin:12px 0 0 auto}.tot div{display:flex;justify-content:space-between;border-bottom:1px solid #ddd;padding:5px}.grand{font-size:16px;font-weight:bold}.no-print{margin-bottom:12px}@media print{.no-print{display:none}body{margin:0}}
+</style>
+</head>
+<body>
+<button class="no-print" onclick="window.print()">Print / Save PDF</button>
+<div class="head"><div><h1>ASSAM MOTORS</h1><div>Workshop Tax Invoice</div></div><div><strong>{{ $inv->invoice_no }}</strong><br>Job: {{ $job->job_no }}</div></div>
+<div class="meta">
+  <div><span>Customer</span>{{ $inv->customer_name }}<br>{{ $inv->customer_phone }}</div>
+  <div><span>Vehicle</span>{{ $inv->vehicle_reg_no }}<br>{{ trim(($job->vehicle_make??'').' '.($job->vehicle_model??'')) }}</div>
+  <div><span>Invoice Date</span>{{ \Carbon\Carbon::parse($inv->invoice_date)->format('d-m-Y') }}</div>
+  <div><span>Status</span>{{ strtoupper((string)$inv->status) }}</div>
+</div>
+
+<h2>Parts</h2>
+<table><thead><tr><th>#</th><th>Part</th><th>Part No.</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">GST</th><th class="num">Total</th></tr></thead><tbody>
+@forelse($parts as $p)<tr><td>{{ $loop->iteration }}</td><td>{{ $p->part_name }}</td><td>{{ $p->part_number ?: $p->part_code }}</td><td class="num">{{ $p->qty }}</td><td class="num">₹{{ number_format((float)$p->rate,2) }}</td><td class="num">{{ number_format((float)($p->gst_percent??0),2) }}%</td><td class="num">₹{{ number_format((float)$p->total,2) }}</td></tr>@empty<tr><td colspan="7">No Parts.</td></tr>@endforelse
+</tbody></table>
+
+<h2>Labour / ROT</h2>
+<table><thead><tr><th>#</th><th>ROT</th><th>Description</th><th class="num">Std Hrs</th><th class="num">Rate</th><th class="num">GST</th><th class="num">Total</th></tr></thead><tbody>
+@forelse($labour as $l)<tr><td>{{ $loop->iteration }}</td><td>{{ $l->rot_code }}</td><td>{{ $l->description }}</td><td class="num">{{ number_format((float)$l->standard_hours,2) }}</td><td class="num">₹{{ number_format((float)$l->labour_rate,2) }}</td><td class="num">{{ number_format((float)($l->gst_percent??0),2) }}%</td><td class="num">₹{{ number_format((float)$l->total,2) }}</td></tr>@empty<tr><td colspan="7">No Labour.</td></tr>@endforelse
+</tbody></table>
+
+<div class="tot">
+<div><span>Parts</span><b>₹{{ number_format((float)$inv->parts_total,2) }}</b></div>
+<div><span>Labour</span><b>₹{{ number_format((float)$inv->labour_total,2) }}</b></div>
+<div><span>GST</span><b>₹{{ number_format((float)($inv->gst_total??$inv->tax_total??0),2) }}</b></div>
+<div><span>Round Off</span><b>₹{{ number_format((float)($inv->round_off??0),2) }}</b></div>
+<div class="grand"><span>Grand Total</span><b>₹{{ number_format((float)$inv->grand_total,2) }}</b></div>
+<div><span>Paid</span><b>₹{{ number_format((float)($inv->paid_amount??$inv->paid_total??0),2) }}</b></div>
+<div><span>Balance Due</span><b>₹{{ number_format((float)($inv->balance_due??$inv->balance_total??0),2) }}</b></div>
+</div>
+</body>
+</html>
