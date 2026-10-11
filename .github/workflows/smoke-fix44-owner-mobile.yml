@@ -1,0 +1,110 @@
+name: Smoke FIX44 Owner Mobile APIs
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/smoke-fix44-owner-mobile.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    env:
+      ADMIN_LOGIN: ${{ secrets.STAGING_ADMIN_LOGIN }}
+      ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+      BASE: https://staging.assammotors.com/api/v1
+    steps:
+      - name: Login Owner/Admin through native API
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ADMIN_LOGIN"
+          test -n "$ADMIN_PASSWORD"
+          python3 - <<'PY' > /tmp/login.json
+          import json,os
+          print(json.dumps({
+            "email":os.environ["ADMIN_LOGIN"],
+            "password":os.environ["ADMIN_PASSWORD"],
+            "device_name":"FIX44_OWNER_SMOKE"
+          }))
+          PY
+          code="$(curl -sS -o /tmp/auth.json -w '%{http_code}' -H 'Content-Type: application/json' -d @/tmp/login.json "$BASE/auth/login")"
+          test "$code" = "200"
+          python3 - <<'PY'
+          import json
+          j=json.load(open('/tmp/auth.json'))
+          assert j.get('token')
+          u=j.get('user') or {}
+          assert u.get('is_admin') is True
+          assert u.get('mobile_mode') == 'OWNER_ADMIN'
+          print('Owner native login: PASS')
+          PY
+          python3 - <<'PY' > /tmp/token
+          import json
+          print(json.load(open('/tmp/auth.json'))['token'], end='')
+          PY
+
+      - name: Smoke owner endpoints
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOKEN="$(cat /tmp/token)"
+          smoke(){
+            path="$1"; key="$2"
+            code="$(curl -sS -o /tmp/out.json -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "$BASE$path")"
+            if [ "$code" != "200" ]; then
+              echo "$path HTTP $code"
+              exit 1
+            fi
+            python3 - "$key" <<'PY'
+          import json,sys
+          j=json.load(open('/tmp/out.json'))
+          assert j.get('ok') is True
+          key=sys.argv[1]
+          if key: assert key in j
+          PY
+          }
+          smoke "/admin/mobile/dashboard" ""
+          smoke "/admin/mobile/staff" "staff"
+          smoke "/admin/mobile/staff-locations?latest=1" "locations"
+          smoke "/admin/mobile/job-cards" "job_cards"
+          smoke "/admin/mobile/customers" "customers"
+          echo "Owner mobile read APIs: PASS"
+
+      - name: Smoke one printable Job Card if available
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOKEN="$(cat /tmp/token)"
+          curl -sS -H "Authorization: Bearer $TOKEN" "$BASE/admin/mobile/job-cards" -o /tmp/jobs.json
+          JOB_ID="$(python3 - <<'PY'
+          import json
+          a=json.load(open('/tmp/jobs.json')).get('job_cards') or []
+          print(a[0].get('id','') if a else '')
+          PY
+          )"
+          if [ -n "$JOB_ID" ]; then
+            code="$(curl -sS -o /tmp/doc.json -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "$BASE/admin/mobile/documents/job-card/$JOB_ID")"
+            test "$code" = "200"
+            python3 - <<'PY'
+          import json
+          j=json.load(open('/tmp/doc.json'))
+          assert j.get('ok') is True and (j.get('document') or {}).get('type')=='JOB_CARD'
+          print('Printable Job Card API: PASS')
+          PY
+          else
+            echo "No Job Card available; printable smoke skipped."
+          fi
+
+      - name: Logout smoke token
+        if: always()
+        shell: bash
+        run: |
+          TOKEN="$(cat /tmp/token 2>/dev/null || true)"
+          if [ -n "$TOKEN" ]; then
+            curl -sS -o /dev/null -X POST -H "Authorization: Bearer $TOKEN" "$BASE/auth/logout" || true
+          fi
+          rm -f /tmp/login.json /tmp/auth.json /tmp/token /tmp/out.json /tmp/jobs.json /tmp/doc.json
