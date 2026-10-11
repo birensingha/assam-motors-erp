@@ -13,6 +13,79 @@ use Illuminate\Validation\ValidationException;
 
 final class OwnerWorkshopController extends Controller
 {
+    public function dashboard(Request $request): JsonResponse
+    {
+        $this->admin($request);
+        $today=CarbonImmutable::now('Asia/Kolkata')->toDateString();
+
+        $jobs=Schema::hasTable('job_cards') ? DB::table('job_cards')->get() : collect();
+        $open=$jobs->filter(fn($j)=>strtolower((string)($j->status??''))==='open')->count();
+        $wip=$jobs->filter(fn($j)=>strtolower((string)($j->status??''))==='in-progress')->count();
+        $qcPending=$jobs->filter(fn($j)=>str_contains(strtolower((string)($j->customer_public_status??'')),'quality check')
+            && !str_contains(strtolower((string)($j->customer_public_status??'')),'passed'))->count();
+        $ready=$jobs->filter(fn($j)=>str_contains(strtolower((string)($j->customer_public_status??'')),'ready for delivery'))->count();
+        $overdue=$jobs->filter(function($j) use($today){
+            if(empty($j->expected_date)) return false;
+            if(in_array(strtolower((string)($j->status??'')),['closed','invoiced','cancelled'],true)) return false;
+            return substr((string)$j->expected_date,0,10)<$today;
+        })->count();
+
+        $staffTotal=Schema::hasTable('staff')
+            ? DB::table('staff')->whereRaw("LOWER(COALESCE(status,'active'))='active'")->count()
+            : 0;
+        $present=Schema::hasTable('attendance')
+            ? DB::table('attendance')->whereDate('date',$today)->whereNotNull('check_in')->whereNull('check_out')->distinct('staff_id')->count('staff_id')
+            : 0;
+        $busy=Schema::hasTable('rot_sessions')
+            ? DB::table('rot_sessions')->where('status','Running')->distinct('staff_id')->count('staff_id')
+            : 0;
+
+        $rotRows=Schema::hasTable('rot_sessions')
+            ? DB::table('rot_sessions')->whereIn('status',['Assigned','Running','Paused'])->get()
+            : collect();
+        $overtime=$rotRows->filter(function($r){
+            if(strtolower((string)($r->status??''))!=='running') return false;
+            $std=(float)($r->std_hours??0)*3600;
+            if($std<=0 || empty($r->start_time)) return false;
+            $base=(int)($r->total_seconds??0);
+            $start=CarbonImmutable::parse($r->start_time,'Asia/Kolkata');
+            $live=max(0,CarbonImmutable::now('Asia/Kolkata')->diffInSeconds($start,false)*-1);
+            return ($base+$live)>$std;
+        })->count();
+
+        $alerts=Schema::hasTable('staff_reminder_state')
+            ? DB::table('staff_reminder_state')->whereNull('resolved_at')->get()
+            : collect();
+
+        return response()->json([
+            'ok'=>true,
+            'today'=>$today,
+            'job_cards'=>[
+                'open'=>$open,
+                'wip'=>$wip,
+                'qc_pending'=>$qcPending,
+                'ready_for_delivery'=>$ready,
+                'overdue'=>$overdue,
+            ],
+            'staff'=>[
+                'total_active'=>(int)$staffTotal,
+                'present'=>(int)$present,
+                'busy'=>(int)$busy,
+                'idle'=>max(0,(int)$present-(int)$busy),
+            ],
+            'rot'=>[
+                'running'=>$rotRows->where('status','Running')->count(),
+                'paused'=>$rotRows->where('status','Paused')->count(),
+                'assigned'=>$rotRows->where('status','Assigned')->count(),
+                'overtime'=>$overtime,
+            ],
+            'alerts'=>[
+                'pending'=>$alerts->count(),
+                'escalated'=>$alerts->filter(fn($a)=>!empty($a->escalated_at))->count(),
+            ],
+        ]);
+    }
+
     public function floor(Request $request): JsonResponse
     {
         $this->admin($request);
