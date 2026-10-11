@@ -9,6 +9,7 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use App\Services\RotWorkflowService;
 use Illuminate\Validation\ValidationException;
 
 final class OwnerWorkshopController extends Controller
@@ -547,6 +548,53 @@ final class OwnerWorkshopController extends Controller
         });
 
         return response()->json(['ok'=>true,'job'=>$this->job($job)]);
+    }
+
+    public function rotAction(Request $request, string $session, RotWorkflowService $service): JsonResponse
+    {
+        $user=$this->admin($request);
+        $data=$request->validate([
+            'action'=>['required','in:start,pause,resume,complete'],
+            'reason'=>['required','string','max:1000'],
+            'note'=>['nullable','string','max:2000'],
+        ]);
+
+        $beforeRow=DB::table('rot_sessions')->where('id',$session)->first();
+        abort_unless($beforeRow,404,'ROT session not found.');
+        $before=(array)$beforeRow;
+
+        $rot=match($data['action']){
+            'start'=>$service->start($session,$user->role,$user->staff_id,null),
+            'pause'=>$service->pause(
+                $session,
+                'Admin Control',
+                trim((string)($data['note'] ?? '')) ?: $data['reason'],
+                $user->role,
+                $user->staff_id,
+                null
+            ),
+            'resume'=>$service->resume($session,$user->role,$user->staff_id,null),
+            'complete'=>$service->complete($session,$user->role,$user->staff_id,null),
+        };
+
+        $afterRow=DB::table('rot_sessions')->where('id',$session)->first();
+        $after=$afterRow ? (array)$afterRow : (is_array($rot)?$rot:[]);
+        $jobCardId=(int)($beforeRow->job_card_id ?? 0) ?: null;
+        $staffId=(int)($beforeRow->staff_id ?? 0) ?: null;
+        $this->audit(
+            $user,
+            'ROT_ADMIN_'.strtoupper($data['action']),
+            'ROT_SESSION',
+            (string)$session,
+            $jobCardId,
+            $staffId,
+            $data['reason'],
+            $before,
+            $after,
+            ['note'=>$data['note'] ?? null]
+        );
+
+        return response()->json(['ok'=>true,'rot'=>$rot]);
     }
 
     public function requestPart(Request $request, int $job): JsonResponse
