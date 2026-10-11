@@ -1,0 +1,113 @@
+name: Inspect Staging Staff Admin Location Source
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/inspect-staging-staff-admin-location.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: /home/u956497103/domains/assammotors.com/assam-erp-staging
+    steps:
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+
+      - name: Collect relevant staging source
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p source
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$SSH_PORT")
+          fi
+
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "bash -s -- '$APP_ROOT'" > source/staging-staff-admin-location.txt <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          cd "$ROOT"
+
+          echo "=== ROUTES STAFF/ATTENDANCE/LOCATION/NOTIFICATION ==="
+          php artisan route:list --json 2>/dev/null | php -r '
+            $j=json_decode(stream_get_contents(STDIN),true)?:[];
+            foreach($j as $r){
+              $hay=strtolower(json_encode($r));
+              if(str_contains($hay,"staff")||str_contains($hay,"attendance")||str_contains($hay,"location")||str_contains($hay,"notification")||str_contains($hay,"device")){
+                echo json_encode($r,JSON_UNESCAPED_SLASHES)."\n";
+              }
+            }' || true
+
+          FILES=(
+            routes/api.php
+            routes/web.php
+            app/Http/Controllers/Api/V1/AuthController.php
+            app/Http/Controllers/Api/V1/AttendanceController.php
+            app/Http/Controllers/Api/V1/StaffDashboardController.php
+            app/Http/Controllers/Api/V1/StaffExtraController.php
+            app/Http/Controllers/Api/V1/StaffNotificationController.php
+            app/Http/Controllers/Api/V1/AdminStaffComplianceController.php
+            app/Http/Controllers/Api/V1/DeviceController.php
+            app/Http/Controllers/Web/StaffPortalController.php
+            app/Http/Controllers/Web/StaffWebAuthController.php
+            app/Http/Controllers/Web/AdminNativeModuleController.php
+            app/Http/Controllers/Web/AdminStaffNotificationPageController.php
+            app/Services/StaffDashboardService.php
+            app/Services/StaffReminderEngine.php
+            app/Services/MandatoryNotificationService.php
+            app/Services/FirebaseFcmService.php
+            app/Models/Staff.php
+            app/Models/StaffDevice.php
+            app/Models/StaffReminderState.php
+            resources/views/admin/native/staff-location.blade.php
+            resources/views/admin/native/staff.blade.php
+            resources/views/admin/staff-notifications.blade.php
+            resources/views/staff/portal.blade.php
+          )
+
+          for f in "${FILES[@]}"; do
+            if [ -f "$f" ]; then
+              echo
+              echo "===== FILE: $f ====="
+              sed -n '1,260p' "$f"
+            fi
+          done
+          REMOTE
+
+          grep -nE 'APP_KEY=|DB_PASSWORD=|PRIVATE KEY|BEGIN RSA|BEGIN OPENSSH|firebase.*private' source/staging-staff-admin-location.txt && {
+            echo "Secret-like material detected; refusing artifact."; exit 2;
+          } || true
+
+      - name: Upload inspection artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-staff-admin-location-source
+          path: source/staging-staff-admin-location.txt
+          retention-days: 1
+
+      - name: Remove SSH key
+        if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519
