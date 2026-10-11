@@ -1,0 +1,102 @@
+name: Inspect Staging Geofence Core
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/inspect-staging-geofence-core.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: /home/u956497103/domains/assammotors.com/assam-erp-staging
+    steps:
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+
+      - name: Inspect geofence core
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p source
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$SSH_PORT")
+          fi
+
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "bash -s -- '$APP_ROOT'" > source/geofence-core.txt <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"; cd "$ROOT"
+
+          echo "=== STAFF LOCATION ROUTES ==="
+          grep -n -E "staff-location|location" routes/web.php routes/api.php 2>/dev/null | head -160 || true
+
+          echo "=== LOCATION/ATTENDANCE FILE INVENTORY ==="
+          find app database/migrations -type f \( -iname '*location*' -o -iname '*attendance*' \) | sort
+
+          echo "=== MODEL/SERVICE REFERENCES ==="
+          grep -RniE "StaffLocationSetting|inside_geofence|distance_m|geofence_checkin_enabled|radius_m|max_accuracy_m|staff_location" app database/migrations 2>/dev/null | head -260 || true
+
+          FILES=(
+            app/Services/AttendanceService.php
+            app/Models/StaffLocationSetting.php
+            app/Models/StaffLocationLog.php
+            app/Models/Attendance.php
+          )
+          for f in "${FILES[@]}"; do
+            if [ -f "$f" ]; then
+              echo
+              echo "===== FILE: $f ====="
+              sed -n '1,320p' "$f"
+            fi
+          done
+
+          echo
+          echo "=== RELEVANT MIGRATIONS ==="
+          for f in database/migrations/*.php; do
+            if grep -qiE "staff_location|geofence|inside_geofence|distance_m|location_settings|attendance" "$f"; then
+              echo
+              echo "===== FILE: $f ====="
+              sed -n '1,300p' "$f"
+            fi
+          done
+
+          echo
+          echo "=== ADMIN NATIVE LOCATION METHODS ==="
+          grep -n -A90 -B20 -E "function (staffLocation|saveStaffLocation|updateStaffLocation|location)" app/Http/Controllers/Web/AdminNativeModuleController.php 2>/dev/null || true
+          REMOTE
+
+          grep -nE 'APP_KEY=|DB_PASSWORD=|PRIVATE KEY|BEGIN RSA|BEGIN OPENSSH' source/geofence-core.txt && {
+            echo "Secret-like material detected"; exit 2;
+          } || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: staging-geofence-core
+          path: source/geofence-core.txt
+          retention-days: 1
+
+      - if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519
