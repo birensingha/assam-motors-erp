@@ -40,6 +40,8 @@ $routes=<<<'PHPROUTES'
             Route::post('/admin/mobile/job-cards/{job}/inspection/assign', [OwnerWorkshopController::class, 'assignInspection'])->whereNumber('job');
             Route::post('/admin/mobile/job-cards/{job}/diagnosis', [OwnerWorkshopController::class, 'diagnosis'])->whereNumber('job');
             Route::post('/admin/mobile/rot/{session}/action', [OwnerWorkshopController::class, 'rotAction']);
+            Route::post('/admin/mobile/rot/{session}/reassign', [OwnerWorkshopController::class, 'rotReassign']);
+            Route::post('/admin/mobile/rot/{session}/reopen', [OwnerWorkshopController::class, 'rotReopen']);
             Route::post('/admin/mobile/job-cards/{job}/parts/request', [OwnerWorkshopController::class, 'requestPart'])->whereNumber('job');
             Route::post('/admin/mobile/job-cards/{job}/parts/{part}/status', [OwnerWorkshopController::class, 'partStatus'])->whereNumber('job')->whereNumber('part');
             Route::post('/admin/mobile/parts-requests/{requestId}/status', [OwnerWorkshopController::class, 'partsRequestStatus'])->whereNumber('requestId');
@@ -81,6 +83,18 @@ $c=ensureRouteAfter(
     "            Route::post('/admin/mobile/job-cards/{job}/diagnosis', [OwnerWorkshopController::class, 'diagnosis'])->whereNumber('job');",
     "            Route::post('/admin/mobile/rot/{session}/action', [OwnerWorkshopController::class, 'rotAction']);",
     'FIX45_ROT_ADMIN_ACTION_ROUTE'
+);
+$c=ensureRouteAfter(
+    $c,
+    "            Route::post('/admin/mobile/rot/{session}/action', [OwnerWorkshopController::class, 'rotAction']);",
+    "            Route::post('/admin/mobile/rot/{session}/reassign', [OwnerWorkshopController::class, 'rotReassign']);",
+    'FIX45_ROT_REASSIGN_ROUTE'
+);
+$c=ensureRouteAfter(
+    $c,
+    "            Route::post('/admin/mobile/rot/{session}/reassign', [OwnerWorkshopController::class, 'rotReassign']);",
+    "            Route::post('/admin/mobile/rot/{session}/reopen', [OwnerWorkshopController::class, 'rotReopen']);",
+    'FIX45_ROT_REOPEN_ROUTE'
 );
 $c=ensureRouteAfter(
     $c,
