@@ -41,6 +41,8 @@ $routes=<<<'PHPROUTES'
             Route::post('/admin/mobile/parts-requests/{requestId}/status', [OwnerWorkshopController::class, 'partsRequestStatus'])->whereNumber('requestId');
             Route::get('/admin/mobile/osl', [OwnerWorkshopController::class, 'osl']);
             Route::get('/admin/mobile/job-cards/{job}/osl', [OwnerWorkshopController::class, 'osl'])->whereNumber('job');
+            Route::post('/admin/mobile/osl/{osl}/status', [OwnerWorkshopController::class, 'oslStatus'])->whereNumber('osl');
+            Route::get('/admin/mobile/staff/{staff}/attendance', [OwnerWorkshopController::class, 'staffAttendance'])->whereNumber('staff');
             Route::post('/admin/mobile/job-cards/{job}/qc', [OwnerWorkshopController::class, 'qc'])->whereNumber('job');
             Route::post('/admin/mobile/job-cards/{job}/road-test', [OwnerWorkshopController::class, 'roadTest'])->whereNumber('job');
             Route::post('/admin/mobile/job-cards/{job}/key-custody', [OwnerWorkshopController::class, 'keyCustody'])->whereNumber('job');
