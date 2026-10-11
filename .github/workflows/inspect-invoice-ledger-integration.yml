@@ -1,0 +1,88 @@
+name: Inspect Invoice Ledger Integration
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/inspect-invoice-ledger-integration.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect invoice ledger staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+            SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$SSH_PORT")
+          else
+            sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$SSH_PORT")
+          fi
+          ROOT="/home/$SSH_USER/domains/assammotors.com/assam-erp-staging"
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "ROOT='$ROOT' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd "$ROOT"
+          echo '=== INVOICE TABLE NAMES ==='
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=Illuminate\Support\Facades\DB::getDatabaseName();
+          $rows=Illuminate\Support\Facades\DB::table('information_schema.tables')
+              ->where('table_schema',$db)->where('table_name','like','%invoice%')
+              ->orderBy('table_name')->pluck('table_name');
+          foreach($rows as $t) echo $t."\n";
+          PHP
+          echo '=== REFERENCES TO INVOICES / CUSTOMER LEDGER ==='
+          grep -Rni --include='*.php' -E "DB::table\('invoices'|table\('customer_ledger'|customer_ledger|invoice_id|invoice_no" app/Http app/Services app/Models routes resources/views 2>/dev/null | head -n 700 || true
+          echo '=== PAYMENT CONTROLLER METHODS ==='
+          for f in app/Http/Controllers/Web/*Payment*.php app/Http/Controllers/Web/*Customer*.php; do
+            [ -f "$f" ] || continue
+            echo "--- $f"
+            grep -nEi -A20 -B8 'customer_ledger|invoice|allocation|receipt|payment' "$f" | head -n 500 || true
+          done
+          echo '=== LATEST INVOICE SAMPLE ==='
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          if(Illuminate\Support\Facades\Schema::hasTable('invoices')){
+            foreach(Illuminate\Support\Facades\DB::table('invoices')->orderByDesc('id')->limit(5)->get() as $r){
+              echo json_encode($r,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
+            }
+          }
+          PHP
+          echo '=== LATEST LEDGER SAMPLE ==='
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          if(Illuminate\Support\Facades\Schema::hasTable('customer_ledger')){
+            foreach(Illuminate\Support\Facades\DB::table('customer_ledger')->orderByDesc('id')->limit(8)->get() as $r){
+              echo json_encode($r,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES)."\n";
+            }
+          }
+          PHP
+          REMOTE
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
