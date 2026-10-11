@@ -545,6 +545,43 @@ final class OwnerWorkshopController extends Controller
         return response()->json(['ok'=>true,'osl'=>$q->limit(250)->get()]);
     }
 
+    public function oslStatus(Request $request, int $osl): JsonResponse
+    {
+        $user=$this->admin($request);
+        $data=$request->validate([
+            'status'=>['required','in:PENDING,APPROVED,COMPLETED,CANCELLED'],
+            'billing_status'=>['nullable','string','max:40'],
+            'reason'=>['required','string','max:1000'],
+        ]);
+        $row=DB::table('workshop_purchases')->where('id',$osl)
+            ->whereRaw("UPPER(COALESCE(purchase_type,''))='OSL'")
+            ->whereNull('deleted_at')->first();
+        abort_unless($row,404,'OSL purchase line not found.');
+        $before=(array)$row;
+        $update=['record_status'=>$data['status'],'updated_at'=>now()];
+        if(array_key_exists('billing_status',$data) && Schema::hasColumn('workshop_purchases','customer_billing_status')) {
+            $update['customer_billing_status']=$data['billing_status'];
+        }
+        DB::table('workshop_purchases')->where('id',$osl)->update($update);
+        $after=(array)DB::table('workshop_purchases')->where('id',$osl)->first();
+        $this->audit($user,'OSL_STATUS','OSL_PURCHASE',(string)$osl,$row->job_card_id ? (int)$row->job_card_id : null,null,$data['reason'],$before,$after);
+        return response()->json(['ok'=>true,'osl'=>$after]);
+    }
+
+    public function staffAttendance(Request $request, int $staff): JsonResponse
+    {
+        $this->admin($request);
+        $this->activeStaff($staff);
+        $month=(string)$request->query('month',now('Asia/Kolkata')->format('Y-m'));
+        if(!preg_match('/^\d{4}-\d{2}$/',$month)) {
+            throw ValidationException::withMessages(['month'=>'Month must be YYYY-MM.']);
+        }
+        $start=$month.'-01';
+        $end=CarbonImmutable::parse($start,'Asia/Kolkata')->endOfMonth()->toDateString();
+        $rows=DB::table('attendance')->where('staff_id',$staff)->whereBetween('date',[$start,$end])->orderByDesc('date')->orderByDesc('id')->get();
+        return response()->json(['ok'=>true,'staff_id'=>$staff,'month'=>$month,'attendance'=>$rows]);
+    }
+
     public function qc(Request $request, int $job): JsonResponse
     {
         $user=$this->admin($request);
