@@ -1,5 +1,5 @@
 name: Deploy FIX45 Owner Workshop Control Staging
-# redeploy-v3-idempotent-import
+# redeploy-v4-full-owner-contract
 
 on:
   push:
