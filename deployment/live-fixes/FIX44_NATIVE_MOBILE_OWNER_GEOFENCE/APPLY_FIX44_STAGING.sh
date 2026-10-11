@@ -13,18 +13,19 @@ test -f "$PKG_DIR/payload/AttendanceController.php"
 test -f "$PKG_DIR/payload/RotWorkflowController.php"
 test -f "$PKG_DIR/payload/AdminMobileController.php"
 test -f "$PKG_DIR/payload/StaffLocationController.php"
+test -f "$PKG_DIR/payload/StaffNotificationController.php"
 
 mkdir -p "$BACKUP/app/Http/Controllers/Api/V1" "$BACKUP/routes"
 
 cp "$APP_ROOT/routes/api.php" "$BACKUP/routes/api.php"
-for f in AuthController.php AttendanceController.php RotWorkflowController.php; do
+for f in AuthController.php AttendanceController.php RotWorkflowController.php StaffNotificationController.php; do
   cp "$APP_ROOT/app/Http/Controllers/Api/V1/$f" "$BACKUP/app/Http/Controllers/Api/V1/$f"
 done
 
 restore() {
   echo "FIX44 rollback triggered"
   cp "$BACKUP/routes/api.php" "$APP_ROOT/routes/api.php" || true
-  for f in AuthController.php AttendanceController.php RotWorkflowController.php; do
+  for f in AuthController.php AttendanceController.php RotWorkflowController.php StaffNotificationController.php; do
     cp "$BACKUP/app/Http/Controllers/Api/V1/$f" "$APP_ROOT/app/Http/Controllers/Api/V1/$f" || true
   done
   rm -f "$APP_ROOT/app/Http/Controllers/Api/V1/AdminMobileController.php"         "$APP_ROOT/app/Http/Controllers/Api/V1/StaffLocationController.php"
@@ -37,10 +38,11 @@ cp "$PKG_DIR/payload/AttendanceController.php" "$APP_ROOT/app/Http/Controllers/A
 cp "$PKG_DIR/payload/RotWorkflowController.php" "$APP_ROOT/app/Http/Controllers/Api/V1/RotWorkflowController.php"
 cp "$PKG_DIR/payload/AdminMobileController.php" "$APP_ROOT/app/Http/Controllers/Api/V1/AdminMobileController.php"
 cp "$PKG_DIR/payload/StaffLocationController.php" "$APP_ROOT/app/Http/Controllers/Api/V1/StaffLocationController.php"
+cp "$PKG_DIR/payload/StaffNotificationController.php" "$APP_ROOT/app/Http/Controllers/Api/V1/StaffNotificationController.php"
 
 php "$PKG_DIR/PATCH_ROUTES.php" "$APP_ROOT"
 
-for f in   "$APP_ROOT/app/Http/Controllers/Api/V1/AuthController.php"   "$APP_ROOT/app/Http/Controllers/Api/V1/AttendanceController.php"   "$APP_ROOT/app/Http/Controllers/Api/V1/RotWorkflowController.php"   "$APP_ROOT/app/Http/Controllers/Api/V1/AdminMobileController.php"   "$APP_ROOT/app/Http/Controllers/Api/V1/StaffLocationController.php"   "$APP_ROOT/routes/api.php"
+for f in   "$APP_ROOT/app/Http/Controllers/Api/V1/AuthController.php"   "$APP_ROOT/app/Http/Controllers/Api/V1/AttendanceController.php"   "$APP_ROOT/app/Http/Controllers/Api/V1/RotWorkflowController.php"   "$APP_ROOT/app/Http/Controllers/Api/V1/AdminMobileController.php"   "$APP_ROOT/app/Http/Controllers/Api/V1/StaffLocationController.php"   "$APP_ROOT/app/Http/Controllers/Api/V1/StaffNotificationController.php"   "$APP_ROOT/routes/api.php"
 do
   php -l "$f"
 done
