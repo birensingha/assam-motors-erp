@@ -1,0 +1,70 @@
+name: Inspect Staging Geofence Status
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/inspect-staging-geofence-status.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: /home/u956497103/domains/assammotors.com/assam-erp-staging
+    steps:
+      - shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+
+      - shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$SSH_PORT")
+          fi
+
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "bash -s -- '$APP_ROOT'" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"; cd "$ROOT"
+          echo "=== GEOFENCE SERVICE ==="
+          sed -n '1,260p' app/Services/GeoFenceService.php
+          echo
+          echo "=== ATTENDANCE SERVICE ==="
+          sed -n '1,280p' app/Services/AttendanceService.php
+          echo
+          echo "=== CURRENT SAFE GEOFENCE STATUS ==="
+          php artisan tinker --execute='
+            $s=\App\Models\StaffLocationSetting::query()->whereKey(1)->first();
+            echo json_encode([
+              "exists"=>(bool)$s,
+              "workshop_name"=>$s?->workshop_name,
+              "coordinates_configured"=>($s && $s->latitude!==null && $s->longitude!==null),
+              "radius_m"=>(int)($s?->radius_m??0),
+              "max_accuracy_m"=>(int)($s?->max_accuracy_m??0),
+              "tracking_enabled"=>(bool)($s?->tracking_enabled??false),
+              "geofence_checkin_enabled"=>(bool)($s?->geofence_checkin_enabled??false),
+            ], JSON_PRETTY_PRINT);'
+          REMOTE
+
+      - if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519
