@@ -46,8 +46,8 @@ $jobController=app(AdminJobCardPageController::class);
 $jobView=$jobController->show(getReq($admin),$jobId,app(JobCardService::class));
 $jobHtml=$jobView->render();
 requireText($jobHtml,'Workshop Lifecycle & Billing','job-lifecycle-panel-render');
-requireText($jobHtml,'READY_FOR_DELIVERY','job-lifecycle-ready-stage-render');
-requireText($jobHtml,'INVOICED','job-lifecycle-invoiced-stage-render');
+requireText($jobHtml,'Ready Delivery','job-lifecycle-ready-stage-render');
+requireText($jobHtml,'Invoiced','job-lifecycle-invoiced-stage-render');
 
 $invoiceId=(int)(DB::table('invoices')->whereNotNull('job_card_id')->orderByDesc('id')->value('id')??0);
 if($invoiceId>0){
