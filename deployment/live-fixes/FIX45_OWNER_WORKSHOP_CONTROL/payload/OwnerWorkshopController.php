@@ -160,6 +160,10 @@ final class OwnerWorkshopController extends Controller
                 ->whereNull('deleted_at')->orderByDesc('id')->get()
             : collect();
 
+        $oslRequests = Schema::hasTable('workshop_osl_requests')
+            ? DB::table('workshop_osl_requests')->where('job_card_id', $job)->orderByDesc('id')->get()
+            : collect();
+
         $partRequests = Schema::hasTable('workshop_parts_requests')
             ? DB::table('workshop_parts_requests')->where('job_card_id', $job)->orderByDesc('id')->get()
             : collect();
@@ -194,6 +198,7 @@ final class OwnerWorkshopController extends Controller
             'rot_sessions' => $rots,
             'inspection' => $inspection,
             'osl' => $osl,
+            'osl_requests' => $oslRequests,
             'parts_requests' => $partRequests,
             'qc_checks' => $qc,
             'road_tests' => $road,
@@ -707,6 +712,61 @@ final class OwnerWorkshopController extends Controller
         $q=DB::table('workshop_purchases')->whereRaw("UPPER(COALESCE(purchase_type,''))='OSL'")->whereNull('deleted_at')->orderByDesc('id');
         if ($job) $q->where('job_card_id',$job);
         return response()->json(['ok'=>true,'osl'=>$q->limit(250)->get()]);
+    }
+
+    public function requestOsl(Request $request, int $job): JsonResponse
+    {
+        $user=$this->admin($request);
+        $this->job($job);
+        $data=$request->validate([
+            'description'=>['required','string','max:255'],
+            'vendor_name'=>['nullable','string','max:180'],
+            'estimated_cost'=>['nullable','numeric','min:0'],
+            'notes'=>['nullable','string','max:2000'],
+        ]);
+        $id=DB::table('workshop_osl_requests')->insertGetId([
+            'job_card_id'=>$job,
+            'description'=>trim($data['description']),
+            'vendor_name'=>trim((string)($data['vendor_name'] ?? '')) ?: null,
+            'estimated_cost'=>$data['estimated_cost'] ?? null,
+            'status'=>'REQUESTED',
+            'notes'=>trim((string)($data['notes'] ?? '')) ?: null,
+            'requested_by_user_id'=>$user->id,
+            'created_at'=>now(),
+            'updated_at'=>now(),
+        ]);
+        $after=(array)DB::table('workshop_osl_requests')->where('id',$id)->first();
+        $this->audit($user,'OSL_REQUEST','OSL_REQUEST',(string)$id,$job,null,$data['notes'] ?? 'Outside service requested',null,$after);
+        return response()->json(['ok'=>true,'osl_request'=>$after],201);
+    }
+
+    public function oslRequestStatus(Request $request, int $requestId): JsonResponse
+    {
+        $user=$this->admin($request);
+        $data=$request->validate([
+            'status'=>['required','in:REQUESTED,APPROVED,IN_PROGRESS,COMPLETED,CANCELLED'],
+            'vendor_name'=>['nullable','string','max:180'],
+            'estimated_cost'=>['nullable','numeric','min:0'],
+            'reason'=>['required','string','max:1000'],
+        ]);
+        $row=DB::table('workshop_osl_requests')->where('id',$requestId)->first();
+        abort_unless($row,404,'OSL request not found.');
+        $before=(array)$row;
+        $now=now('Asia/Kolkata');
+        $update=[
+            'status'=>$data['status'],
+            'processed_by_user_id'=>$user->id,
+            'updated_at'=>$now,
+        ];
+        if(array_key_exists('vendor_name',$data)) $update['vendor_name']=trim((string)$data['vendor_name']) ?: null;
+        if(array_key_exists('estimated_cost',$data)) $update['estimated_cost']=$data['estimated_cost'];
+        if($data['status']==='APPROVED') $update['approved_at']=$now;
+        if($data['status']==='IN_PROGRESS') $update['started_at']=$now;
+        if($data['status']==='COMPLETED') $update['completed_at']=$now;
+        DB::table('workshop_osl_requests')->where('id',$requestId)->update($update);
+        $after=(array)DB::table('workshop_osl_requests')->where('id',$requestId)->first();
+        $this->audit($user,'OSL_REQUEST_'.$data['status'],'OSL_REQUEST',(string)$requestId,(int)$row->job_card_id,null,$data['reason'],$before,$after);
+        return response()->json(['ok'=>true,'osl_request'=>$after]);
     }
 
     public function oslStatus(Request $request, int $osl): JsonResponse
