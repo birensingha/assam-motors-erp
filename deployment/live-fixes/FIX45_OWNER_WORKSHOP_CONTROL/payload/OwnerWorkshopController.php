@@ -960,7 +960,46 @@ final class OwnerWorkshopController extends Controller
             if (!empty($card->vehicle_reg_no)) $w->orWhere('vehicle_reg_no',$card->vehicle_reg_no);
             if (!empty($card->customer_phone)) $w->orWhere('customer_phone',$card->customer_phone);
         });
-        $jobs=$q->limit(100)->get();
+        $jobs=$q->limit(50)->get();
+        $ids=$jobs->pluck('id')->map(fn($x)=>(int)$x)->values()->all();
+
+        $parts=($ids && Schema::hasTable('job_card_parts'))
+            ? DB::table('job_card_parts')->whereIn('job_card_id',$ids)->orderBy('id')->get()->groupBy('job_card_id')
+            : collect();
+        $labour=($ids && Schema::hasTable('job_card_labour'))
+            ? DB::table('job_card_labour')->whereIn('job_card_id',$ids)->orderBy('id')->get()->groupBy('job_card_id')
+            : collect();
+        $rots=($ids && Schema::hasTable('rot_sessions'))
+            ? DB::table('rot_sessions')->whereIn('job_card_id',$ids)->orderBy('created_at')->get()->groupBy('job_card_id')
+            : collect();
+
+        $history=$jobs->map(function($j) use($parts,$labour,$rots){
+            $arr=(array)$j;
+            $arr['parts']=$parts->get($j->id,collect())->map(fn($x)=>[
+                'part_name'=>$x->part_name ?? null,
+                'part_code'=>$x->part_code ?? null,
+                'qty'=>$x->qty ?? null,
+                'issue_status'=>$x->issue_status ?? null,
+            ])->values();
+            $arr['labour']=$labour->get($j->id,collect())->map(fn($x)=>[
+                'rot_code'=>$x->rot_code ?? null,
+                'description'=>$x->description ?? null,
+                'standard_hours'=>$x->standard_hours ?? null,
+                'total_hours'=>$x->total_hours ?? null,
+                'execution_status'=>$x->execution_status ?? null,
+            ])->values();
+            $arr['rot_sessions']=$rots->get($j->id,collect())->map(fn($x)=>[
+                'id'=>$x->id ?? null,
+                'rot_code'=>$x->rot_code ?? null,
+                'rot_desc'=>$x->rot_desc ?? null,
+                'status'=>$x->status ?? null,
+                'staff_id'=>$x->staff_id ?? null,
+                'start_time'=>$x->start_time ?? null,
+                'end_time'=>$x->end_time ?? null,
+                'total_seconds'=>$x->total_seconds ?? null,
+            ])->values();
+            return $arr;
+        })->values();
 
         $vehicle=null;
         if (!empty($card->vehicle_id) && Schema::hasTable('am_vehicle_master')) {
@@ -971,7 +1010,13 @@ final class OwnerWorkshopController extends Controller
             $customer=DB::table('am_customer_master')->where('id',$card->customer_id)->first();
         }
 
-        return response()->json(['ok'=>true,'customer'=>$customer,'vehicle'=>$vehicle,'job_history'=>$jobs]);
+        return response()->json([
+            'ok'=>true,
+            'customer'=>$customer,
+            'vehicle'=>$vehicle,
+            'job_history'=>$history,
+            'last_service'=>$history->first(),
+        ]);
     }
 
     public function correctAttendance(Request $request, int $attendance): JsonResponse
