@@ -203,7 +203,7 @@ final class AdminMobileController extends Controller
             'staff_ids' => ['nullable', 'array', 'max:200'],
             'staff_ids.*' => ['integer', 'min:1'],
             'title' => ['required', 'string', 'max:160'],
-            'message' => ['required', 'string', 'max:2000'],
+            'message' => ['required', 'string', 'max:500'],
             'type' => ['nullable', 'string', 'max:60'],
             'require_ack' => ['nullable', 'boolean'],
         ]);
@@ -220,42 +220,52 @@ final class AdminMobileController extends Controller
         $ids = array_values(array_filter($ids, fn($x) => $x > 0));
         if (!$ids) return response()->json(['message' => 'No staff selected.'], 422);
 
-        $devices = StaffDevice::query()
-            ->whereIn('staff_id', $ids)
-            ->where('active', 1)
-            ->where('notification_permission', 1)
-            ->whereNull('fcm_invalidated_at')
-            ->whereNotNull('fcm_token')
-            ->get();
-
         $now = CarbonImmutable::now('Asia/Kolkata');
         $queued = 0;
-        foreach ($devices as $device) {
-            NotificationOutbox::query()->create([
-                'staff_id' => $device->staff_id,
-                'staff_device_id' => $device->id,
-                'reminder_state_id' => null,
-                'notification_type' => $data['type'] ?? 'ADMIN_BROADCAST',
-                'title' => $data['title'],
-                'body' => $data['message'],
-                'deep_link' => 'assammotors://staff/alerts',
-                'payload_json' => [
-                    'broadcast' => true,
-                    'require_ack' => (bool)($data['require_ack'] ?? false),
-                    'sent_by_admin_user_id' => $user->id,
-                ],
-                'status' => 'PENDING',
-                'available_at' => $now,
-            ]);
-            $queued++;
+        $pushDevices = 0;
+        foreach ($ids as $staffId) {
+            $devices = StaffDevice::query()
+                ->where('staff_id', $staffId)
+                ->where('active', 1)
+                ->where('notification_permission', 1)
+                ->whereNull('fcm_invalidated_at')
+                ->whereNotNull('fcm_token')
+                ->get();
+
+            // FCM-capable devices get one row each. If FCM is not configured on
+            // the Android client yet, keep one device-less row so native polling
+            // still delivers the Owner/Admin broadcast inside Staff App.
+            $targets = $devices->isNotEmpty() ? $devices : collect([null]);
+            foreach ($targets as $device) {
+                NotificationOutbox::query()->create([
+                    'staff_id' => $staffId,
+                    'staff_device_id' => $device?->id,
+                    'reminder_state_id' => null,
+                    'notification_type' => $data['type'] ?? 'ADMIN_BROADCAST',
+                    'title' => $data['title'],
+                    'body' => $data['message'],
+                    'deep_link' => 'assammotors://staff/alerts',
+                    'payload_json' => [
+                        'broadcast' => true,
+                        'require_ack' => (bool)($data['require_ack'] ?? false),
+                        'sent_by_admin_user_id' => $user->id,
+                        'polling_fallback' => $device === null,
+                    ],
+                    'status' => $device ? 'PENDING' : 'POLLING',
+                    'available_at' => $now,
+                ]);
+                $queued++;
+                if ($device) $pushDevices++;
+            }
         }
 
         return response()->json([
             'ok' => true,
             'selected_staff' => count($ids),
-            'devices_found' => $devices->count(),
+            'devices_found' => $pushDevices,
             'queued' => $queued,
-            'message' => $queued ? 'Broadcast queued.' : 'No compliant notification device found for selected staff.',
+            'polling_fallback' => $pushDevices === 0,
+            'message' => 'Broadcast queued for Staff App delivery.',
         ]);
     }
 
