@@ -105,6 +105,25 @@ if (!Schema::hasTable('workshop_reworks')) {
     echo "CREATE workshop_reworks\n";
 }
 
+if (!Schema::hasTable('workshop_osl_requests')) {
+    Schema::create('workshop_osl_requests', function (Blueprint $t) {
+        $t->bigIncrements('id');
+        $t->unsignedBigInteger('job_card_id')->index();
+        $t->string('description',255);
+        $t->string('vendor_name',180)->nullable();
+        $t->decimal('estimated_cost',14,2)->nullable();
+        $t->string('status',30)->default('REQUESTED')->index();
+        $t->text('notes')->nullable();
+        $t->unsignedBigInteger('requested_by_user_id')->nullable();
+        $t->unsignedBigInteger('processed_by_user_id')->nullable();
+        $t->dateTime('approved_at')->nullable();
+        $t->dateTime('started_at')->nullable();
+        $t->dateTime('completed_at')->nullable();
+        $t->timestamps();
+    });
+    echo "CREATE workshop_osl_requests\n";
+}
+
 if (!Schema::hasTable('workshop_parts_requests')) {
     Schema::create('workshop_parts_requests', function (Blueprint $t) {
         $t->bigIncrements('id');
