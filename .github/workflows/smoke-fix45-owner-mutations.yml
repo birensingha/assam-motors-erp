@@ -1,0 +1,43 @@
+name: Smoke FIX45 Owner Mutations Rollback
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/smoke-fix45-owner-mutations.yml"
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run rollback-only mutation smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+            SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$SSH_PORT")
+            SCP=(scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -P "$SSH_PORT")
+          else
+            sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P "$SSH_PORT")
+          fi
+          FILE="deployment/live-fixes/FIX45_OWNER_WORKSHOP_CONTROL/SMOKE_FIX45_MUTATIONS_ROLLBACK.php"
+          REMOTE="/home/$SSH_USER/SMOKE_FIX45_MUTATIONS_ROLLBACK.php"
+          ROOT="/home/$SSH_USER/domains/assammotors.com/assam-erp-staging"
+          "${SCP[@]}" "$FILE" "$SSH_USER@$SSH_HOST:$REMOTE"
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "php '$REMOTE' '$ROOT'; rc=\$?; rm -f '$REMOTE'; exit \$rc"
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
