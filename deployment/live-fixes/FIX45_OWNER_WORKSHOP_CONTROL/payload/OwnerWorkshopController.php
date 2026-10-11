@@ -579,12 +579,103 @@ final class OwnerWorkshopController extends Controller
             'status'=>['required','in:PENDING,PLANNED,ISSUED,FITTED,RETURNED'],
             'reason'=>['required','string','max:1000'],
         ]);
-        $row=DB::table('job_card_parts')->where('job_card_id',$job)->where('id',$part)->first();
-        abort_unless($row,404,'Job Card Part not found.');
-        $before=(array)$row;
-        DB::table('job_card_parts')->where('id',$part)->update(['issue_status'=>$data['status']]);
-        $after=(array)DB::table('job_card_parts')->where('id',$part)->first();
-        $this->audit($user,'PART_ISSUE_STATUS','JOB_CARD_PART',(string)$part,$job,null,$data['reason'],$before,$after);
+
+        $after=DB::transaction(function() use($user,$data,$job,$part){
+            $row=DB::table('job_card_parts')->where('job_card_id',$job)->where('id',$part)->lockForUpdate()->first();
+            abort_unless($row,404,'Job Card Part not found.');
+            $before=(array)$row;
+            $from=strtoupper(trim((string)($row->issue_status ?? 'PLANNED')));
+            $to=$data['status'];
+
+            $partMasterId=(int)($row->part_master_id ?? 0);
+            $qty=(float)($row->qty ?? 0);
+            if($qty<=0) throw ValidationException::withMessages(['part'=>'Invalid Job Card Part quantity.']);
+
+            $issueNeeded=in_array($from,['','PLANNED','PENDING'],true) && in_array($to,['ISSUED','FITTED'],true);
+            $returnNeeded=in_array($from,['ISSUED','FITTED'],true) && $to==='RETURNED';
+
+            if($issueNeeded || $returnNeeded){
+                if($partMasterId<=0 || !Schema::hasTable('parts_master') || !Schema::hasTable('inventory_movements')){
+                    throw ValidationException::withMessages(['part'=>'Stock-linked Part Master / inventory movement is required for Issue/Return.']);
+                }
+                $master=DB::table('parts_master')->where('id',$partMasterId)->lockForUpdate()->first();
+                if(!$master) throw ValidationException::withMessages(['part'=>'Parts Master row not found.']);
+
+                if($issueNeeded){
+                    $reference='JC-PART-'.$part.'-ISSUE';
+                    $already=DB::table('inventory_movements')
+                        ->where('part_master_id',$partMasterId)
+                        ->where('job_card_id',$job)
+                        ->where('movement_type','JOB_PART_ISSUE')
+                        ->where('reference_no',$reference)->exists();
+                    if($already) throw ValidationException::withMessages(['part'=>'Stock issue already recorded for this Job Card Part. Refresh first.']);
+
+                    $beforeStock=(float)($master->stock_qty ?? 0);
+                    if($beforeStock < $qty){
+                        throw ValidationException::withMessages(['part'=>'Insufficient stock. Available '.round($beforeStock,3).', required '.round($qty,3).'.']);
+                    }
+                    $afterStock=round($beforeStock-$qty,3);
+                    DB::table('parts_master')->where('id',$partMasterId)->update(['stock_qty'=>$afterStock]);
+                    DB::table('inventory_movements')->insert([
+                        'part_master_id'=>$partMasterId,
+                        'job_card_id'=>$job,
+                        'movement_type'=>'JOB_PART_ISSUE',
+                        'qty_in'=>0,
+                        'qty_out'=>$qty,
+                        'balance_after'=>$afterStock,
+                        'reference_no'=>$reference,
+                        'note'=>'Owner mobile Job Card Part issue · '.$data['reason'],
+                        'created_at'=>now(),
+                    ]);
+                }
+
+                if($returnNeeded){
+                    $issue=DB::table('inventory_movements')
+                        ->where('part_master_id',$partMasterId)
+                        ->where('job_card_id',$job)
+                        ->where('movement_type','JOB_PART_ISSUE')
+                        ->where('reference_no','JC-PART-'.$part.'-ISSUE')
+                        ->first();
+                    if(!$issue) throw ValidationException::withMessages(['part'=>'Original stock issue movement not found. Return blocked to protect stock.']);
+
+                    $reference='JC-PART-'.$part.'-RETURN';
+                    $already=DB::table('inventory_movements')
+                        ->where('part_master_id',$partMasterId)
+                        ->where('job_card_id',$job)
+                        ->where('movement_type','JOB_PART_RETURN')
+                        ->where('reference_no',$reference)->exists();
+                    if($already) throw ValidationException::withMessages(['part'=>'Stock return already recorded for this Part.']);
+
+                    $beforeStock=(float)($master->stock_qty ?? 0);
+                    $afterStock=round($beforeStock+$qty,3);
+                    DB::table('parts_master')->where('id',$partMasterId)->update(['stock_qty'=>$afterStock]);
+                    DB::table('inventory_movements')->insert([
+                        'part_master_id'=>$partMasterId,
+                        'job_card_id'=>$job,
+                        'movement_type'=>'JOB_PART_RETURN',
+                        'qty_in'=>$qty,
+                        'qty_out'=>0,
+                        'balance_after'=>$afterStock,
+                        'reference_no'=>$reference,
+                        'note'=>'Owner mobile Job Card Part return · '.$data['reason'],
+                        'created_at'=>now(),
+                    ]);
+                }
+            }
+
+            if($from==='RETURNED' && in_array($to,['ISSUED','FITTED'],true)){
+                throw ValidationException::withMessages(['part'=>'Returned Part ko direct re-issue nahi karein. New Job Card Part line/request create kijiye.']);
+            }
+
+            DB::table('job_card_parts')->where('id',$part)->update(['issue_status'=>$to]);
+            $after=(array)DB::table('job_card_parts')->where('id',$part)->first();
+            $this->audit($user,'PART_ISSUE_STATUS','JOB_CARD_PART',(string)$part,$job,null,$data['reason'],$before,$after,[
+                'stock_issue'=>$issueNeeded,
+                'stock_return'=>$returnNeeded,
+            ]);
+            return $after;
+        });
+
         return response()->json(['ok'=>true,'part'=>$after]);
     }
 
