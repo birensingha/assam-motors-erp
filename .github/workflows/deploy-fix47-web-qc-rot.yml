@@ -1,0 +1,58 @@
+name: Deploy FIX47 Web QC ROT Link Staging
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/deploy-fix47-web-qc-rot.yml"
+permissions:
+  contents: read
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Upload and apply incremental Web-only FIX47
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -o ConnectTimeout=20 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$SSH_PORT")
+            SCP=(scp -o ConnectTimeout=20 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=20 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o ConnectTimeout=20 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P "$SSH_PORT")
+          fi
+          PKG="deployment/live-fixes/FIX47_WEB_QC_ROT_LINK"
+          ROOT="/home/$SSH_USER/domains/assammotors.com/assam-erp-staging"
+          REMOTE="$SSH_USER@$SSH_HOST"
+          "${SSH[@]}" "$REMOTE" "mkdir -p ~/FIX47_WEB_QC_ROT_LINK"
+          "${SCP[@]}" "$PKG/PATCH_FIX47.php" "$PKG/APPLY_FIX47_STAGING.sh" "$REMOTE:~/FIX47_WEB_QC_ROT_LINK/"
+          "${SSH[@]}" "$REMOTE" "bash ~/FIX47_WEB_QC_ROT_LINK/APPLY_FIX47_STAGING.sh '$ROOT'"
+      - name: Unauthenticated GET smoke (no writes)
+        run: |
+          set -euo pipefail
+          code="$(curl -sS -o /dev/null -w '%{http_code}' --max-redirs 0 'https://staging.assammotors.com/erp/job-cards')"
+          test "$code" = "302"
+          echo "Staging Web auth boundary: PASS"
+      - name: Delete SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
