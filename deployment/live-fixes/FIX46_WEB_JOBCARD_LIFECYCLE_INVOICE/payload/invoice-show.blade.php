@@ -73,7 +73,7 @@ $paid=(float)($inv->paid_amount??$inv->paid_total??0);
   <div class="section-head"><div><h2 class="section-title">Customer Ledger Entries for this Invoice</h2></div></div>
   <div class="line-scroll"><table class="data-table"><thead><tr><th>Date</th><th>Type</th><th>Reference</th><th>Narration</th><th class="num">Debit</th><th class="num">Credit</th></tr></thead><tbody>
     @forelse($ledger as $e)
-      <tr><td>{{ $e->entry_date ?: optional($e->created_at)->format('d-m-Y') }}</td><td>{{ $e->entry_type }}</td><td>{{ $e->reference_no }}</td><td>{{ $e->narration ?: $e->note }}</td><td class="num">₹{{ number_format((float)($e->debit??0),2) }}</td><td class="num">₹{{ number_format((float)($e->credit??0),2) }}</td></tr>
+      <tr><td>{{ CarbonCarbon::parse($e->entry_date ?: $e->created_at)->format('d-m-Y') }}</td><td>{{ $e->entry_type }}</td><td>{{ $e->reference_no }}</td><td>{{ $e->narration ?: $e->note }}</td><td class="num">₹{{ number_format((float)($e->debit??0),2) }}</td><td class="num">₹{{ number_format((float)($e->credit??0),2) }}</td></tr>
     @empty<tr><td colspan="6" class="empty">No ledger entries.</td></tr>@endforelse
   </tbody></table></div>
 </div>
