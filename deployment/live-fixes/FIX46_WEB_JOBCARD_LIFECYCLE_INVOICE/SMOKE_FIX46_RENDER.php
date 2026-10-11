@@ -14,10 +14,17 @@ use App\Http\Controllers\Web\AdminJobCardPageController;
 use App\Models\ErpAuthUser;
 use App\Services\JobCardService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\View;
+use Illuminate\Support\MessageBag;
+use Illuminate\Support\ViewErrorBag;
 
 $admin=ErpAuthUser::query()->where('active',1)->get()->first(fn($u)=>$u->isAdmin());
 if(!$admin){fwrite(STDERR,"No active Admin\n");exit(10);}
+
+Auth::setUser($admin);
+View::share('errors',(new ViewErrorBag())->put('default',new MessageBag()));
 
 function getReq(ErpAuthUser $admin): Request {
     $r=Request::create('/','GET');
