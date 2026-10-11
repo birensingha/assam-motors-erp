@@ -1,0 +1,70 @@
+name: Inspect Native Mobile API Details
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/inspect-native-mobile-api-details.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: /home/u956497103/domains/assammotors.com/assam-erp-staging
+    steps:
+      - shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+
+      - shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "bash -s -- '$APP_ROOT'" > native-mobile-details.txt <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"; cd "$ROOT"
+          FILES=(
+            app/Http/Controllers/Api/V1/ReminderController.php
+            app/Http/Controllers/Api/V1/RotWorkflowController.php
+            app/Models/ErpAuthUser.php
+            app/Models/NotificationOutbox.php
+            app/Services/GeoFenceService.php
+          )
+          for f in "${FILES[@]}"; do
+            echo
+            echo "===== FILE: $f ====="
+            sed -n '1,360p' "$f"
+          done
+          REMOTE
+          grep -nE 'APP_KEY=|DB_PASSWORD=|PRIVATE KEY|BEGIN RSA|BEGIN OPENSSH' native-mobile-details.txt && exit 2 || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: native-mobile-api-details
+          path: native-mobile-details.txt
+          retention-days: 1
+
+      - if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519
