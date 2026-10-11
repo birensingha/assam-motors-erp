@@ -597,6 +597,62 @@ final class OwnerWorkshopController extends Controller
         return response()->json(['ok'=>true,'rot'=>$rot]);
     }
 
+    public function rotReassign(Request $request, string $session, RotWorkflowService $service): JsonResponse
+    {
+        $user=$this->admin($request);
+        $data=$request->validate([
+            'staff_id'=>['required','integer','min:1'],
+            'reason'=>['required','string','max:1000'],
+            'note'=>['required','string','max:2000'],
+        ]);
+        $this->activeStaff((int)$data['staff_id']);
+        $beforeRow=DB::table('rot_sessions')->where('id',$session)->first();
+        abort_unless($beforeRow,404,'ROT session not found.');
+        $before=(array)$beforeRow;
+
+        $rot=$service->changeMechanic(
+            $session,
+            (int)$data['staff_id'],
+            $data['reason'],
+            $data['note'],
+            $user->email ?: $user->name
+        );
+        $afterRow=DB::table('rot_sessions')->where('id',$session)->first();
+        $after=$afterRow ? (array)$afterRow : (is_array($rot)?$rot:[]);
+        $this->audit(
+            $user,'ROT_ADMIN_REASSIGN','ROT_SESSION',(string)$session,
+            (int)($beforeRow->job_card_id ?? 0) ?: null,
+            (int)$data['staff_id'],
+            $data['reason'],$before,$after,['note'=>$data['note']]
+        );
+        return response()->json(['ok'=>true,'rot'=>$rot]);
+    }
+
+    public function rotReopen(Request $request, string $session, RotWorkflowService $service): JsonResponse
+    {
+        $user=$this->admin($request);
+        $data=$request->validate([
+            'reason'=>['required','string','max:1000'],
+            'note'=>['required','string','max:2000'],
+        ]);
+        $beforeRow=DB::table('rot_sessions')->where('id',$session)->first();
+        abort_unless($beforeRow,404,'ROT session not found.');
+        $before=(array)$beforeRow;
+
+        $rot=$service->reopenResetEndTime(
+            $session,$data['reason'],$data['note'],$user->email ?: $user->name
+        );
+        $afterRow=DB::table('rot_sessions')->where('id',$session)->first();
+        $after=$afterRow ? (array)$afterRow : (is_array($rot)?$rot:[]);
+        $this->audit(
+            $user,'ROT_ADMIN_REOPEN','ROT_SESSION',(string)$session,
+            (int)($beforeRow->job_card_id ?? 0) ?: null,
+            (int)($beforeRow->staff_id ?? 0) ?: null,
+            $data['reason'],$before,$after,['note'=>$data['note']]
+        );
+        return response()->json(['ok'=>true,'rot'=>$rot]);
+    }
+
     public function requestPart(Request $request, int $job): JsonResponse
     {
         $user = $this->admin($request);
