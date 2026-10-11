@@ -1,0 +1,95 @@
+name: Verify FIX44 Geofence Enforcement
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/verify-fix44-geofence.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: /home/u956497103/domains/assammotors.com/assam-erp-staging
+    steps:
+      - shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+
+      - name: Verify server-side 100m geofence without exposing coordinates
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$SSH_PORT")
+          fi
+
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "bash -s -- '$APP_ROOT'" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"; cd "$ROOT"
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+
+          $settings=App\Models\StaffLocationSetting::query()->whereKey(1)->firstOrFail();
+          if(!$settings->geofence_checkin_enabled || (int)$settings->radius_m!==100){
+              throw new RuntimeException('100m geofence not enabled');
+          }
+
+          $svc=app(App\Services\GeoFenceService::class);
+          $lat=(float)$settings->latitude;
+          $lon=(float)$settings->longitude;
+
+          $inside=$svc->verify($lat,$lon,min(20,(float)$settings->max_accuracy_m),false);
+          if(!($inside['inside']??false)) throw new RuntimeException('Workshop centre was rejected');
+
+          // ~10 km north; never print source coordinates.
+          $farLat=$lat + (10.0/111.0);
+          $farRejected=false;
+          try { $svc->verify($farLat,$lon,min(20,(float)$settings->max_accuracy_m),false); }
+          catch(Throwable $e){ $farRejected=true; }
+          if(!$farRejected) throw new RuntimeException('10km point was not rejected');
+
+          $mockRejected=false;
+          try { $svc->verify($lat,$lon,min(20,(float)$settings->max_accuracy_m),true); }
+          catch(Throwable $e){ $mockRejected=true; }
+          if(!$mockRejected) throw new RuntimeException('Mock location was not rejected');
+
+          $weakRejected=false;
+          try { $svc->verify($lat,$lon,(float)$settings->max_accuracy_m+50,false); }
+          catch(Throwable $e){ $weakRejected=true; }
+          if(!$weakRejected) throw new RuntimeException('Weak GPS accuracy was not rejected');
+
+          echo "FIX44 GEOFENCE SELF-TEST: PASS\n";
+          echo "Radius: 100m\n";
+          echo "Workshop centre: accepted\n";
+          echo "~10km synthetic point: rejected\n";
+          echo "Mock location: rejected\n";
+          echo "Weak GPS accuracy: rejected\n";
+          PHP
+          REMOTE
+
+      - if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519
