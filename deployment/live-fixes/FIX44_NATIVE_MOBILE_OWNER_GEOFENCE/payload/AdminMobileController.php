@@ -182,12 +182,13 @@ final class AdminMobileController extends Controller
         if (!$table) return response()->json(['ok' => true, 'customers' => []]);
 
         $q = DB::table($table)->orderByDesc('id');
+        $hasEmail = Schema::hasColumn($table, 'email');
         $search = trim((string)$request->query('q', ''));
         if ($search !== '') {
             $like = "%{$search}%";
-            $q->where(function ($w) use ($like) {
+            $q->where(function ($w) use ($like, $hasEmail) {
                 $w->where('name', 'like', $like)->orWhere('phone', 'like', $like);
-                if (Schema::hasColumn($w->getModel()?->getTable() ?? '', 'email')) $w->orWhere('email', 'like', $like);
+                if ($hasEmail) $w->orWhere('email', 'like', $like);
             });
         }
         return response()->json(['ok' => true, 'customers' => $q->limit(200)->get()]);
