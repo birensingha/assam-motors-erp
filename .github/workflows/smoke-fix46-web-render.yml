@@ -1,5 +1,5 @@
 name: Smoke FIX46 Web Blade Render
-# rerun-display-labels
+# strict-render-after-invoice-fix
 
 on:
   push:
