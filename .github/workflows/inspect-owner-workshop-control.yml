@@ -1,0 +1,85 @@
+name: Inspect Owner Workshop Control Staging
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/inspect-owner-workshop-control.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Inspect staging workshop schema and routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$SSH_PORT")
+          fi
+          ROOT="/home/$SSH_USER/domains/assammotors.com/assam-erp-staging"
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "ROOT='$ROOT' bash -s" <<'REMOTE'
+          set -euo pipefail
+          cd "$ROOT"
+          echo '=== ROUTES ==='
+          php artisan route:list --path=api/v1 | grep -Ei 'job|inspection|diagn|attendance|rot|qc|ready|osl|part|vehicle|customer|audit|admin/mobile' || true
+          echo '=== TABLE/COLUMN MAP ==='
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $names=['job_cards','job_card_parts','job_card_labour','job_estimates','invoices','attendance','rot_sessions',
+                  'staff','staff_reminder_state','staff_location_logs','notification_outbox','vehicle_inspections',
+                  'inspections','diagnosis','diagnoses','osl_purchases','osl_purchase_items','outside_labour',
+                  'vehicles','vehicle_master','am_vehicle_master','am_customer_master','customer_master',
+                  'audit_logs','activity_log','job_card_status_history','job_card_history','qc_checks','quality_checks',
+                  'road_tests','vehicle_movements','vehicle_key_custody','parts_requisitions'];
+          foreach($names as $t){
+            if(!Illuminate\Support\Facades\Schema::hasTable($t)) continue;
+            echo "TABLE:$t\n";
+            try{
+              $cols=Illuminate\Support\Facades\DB::select("SHOW COLUMNS FROM ".$t);
+              foreach($cols as $c) echo "  ".$c->Field." ".$c->Type." ".($c->Null==='NO'?'NOTNULL':'NULL')."\n";
+            }catch(Throwable $e){ echo "  ERR ".$e->getMessage()."\n"; }
+          }
+          PHP
+          echo '=== API CONTROLLERS ==='
+          find app/Http/Controllers/Api/V1 -maxdepth 1 -type f -printf '%f\n' | sort | grep -Ei 'Job|Inspection|Attend|Rot|Admin|Customer|Vehicle|QC|Quality|Part|OSL|Audit' || true
+          echo '=== SERVICES ==='
+          find app/Services -maxdepth 1 -type f -printf '%f\n' | sort | grep -Ei 'Job|Inspection|Attend|Rot|Geo|QC|Quality|Part|OSL|Audit' || true
+          echo '=== CONTROLLER METHODS ==='
+          for f in app/Http/Controllers/Api/V1/*Job*Controller.php app/Http/Controllers/Api/V1/*Inspection*Controller.php app/Http/Controllers/Api/V1/*Attendance*Controller.php app/Http/Controllers/Api/V1/*Rot*Controller.php; do
+            [ -f "$f" ] || continue
+            echo "--- $f"
+            grep -nE 'public function|private function|status|QC|READY|reopen|assign|technician|inspection|diagn|parts|labour|osl' "$f" | head -220 || true
+          done
+          REMOTE
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
