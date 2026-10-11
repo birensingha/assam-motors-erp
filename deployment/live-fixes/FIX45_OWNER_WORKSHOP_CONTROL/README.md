@@ -9,8 +9,8 @@ Staging-native Owner/Admin mobile operations. No legacy backend is introduced.
 - Job Card lifecycle controls with QC / Ready-for-Delivery gates.
 - Inspection technician assignment.
 - Diagnosis complete/reopen.
-- Parts requisition + Part issued/fitted/returned status control.
-- OSL purchase visibility from existing `workshop_purchases`.
+- Parts requisition + stock-safe Part Issue/Fit/Return; Issue/Return writes inventory movements and updates Parts Master stock.
+- OSL request → approve → in-progress → complete/cancel workflow plus linked OSL purchase status control from existing `workshop_purchases`.
 - QC Pass / Fail with rework routing.
 - Road Test start/complete/cancel.
 - Vehicle key custody event history.
@@ -20,7 +20,7 @@ Staging-native Owner/Admin mobile operations. No legacy backend is introduced.
 - Staff pending/escalated alerts for Owner.
 - Owner action audit log.
 - Emergency lifecycle override only when explicit override + reason is submitted.
-- Existing ROT admin endpoints remain authoritative for reassign/reopen/history.
+- Existing `RotWorkflowService` remains authoritative; Owner mobile Start/Pause/Resume/Complete/Reassign/Reopen actions are wrapped with mandatory reason + Owner audit.
 
 ## Existing data reused
 - `job_cards`
@@ -41,5 +41,6 @@ Staging-native Owner/Admin mobile operations. No legacy backend is introduced.
 - `workshop_key_custody`
 - `workshop_reworks`
 - `workshop_parts_requests`
+- `workshop_osl_requests`
 
 No destructive migration is used.
