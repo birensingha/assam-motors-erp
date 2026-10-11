@@ -36,8 +36,17 @@ jobs:
           FILE="deployment/live-fixes/FIX45_OWNER_WORKSHOP_CONTROL/SMOKE_FIX45_MUTATIONS_ROLLBACK.php"
           REMOTE="/home/$SSH_USER/SMOKE_FIX45_MUTATIONS_ROLLBACK.php"
           ROOT="/home/$SSH_USER/domains/assammotors.com/assam-erp-staging"
-          "${SCP[@]}" "$FILE" "$SSH_USER@$SSH_HOST:$REMOTE"
-          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "php '$REMOTE' '$ROOT'; rc=\$?; rm -f '$REMOTE'; exit \$rc"
+          ok=0
+          for attempt in 1 2 3; do
+            echo "Mutation smoke SSH attempt $attempt"
+            if "${SCP[@]}" "$FILE" "$SSH_USER@$SSH_HOST:$REMOTE" && \
+               "${SSH[@]}" "$SSH_USER@$SSH_HOST" "php '$REMOTE' '$ROOT'; rc=\$?; rm -f '$REMOTE'; exit \$rc"; then
+              ok=1
+              break
+            fi
+            sleep 15
+          done
+          test "$ok" = "1"
       - name: Cleanup
         if: always()
         run: rm -f ~/.ssh/id_ed25519
