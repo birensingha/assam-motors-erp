@@ -1,0 +1,63 @@
+name: Inspect Notification Fallback Schema
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/inspect-notification-fallback-schema.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: /home/u956497103/domains/assammotors.com/assam-erp-staging
+    steps:
+      - shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "bash -s -- '$APP_ROOT'" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"; cd "$ROOT"
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          foreach(['notification_outbox','staff_devices'] as $table){
+              echo "TABLE ".$table."\n";
+              foreach(Illuminate\Support\Facades\DB::select("SHOW COLUMNS FROM ".$table) as $c){
+                  echo $c->Field."|".$c->Type."|".$c->Null."|".($c->Default??'')."\n";
+              }
+          }
+          echo "SERVER_FIREBASE_PROJECT=".(config('firebase.project_id')?'configured':'missing')."\n";
+          echo "SERVER_FIREBASE_ACCOUNT=".(is_file((string)config('firebase.service_account_path'))?'configured':'missing')."\n";
+          PHP
+          REMOTE
+      - if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519
