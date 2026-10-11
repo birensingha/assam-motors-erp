@@ -192,6 +192,29 @@ try {
         echo "attendance-correction: SKIP (no row)\n";
     }
 
+    $stockCandidate=DB::table('job_card_parts as p')
+        ->join('parts_master as m','m.id','=','p.part_master_id')
+        ->whereNotNull('p.part_master_id')
+        ->whereIn(DB::raw("UPPER(COALESCE(p.issue_status,'PLANNED'))"),['PLANNED','PENDING'])
+        ->where('p.qty','>',0)
+        ->whereColumn('m.stock_qty','>=','p.qty')
+        ->select('p.id','p.job_card_id','p.qty','p.part_master_id','m.stock_qty')
+        ->orderBy('p.id')
+        ->first();
+
+    if($stockCandidate){
+        dataOf($c->partStatus(req($admin,'POST',[
+            'status'=>'ISSUED',
+            'reason'=>'Rollback-only stock issue test'
+        ]),(int)$stockCandidate->job_card_id,(int)$stockCandidate->id),'part-stock-issue',['part']);
+        dataOf($c->partStatus(req($admin,'POST',[
+            'status'=>'RETURNED',
+            'reason'=>'Rollback-only stock return test'
+        ]),(int)$stockCandidate->job_card_id,(int)$stockCandidate->id),'part-stock-return',['part']);
+    } else {
+        echo "part-stock-issue-return: SKIP (no eligible planned Part with sufficient stock)\n";
+    }
+
     echo "FIX45 MUTATION CONTROLLERS: PASS\n";
 } finally {
     DB::rollBack();
