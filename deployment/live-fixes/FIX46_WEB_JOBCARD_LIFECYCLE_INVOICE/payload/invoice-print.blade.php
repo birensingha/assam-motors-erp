@@ -13,7 +13,7 @@ body{font:13px Arial;color:#111;margin:22px}.head{display:flex;justify-content:s
 <div class="meta">
   <div><span>Customer</span>{{ $inv->customer_name }}<br>{{ $inv->customer_phone }}</div>
   <div><span>Vehicle</span>{{ $inv->vehicle_reg_no }}<br>{{ trim(($job->vehicle_make??'').' '.($job->vehicle_model??'')) }}</div>
-  <div><span>Invoice Date</span>{{ \Carbon\Carbon::parse($inv->invoice_date)->format('d-m-Y') }}</div>
+  <div><span>Invoice Date</span>{{ date('d-m-Y',strtotime($inv->invoice_date)) }}</div>
   <div><span>Status</span>{{ strtoupper((string)$inv->status) }}</div>
 </div>
 
