@@ -39,30 +39,36 @@ function requireText(string $html,string $needle,string $name): void {
     echo "$name: PASS\n";
 }
 
-$jobId=(int)(DB::table('job_cards')->orderByDesc('id')->value('id')??0);
-if($jobId<=0){fwrite(STDERR,"No Job Card\n");exit(11);}
-
-$jobController=app(AdminJobCardPageController::class);
-$jobView=$jobController->show(getReq($admin),$jobId,app(JobCardService::class));
-$jobHtml=$jobView->render();
-requireText($jobHtml,'Workshop Lifecycle & Billing','job-lifecycle-panel-render');
-requireText($jobHtml,'Ready Delivery','job-lifecycle-ready-stage-render');
-requireText($jobHtml,'Invoiced','job-lifecycle-invoiced-stage-render');
-
-$invoiceId=(int)(DB::table('invoices')->whereNotNull('job_card_id')->orderByDesc('id')->value('id')??0);
-if($invoiceId>0){
-    $life=app(AdminJobCardLifecyclePageController::class);
-    $invoiceView=$life->showInvoice(getReq($admin),$invoiceId);
-    $invoiceHtml=$invoiceView->render();
-    requireText($invoiceHtml,'Invoice Totals','invoice-view-render');
-    requireText($invoiceHtml,'Customer Ledger Entries for this Invoice','invoice-ledger-render');
-
-    $printView=$life->printInvoice(getReq($admin),$invoiceId);
-    $printHtml=$printView->render();
-    requireText($printHtml,'Workshop Tax Invoice','invoice-print-render');
-    requireText($printHtml,'Print / Save PDF','invoice-print-pdf-control-render');
-}else{
-    echo "invoice-render: SKIP (no existing invoice)\n";
+try {
+    $jobId=(int)(DB::table('job_cards')->orderByDesc('id')->value('id')??0);
+    if($jobId<=0){fwrite(STDERR,"No Job Card\n");exit(11);}
+    
+    $jobController=app(AdminJobCardPageController::class);
+    $jobView=$jobController->show(getReq($admin),$jobId,app(JobCardService::class));
+    $jobHtml=$jobView->render();
+    requireText($jobHtml,'Workshop Lifecycle & Billing','job-lifecycle-panel-render');
+    requireText($jobHtml,'Ready Delivery','job-lifecycle-ready-stage-render');
+    requireText($jobHtml,'Invoiced','job-lifecycle-invoiced-stage-render');
+    
+    $invoiceId=(int)(DB::table('invoices')->whereNotNull('job_card_id')->orderByDesc('id')->value('id')??0);
+    if($invoiceId>0){
+        $life=app(AdminJobCardLifecyclePageController::class);
+        $invoiceView=$life->showInvoice(getReq($admin),$invoiceId);
+        $invoiceHtml=$invoiceView->render();
+        requireText($invoiceHtml,'Invoice Totals','invoice-view-render');
+        requireText($invoiceHtml,'Customer Ledger Entries for this Invoice','invoice-ledger-render');
+    
+        $printView=$life->printInvoice(getReq($admin),$invoiceId);
+        $printHtml=$printView->render();
+        requireText($printHtml,'Workshop Tax Invoice','invoice-print-render');
+        requireText($printHtml,'Print / Save PDF','invoice-print-pdf-control-render');
+    }else{
+        echo "invoice-render: SKIP (no existing invoice)\n";
+    }
+    
+    echo "FIX46 BLADE RENDER SMOKE: PASS\n";
+    
+} catch (\Throwable $e) {
+    fwrite(STDERR,"FIX46 STRICT RENDER FAIL: ".$e->getMessage()."\n");
+    exit(30);
 }
-
-echo "FIX46 BLADE RENDER SMOKE: PASS\n";
