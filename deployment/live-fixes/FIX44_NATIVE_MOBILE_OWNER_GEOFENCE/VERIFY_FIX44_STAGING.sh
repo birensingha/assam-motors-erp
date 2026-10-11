@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
 set -euo pipefail
 APP_ROOT="${1:-/home/u956497103/domains/assammotors.com/assam-erp-staging}"
-for f in   "$APP_ROOT/app/Http/Controllers/Api/V1/AuthController.php"   "$APP_ROOT/app/Http/Controllers/Api/V1/AttendanceController.php"   "$APP_ROOT/app/Http/Controllers/Api/V1/RotWorkflowController.php"   "$APP_ROOT/app/Http/Controllers/Api/V1/AdminMobileController.php"   "$APP_ROOT/app/Http/Controllers/Api/V1/StaffLocationController.php"   "$APP_ROOT/routes/api.php"
+for f in   "$APP_ROOT/app/Http/Controllers/Api/V1/AuthController.php"   "$APP_ROOT/app/Http/Controllers/Api/V1/AttendanceController.php"   "$APP_ROOT/app/Http/Controllers/Api/V1/RotWorkflowController.php"   "$APP_ROOT/app/Http/Controllers/Api/V1/AdminMobileController.php"   "$APP_ROOT/app/Http/Controllers/Api/V1/StaffLocationController.php"   "$APP_ROOT/app/Http/Controllers/Api/V1/StaffNotificationController.php"   "$APP_ROOT/routes/api.php"
 do
   php -l "$f" >/dev/null
 done
 grep -q "AM_NATIVE_STAFF_LOGIN_GEOFENCE_FIX44" "$APP_ROOT/app/Http/Controllers/Api/V1/AuthController.php"
 grep -q "admin/mobile/dashboard" "$APP_ROOT/routes/api.php"
 grep -q "staff/location" "$APP_ROOT/routes/api.php"
+grep -q "polling_fallback" "$APP_ROOT/app/Http/Controllers/Api/V1/AdminMobileController.php"
+grep -q "action_resolved_at" "$APP_ROOT/app/Http/Controllers/Api/V1/StaffNotificationController.php"
 cd "$APP_ROOT"
 php artisan route:list --path=api/v1 | grep -q "admin/mobile/dashboard"
 php artisan route:list --path=api/v1 | grep -q "staff/location"
