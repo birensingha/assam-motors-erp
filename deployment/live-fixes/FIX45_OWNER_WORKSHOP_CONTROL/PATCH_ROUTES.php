@@ -17,12 +17,14 @@ function afterOnce(string $src,string $anchor,string $insert,string $id): string
     return str_replace($anchor,$anchor."\n".$insert,$src);
 }
 
-$c=afterOnce(
-    $c,
-    "use App\\Http\\Controllers\\Api\\V1\\AdminMobileController;",
-    "use App\\Http\\Controllers\\Api\\V1\\OwnerWorkshopController;",
-    'FIX45_OWNER_WORKSHOP_IMPORT'
-);
+if (!str_contains($c, "use App\\Http\\Controllers\\Api\\V1\\OwnerWorkshopController;")) {
+    $c=afterOnce(
+        $c,
+        "use App\\Http\\Controllers\\Api\\V1\\AdminMobileController;",
+        "use App\\Http\\Controllers\\Api\\V1\\OwnerWorkshopController;",
+        'FIX45_OWNER_WORKSHOP_IMPORT'
+    );
+}
 
 $anchor="            Route::get('/admin/mobile/documents/job-card/{job}', [AdminMobileController::class, 'jobCardDocument'])->whereNumber('job');";
 $routes=<<<'PHPROUTES'
