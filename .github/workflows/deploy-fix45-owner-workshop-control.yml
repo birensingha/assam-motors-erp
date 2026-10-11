@@ -1,0 +1,105 @@
+name: Deploy FIX45 Owner Workshop Control Staging
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/deploy-fix45-owner-workshop-control.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+
+      - name: Upload FIX45
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$SSH_PORT")
+            SCP=(scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P "$SSH_PORT")
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          "${SSH[@]}" "$REMOTE" "rm -rf ~/FIX45_OWNER_WORKSHOP_CONTROL && mkdir -p ~/FIX45_OWNER_WORKSHOP_CONTROL"
+          "${SCP[@]}" -r deployment/live-fixes/FIX45_OWNER_WORKSHOP_CONTROL/* "$REMOTE:~/FIX45_OWNER_WORKSHOP_CONTROL/"
+
+      - name: Check
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"; SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$SSH_PORT")
+          fi
+          ROOT="/home/$SSH_USER/domains/assammotors.com/assam-erp-staging"
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "bash ~/FIX45_OWNER_WORKSHOP_CONTROL/CHECK_FIX45_STAGING.sh '$ROOT'"
+
+      - name: Apply
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"; SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$SSH_PORT")
+          fi
+          ROOT="/home/$SSH_USER/domains/assammotors.com/assam-erp-staging"
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "bash ~/FIX45_OWNER_WORKSHOP_CONTROL/APPLY_FIX45_STAGING.sh '$ROOT'"
+
+      - name: Verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"; SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$SSH_PORT")
+          fi
+          ROOT="/home/$SSH_USER/domains/assammotors.com/assam-erp-staging"
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "bash ~/FIX45_OWNER_WORKSHOP_CONTROL/VERIFY_FIX45_STAGING.sh '$ROOT'"
+
+      - name: External unauth smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          for url in \
+            "https://staging.assammotors.com/api/v1/admin/mobile/workshop-floor" \
+            "https://staging.assammotors.com/api/v1/admin/mobile/alerts" \
+            "https://staging.assammotors.com/api/v1/admin/mobile/audit"
+          do
+            code="$(curl -sS -o /tmp/body -w '%{http_code}' "$url")"
+            case "$code" in 401|403) ;; *) echo "Unexpected HTTP $code for $url"; cat /tmp/body; exit 1;; esac
+          done
+          echo "FIX45 external smoke: PASS"
+
+      - name: Cleanup key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
