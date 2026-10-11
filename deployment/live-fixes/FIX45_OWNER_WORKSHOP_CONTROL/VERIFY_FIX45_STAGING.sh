@@ -11,10 +11,15 @@ grep -q "public function roadTest" "$APP_ROOT/app/Http/Controllers/Api/V1/OwnerW
 grep -q "public function correctAttendance" "$APP_ROOT/app/Http/Controllers/Api/V1/OwnerWorkshopController.php"
 
 cd "$APP_ROOT"
+php artisan route:list --path=api/v1/admin/mobile | grep -q "workshop-dashboard"
 php artisan route:list --path=api/v1/admin/mobile | grep -q "workshop-floor"
 php artisan route:list --path=api/v1/admin/mobile | grep -q "job-cards/{job}/control"
 php artisan route:list --path=api/v1/admin/mobile | grep -q "job-cards/{job}/qc"
+php artisan route:list --path=api/v1/admin/mobile | grep -q "staff/{staff}/attendance"
+php artisan route:list --path=api/v1/admin/mobile | grep -q "osl/{osl}/status"
 php artisan route:list --path=api/v1/admin/mobile | grep -q "attendance/{attendance}/correct"
+grep -q "JOB_PART_ISSUE" "$APP_ROOT/app/Http/Controllers/Api/V1/OwnerWorkshopController.php"
+grep -q "JOB_PART_RETURN" "$APP_ROOT/app/Http/Controllers/Api/V1/OwnerWorkshopController.php"
 
 php <<'PHP'
 <?php
