@@ -7,6 +7,9 @@ grep -q "FIX46_WEB_JOBCARD_LIFECYCLE_INVOICE" "$APP_ROOT/routes/web.php"
 grep -q "job-cards.lifecycle-panel" "$APP_ROOT/resources/views/job-cards/show.blade.php"
 grep -q "FIX46_WEB_JOBCARD_LIFECYCLE_INVOICE" "$APP_ROOT/resources/views/job-cards/lifecycle-panel.blade.php"
 grep -q "Workshop Tax Invoice" "$APP_ROOT/resources/views/invoices/print.blade.php"
+! grep -R -q "CarbonCarbon" "$APP_ROOT/resources/views/invoices"
+grep -q "date('d-m-Y',strtotime" "$APP_ROOT/resources/views/invoices/show.blade.php"
+grep -q "date('d-m-Y',strtotime" "$APP_ROOT/resources/views/invoices/print.blade.php"
 cd "$APP_ROOT"
 php artisan route:list --json > /tmp/fix46_routes.json
 grep -q '"name":"erp.job-cards.lifecycle.work-complete"' /tmp/fix46_routes.json
