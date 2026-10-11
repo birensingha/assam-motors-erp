@@ -45,7 +45,7 @@ if($jobId<=0){fwrite(STDERR,"No Job Card\n");exit(11);}
 $jobController=app(AdminJobCardPageController::class);
 $jobView=$jobController->show(getReq($admin),$jobId,app(JobCardService::class));
 $jobHtml=$jobView->render();
-requireText($jobHtml,'Workshop Lifecycle &amp; Billing','job-lifecycle-panel-render');
+requireText($jobHtml,'Workshop Lifecycle & Billing','job-lifecycle-panel-render');
 requireText($jobHtml,'OPEN → WIP → WORK_COMPLETE → QC_PENDING → QC_PASSED → READY_FOR_DELIVERY → CLOSED → INVOICED','job-lifecycle-stepper-render');
 
 $invoiceId=(int)(DB::table('invoices')->whereNotNull('job_card_id')->orderByDesc('id')->value('id')??0);
