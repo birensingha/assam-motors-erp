@@ -3,6 +3,7 @@ namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\ErpAuthUser;
+use App\Models\StaffDevice;
 use App\Services\GeoFenceService;
 use App\Services\RotWorkflowService;
 use App\Services\MandatoryNotificationService;
@@ -16,7 +17,7 @@ final class RotWorkflowController extends Controller
     {
         [$user, $restrictedStaffId] = $this->actor($request, false);
         if ($restrictedStaffId) {
-            $notifications->assertCompliant($restrictedStaffId);
+            $this->assertNotificationReady($restrictedStaffId, $notifications);
             $this->assertStaffGeoFence($request, $geoFence);
         }
         $rot = $service->start($session, $user->role, $user->staff_id, $restrictedStaffId);
@@ -39,7 +40,7 @@ final class RotWorkflowController extends Controller
     {
         [$user, $restrictedStaffId] = $this->actor($request, false);
         if ($restrictedStaffId) {
-            $notifications->assertCompliant($restrictedStaffId);
+            $this->assertNotificationReady($restrictedStaffId, $notifications);
             $this->assertStaffGeoFence($request, $geoFence);
         }
         $rot = $service->resume($session, $user->role, $user->staff_id, $restrictedStaffId);
@@ -89,6 +90,21 @@ final class RotWorkflowController extends Controller
     {
         $this->admin($request);
         return response()->json(['ok' => true] + $service->history($session));
+    }
+
+    private function assertNotificationReady(int $staffId, MandatoryNotificationService $notifications): void
+    {
+        $status = $notifications->notificationCompliance($staffId);
+        if ($status['compliant'] ?? false) return;
+
+        $pollingCapable = StaffDevice::query()
+            ->where('staff_id', $staffId)
+            ->where('active', 1)
+            ->where('notification_permission', 1)
+            ->where('app_version', 'like', '6.1%')
+            ->exists();
+
+        if (!$pollingCapable) $notifications->assertCompliant($staffId);
     }
 
     private function assertStaffGeoFence(Request $request, GeoFenceService $geoFence): void
