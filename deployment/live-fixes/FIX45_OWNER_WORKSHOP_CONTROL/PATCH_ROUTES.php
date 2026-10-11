@@ -27,6 +27,7 @@ $c=afterOnce(
 $anchor="            Route::get('/admin/mobile/documents/job-card/{job}', [AdminMobileController::class, 'jobCardDocument'])->whereNumber('job');";
 $routes=<<<'PHPROUTES'
             // FIX45_OWNER_WORKSHOP_CONTROL — full Company Owner workshop operations.
+            Route::get('/admin/mobile/workshop-dashboard', [OwnerWorkshopController::class, 'dashboard']);
             Route::get('/admin/mobile/workshop-floor', [OwnerWorkshopController::class, 'floor']);
             Route::post('/admin/mobile/job-cards', [OwnerWorkshopController::class, 'createJob']);
             Route::get('/admin/mobile/job-cards/{job}/control', [OwnerWorkshopController::class, 'jobControl'])->whereNumber('job');
