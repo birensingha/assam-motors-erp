@@ -8,13 +8,15 @@ grep -q "job-cards.lifecycle-panel" "$APP_ROOT/resources/views/job-cards/show.bl
 grep -q "FIX46_WEB_JOBCARD_LIFECYCLE_INVOICE" "$APP_ROOT/resources/views/job-cards/lifecycle-panel.blade.php"
 grep -q "Workshop Tax Invoice" "$APP_ROOT/resources/views/invoices/print.blade.php"
 cd "$APP_ROOT"
-php artisan route:list | grep -q "erp.job-cards.lifecycle.work-complete"
-php artisan route:list | grep -q "erp.job-cards.lifecycle.qc-result"
-php artisan route:list | grep -q "erp.job-cards.lifecycle.ready"
-php artisan route:list | grep -q "erp.job-cards.lifecycle.close"
-php artisan route:list | grep -q "erp.job-cards.invoice.create"
-php artisan route:list | grep -q "erp.invoices.show"
-php artisan route:list | grep -q "erp.invoices.print"
+php artisan route:list --json > /tmp/fix46_routes.json
+grep -q '"name":"erp.job-cards.lifecycle.work-complete"' /tmp/fix46_routes.json
+grep -q '"name":"erp.job-cards.lifecycle.qc-result"' /tmp/fix46_routes.json
+grep -q '"name":"erp.job-cards.lifecycle.ready"' /tmp/fix46_routes.json
+grep -q '"name":"erp.job-cards.lifecycle.close"' /tmp/fix46_routes.json
+grep -q '"name":"erp.job-cards.invoice.create"' /tmp/fix46_routes.json
+grep -q '"name":"erp.invoices.show"' /tmp/fix46_routes.json
+grep -q '"name":"erp.invoices.print"' /tmp/fix46_routes.json
+rm -f /tmp/fix46_routes.json
 php artisan view:clear >/dev/null
 php artisan view:cache >/dev/null
 php artisan view:clear >/dev/null
