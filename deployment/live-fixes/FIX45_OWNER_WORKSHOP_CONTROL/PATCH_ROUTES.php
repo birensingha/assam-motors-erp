@@ -56,5 +56,33 @@ PHPROUTES;
 
 $c=afterOnce($c,$anchor,$routes,'FIX45_OWNER_WORKSHOP_CONTROL');
 
+
+// Incremental-safe route additions for already-installed FIX45 staging.
+function ensureRouteAfter(string $src,string $anchor,string $route,string $id): string {
+    if(str_contains($src,$route)) return $src;
+    $n=substr_count($src,$anchor);
+    if($n!==1) throw new RuntimeException($id.' anchor count='.$n);
+    return str_replace($anchor,$anchor."\n".$route,$src);
+}
+
+$c=ensureRouteAfter(
+    $c,
+    "            Route::get('/admin/mobile/workshop-floor', [OwnerWorkshopController::class, 'floor']);",
+    "            Route::get('/admin/mobile/workshop-dashboard', [OwnerWorkshopController::class, 'dashboard']);",
+    'FIX45_WORKSHOP_DASHBOARD_ROUTE'
+);
+$c=ensureRouteAfter(
+    $c,
+    "            Route::get('/admin/mobile/job-cards/{job}/osl', [OwnerWorkshopController::class, 'osl'])->whereNumber('job');",
+    "            Route::post('/admin/mobile/osl/{osl}/status', [OwnerWorkshopController::class, 'oslStatus'])->whereNumber('osl');",
+    'FIX45_OSL_STATUS_ROUTE'
+);
+$c=ensureRouteAfter(
+    $c,
+    "            Route::post('/admin/mobile/osl/{osl}/status', [OwnerWorkshopController::class, 'oslStatus'])->whereNumber('osl');",
+    "            Route::get('/admin/mobile/staff/{staff}/attendance', [OwnerWorkshopController::class, 'staffAttendance'])->whereNumber('staff');",
+    'FIX45_STAFF_ATTENDANCE_ROUTE'
+);
+
 if(file_put_contents($file,$c)===false) throw new RuntimeException('Cannot write routes/api.php');
 echo "FIX45 routes: PASS\n";
