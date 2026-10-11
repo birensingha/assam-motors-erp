@@ -1,5 +1,5 @@
 name: Smoke FIX46 Web Blade Render
-# rerun-literal-heading
+# rerun-stage-markers
 
 on:
   push:
