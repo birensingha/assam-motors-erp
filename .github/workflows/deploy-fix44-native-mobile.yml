@@ -1,0 +1,82 @@
+name: Deploy FIX44 Native Mobile Owner Geofence
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/deploy-fix44-native-mobile.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: /home/u956497103/domains/assammotors.com/assam-erp-staging
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+
+      - name: Upload and apply FIX44
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG="deployment/live-fixes/FIX44_NATIVE_MOBILE_OWNER_GEOFENCE"
+          test -f "$PKG/APPLY_FIX44_STAGING.sh"
+
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$SSH_PORT")
+          fi
+
+          tar -C "$PKG" -czf /tmp/fix44.tgz .
+          cat /tmp/fix44.tgz | "${SSH[@]}" "$SSH_USER@$SSH_HOST" "bash -s -- '$APP_ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP_ROOT="$1"
+          TMP="$(mktemp -d)"
+          trap 'rm -rf "$TMP"' EXIT
+          cat > "$TMP/fix44.tgz"
+          mkdir -p "$TMP/pkg"
+          tar -C "$TMP/pkg" -xzf "$TMP/fix44.tgz"
+          bash "$TMP/pkg/CHECK_FIX44_STAGING.sh" "$APP_ROOT"
+          bash "$TMP/pkg/APPLY_FIX44_STAGING.sh" "$APP_ROOT"
+          bash "$TMP/pkg/VERIFY_FIX44_STAGING.sh" "$APP_ROOT"
+          REMOTE
+
+      - name: External unauthenticated smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          code="$(curl -sS -o /tmp/admin -w '%{http_code}' https://staging.assammotors.com/api/v1/admin/mobile/dashboard)"
+          test "$code" = "401"
+
+          code="$(curl -sS -o /tmp/location -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' https://staging.assammotors.com/api/v1/staff/location)"
+          test "$code" = "401"
+
+          code="$(curl -sS -o /tmp/login -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' https://staging.assammotors.com/api/v1/auth/login)"
+          case "$code" in 400|422) ;; *) echo "Unexpected login validation HTTP $code"; cat /tmp/login; exit 1;; esac
+          echo "FIX44 external smoke: PASS"
+
+      - if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519 /tmp/fix44.tgz
