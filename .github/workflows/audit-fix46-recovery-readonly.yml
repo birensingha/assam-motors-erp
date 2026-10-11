@@ -1,0 +1,52 @@
+name: Read-only FIX46 Recovery Audit
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/audit-fix46-recovery-readonly.yml"
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare saved and staged code and run SELECT-only audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+            SSH=(ssh -T -o ConnectTimeout=20 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$SSH_PORT")
+          else
+            sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -T -o ConnectTimeout=20 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$SSH_PORT")
+          fi
+          ROOT="/home/$SSH_USER/domains/assammotors.com/assam-erp-staging"
+          PKG="deployment/live-fixes/FIX46_WEB_JOBCARD_LIFECYCLE_INVOICE"
+          echo '=== Saved source checksums ==='
+          sha256sum "$PKG/payload/AdminJobCardLifecyclePageController.php" "$PKG/payload/lifecycle-panel.blade.php" "$PKG/payload/invoice-show.blade.php" "$PKG/payload/invoice-print.blade.php"
+          echo '=== Staging read-only audit ==='
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "cd '$ROOT' && php" < "$PKG/AUDIT_FIX46_READONLY.php"
+          echo '=== Staging source markers ==='
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "cd '$ROOT' && grep -c 'FIX46_WEB_JOBCARD_LIFECYCLE_INVOICE' routes/web.php resources/views/job-cards/lifecycle-panel.blade.php && grep -c 'job-cards.lifecycle-panel' resources/views/job-cards/show.blade.php"
+          echo '=== Non-mutating external route smoke ==='
+          for url in \
+            "https://staging.assammotors.com/erp/job-cards" \
+            "https://staging.assammotors.com/erp/invoices/18"; do
+              code="$(curl -sS --max-redirs 0 -o /dev/null -w '%{http_code}' "$url" || true)"
+              echo "$url: HTTP $code (unauthenticated)"
+          done
+          echo 'READONLY RECOVERY AUDIT DONE'
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
