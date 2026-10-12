@@ -70,10 +70,10 @@ jobs:
           echo '== HR OPERATIONS REPORT READ ONLY RUNTIME =='
           php -r '
           require "vendor/autoload.php"; $app=require "bootstrap/app.php";
-          $app->make(\\Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
-          $service=$app->make(\\App\\Services\\HrOperationsService::class);
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $service=$app->make(\App\Services\HrOperationsService::class);
           $r=$service->report(now("Asia/Kolkata")->format("Y-m"));
-          echo "HR_OPERATIONS_RUNTIME_REPORT_PASS: staff_count=".$r["staff"]->count()."; recorded_attendance=".$r["attendance"]->count()."; rot_lines=".count($r["rows"])."; leave_accounts=".count($r["balances"])."\\n";'
+          echo "HR_OPERATIONS_RUNTIME_REPORT_PASS: staff_count=".$r["staff"]->count()."; recorded_attendance=".$r["attendance"]->count()."; rot_lines=".count($r["rows"])."; leave_accounts=".count($r["balances"])."\n";'
           echo 'HR ATTENDANCE/ROT READONLY AUDIT: PASS — no data rows read and no changes made.'
           REMOTE
       - name: Verify guest web and API security (no redirect following)
