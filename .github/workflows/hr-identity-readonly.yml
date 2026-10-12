@@ -1,0 +1,67 @@
+name: Assam Motors HR Login Read-Only Audit
+on:
+  push:
+    branches: [feature/hr-safe-preflight-20261012]
+    paths: [.github/workflows/hr-identity-readonly.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Prepare SSH
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+          fi
+      - name: Check real HR account linkage without printing personal data
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          php -r '
+          require "vendor/autoload.php";
+          $app=require "bootstrap/app.php";
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::class;
+          $staff=$db::table("staff");
+          $hr=$db::table("staff")->whereRaw("LOWER(TRIM(role)) = ?",["hr manager"]);
+          $qualified=$db::table("staff")->whereRaw("LOWER(TRIM(role)) = ?",["hr manager"])
+            ->whereRaw("LOWER(TRIM(department)) = ?",["human resources (hr)"])
+            ->whereRaw("LOWER(TRIM(status)) = ?",["active"])->get(["id","email"]);
+          $linked=0;
+          foreach($qualified as $s) {
+            $n=$db::table("erp_auth_users")->whereRaw("LOWER(TRIM(email)) = ?",[strtolower(trim((string)$s->email))])
+              ->where("staff_id",(int)$s->id)->where("role","staff")->where("active",1)->count();
+            if($n===1)$linked++;
+          }
+          echo "STAGING_HR_AUDIT: READ_ONLY\n";
+          echo "STAFF_TOTAL=".$staff->count()."\n";
+          echo "STAFF_HR_ROLE=".$hr->count()."\n";
+          echo "STAFF_HR_ROLE_DEPT_ACTIVE=".$qualified->count()."\n";
+          echo "STAFF_HR_LINKED_LARAVEL=".$linked."\n";
+          echo "ERP_AUTH_STAFF=".$db::table("erp_auth_users")->where("role","staff")->count()."\n";
+          echo "HR_ACCESS_GRANTS=".$db::table("hr_access_grants")->where("active",1)->count()."\n";
+          '
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
