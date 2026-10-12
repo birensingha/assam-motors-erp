@@ -1,0 +1,114 @@
+name: Assam Motors HR Attendance ROT Leave Phase 3 (Guarded)
+on:
+  push:
+    branches: [feature/hr-safe-preflight-20261012]
+    paths: [.github/workflows/hr-operations-phase3-staging.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-hr-staging
+  cancel-in-progress: false
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate HR payload locally (source only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG=deployment/live-fixes/HR_OPERATIONS_P3
+          for file in "$PKG"/APPLY_HR_OPERATIONS.php "$PKG"/payload/app/Services/*.php "$PKG"/payload/app/Http/Controllers/Web/*.php "$PKG"/payload/app/Http/Controllers/Api/V1/*.php "$PKG"/payload/database/migrations/*.php; do php -l "$file"; done
+          grep -q 'ASSAM_HR_OPERATIONS_P3' "$PKG/APPLY_HR_OPERATIONS.php"
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+      - name: Configure protected SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Readonly preflight then guarded HR code and migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          PKG=deployment/live-fixes/HR_OPERATIONS_P3
+          REMOTE="$SSH_USER@$SSH_HOST"
+          tar -C "$PKG" -czf /tmp/hr-operations-p3.tgz .
+          "${SSH[@]}" "$REMOTE" 'mkdir -p ~/hr-operations-deploy'
+          "${SCP[@]}" /tmp/hr-operations-p3.tgz "$REMOTE:~/hr-operations-deploy/HR_OPERATIONS_P3.tgz"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          STAGE="$HOME/hr-operations-deploy"
+          test -f "$APP/artisan"
+          mkdir -p "$STAGE/p3"
+          tar -C "$STAGE/p3" -xzf "$STAGE/HR_OPERATIONS_P3.tgz"
+          PATCH="$STAGE/p3/APPLY_HR_OPERATIONS.php"
+          php -l "$PATCH"
+          php "$PATCH" check
+          cd "$APP"
+          php -r '
+          require "vendor/autoload.php"; $app=require "bootstrap/app.php";
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          foreach (["hr_access_grants","hr_audit_logs","attendance","rot_sessions","rot_mechanic_segments"] as $t) {
+            if (!\Illuminate\Support\Facades\Schema::hasTable($t)) { fwrite(STDERR, "NO-GO missing existing foundation table\n"); exit(2); }
+          }
+          if (\Illuminate\Support\Facades\Schema::hasTable("hr_leave_entries")) { fwrite(STDERR, "NO-GO leave table already exists; reconcile first\n");exit(2); }
+          echo "HR P3 schema preflight: PASS (metadata only)\n";'
+          OUTPUT="$(php "$PATCH" apply)"
+          printf '%s\n' "$OUTPUT"
+          BACKUP="$(printf '%s\n' "$OUTPUT" | sed -n 's/^HR_OPERATIONS_P3 INSTALLED SOURCE ONLY; BACKUP=//p')"
+          test -n "$BACKUP" && test -d "$BACKUP"
+          revert_source() {
+            echo 'NO-GO: restoring backed-up HR and staff PHP/Blade source (leave table is not auto-dropped)'
+            for rel in routes/web.php routes/api.php resources/views/staff/portal.blade.php resources/views/hr/dashboard.blade.php; do
+              cp "$BACKUP/${rel//\//_}" "$APP/$rel"
+            done
+            for rel in app/Services/HrOperationsService.php app/Http/Controllers/Web/HrOperationsController.php app/Http/Controllers/Api/V1/HrOperationsApiController.php resources/views/hr/operations.blade.php database/migrations/2026_10_13_030000_create_hr_leave_ledger.php; do rm -f "$APP/$rel"; done
+            (cd "$APP" && php artisan view:clear >/dev/null 2>&1 && php artisan route:clear >/dev/null 2>&1) || true
+          }
+          trap revert_source ERR
+          for file in app/Services/HrOperationsService.php app/Http/Controllers/Web/HrOperationsController.php app/Http/Controllers/Api/V1/HrOperationsApiController.php routes/web.php routes/api.php database/migrations/2026_10_13_030000_create_hr_leave_ledger.php; do php -l "$file"; done
+          php artisan view:cache
+          php artisan view:clear
+          php artisan route:list --path=erp/hr/operations --except-vendor | grep -q 'erp/hr/operations'
+          php artisan route:list --path=api/v1/hr/operations --except-vendor | grep -q 'hr/operations'
+          php artisan migrate --path=database/migrations/2026_10_13_030000_create_hr_leave_ledger.php --force --no-interaction
+          php artisan optimize:clear
+          trap - ERR
+          echo 'HR_OPERATIONS_PHASE3_STAGING: PASS — audited attendance, ROT report, ledger, HR-only Staff Portal navigation.'
+          REMOTE_SCRIPT
+      - name: Verify guest access protections
+        shell: bash
+        run: |
+          set -euo pipefail
+          c="$(curl -sSL --max-time 20 --max-redirs 0 -o /dev/null -w '%{http_code}' https://staging.assammotors.com/erp/hr/operations)"
+          test "$c" = '302'
+          c="$(curl -sSL --max-time 20 --max-redirs 0 -o /dev/null -w '%{http_code}' -H 'Accept: application/json' https://staging.assammotors.com/api/v1/hr/operations)"
+          test "$c" = '401'
+          echo 'HR operations protected guest boundaries: PASS'
+      - name: Clean up credentials
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519" /tmp/hr-operations-p3.tgz
