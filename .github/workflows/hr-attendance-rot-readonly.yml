@@ -67,8 +67,24 @@ jobs:
             $cols=\Illuminate\Support\Facades\Schema::getColumnListing($table);
             echo "TABLE_SCHEMA ".$table."=".implode(",",$cols)."\n";
           }'
+          echo '== HR OPERATIONS REPORT READ ONLY RUNTIME =='
+          php -r '
+          require "vendor/autoload.php"; $app=require "bootstrap/app.php";
+          $app->make(\\Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
+          $service=$app->make(\\App\\Services\\HrOperationsService::class);
+          $r=$service->report(now("Asia/Kolkata")->format("Y-m"));
+          echo "HR_OPERATIONS_RUNTIME_REPORT_PASS: staff_count=".$r["staff"]->count()."; recorded_attendance=".$r["attendance"]->count()."; rot_lines=".count($r["rows"])."; leave_accounts=".count($r["balances"])."\\n";'
           echo 'HR ATTENDANCE/ROT READONLY AUDIT: PASS — no data rows read and no changes made.'
           REMOTE
+      - name: Verify guest web and API security (no redirect following)
+        shell: bash
+        run: |
+          set -euo pipefail
+          web="$(curl --max-time 20 -sS -o /dev/null -w '%{http_code}' --max-redirs 0 https://staging.assammotors.com/erp/hr/operations)"
+          api="$(curl --max-time 20 -sS -H 'Accept: application/json' -o /dev/null -w '%{http_code}' --max-redirs 0 https://staging.assammotors.com/api/v1/hr/operations)"
+          echo "HR_GUEST_WEB_HTTP=$web HR_GUEST_API_HTTP=$api"
+          test "$web" = 302 && test "$api" = 401
+          echo 'HR_OPERATIONS_ACCESS_BOUNDARY: PASS'
       - name: Remove SSH key
         if: always()
         run: rm -f "$HOME/.ssh/id_ed25519"
