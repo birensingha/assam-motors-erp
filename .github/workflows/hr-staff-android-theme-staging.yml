@@ -1,0 +1,101 @@
+name: Assam Motors HR and Staff Android-Style Web Theme
+on:
+  push:
+    branches: [feature/hr-safe-preflight-20261012]
+    paths: [.github/workflows/hr-staff-android-theme-staging.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-hr-staff-theme-staging
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate UI-only patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG='deployment/live-fixes/HR_STAFF_ANDROID_UI'
+          php -l "$PKG/APPLY_STAFF_ANDROID_THEME.php"
+          grep -q 'ASSAM_MOTORS_STAFF_ANDROID_THEME_V1' "$PKG/assam-staff-android-theme.css"
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+      - name: Configure protected staging SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Upload and install CSS-only theme on staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG='deployment/live-fixes/HR_STAFF_ANDROID_UI'
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p ~/hr-staff-theme'
+          "${SCP[@]}" "$PKG/APPLY_STAFF_ANDROID_THEME.php" "$PKG/assam-staff-android-theme.css" "$REMOTE:~/hr-staff-theme/"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/hr-staff-theme/APPLY_STAFF_ANDROID_THEME.php"
+          test -f "$ROOT/artisan" && test -f "$PATCH"
+          php -l "$PATCH"
+          php "$PATCH" check
+          OUTPUT="$(php "$PATCH" apply)"
+          printf '%s\n' "$OUTPUT"
+          BACKUP="$(printf '%s\n' "$OUTPUT" | sed -n 's/^APPLIED ASSAM_MOTORS_STAFF_ANDROID_THEME_V1; BACKUP=//p')"
+          test -n "$BACKUP" && test -d "$BACKUP"
+          rollback_theme() {
+            echo 'NO-GO: reverting HR and Staff web views (no database impact)'
+            for rel in resources/views/staff/portal.blade.php resources/views/hr/dashboard.blade.php resources/views/staff/hr/policies.blade.php; do
+              cp "$BACKUP/${rel//\//_}" "$ROOT/$rel"
+            done
+            (cd "$ROOT" && php artisan view:clear >/dev/null 2>&1) || true
+          }
+          trap rollback_theme ERR
+          for rel in resources/views/staff/portal.blade.php resources/views/hr/dashboard.blade.php resources/views/staff/hr/policies.blade.php; do
+            grep -q 'assam-motors-staff-android-theme-v1' "$ROOT/$rel"
+          done
+          cd "$ROOT"
+          php artisan view:clear
+          php artisan view:cache
+          php artisan view:clear
+          php artisan route:list --path=erp/hr --except-vendor | grep -q 'erp/hr'
+          trap - ERR
+          echo 'ASSAM_MOTORS_STAFF_AND_HR_WEB_THEME: STAGING PASS. Existing business logic untouched.'
+          REMOTE_SCRIPT
+      - name: Unauthenticated access boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          for url in 'https://staging.assammotors.com/staff' 'https://staging.assammotors.com/erp/hr'; do
+            code="$(curl --max-time 20 -sS -o /dev/null -w '%{http_code}' --max-redirs 0 "$url")"
+            test "$code" = '302' || { echo "Unexpected unauthenticated page response: HTTP $code"; exit 1; }
+          done
+          echo 'Staff and HR web pages still protected: PASS'
+      - if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519
