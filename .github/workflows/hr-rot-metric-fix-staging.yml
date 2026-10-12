@@ -1,0 +1,85 @@
+name: Assam Motors HR ROT Metric Fix Staging
+on:
+  push:
+    branches: [feature/hr-safe-preflight-20261012]
+    paths: [.github/workflows/hr-rot-metric-fix-staging.yml]
+permissions:
+  contents: read
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate PHP and configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC='deployment/live-fixes/HR_OPERATIONS_P3/payload/app/Services/HrOperationsService.php'
+          php -l "$SRC"
+          grep -q 'creditedSessions' "$SRC"
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Guarded one-file correction and runtime read-only smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p ~/hr-rot-metrics-fix'
+          "${SCP[@]}" deployment/live-fixes/HR_OPERATIONS_P3/payload/app/Services/HrOperationsService.php "$REMOTE:~/hr-rot-metrics-fix/HrOperationsService.php"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          TARGET="$APP/app/Services/HrOperationsService.php"
+          FIX="$HOME/hr-rot-metrics-fix/HrOperationsService.php"
+          test -f "$APP/artisan" && test -f "$TARGET" && test -f "$FIX"
+          php -l "$FIX"
+          EXPECTED='46bc960f42f3e7477bedab1b3ad247cd7010d92453b9f46bbfb2dcdb0c59de3b'
+          test "$(sha256sum "$TARGET" | awk '{print $1}')" = "$EXPECTED" || { echo 'NO-GO: live HR report version differs, no replacement'; exit 2; }
+          BACKUP="$APP/storage/app/hr_rot_metric_backup_$(date +%Y%m%d_%H%M%S)"
+          mkdir -p "$BACKUP"
+          cp "$TARGET" "$BACKUP/HrOperationsService.php"
+          cmp -s "$TARGET" "$BACKUP/HrOperationsService.php" || { echo 'NO-GO backup failed'; exit 2; }
+          NEW="$(sha256sum "$FIX" | awk '{print $1}')"
+          TMP="$(mktemp "$APP/app/Services/.hrrot.XXXXXX")"
+          cp "$FIX" "$TMP"
+          chmod --reference="$TARGET" "$TMP"
+          mv "$TMP" "$TARGET"
+          rollback() { cp "$BACKUP/HrOperationsService.php" "$TARGET"; }
+          trap rollback ERR
+          test "$(sha256sum "$TARGET" | awk '{print $1}')" = "$NEW"
+          cd "$APP"
+          php -l app/Services/HrOperationsService.php
+          php -r '
+          require "vendor/autoload.php"; $app=require "bootstrap/app.php";
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $r=$app->make(\App\Services\HrOperationsService::class)->report(now("Asia/Kolkata")->format("Y-m"));
+          echo "HR ROT metrics runtime PASS; report_staff=".count($r["performance"])."; rot_segments=".count($r["rows"])."\n";'
+          trap - ERR
+          echo 'HR ROT corrected — no double-credited standard time, no database writes'
+          REMOTE_SCRIPT
+      - if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519

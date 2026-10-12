@@ -1,0 +1,92 @@
+name: Assam Motors HR Phase 2A Read-only Preflight
+
+on:
+  push:
+    branches:
+      - feature/hr-safe-preflight-20261012
+    paths:
+      - .github/workflows/hr-phase2a-readonly-preflight.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: assam-motors-hr-readonly-preflight
+  cancel-in-progress: false
+
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Confirm connection configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          echo 'Staging credential availability: PASS (values hidden)'
+
+      - name: Set up temporary SSH credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+
+      - name: Inspect staging Laravel paths and route anchors (NO WRITES)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          echo '== HR phase 2A staging compatibility (READ-ONLY) =='
+          test -f "$APP/artisan" || { echo 'NO-GO: staging Laravel artisan missing'; exit 2; }
+          test -f "$APP/routes/web.php" && test -f "$APP/routes/api.php" || { echo 'NO-GO: Laravel routes missing'; exit 2; }
+          test -f "$APP/app/Models/ErpAuthUser.php" || { echo 'NO-GO: Laravel auth model missing'; exit 2; }
+          echo 'Laravel application and auth model: PRESENT'
+          php -l "$APP/routes/web.php"
+          php -l "$APP/routes/api.php"
+          php -l "$APP/app/Models/ErpAuthUser.php"
+          grep -Fq "Route::get('/', [StaffPortalController::class,'index'])->name('staff.portal');" "$APP/routes/web.php" || { echo 'NO-GO: Staff web route changed'; exit 2; }
+          grep -Fq "Route::post('/auth/logout', [AuthController::class, 'logout']);" "$APP/routes/api.php" || { echo 'NO-GO: API auth route changed'; exit 2; }
+          echo 'HR installer route anchors: PRESENT'
+          if grep -Fq 'ASSAM_HR_PHASE2A' "$APP/routes/web.php" || grep -Fq 'ASSAM_HR_PHASE2A' "$APP/routes/api.php"; then
+            echo 'HR Phase 2A route marker: PRESENT; STOP before reapplying'
+          else
+            echo 'HR Phase 2A route marker: ABSENT'
+          fi
+          SOURCE="$HOME/domains/assammotors.com/HR_PHASE2A/APPLY_HR_PHASE2A.php"
+          if [ -f "$SOURCE" ]; then
+            echo 'Previously extracted HR installer: PRESENT (not executed)'
+            php -l "$SOURCE"
+          else
+            echo 'Previously extracted HR installer: NOT PRESENT'
+          fi
+          echo 'Staging HR preflight: COMPLETE. No code, DB, staff permissions or APK changed.'
+          REMOTE
+
+      - name: Delete temporary SSH credentials
+        if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519
