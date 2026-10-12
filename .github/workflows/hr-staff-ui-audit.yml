@@ -1,0 +1,62 @@
+name: HR and Staff Web UI structure audit (read-only)
+on:
+  push:
+    branches: [feature/hr-safe-preflight-20261012]
+    paths: [.github/workflows/hr-staff-ui-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Set up SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+          fi
+      - name: Audit markup patterns only (no data, no changes)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          for REL in resources/views/staff/portal.blade.php resources/views/hr/dashboard.blade.php resources/views/staff/hr/policies.blade.php; do
+            F="$ROOT/$REL"
+            printf 'FILE=%s\n' "$REL"
+            if [ ! -f "$F" ]; then echo 'NOT_FOUND'; continue; fi
+            php -r '
+              $s=file_get_contents($argv[1]);
+              echo "BYTES=".strlen($s)." SHA256=".hash("sha256",$s)."\n";
+              echo "HEAD_TAG=". (stripos($s,"</head>")!==false?"YES":"NO") ." STYLE_TAG=".(stripos($s,"<style")!==false?"YES":"NO")."\n";
+              echo "BLADE_EXTENDS=".(strpos($s,"@extends")!==false?"YES":"NO")."\n";
+              preg_match_all("/class=[\x22\x27]([^\x22\x27]+)[\x22\x27]/",$s,$m);
+              $v=[];
+              foreach($m[1] as $group){foreach(preg_split("/\\s+/", $group) as $c){if(preg_match("/^[a-zA-Z][a-zA-Z0-9_-]*$/",$c))$v[$c]=true;}}
+              echo "CLASS_TOKENS=".implode(",",array_slice(array_keys($v),0,110))."\n";
+              preg_match_all("/<(?:main|header|nav|aside|section|h[1-3])\\b[^>]*>/i",$s,$tags);
+              echo "STRUCTURAL_TAGS=".implode("|",array_slice(array_map(fn($x)=>substr(preg_replace("/\\s+/", " ", $x),0,115),$tags[0]),0,26))."\n";
+            ' "$F"
+          done
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
