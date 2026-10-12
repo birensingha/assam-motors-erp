@@ -35,8 +35,8 @@ echo "JOB_NO=$jobNo\n";
 echo "JOB_ID=$id\n";
 showColumns('JOB',$job,['status','inspection_status','diagnosis_status','decision_status','estimate_allowed','current_estimate_id','work_started_at']);
 foreach ([
-    'rot_sessions'=>['id','status','job_card_labour_id','labour_id','rot_code','staff_id','first_start_at','start_time','end_time','updated_at'],
-    'job_card_labour'=>['id','rot_session_id','execution_status','rot_code','mechanic_name'],
+    'rot_sessions'=>['id','status','job_card_labour_id','labour_id','rot_code','first_start_at','start_time','end_time','updated_at'],
+    'job_card_labour'=>['id','rot_session_id','execution_status','rot_code'],
     'job_card_parts'=>['id','issue_status'],
     'job_estimates'=>['id','estimate_kind','status','converted_to_job_at','current_flag'],
     'workshop_job_estimates'=>['id','estimate_kind','status','converted_to_job_at','current_flag'],
