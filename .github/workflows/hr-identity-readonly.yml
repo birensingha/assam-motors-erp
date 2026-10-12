@@ -61,6 +61,15 @@ jobs:
           echo "STAFF_HR_LINKED_LARAVEL=".$linked."\n";
           echo "ERP_AUTH_STAFF=".$db::table("erp_auth_users")->where("role","staff")->count()."\n";
           echo "HR_ACCESS_GRANTS=".$db::table("hr_access_grants")->where("active",1)->count()."\n";
+          $hrCandidate=$qualified->count() === 1 ? $qualified->first() : null;
+          if ($hrCandidate) {
+            $same=$db::table("erp_auth_users")->whereRaw("LOWER(TRIM(email)) = ?",[strtolower(trim((string)$hrCandidate->email))])->get(["staff_id","role","active"]);
+            echo "HR_LARAVEL_SAME_EMAIL_ROWS=".$same->count()."\n";
+            echo "HR_LARAVEL_SAME_EMAIL_STAFF_ROLE=".$same->filter(fn($x)=>strtolower((string)$x->role)==="staff")->count()."\n";
+            echo "HR_LARAVEL_SAME_EMAIL_ACTIVE=".$same->filter(fn($x)=>(bool)$x->active)->count()."\n";
+            echo "HR_LARAVEL_SAME_EMAIL_CORRECT_LINK=".$same->filter(fn($x)=>(int)$x->staff_id===(int)$hrCandidate->id)->count()."\n";
+          }
+          echo "STAFF_COLUMNS=".implode(",",\\Illuminate\\Support\\Facades\\Schema::getColumnListing("staff"))."\n";
           '
           REMOTE
       - if: always()
