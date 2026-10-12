@@ -62,7 +62,7 @@ final class HrOperationsService
                 ->select('rot_session_id')->selectRaw('COUNT(DISTINCT staff_id) AS mechanics')
                 ->groupBy('rot_session_id')->pluck('mechanics','rot_session_id')->all();
         }
-        $productive = []; $standard = []; $tat = []; $rows = [];
+        $productive = []; $standard = []; $tat = []; $rows = []; $creditedSessions = []; $eligibleProductive = [];
         foreach ($segments as $s) {
             $seconds = max(0, (int)($s->productive_seconds ?? 0));
             $tatSeconds = null;
@@ -71,7 +71,14 @@ final class HrOperationsService
             }
             $shared = (int)($teamCounts[$s->rot_session_id] ?? 0) > 1;
             $prodH = round($seconds/3600, 2);
-            $stdH = !$shared && $s->ended_at && $s->std_hours !== null ? max(0,(float)$s->std_hours) : null;
+            $soleCompleted = !$shared && in_array(strtolower(trim((string)$s->status)), ['completed','complete'], true);
+            $creditKey = (int)$s->staff_id.'|'.(int)$s->rot_session_id;
+            $stdH = $soleCompleted && $s->ended_at && $s->std_hours !== null && !isset($creditedSessions[$creditKey])
+                ? max(0,(float)$s->std_hours) : null;
+            if ($stdH !== null) {
+                $creditedSessions[$creditKey] = true;
+                $eligibleProductive[$s->staff_id] = ($eligibleProductive[$s->staff_id] ?? 0) + $prodH;
+            }
             $row = [
                 'staff_id'=>(int)$s->staff_id,'staff_name'=>$s->staff_name ?: ($byId->get($s->staff_id)->name ?? 'Staff'),
                 'job_no'=>$s->job_card_no,'rot_code'=>$s->rot_code,'description'=>$s->rot_desc,
@@ -95,7 +102,7 @@ final class HrOperationsService
                 'duty_hours'=>$worked,'productive_hours'=>$prod,'standard_hours_sole_staff'=>$std,
                 'tat_hours'=>round((float)($tat[$sid] ?? 0),2),
                 'productivity_percent'=>$worked>0 ? round(100*$prod/$worked,1) : null,
-                'efficiency_percent'=>$prod>0 && $std>0 ? round(100*$std/$prod,1) : null,
+                'efficiency_percent'=>($eligibleProductive[$sid] ?? 0)>0 && $std>0 ? round(100*$std/$eligibleProductive[$sid],1) : null,
             ];
         }
         $ledgers = $pick(DB::table('hr_leave_entries'))
