@@ -69,7 +69,7 @@ jobs:
             echo "HR_LARAVEL_SAME_EMAIL_ACTIVE=".$same->filter(fn($x)=>(bool)$x->active)->count()."\n";
             echo "HR_LARAVEL_SAME_EMAIL_CORRECT_LINK=".$same->filter(fn($x)=>(int)$x->staff_id===(int)$hrCandidate->id)->count()."\n";
           }
-          echo "STAFF_COLUMNS=".implode(",",\\Illuminate\\Support\\Facades\\Schema::getColumnListing("staff"))."\n";
+          echo "STAFF_COLUMNS=".implode(",",\Illuminate\Support\Facades\Schema::getColumnListing("staff"))."\n";
           '
           REMOTE
       - if: always()
