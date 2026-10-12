@@ -70,6 +70,16 @@ jobs:
             echo "HR_LARAVEL_SAME_EMAIL_CORRECT_LINK=".$same->filter(fn($x)=>(int)$x->staff_id===(int)$hrCandidate->id)->count()."\n";
           }
           echo "STAFF_COLUMNS=".implode(",",\Illuminate\Support\Facades\Schema::getColumnListing("staff"))."\n";
+          if ($hrCandidate) {
+            $r=$db::table("staff")->where("id",$hrCandidate->id)->first(["password"]);
+            $info=password_get_info((string)($r->password ?? ""));
+            echo "HR_LEGACY_PASSWORD_HASH_ALGO=".($info["algoName"]??"unknown")."\n";
+            echo "HR_LEGACY_PASSWORD_HASH_VALID=".((in_array($info["algoName"]??"",["bcrypt","argon2i","argon2id"],true)) ? "yes" : "no")."\n";
+          }
+          $cols=\Illuminate\Support\Facades\DB::select("SHOW COLUMNS FROM erp_auth_users");
+          foreach ($cols as $c) {
+            echo "AUTH_COL_".(string)$c->Field."=".strtolower((string)$c->Type).";NULL=".(string)$c->Null.";DEFAULT=".(is_null($c->Default)?"NULL":"SET")."\n";
+          }
           '
           REMOTE
       - if: always()
