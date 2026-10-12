@@ -1,0 +1,142 @@
+name: Assam Motors HR Native ERP Staging (Guarded)
+
+on:
+  push:
+    branches: [feature/hr-safe-preflight-20261012]
+    paths:
+      - .github/workflows/hr-native-erp-staging.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: assam-motors-hr-native-staging-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate HR native installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -l deployment/live-fixes/HR_NATIVE_PHASE2B/APPLY_HR_NATIVE.php
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+      - name: Configure SSH (existing staging deployment credentials)
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Guarded staging-only HR code / schema deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'mkdir -p ~/hr-native-deploy'
+          "${SCP[@]}" deployment/live-fixes/HR_NATIVE_PHASE2B/APPLY_HR_NATIVE.php \
+            "$SSH_USER@$SSH_HOST:~/hr-native-deploy/APPLY_HR_NATIVE.php"
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/hr-native-deploy/APPLY_HR_NATIVE.php"
+          test -f "$APP/artisan" && test -f "$PATCH"
+          php -l "$PATCH"
+          php "$PATCH" check
+          cd "$APP"
+          # Additive migration only. Guard against unexpected tables, without reading salary/customer data.
+          php -r '
+          require "vendor/autoload.php";
+          $app = require "bootstrap/app.php";
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          foreach (["hr_access_grants","hr_policies","hr_policy_acknowledgments","hr_audit_logs"] as $t) {
+            if (\Illuminate\Support\Facades\Schema::hasTable($t)) {fwrite(STDERR,"NO-GO: HR table already exists: $t\n");exit(2);}
+          }
+          echo "HR schema preflight: PASS (no existing HR tables)\n";
+          '
+          OUTPUT="$(php "$PATCH" apply)"
+          printf '%s\n' "$OUTPUT"
+          BACKUP="$(printf '%s\n' "$OUTPUT" | sed -n 's/^APPLIED HR NATIVE SOURCE ONLY. BACKUP=//p')"
+          test -n "$BACKUP" && test -f "$BACKUP/routes_web.php" && test -f "$BACKUP/routes_api.php"
+          rollback_code() {
+            echo 'NO-GO: restoring original Laravel routes and HR code (HR tables, if created, retained)'
+            cp "$BACKUP/routes_web.php" "$APP/routes/web.php"
+            cp "$BACKUP/routes_api.php" "$APP/routes/api.php"
+            rm -f "$APP/app/Support/HrAccess.php" \
+              "$APP/app/Http/Middleware/EnsureHrManager.php" \
+              "$APP/app/Http/Controllers/Web/HrManagerController.php" \
+              "$APP/app/Http/Controllers/Web/StaffHrPolicyController.php" \
+              "$APP/app/Http/Controllers/Api/V1/HrApiController.php" \
+              "$APP/app/Console/Commands/GrantHrManagerAccess.php" \
+              "$APP/resources/views/staff/hr/policies.blade.php" \
+              "$APP/resources/views/hr/dashboard.blade.php"
+            php artisan optimize:clear >/dev/null 2>&1 || true
+          }
+          trap rollback_code ERR
+          php -l routes/web.php
+          php -l routes/api.php
+          php artisan route:list --path=erp/hr --except-vendor | grep 'erp/hr'
+          php artisan migrate --path=database/migrations/2026_10_12_220000_create_hr_foundation_tables.php --force --no-interaction
+          php artisan optimize:clear
+          # HR grants require a UNIQUE, active HR-designated linked account; no automatic creation/reset.
+          EMAIL="$(php -r '
+          require "vendor/autoload.php";
+          $app = require "bootstrap/app.php";
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $rows = \Illuminate\Support\Facades\DB::table("staff")
+            ->whereRaw("LOWER(TRIM(role)) = ?",["hr manager"])
+            ->whereRaw("LOWER(TRIM(department)) = ?",["human resources (hr)"])
+            ->whereRaw("LOWER(TRIM(status)) = ?",["active"])->get(["id","email"]);
+          if ($rows->count() !== 1) {exit(0);}
+          $s=$rows->first();
+          $u=\Illuminate\Support\Facades\DB::table("erp_auth_users")
+            ->whereRaw("LOWER(email) = ?",[strtolower(trim($s->email))])
+            ->where("staff_id",(int)$s->id)->where("role","staff")->where("active",1)->count();
+          if ($u===1) echo strtolower(trim($s->email));
+          ')"
+          if [ -n "$EMAIL" ]; then
+            php artisan hr:grant-manager "$EMAIL"
+            php artisan hr:grant-manager "$EMAIL" --apply
+            echo 'Unique verified HR account: GRANT APPLIED (email hidden)'
+          else
+            echo 'HR ACCESS PENDING: unique linked HR Manager not proven; no grant applied.'
+          fi
+          unset EMAIL
+          trap - ERR
+          echo 'HR_NATIVE_STAGING_DEPLOY: CODE + SCHEMA PASS'
+          REMOTE
+      - name: Guest boundary smoke (HR not public)
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -sS -o /dev/null -w '%{http_code}' --max-redirs 0 https://staging.assammotors.com/erp/hr)
+          test "$code" = 302 || { echo "Expected HR auth redirect 302, got $code"; exit 1; }
+          echo 'HR native ERP guest redirect: PASS'
+      - name: Remove temporary SSH key
+        if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519
