@@ -1,0 +1,107 @@
+name: Assam Motors Direct HR Browser Sign-In Staging
+on:
+  push:
+    branches: [fix/hr-direct-login-p8ing-20261013]
+    paths: [.github/workflows/hr-direct-login-staging.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-hr-direct-login-p8
+  cancel-in-progress: false
+jobs:
+  guarded-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify patch and SSH configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC=deployment/live-fixes/HR_DIRECT_LOGIN_P8/APPLY_HR_DIRECT_LOGIN.php
+          php -l "$SRC"
+          grep -q 'HR_DIRECT_LOGIN_P8' "$SRC"
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Scoped HR GET attendance redirect with role isolation smoke and rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p ~/hr-direct-login-p8'
+          "${SCP[@]}" -r deployment/live-fixes/HR_DIRECT_LOGIN_P8/APPLY_HR_DIRECT_LOGIN.php deployment/live-fixes/HR_DIRECT_LOGIN_P8/payload "$REMOTE:~/hr-direct-login-p8/"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/hr-direct-login-p8/APPLY_HR_DIRECT_LOGIN.php"
+          test -f "$APP/artisan" && test -f "$PATCH"
+          php "$PATCH" check
+          OUTPUT="$(php "$PATCH" apply)"
+          printf '%s\n' "$OUTPUT"
+          BACKUP="$(printf '%s\n' "$OUTPUT" | sed -n 's/^HR_DIRECT_LOGIN_APPLIED: PASS BACKUP=//p')"
+          test -n "$BACKUP" && test -f "$BACKUP/routes_web.php"
+          rollback() {
+            cp "$BACKUP/routes_web.php" "$APP/routes/web.php"
+            cp "$BACKUP/app_Http_Middleware_EnsureHrManager.php" "$APP/app/Http/Middleware/EnsureHrManager.php"
+            cp "$BACKUP/app_Http_Middleware_EnsureStaffUser.php" "$APP/app/Http/Middleware/EnsureStaffUser.php"
+            rm -f "$APP/app/Http/Controllers/Web/HrDirectLoginController.php"
+            rm -f "$APP/resources/views/hr/direct-login.blade.php"
+            (cd "$APP" && php artisan optimize:clear >/dev/null 2>&1) || true
+          }
+          trap rollback ERR
+          for p in app/Http/Middleware/EnsureHrManager.php app/Http/Middleware/EnsureStaffUser.php routes/web.php app/Http/Controllers/Web/HrDirectLoginController.php; do
+            php -l "$APP/$p"
+          done
+          cd "$APP"
+          php artisan optimize:clear >/dev/null
+          php artisan route:list --path=erp/hr/sign-in --except-vendor
+          php artisan route:list --path=erp/hr/operations --except-vendor
+          php -r '
+          require "vendor/autoload.php";$app=require "bootstrap/app.php";$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $users=\App\Models\ErpAuthUser::query()->where("active",1)->get();
+          $hr=$users->first(fn($u)=>\App\Support\HrAccess::permitted($u));
+          $staff=$users->first(fn($u)=>!$u->isAdmin()&&!\App\Support\HrAccess::permitted($u));
+          if(!$hr||!$staff) {fwrite(STDERR,"NO-GO: missing HR or ordinary staff sample\n");exit(2);}
+          $guard=new \App\Http\Middleware\EnsureHrManager;
+          $req=function($user,$method,$accept) {
+            $r=\Illuminate\Http\Request::create("https://staging.assammotors.com/erp/hr/operations",$method);
+            $r->headers->set("Accept",$accept);
+            $r->setUserResolver(static fn()=>$user);
+            return $r;
+          };
+          $ok=$guard->handle($req($hr,"GET","text/html"),static fn()=>response("AUTHORIZED",200));
+          if($ok->getStatusCode()!==200)exit(3);
+          $redirect=$guard->handle($req($staff,"GET","text/html"),static fn()=>response("NOT_ALLOWED",200));
+          if($redirect->getStatusCode()!==302||!str_contains((string)$redirect->headers->get("Location"),"/erp/hr/sign-in"))exit(4);
+          try{$guard->handle($req($staff,"POST","application/json"),static fn()=>response("NOT_ALLOWED",200));exit(5);}
+          catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){if($e->getStatusCode()!==403)exit(6);}
+          echo "HR_DIRECT_LOGIN_ROLE_GUARD_SMOKE: PASS\n";
+          '
+          trap - ERR
+          echo 'HR_DIRECT_LOGIN_STAGING: PASS, no staff role or salary/attendance record modified'
+          REMOTE_SCRIPT
+      - if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519
