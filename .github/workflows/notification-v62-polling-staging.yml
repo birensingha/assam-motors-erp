@@ -1,0 +1,91 @@
+name: Assam Motors Android v6.2 Notification Polling Fix
+on:
+  push:
+    branches: [fix/notification-v62-polling-20261013]
+    paths: [.github/workflows/notification-v62-polling-staging.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-notification-v62-polling
+  cancel-in-progress: false
+jobs:
+  guarded-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify patch and SSH configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC=deployment/live-fixes/NOTIFICATION_POLL_V62/APPLY_NOTIFICATION_62.php
+          php -l "$SRC"
+          grep -q 'NOTIFICATION_POLL_V62_20261013' "$SRC"
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Scoped HR GET attendance redirect with role isolation smoke and rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p ~/notification-v62-poll'
+          "${SCP[@]}" deployment/live-fixes/NOTIFICATION_POLL_V62/APPLY_NOTIFICATION_62.php "$REMOTE:~/notification-v62-poll/APPLY_NOTIFICATION_62.php"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/notification-v62-poll/APPLY_NOTIFICATION_62.php"
+          test -f "$APP/artisan" && test -f "$PATCH"
+          php "$PATCH" check
+          OUTPUT="$(php "$PATCH" apply)"
+          printf '%s\n' "$OUTPUT"
+          BACKUP="$(printf '%s\n' "$OUTPUT" | sed -n 's/^APPLIED_ATTENDANCE_AND_ROT_V62_POLLING: PASS BACKUP=//p')"
+          test -n "$BACKUP" && test -f "$BACKUP/AttendanceController.php"
+          rollback() {
+            cp "$BACKUP/AttendanceController.php" "$APP/app/Http/Controllers/Api/V1/AttendanceController.php"
+            cp "$BACKUP/RotWorkflowController.php" "$APP/app/Http/Controllers/Api/V1/RotWorkflowController.php"
+            (cd "$APP" && php artisan optimize:clear >/dev/null 2>&1) || true
+          }
+          trap rollback ERR
+          php -l "$APP/app/Http/Controllers/Api/V1/AttendanceController.php"
+          php -l "$APP/app/Http/Controllers/Api/V1/RotWorkflowController.php"
+          test "$(grep -c 'NOTIFICATION_POLL_V62_20261013' "$APP/app/Http/Controllers/Api/V1/AttendanceController.php")" -eq 1
+          test "$(grep -c 'NOTIFICATION_POLL_V62_20261013' "$APP/app/Http/Controllers/Api/V1/RotWorkflowController.php")" -eq 1
+          cd "$APP"
+          php artisan optimize:clear >/dev/null
+          php -r '
+          require "vendor/autoload.php";$app=require "bootstrap/app.php";
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $n=\App\Models\StaffDevice::query()
+            ->where("active",1)->where("notification_permission",1)
+            ->where(function($q){$q->where("app_version","like","6.1%")->orWhere("app_version","like","6.2%");})
+            ->count();
+          echo "POLLING_ELIGIBLE_REGISTERED_DEVICES=$n\n";
+          '
+          echo 'NOTIFICATION_V62_STAGING_SMOKE: PASS'
+          trap - ERR
+          REMOTE_SCRIPT
+      - if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519
