@@ -1,0 +1,81 @@
+name: Assam Motors JC Delete & Purchase Settlement Audit
+on:
+  push:
+    branches: [feature/jobcard-delete-purchase-settlement-20261013]
+    paths: [.github/workflows/jc-payment-source-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: SSH authentication
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Read-only routes, finance schema and application source methods
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          cd "$APP"
+          echo '== MATCHING ROUTES (names and handlers only) =='
+          php artisan route:list --path=erp/job-cards --except-vendor | head -48
+          php artisan route:list --path=erp/payments --except-vendor | head -48
+          php artisan route:list --path=erp/purchases --except-vendor | head -48
+          echo '== CONTROLLER/SERVICE/VIEW FILES =='
+          find app/Http/Controllers app/Services resources/views -maxdepth 5 -type f \( -iname '*JobCard*' -o -iname '*Purchase*' -o -iname '*Payment*' -o -iname '*Vendor*' -o -iname '*Supplier*' \) | sort | head -125
+          echo '== JOB CARD DELETE/CANCEL IMPLEMENTATIONS =='
+          grep -RsnE --include='*.php' '(function (destroy|delete|cancel|void)|job.cards.*(delete|destroy)|JOB_CARD_CANCELLED)' app/Http/Controllers app/Services routes/web.php | head -70 || true
+          echo '== PAYMENT REFERENCE/ROUNDING IMPLEMENTATIONS =='
+          grep -RsnEi --include='*.php' '(against.reference|on.account|advance|round.?off|source_reference|payableSources|outstanding|function (store|create).*\()' app/Services/ExpensePaymentService.php app/Http/Controllers/Web/*Payment* app/Http/Controllers/*/*Payment* resources/views/payments resources/views/purchases 2>/dev/null | head -170 || true
+          echo '== DATABASE STRUCTURE: TABLES/COLUMNS ONLY =='
+          php -r '
+            require "vendor/autoload.php";$app=require "bootstrap/app.php";
+            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $schema=\Illuminate\Support\Facades\Schema::getFacadeRoot();
+            foreach(\Illuminate\Support\Facades\DB::select("SHOW TABLES") as $item){
+              $t=(string)array_values((array)$item)[0];
+              if(!preg_match("/job.card|purchase|payment|vendor|supplier|ledger|advance|round|stock/i",$t))continue;
+              $cols=\Illuminate\Support\Facades\Schema::getColumnListing($t);
+              echo "TABLE ".$t." COLUMNS=".implode(",",$cols)."\n";
+            }
+          '
+          echo '== CURRENT COUNTS/NO ROW DATA =='
+          php -r '
+            require "vendor/autoload.php";$app=require "bootstrap/app.php";
+            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            foreach(["job_cards","workshop_payment_vouchers","parts_purchases","workshop_parts_purchases","purchase_bills","purchase_payments"] as $t)
+              if(\Illuminate\Support\Facades\Schema::hasTable($t))
+                echo "COUNT ".$t."=".\Illuminate\Support\Facades\DB::table($t)->count()."\n";
+          '
+          echo 'JC_PAYMENT_SOURCE_AUDIT_READONLY_PASS'
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
