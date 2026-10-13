@@ -1,0 +1,122 @@
+name: Assam Motors HR Fixed Salary Impact Staging (Guarded)
+on:
+  push:
+    branches: [feature/hr-fixed-salary-absence-impact-20261013]
+    paths:
+      - .github/workflows/hr-fixed-salary-impact-staging.yml
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-hr-fixed-salary-impact-staging
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate code and financial separation
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG='deployment/live-fixes/HR_SALARY_IMPACT_P4'
+          php "$PKG/test_calculator.php"
+          for f in "$PKG/APPLY_HR_SALARY_IMPACT.php" "$PKG/payload/app/Services/"*.php "$PKG/payload/app/Http/Controllers/Web/"*.php "$PKG/payload/app/Http/Controllers/Api/V1/"*.php "$PKG/payload/database/migrations/"*.php; do php -l "$f"; done
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+      - name: Prepare protected staging connection
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Guarded staging source installation, migration and route smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG='deployment/live-fixes/HR_SALARY_IMPACT_P4'
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          tar -C "$PKG" -czf /tmp/hr-impact-p4.tgz .
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'mkdir -p ~/hr-salary-impact-p4'
+          "${SCP[@]}" /tmp/hr-impact-p4.tgz "$SSH_USER@$SSH_HOST:~/hr-salary-impact-p4/pkg.tgz"
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          PKG="$HOME/hr-salary-impact-p4"
+          test -f "$ROOT/artisan" && test -f "$PKG/pkg.tgz"
+          install -d -m 700 "$PKG/src"
+          tar -xzf "$PKG/pkg.tgz" -C "$PKG/src"
+          php -l "$PKG/src/APPLY_HR_SALARY_IMPACT.php"
+          php "$PKG/src/test_calculator.php"
+          php "$PKG/src/APPLY_HR_SALARY_IMPACT.php" check
+          cd "$ROOT"
+          php -r '
+          require "vendor/autoload.php";
+          $app=require "bootstrap/app.php";
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          if (\Illuminate\Support\Facades\Schema::hasTable("hr_salary_impact_profiles")) {
+            fwrite(STDERR,"NO-GO: salary impact table exists; reconcile first\n");exit(2);
+          }
+          foreach (["staff","attendance","hr_access_grants","hr_audit_logs","rot_mechanic_segments"] as $table) {
+            if(!\Illuminate\Support\Facades\Schema::hasTable($table)){fwrite(STDERR,"NO-GO: prerequisite table missing\n");exit(2);}
+          }
+          echo "HR salary schema preflight: PASS. No employee values queried.\n";'
+          OUTPUT="$(php "$PKG/src/APPLY_HR_SALARY_IMPACT.php" apply)"
+          printf '%s\n' "$OUTPUT"
+          BACKUP="$(printf '%s\n' "$OUTPUT" | sed -n 's/^HR_SALARY_IMPACT_PHASE4 SOURCE APPLIED; BACKUP=//p')"
+          test -n "$BACKUP" && test -d "$BACKUP"
+          restore_sources(){
+            echo 'NO-GO: restoring salary impact route/view source and removing new files'
+            for rel in routes/web.php routes/api.php resources/views/hr/operations.blade.php; do cp "$BACKUP/${rel//\//_}" "$ROOT/$rel"; done
+            for rel in app/Services/HrSalaryImpactCalculator.php app/Services/HrSalaryImpactService.php app/Http/Controllers/Web/HrSalaryImpactController.php app/Http/Controllers/Api/V1/HrSalaryImpactApiController.php resources/views/hr/salary-impact.blade.php database/migrations/2026_10_13_060000_create_hr_salary_impact_profiles.php; do rm -f "$ROOT/$rel"; done
+            php artisan optimize:clear >/dev/null 2>&1 || true
+          }
+          trap restore_sources ERR
+          php -l routes/web.php
+          php -l routes/api.php
+          php artisan route:list --path=erp/hr/salary-impact --except-vendor | grep 'erp/hr/salary-impact'
+          php artisan migrate --path=database/migrations/2026_10_13_060000_create_hr_salary_impact_profiles.php --force --no-interaction
+          php artisan view:cache
+          php artisan view:clear
+          php artisan route:clear
+          php -r '
+          require "vendor/autoload.php"; $app=require "bootstrap/app.php";
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          if (!\Illuminate\Support\Facades\Schema::hasTable("hr_salary_impact_profiles")) exit(2);
+          $svc=$app->make(\App\Services\HrSalaryImpactService::class);
+          $r=$svc->report(now("Asia/Kolkata")->format("Y-m"));
+          echo "HR SALARY IMPACT REPORT: PASS; employee_count=".count($r["records"])."; all missing rates remain unconfigured.\n";'
+          trap - ERR
+          echo 'HR_SALARY_IMPACT_P4_DEPLOY PASS: only new HR salary analysis model + routes + view, no wages changed.'
+          REMOTE
+      - name: Confirm unauthorized guest cannot read HR salaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          web="$(curl -sS --max-time 20 --max-redirs 0 -o /dev/null -w '%{http_code}' https://staging.assammotors.com/erp/hr/salary-impact)"
+          api="$(curl -sS --max-time 20 --max-redirs 0 -H 'Accept: application/json' -o /dev/null -w '%{http_code}' https://staging.assammotors.com/api/v1/hr/salary-impact)"
+          echo "GUEST_HR_WEB=$web GUEST_HR_API=$api"
+          test "$web" = '302' && test "$api" = '401'
+          echo 'HR salary privacy boundary: PASS'
+      - if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519 /tmp/hr-impact-p4.tgz
