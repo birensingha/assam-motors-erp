@@ -1,0 +1,98 @@
+name: Assam Motors Job Card Safe Delete Option Staging
+on:
+  push:
+    branches: [feature/jobcard-delete-purchase-settlement-20261013]
+    paths: [.github/workflows/p10-jobcard-delete-staging.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-p10-jobcard-delete
+  cancel-in-progress: false
+jobs:
+  guarded-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify patch and SSH configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC=deployment/live-fixes/P10_JOB_CARD_DELETE/APPLY_P10.php
+          php -l "$SRC"
+          grep -q 'JC_DELETE_GUARD_P10' "$SRC"
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Scoped HR GET attendance redirect with role isolation smoke and rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p ~/jc-p10'
+          "${SCP[@]}" -r deployment/live-fixes/P10_JOB_CARD_DELETE/APPLY_P10.php deployment/live-fixes/P10_JOB_CARD_DELETE/payload "$REMOTE:~/jc-p10/"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/jc-p10/APPLY_P10.php"
+          test -f "$APP/artisan" && test -f "$PATCH"
+          php "$PATCH" check
+          OUTPUT="$(php "$PATCH" apply)"
+          printf '%s\n' "$OUTPUT"
+          BACKUP="$(printf '%s\n' "$OUTPUT" | sed -n 's/^P10_JOBCARD_DELETE_APPLIED: BACKUP=//p')"
+          test -n "$BACKUP" && test -f "$BACKUP/routes__web.php"
+          rollback(){
+            echo 'P10 NO-GO: restoring Job Card routes/views and removing new controller'
+            cp "$BACKUP/routes__web.php" "$APP/routes/web.php"
+            cp "$BACKUP/resources__views__job-cards__index.blade.php" "$APP/resources/views/job-cards/index.blade.php"
+            cp "$BACKUP/resources__views__job-cards__show.blade.php" "$APP/resources/views/job-cards/show.blade.php"
+            rm -f "$APP/app/Http/Controllers/Web/AdminJobCardDeletePageController.php"
+            (cd "$APP" && php artisan optimize:clear >/dev/null 2>&1) || true
+          }
+          trap rollback ERR
+          php -l "$APP/app/Http/Controllers/Web/AdminJobCardDeletePageController.php"
+          php -l "$APP/routes/web.php"
+          cd "$APP"
+          php artisan optimize:clear >/dev/null
+          php artisan view:cache >/dev/null
+          php artisan route:list --path=erp/job-cards --except-vendor | grep -F 'DELETE' | grep -F 'erp.job-cards.destroy'
+          php -r '
+          require "vendor/autoload.php";$app=require "bootstrap/app.php";
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $req=\Illuminate\Http\Request::create("/erp/job-cards/999999","DELETE",["confirm_job_no"=>"JC-NO-ACCESS","delete_reason"=>"Unauthorized role check test"]);
+          $req->setUserResolver(static fn()=>null);
+          try{(new \App\Http\Controllers\Web\AdminJobCardDeletePageController)->destroy($req,999999);exit(6);}
+          catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){if($e->getStatusCode()!==403)exit(7);}
+          if(!\Illuminate\Support\Facades\Schema::hasTable("job_card_delete_audit"))exit(8);
+          echo "P10_ROLE_GATE_AND_AUDIT_SCHEMA: PASS, unauthorized request rejected 403\n";
+          '
+          grep -Fq 'jc-delete-panel' resources/views/job-cards/show.blade.php
+          grep -Fq 'confirm_job_no' resources/views/job-cards/show.blade.php
+          grep -Fq 'JC_DELETE_GUARD_P10' app/Http/Controllers/Web/AdminJobCardDeletePageController.php
+          echo 'P10_JOB_CARD_DELETE_UI_SMOKE: PASS (no real Job Cards deleted)'
+          trap - ERR
+          REMOTE_SCRIPT
+      - if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519
