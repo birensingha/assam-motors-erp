@@ -1,0 +1,63 @@
+name: Assam Motors HR Remote Login Readonly Audit
+on:
+  push:
+    branches: [feature/hr-safe-preflight-20261012]
+    paths: [.github/workflows/hr-remote-login-readonly.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: SSH authentication
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Inspect geofence login and current staff/Admin role guards (read-only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          cd "$ROOT"
+          echo '=== AUTH & LOGIN FILE INVENTORY ==='
+          find app/Http/Controllers/Api/V1 app/Services app/Support -maxdepth 2 -type f -name '*.php' | grep -Ei '(Auth|Login|GeoFence|Staff|HR)' | sort | head -50
+          echo '=== LOGIN RELATED PHP CLASS / METHOD REFERENCES ==='
+          grep -RniE "function (login|staffLogin|authenticate|issueToken|validateLogin)|GeoFenceService|verify.*[Ll]ocation|location.*[Ll]ogin|geo[fF]ence.*[Ll]ogin|assert.*[Gg]eo" app/Http/Controllers/Api app/Services app/Support | head -120 | cut -c1-200 || true
+          echo '=== API AUTH CONTROLLER (NO PASSWORD/USER DATA) ==='
+          sed -n '1,320p' app/Http/Controllers/Api/V1/AuthController.php | sed -E 's/(password|secret|token)[[:space:]]*=[[:space:]]*[^;,]+/\1=[REDACTED]/Ig'
+          echo '=== GEO FENCE SERVICE ==='
+          if [ -f app/Services/GeoFenceService.php ]; then sed -n '1,320p' app/Services/GeoFenceService.php; fi
+          echo '=== HRACCESS ROLE GATES ==='
+          sed -n '1,200p' app/Support/HrAccess.php
+          echo '=== LEGACY STAFF LOGIN FILE EXISTS & GEO CHECK ANCHORS ==='
+          for f in public/legacy/api/staff-login.php public_html/staging/legacy/api/staff-login.php; do if [ -f "$f" ]; then echo "LOGIN_FILE=$f"; grep -nEi 'geo|GPS|distance|radius|staff-login|role|department' "$f" | head -65 | cut -c1-170; fi; done
+          echo 'HR REMOTE LOGIN INSPECT READONLY PASS'
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
