@@ -1,0 +1,72 @@
+name: Assam Motors Cancelled ROT Audit
+on:
+  push:
+    branches: [fix/jc-cancelled-rot-void-20261013]
+    paths: [.github/workflows/jc-cancelled-rot-readonly.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: SSH authentication
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Read-only routes, finance schema and application source methods
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          cd "$APP"
+          echo '=== TARGET JC CURRENT STATE; NO PERSONAL DETAILS ==='
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';$app=require 'bootstrap/app.php';$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::connection();$c=$db->table('job_cards')->where('job_no','JC-2026-0025')->first();
+          if(!$c){echo "JC_NOT_FOUND\n";exit(0);}
+          echo "JC_ID=".$c->id." STATUS=".$c->status." LABOUR_TOTAL=".$c->labour_total." PARTS_TOTAL=".$c->parts_total." GRAND_TOTAL=".$c->grand_total."\n";
+          foreach(['rot_sessions'=>['id','status','total_seconds','labour_line_id','completed_at'],'job_card_labour'=>['id','rot_code','execution_status','productive_seconds','rot_session_id','total'],'job_estimates'=>['id','estimate_no','status','converted_to_job_at'],'inventory_movements'=>['id','movement_type','part_master_id','qty_in','qty_out'],'workshop_purchases'=>['id','record_status','purchase_batch_no']] as $table=>$fields){
+            foreach($db->table($table)->where('job_card_id',$c->id)->get() as $r){
+              $v=[];foreach($fields as $field){$x=$r->$field??null;if(in_array($field,['completed_at','converted_to_job_at'],true))$x=$x?'YES':'NO';$v[$field]=$x;}echo "REL ".$table." ".json_encode($v)."\n";
+            }
+          }
+          echo "SCHEMA rot_sessions=".implode(',',\Illuminate\Support\Facades\Schema::getColumnListing('rot_sessions'))."\n";
+          echo "SCHEMA job_card_change_audits=".implode(',',\Illuminate\Support\Facades\Schema::getColumnListing('job_card_change_audits'))."\n";
+          PHP
+          echo '=== EXISTING ROT STATUS AND PRODUCTIVE REPORTING REFS ==='
+          grep -RsnE --include='*.php' "(where.*rot_sessions|rot_sessions.*where|Completed|productive_seconds|SUM\(.*total_seconds|sum\('total_seconds'|status.*completed)" app/Services/RotAssignmentService.php app/Services/HrOperationsService.php app/Http/Controllers/Api/V1/HrOperationsApiController.php app/Http/Controllers/Api/V1/OwnerWorkshopController.php | head -95 || true
+          echo '=== LIFECYCLE BLADE SOURCE ==='
+          sed -n '1,225p' resources/views/job-cards/lifecycle-panel.blade.php
+          echo '=== JOB REVERSE UI SOURCE ==='
+          sed -n '20,85p' resources/views/job-cards/show.blade.php
+          echo 'AUDIT_COMPLETE_NO_WRITES'
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
