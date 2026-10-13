@@ -1,0 +1,22 @@
+name: Assam Motors HR Public Login Page Smoke
+on:
+  push:
+    branches: [fix/notification-v62-polling-20261013]
+    paths: [.github/workflows/hr-login-page-smoke.yml]
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Verify dedicated HR login page is reachable from browser
+        run: |
+          set -euo pipefail
+          URL='https://staging.assammotors.com/erp/hr/sign-in'
+          CODE="$(curl --max-time 20 -sS -o /tmp/hr-login.html -w '%{http_code}' --max-redirs 0 "$URL")"
+          echo "HR_DIRECT_LOGIN_GUEST_HTTP=$CODE"
+          test "$CODE" = 200
+          grep -Fq 'HR Manager Login' /tmp/hr-login.html
+          grep -Fq 'name="_token"' /tmp/hr-login.html
+          echo 'HR_DIRECT_LOGIN_BROWSER_PAGE: PASS'
