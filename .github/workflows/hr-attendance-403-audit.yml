@@ -53,6 +53,14 @@ jobs:
           cd "$ERP"
           echo '== HR ROUTES =='
           php artisan route:list --path=api/v1/hr --except-vendor | head -42
+          echo '== ATTENDANCE WEB ROUTES (route guards) =='
+          php artisan route:list --path=erp/attendance -v --except-vendor | head -60
+          php artisan route:list --path=erp/hr -v --except-vendor | head -75
+          echo '== ADMIN MIDDLEWARE AND ATTENDANCE METHOD =='
+          sed -n '1,100p' app/Http/Middleware/EnsureErpAdmin.php
+          grep -nEi "(/erp/attendance|attendance.*AdminNative|attendance.*name\()" routes/web.php | head -28 || true
+          echo '== HR DASHBOARD ATTENDANCE LINKS =='
+          grep -nE "erp.hr.operations|erp.attendance|/erp/attendance" resources/views/hr/dashboard.blade.php resources/views/staff/portal.blade.php | head -20 || true
           echo '== LIVE AUTH CONTROLLER STATUS =='
           for f in app/Http/Controllers/Api/V1/HrOperationsApiController.php app/Http/Controllers/Api/V1/AuthController.php app/Support/HrAccess.php app/Http/Middleware/EnsureHrManager.php; do
             if [ -f "$f" ]; then echo "FILE=$f"; php -l "$f"; sha256sum "$f"; else echo "MISSING_FILE=$f"; fi
