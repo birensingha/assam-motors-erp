@@ -1,0 +1,70 @@
+name: Assam Motors JC Target Unwind Detailed Audit
+on:
+  push:
+    branches: [feature/jc-safe-unwind-20261013]
+    paths: [.github/workflows/jc-target-unwind-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: SSH authentication
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Read-only routes, finance schema and application source methods
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          cd "$APP"
+          echo '=== TARGET JC REVERSAL STATUS ONLY (NO PII/AMOUNTS) ==='
+          php <<'PHP'
+          <?php
+          require "vendor/autoload.php";$app=require "bootstrap/app.php";$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $d=\Illuminate\Support\Facades\DB::connection();$id=(int)$d->table('job_cards')->where('job_no','JC-2026-0025')->value('id');
+          foreach(['job_card_labour'=>['execution_status','rot_start','rot_end','rot_session_id','source_estimate_item_id','productive_seconds'],'rot_sessions'=>['status','start_time','end_time','total_seconds','completed_at','labour_line_id'],'job_estimates'=>['status','converted_to_job_at','current_flag','version_no'],'job_card_parts'=>['issue_status','source_estimate_item_id'],'inventory_movements'=>['movement_type','qty_in','qty_out','part_master_id'],'workshop_purchases'=>['purchase_type','record_status','purchase_batch_no','billing_line_created','customer_billing_status','part_master_id','labour_line_id'],'job_estimate_transfers'=>['id'],'job_estimate_approvals'=>['id']] as $table=>$cols){
+            $rows=$d->table($table)->where('job_card_id',$id)->get();
+            foreach($rows as $r){$summary=[];foreach($cols as $col){$v=$r->$col??null;if(in_array($col,['qty_in','qty_out'],true))$v=((float)$v>0?'POSITIVE':'ZERO');if(in_array($col,['rot_start','rot_end','start_time','end_time','completed_at','converted_to_job_at'],true))$v=$v?'SET':'NONE';$summary[$col]=$v;}echo "$table ".json_encode($summary)."\n";}
+          }
+          PHP
+          echo '=== LABOUR SCREEN SECTION ==='
+          grep -nE "job_card_labour|labour-line|labourLines|rot-card|Remove Labour|Delete Labour|labour.id|labour->id" resources/views/job-cards/show.blade.php | head -75
+          echo '=== JOB CARD TOTAL RECALCULATE FUNCTION ==='
+          grep -nE "function recalculateJobTotals|function auditChange|function admin\(" app/Http/Controllers/Web/AdminJobCardPageController.php
+          sed -n '820,895p' app/Http/Controllers/Web/AdminJobCardPageController.php
+          echo '=== ESTIMATE CONTROLLER REVERT CODE ==='
+          sed -n '580,632p' app/Http/Controllers/Web/AdminJobCardPageController.php
+          echo '=== ROT REOPEN / ASSIGNMENT SERVICE API ==='
+          grep -nE 'function (start|pause|complete|cancel|release|reopen|unassign)|status=' app/Services/RotAssignmentService.php | head -85
+          echo 'JC_TARGET_SAFE_UNWIND_DETAIL_PASS'
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
