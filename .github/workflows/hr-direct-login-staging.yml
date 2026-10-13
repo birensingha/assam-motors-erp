@@ -1,7 +1,7 @@
 name: Assam Motors Direct HR Browser Sign-In Staging
 on:
   push:
-    branches: [fix/hr-direct-login-p8ing-20261013]
+    branches: [fix/notification-v62-polling-20261013]
     paths: [.github/workflows/hr-direct-login-staging.yml]
 permissions:
   contents: read
