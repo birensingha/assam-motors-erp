@@ -1,0 +1,96 @@
+name: Assam Motors HR and Admin Remote Login Staging
+on:
+  push:
+    branches: [feature/hr-fixed-salary-absence-impact-20261013]
+    paths: [.github/workflows/hr-remote-login-staging.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-hr-remote-login-staging
+  cancel-in-progress: false
+jobs:
+  guarded-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify patch and SSH configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC=deployment/live-fixes/HR_REMOTE_LOGIN_P5/APPLY_HR_REMOTE_LOGIN.php
+          php -l "$SRC"
+          grep -q 'ASSAM_HR_REMOTE_LOGIN_P5' "$SRC"
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Backed-up HR login-only installer with read-only authorization smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p ~/hr-remote-login-p5'
+          "${SCP[@]}" deployment/live-fixes/HR_REMOTE_LOGIN_P5/APPLY_HR_REMOTE_LOGIN.php "$REMOTE:~/hr-remote-login-p5/APPLY_HR_REMOTE_LOGIN.php"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/hr-remote-login-p5/APPLY_HR_REMOTE_LOGIN.php"
+          test -f "$APP/artisan" && test -f "$PATCH"
+          php "$PATCH" check
+          ATTENDANCE_BEFORE="$(sha256sum "$APP/app/Services/AttendanceService.php" | cut -d' ' -f1)"
+          ROT_BEFORE="$(sha256sum "$APP/app/Http/Controllers/Api/V1/RotWorkflowController.php" | cut -d' ' -f1)"
+          cd "$APP"
+          php -r '
+          require "vendor/autoload.php"; $app=require "bootstrap/app.php";
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $users=\App\Models\ErpAuthUser::query()->where("active",1)->get();
+          $hr=0;$admin=0;
+          foreach($users as $u){if($u->isAdmin())$admin++; elseif($u->isStaff() && \App\Support\HrAccess::permitted($u))$hr++;}
+          if($hr<1 || $admin<1){fwrite(STDERR,"NO-GO: verified HR/Admin accounts not found\n");exit(2);}
+          echo "HR_REMOTE_LOGIN_ACCESS_PRECHECK PASS; authorized_hr_accounts=$hr; active_admin_accounts=$admin\n";'
+          OUTPUT="$(php "$PATCH" apply)"
+          printf '%s\n' "$OUTPUT"
+          BACKUP="$(printf '%s\n' "$OUTPUT" | sed -n 's/^HR_REMOTE_LOGIN_P5 APPLIED; BACKUP=//p')"
+          test -n "$BACKUP" && test -f "$BACKUP/AuthController.php"
+          rollback_auth() {
+            echo 'NO-GO: Rolling back AuthController, never touching attendance or ROT'
+            cp "$BACKUP/AuthController.php" "$APP/app/Http/Controllers/Api/V1/AuthController.php"
+            (cd "$APP" && php artisan optimize:clear >/dev/null 2>&1) || true
+          }
+          trap rollback_auth ERR
+          php -l "$APP/app/Http/Controllers/Api/V1/AuthController.php"
+          grep -Fq 'ASSAM_HR_REMOTE_LOGIN_P5' "$APP/app/Http/Controllers/Api/V1/AuthController.php"
+          grep -Fq 'HrAccess::permitted($user)' "$APP/app/Http/Controllers/Api/V1/AuthController.php"
+          grep -Fq 'if (!$remoteExempt)' "$APP/app/Http/Controllers/Api/V1/AuthController.php"
+          test "$ATTENDANCE_BEFORE" = "$(sha256sum "$APP/app/Services/AttendanceService.php" | cut -d' ' -f1)"
+          test "$ROT_BEFORE" = "$(sha256sum "$APP/app/Http/Controllers/Api/V1/RotWorkflowController.php" | cut -d' ' -f1)"
+          cd "$APP"
+          php artisan optimize:clear >/dev/null
+          php artisan route:list --path=api/v1/auth/login --except-vendor | grep -q auth/login
+          echo 'HR_REMOTE_LOGIN_P5_STAGING: PASS. HR/Admin login GPS exempt; other Staff and duty GPS untouched.'
+          trap - ERR
+          REMOTE_SCRIPT
+      - if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519
