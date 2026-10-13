@@ -44,24 +44,39 @@ jobs:
           set -euo pipefail
           APP="$HOME/domains/assammotors.com/assam-erp-staging"
           cd "$APP"
-          echo '=== PAYMENT SERVICE SOURCE ==='
-          nl -ba app/Services/ExpensePaymentService.php | sed -n '125,225p'
-          echo '=== PAYMENT CONTROLLER SOURCE ==='
-          nl -ba app/Http/Controllers/Web/AdminExpensePaymentPageController.php | sed -n '58,100p'
-          echo '=== PAYMENT CREATE BLADE SOURCE ==='
-          nl -ba resources/views/payments/create.blade.php | sed -n '1,165p'
-          echo '=== PURCHASE SERVICE / BATCH TOTAL REFERENCES ==='
-          grep -nE 'purchase_batch_no|pre_round_total|round_off|grand_total|function.*batch|workshop_purchase_batches|total_amount' app/Services/PurchaseService.php | head -72
-          echo '=== JOB CARD PAGE METHODS/DELETE LIST ==='
-          grep -nE 'function (index|show|destroy|store|edit|update|delete|cancel)|job_card_delete_audit|from .job_cards|DB::table\(.job_cards|return view' app/Http/Controllers/Web/AdminJobCardPageController.php | head -87
-          echo '=== JOB CARD LIST / SHOW UI LINKS ==='
-          for t in resources/views/job-cards/index.blade.php resources/views/job-cards/show.blade.php; do
-            echo "VIEW=$t"
-            sed -n '1,72p' "$t"
-          done
-          echo '=== ROUTES CONTEXT ==='
-          sed -n '52,98p' routes/web.php
-          echo 'SOURCE_CODE_AUDIT_NO_WRITES_PASS'
+          echo '=== PAYMENT JS SOURCE ==='
+          nl -ba public/js/payment-voucher.js | sed -n '1,225p'
+          echo '=== EXPENSE PAYMENT SERVICE CONSTANTS ==='
+          nl -ba app/Services/ExpensePaymentService.php | sed -n '1,54p'
+          echo '=== PAYMENT MODEL ==='
+          sed -n '1,115p' app/Models/WorkshopPaymentVoucher.php
+          echo '=== JOB CARD CONTROL TOP ==='
+          sed -n '1,120p' app/Http/Controllers/Web/AdminJobCardPageController.php
+          echo '=== JOB CARD CONTROLLER SHOW ==='
+          sed -n '260,318p' app/Http/Controllers/Web/AdminJobCardPageController.php
+          echo '=== JOB CARD SERVICE TOP ==='
+          sed -n '1,115p' app/Services/JobCardService.php
+          echo '=== REFERENCED CHILD TABLE COUNTS AND KEYS ==='
+          php -r '
+            require "vendor/autoload.php";$app=require "bootstrap/app.php";$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $db=\Illuminate\Support\Facades\DB::connection();$schema=\Illuminate\Support\Facades\Schema::getFacadeRoot();
+            foreach($db->select("SHOW TABLES") as $row){$t=(string)array_values((array)$row)[0];
+              $cols=\Illuminate\Support\Facades\Schema::getColumnListing($t);
+              if(in_array("job_card_id",$cols)||in_array("job_id",$cols))
+                echo "REL_TABLE ".$t." REF_COL=".(in_array("job_card_id",$cols)?"job_card_id":"job_id")." COUNT=".$db->table($t)->count()."\n";
+            }
+            foreach(["workshop_purchase_batches","workshop_purchases"] as $t)
+              echo "BATCH_STATUSES ".$t." COUNT=".$db->table($t)->count()."\n";
+          '
+          echo '=== ROUND-OFF DELTA COUNTS (NO FINANCIAL AMOUNTS OR SUPPLIER DATA) ==='
+          php -r '
+            require "vendor/autoload.php";$app=require "bootstrap/app.php";$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $b=\Illuminate\Support\Facades\DB::table("workshop_purchase_batches")->where("purchase_type","PART")->where("record_status","ACTIVE")->get(["batch_no","grand_total"]);
+            $different=0;$matched=0;foreach($b as $p){$sum=(float)\Illuminate\Support\Facades\DB::table("workshop_purchases")->where("purchase_batch_no",$p->batch_no)->where("purchase_type","PART")->whereRaw("COALESCE(record_status,\x27ACTIVE\x27)<>\x27DELETED\x27")->sum("total_amount");
+              $matched++;if(abs(round($sum-(float)$p->grand_total,2))>=0.01)$different++;
+            }echo "ACTIVE_PART_BATCHES=".$matched." ROUNDING_DIFFERENCE_BATCHES=".$different."\n";
+          '
+          echo 'JC_PAYMENT_DETAIL_AUDIT_PASS'
           REMOTE
       - name: Remove SSH key
         if: always()
