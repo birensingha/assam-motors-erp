@@ -1,0 +1,80 @@
+name: Assam Motors P13 Rendered Reversal Page QA
+on:
+  push:
+    branches: [fix/jc-cancelled-rot-void-20261013]
+    paths: [.github/workflows/p13-rendered-page-readonly.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: SSH authentication
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Read-only routes, finance schema and application source methods
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          cd "$APP"
+          cd "$APP"
+          echo '=== REAL REVERSAL VIEW RENDER (AUTHORIZED IN-MEMORY USER ONLY) ==='
+          php <<'PHP'
+          <?php
+          require "vendor/autoload.php";$app=require "bootstrap/app.php";
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::connection();
+          $jc=$db->table("job_cards")->where("job_no","JC-2026-0025")->first();
+          $admin=\App\Models\ErpAuthUser::query()->where("active",1)->get()->first(fn($u)=>$u->isAdmin());
+          if(!$jc || $jc->status!=="cancelled" || !$admin)exit(2);
+          \Illuminate\Support\Facades\Auth::guard("web")->setUser($admin);
+          $request=\Illuminate\Http\Request::create("https://staging.assammotors.com/erp/job-cards/".$jc->id."/reversal","GET");
+          $request->setUserResolver(static fn()=>$admin);
+          $view=(new \App\Http\Controllers\Web\AdminJobCardUnwindController())->show($request,$jc->id);
+          $html=$view->render();
+          foreach(["Void ROT from HR Productivity","ROT26100501344375FC","original time","completed"] as $needle){
+            if(stripos($html,$needle)===false){echo "MISSING_RENDERED_TEXT ".$needle."\n";exit(3);}
+          }
+          if(strpos($html,"job-cards/".$jc->id."/reversal/rot/ROT26100501344375FC/void")===false){
+            echo "NO_GO_ACTION_URL_MISSING\n";exit(4);
+          }
+          $rot=$db->table("rot_sessions")->where("job_card_id",$jc->id)->first();
+          if(!$rot||$rot->status!=="Completed"||(int)$rot->total_seconds!==1515)exit(5);
+          if($db->table("job_card_rot_voids")->where("rot_session_id",$rot->id)->exists())exit(6);
+          $columns=$db->select("SHOW COLUMNS FROM job_card_change_audits");
+          $entity=collect($columns)->first(fn($c)=>$c->Field==="entity_id");
+          if(!$entity || $entity->Null!=="YES") {echo "NO_GO_ENTITY_ID_NOT_NULLABLE\n";exit(7);}
+          echo "P13_RENDERED_ADMIN_REVERSAL_PAGE_PASS\nP13_JC_CANCELLED_ROT_PRESERVED_PASS\nP13_AUDIT_ENTITY_NULLABLE_PASS\n";
+          PHP
+          echo 'P13_RENDER_CHECK_READ_ONLY_PASS'
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
