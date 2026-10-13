@@ -51,8 +51,10 @@ jobs:
           sed -n '1,90p' app/Http/Middleware/EnsureStaffUser.php
           echo '== WEB ROUTE LOGIN REDIRECT =='
           grep -nE "(redirectGuestsTo|redirectTo|login|staff.login|staff.logout|ASSAM_HR_NATIVE_2B)" bootstrap/app.php routes/web.php | head -80
-          echo '== WEB AUTH CONFIG =="
-          grep -nE "(defaults|guard|provider|web|erp_auth_users)" config/auth.php | head -50
+          echo '== WEB AND STAFF AUTH LOGIN HANDLERS =='
+          grep -RsnE 'function (login|logout)\(' app/Http/Controllers/Web/*AuthController.php | head -30 || true
+          sed -n '1,175p' app/Http/Controllers/Web/StaffWebAuthController.php
+          sed -n '1,165p' app/Http/Controllers/Web/WebAuthController.php
           echo 'HR_BROWSER_GUARD_SOURCE_AUDIT: COMPLETE (no writes)'
           REMOTE
       - name: Remove SSH key
