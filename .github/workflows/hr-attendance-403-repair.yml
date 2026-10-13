@@ -1,0 +1,105 @@
+name: Assam Motors HR Attendance 403 Staging Repair
+on:
+  push:
+    branches: [fix/hr-attendance-403-20261013]
+    paths: [.github/workflows/hr-attendance-403-repair.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-hr-attendance-403-repair
+  cancel-in-progress: false
+jobs:
+  guarded-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify patch and SSH configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC=deployment/live-fixes/HR_ATTENDANCE_403/APPLY_HR_ATTENDANCE_403.php
+          php -l "$SRC"
+          grep -q 'HR_ATTENDANCE_LINK_403_P7' "$SRC"
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Scoped HR GET attendance redirect with role isolation smoke and rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p ~/hr-attendance-403-p7'
+          "${SCP[@]}" deployment/live-fixes/HR_ATTENDANCE_403/APPLY_HR_ATTENDANCE_403.php "$REMOTE:~/hr-attendance-403-p7/APPLY_HR_ATTENDANCE_403.php"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/hr-attendance-403-p7/APPLY_HR_ATTENDANCE_403.php"
+          PATCH="$HOME/hr-attendance-403-p7/APPLY_HR_ATTENDANCE_403.php"
+          test -f "$APP/artisan" && test -f "$PATCH"
+          php "$PATCH" check
+          OUTPUT="$(php "$PATCH" apply)"
+          printf '%s\n' "$OUTPUT"
+          BACKUP="$(printf '%s\n' "$OUTPUT" | sed -n 's/^HR ATTENDANCE 403 APPLIED; BACKUP=//p')"
+          test -n "$BACKUP" && test -f "$BACKUP/EnsureErpAdmin.php"
+          TARGET="$APP/app/Http/Middleware/EnsureErpAdmin.php"
+          rollback() {
+            cp "$BACKUP/EnsureErpAdmin.php" "$TARGET"
+            (cd "$APP" && php artisan optimize:clear >/dev/null 2>&1) || true
+          }
+          trap rollback ERR
+          php -l "$TARGET"
+          grep -Fq 'HR_ATTENDANCE_LINK_403_P7' "$TARGET"
+          cd "$APP"
+          php artisan optimize:clear >/dev/null
+          php -r '
+          require "vendor/autoload.php"; $app=require "bootstrap/app.php";
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $users=\App\Models\ErpAuthUser::query()->where("active",1)->get();
+          $hr=$users->first(fn($u)=>!$u->isAdmin() && \App\Support\HrAccess::permitted($u));
+          $admin=$users->first(fn($u)=>$u->isAdmin());
+          $staff=$users->first(fn($u)=>!$u->isAdmin() && !\App\Support\HrAccess::permitted($u));
+          if(!$hr || !$admin || !$staff){fwrite(STDERR,"NO GO: role sample missing\n");exit(2);}
+          $gate=new \App\Http\Middleware\EnsureErpAdmin;
+          $run=function($u,$path,$method)use($gate){
+            $r=\Illuminate\Http\Request::create("https://staging.assammotors.com/".$path,$method);
+            $r->setUserResolver(static fn()=>$u);
+            try{return $gate->handle($r,static fn()=>response("ADMIN_OK",200));}
+            catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){return $e->getStatusCode();}
+          };
+          $get=$run($hr,"erp/attendance","GET");
+          if(!$get instanceof \Symfony\Component\HttpFoundation\Response||$get->getStatusCode()!==302||!str_contains((string)$get->headers->get("Location"),"/erp/hr/operations#attendance")){fwrite(STDERR,"NO GO: HR attendance redirect\n");exit(2);}
+          $home=$run($hr,"erp","GET");
+          if(!$home instanceof \Symfony\Component\HttpFoundation\Response||$home->getStatusCode()!==302){fwrite(STDERR,"NO GO: HR home redirect\n");exit(2);}
+          if($run($hr,"erp/attendance","POST")!==403||$run($hr,"erp/invoices","GET")!==403||$run($staff,"erp/attendance","GET")!==403){fwrite(STDERR,"NO GO: unauthorized admin access\n");exit(2);}
+          $ag=$run($admin,"erp/attendance","GET");
+          if(!$ag instanceof \Symfony\Component\HttpFoundation\Response||$ag->getStatusCode()!==200){fwrite(STDERR,"NO GO: existing admin access\n");exit(2);}
+          echo "HR_ATTENDANCE_403_ROLE_ISOLATION_PASS\n";
+          '
+          trap - ERR
+          echo 'HR ATTENDANCE 403 STAGING: PASS. No staff roles, attendance data, payroll, GPS or APK changed.'
+          REMOTE_SCRIPT
+      - if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519

@@ -1,0 +1,88 @@
+name: Assam Motors HR Attendance 403 Readonly Audit
+on:
+  push:
+    branches: [fix/hr-attendance-403-20261013]
+    paths: [.github/workflows/hr-attendance-403-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: SSH authentication
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Inspect geofence login and current staff/Admin role guards (read-only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          BASE="$HOME/domains/assammotors.com"
+          ERP="$BASE/assam-erp-staging"
+          LEGACY="$BASE/public_html/staging/legacy"
+          test -f "$ERP/artisan" && test -d "$LEGACY"
+          echo '== EXACT PERMISSION MESSAGE =='
+          grep -RsnF --include='*.php' --exclude-dir=vendor --exclude-dir=storage 'Admin/Supervisor permission required' "$ERP/app" "$ERP/routes" "$LEGACY" 2>/dev/null | head -24 || true
+          echo '== RELATED FORBIDDEN MESSAGES =='
+          grep -RsnE --include='*.php' --exclude-dir=vendor --exclude-dir=storage '(ERP login forbidden|Supervisor permission|Admin login required)' "$ERP/app" "$ERP/routes" "$LEGACY/api" 2>/dev/null | head -36 || true
+          cd "$ERP"
+          echo '== HR ROUTES =='
+          php artisan route:list --path=api/v1/hr --except-vendor | head -42
+          echo '== ATTENDANCE WEB ROUTES (route guards) =='
+          php artisan route:list --path=erp/attendance -v --except-vendor | head -60
+          php artisan route:list --path=erp/hr -v --except-vendor | head -75
+          echo '== ADMIN MIDDLEWARE AND ATTENDANCE METHOD =='
+          sed -n '1,100p' app/Http/Middleware/EnsureErpAdmin.php
+          grep -nEi "(/erp/attendance|attendance.*AdminNative|attendance.*name\()" routes/web.php | head -28 || true
+          echo '== HR DASHBOARD ATTENDANCE LINKS =='
+          grep -nE "erp.hr.operations|erp.attendance|/erp/attendance" resources/views/hr/dashboard.blade.php resources/views/staff/portal.blade.php | head -20 || true
+          echo '== LIVE AUTH CONTROLLER STATUS =='
+          for f in app/Http/Controllers/Api/V1/HrOperationsApiController.php app/Http/Controllers/Api/V1/AuthController.php app/Support/HrAccess.php app/Http/Middleware/EnsureHrManager.php; do
+            if [ -f "$f" ]; then echo "FILE=$f"; php -l "$f"; sha256sum "$f"; else echo "MISSING_FILE=$f"; fi
+          done
+          echo '== HR LOGIN LINK =='
+          php -r '
+          require "vendor/autoload.php";
+          $app=require "bootstrap/app.php";
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $users=\App\Models\ErpAuthUser::query()->where("active",1)->get();
+          $hr=0;$authorized=0;
+          foreach($users as $u){
+            if(!(int)$u->staff_id)continue;
+            $staff=\Illuminate\Support\Facades\DB::table("staff")->where("id",$u->staff_id)->first(["role","department"]);
+            if(!$staff||strtolower(trim((string)$staff->role))!=="hr manager")continue;
+            $hr++;
+            if(\App\Support\HrAccess::permitted($u))$authorized++;
+          }
+          echo "HR_LINKED=$hr\nHR_ALLOWED=$authorized\n";
+          '
+          echo 'HR 403 AUDIT: COMPLETE — NO WRITES'
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
