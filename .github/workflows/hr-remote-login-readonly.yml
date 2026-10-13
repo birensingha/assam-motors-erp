@@ -1,7 +1,7 @@
 name: Assam Motors HR Remote Login Readonly Audit
 on:
   push:
-    branches: [feature/hr-safe-preflight-20261012]
+    branches: [feature/hr-fixed-salary-absence-impact-20261013]
     paths: [.github/workflows/hr-remote-login-readonly.yml]
 permissions:
   contents: read
