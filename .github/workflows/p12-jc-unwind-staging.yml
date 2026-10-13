@@ -1,0 +1,114 @@
+name: Assam Motors JC Reversal Centre Staging
+on:
+  push:
+    branches: [feature/jc-safe-unwind-20261013]
+    paths: [.github/workflows/p12-jc-unwind-staging.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-p12-jc-unwind
+  cancel-in-progress: false
+jobs:
+  guarded-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify patch and SSH configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC=deployment/live-fixes/P12_JC_UNWIND/APPLY_P12.php
+          php -l "$SRC"
+          grep -q 'JC_UNWIND_P12' "$SRC"
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Scoped HR GET attendance redirect with role isolation smoke and rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p ~/jc-p12'
+          "${SCP[@]}" -r deployment/live-fixes/P12_JC_UNWIND/APPLY_P12.php deployment/live-fixes/P12_JC_UNWIND/payload "$REMOTE:~/jc-p12/"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/jc-p12/APPLY_P12.php"
+          test -f "$APP/artisan" && test -f "$PATCH"
+          php "$PATCH" check
+          OUTPUT="$(php "$PATCH" apply)"
+          printf '%s\n' "$OUTPUT"
+          BACKUP="$(printf '%s\n' "$OUTPUT" | sed -n 's/^P12_JC_UNWIND_APPLIED: BACKUP=//p')"
+          test -n "$BACKUP" && test -f "$BACKUP/web.php"
+          rollback(){
+            cp "$BACKUP/web.php" "$APP/routes/web.php"
+            cp "$BACKUP/show.blade.php" "$APP/resources/views/job-cards/show.blade.php"
+            rm -f "$APP/app/Http/Controllers/Web/AdminJobCardUnwindController.php"
+            rm -f "$APP/resources/views/job-cards/unwind.blade.php"
+            (cd "$APP" && php artisan optimize:clear >/dev/null 2>&1) || true
+            echo 'P12: rollback restored all source files'
+          }
+          trap rollback ERR
+          php -l "$APP/app/Http/Controllers/Web/AdminJobCardUnwindController.php"
+          php -l "$APP/routes/web.php"
+          cd "$APP"
+          php artisan optimize:clear >/dev/null
+          php artisan view:cache >/dev/null
+          php artisan route:list --path=erp/job-cards --except-vendor | grep -F 'reversal'
+          php <<'PHP'
+          <?php
+          require "vendor/autoload.php";$app=require "bootstrap/app.php";
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::connection();
+          $jc=$db->table('job_cards')->where('job_no','JC-2026-0025')->first();
+          if(!$jc || strtolower((string)$jc->status)!=='in-progress') { echo "P12 NO-GO: test target changed since audit\n";exit(2); }
+          $admins=\App\Models\ErpAuthUser::query()->where('active',1)->get();
+          $admin=$admins->first(fn($u)=>$u->isAdmin());
+          $normal=$admins->first(fn($u)=>!$u->isAdmin());
+          if(!$admin||!$normal)exit(2);
+          $ctr=new \App\Http\Controllers\Web\AdminJobCardUnwindController;
+          $req=\Illuminate\Http\Request::create('/erp/job-cards/'.$jc->id.'/reversal','GET');
+          $req->setUserResolver(static fn()=>$admin);
+          $view=$ctr->show($req,$jc->id);
+          if($view->name()!=='job-cards.unwind')exit(3);
+          $data=$view->getData();
+          if((string)$data['card']->job_no!=='JC-2026-0025'||$data['counts']['rot_sessions']<1||$data['counts']['job_estimates']<1)exit(4);
+          echo "P12_TARGET_REVERSAL_SCREEN_DATA: PASS status=in-progress, linked work history visible\n";
+          $req->setUserResolver(static fn()=>$normal);
+          try{$ctr->show($req,$jc->id);exit(5);}
+          catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){if($e->getStatusCode()!==403)exit(6);}
+          echo "P12_NORMAL_STAFF_ACCESS_403: PASS\n";
+          $after=$db->table('job_cards')->where('id',$jc->id)->first();
+          if($after->status!==$jc->status||$after->cancelled_at!==$jc->cancelled_at)exit(7);
+          echo "P12_NO_AUTOMATIC_CANCELLATION: PASS\n";
+          PHP
+          grep -Fq 'Permanently Delete Empty Job Card' resources/views/job-cards/show.blade.php
+          grep -Fq 'Job Card Reversal / Cancel Centre' resources/views/job-cards/show.blade.php
+          echo 'P12_JC_REVERSAL_STAGING_SMOKE: PASS (no JC/payment/stock data changed)'
+          trap - ERR
+          REMOTE_SCRIPT
+      - if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519
