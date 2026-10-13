@@ -51,7 +51,7 @@ jobs:
               echo "TABLE_INFO ".$t."\n";
               foreach(\Illuminate\Support\Facades\DB::select("SHOW COLUMNS FROM ".$t) as $x)echo $x->Field." ".$x->Type." NULL=".$x->Null." KEY=".$x->Key."\n";
             }
-            $rows=\Illuminate\Support\Facades\DB::select("SELECT TABLE_NAME,COLUMN_NAME,CONSTRAINT_NAME,REFERENCED_TABLE_NAME,DELETE_RULE FROM information_schema.KEY_COLUMN_USAGE k LEFT JOIN information_schema.REFERENTIAL_CONSTRAINTS r ON r.CONSTRAINT_SCHEMA=k.CONSTRAINT_SCHEMA AND r.CONSTRAINT_NAME=k.CONSTRAINT_NAME AND r.TABLE_NAME=k.TABLE_NAME WHERE k.TABLE_SCHEMA=DATABASE() AND k.REFERENCED_TABLE_NAME=\x27job_cards\x27");
+            $rows=\Illuminate\Support\Facades\DB::select("SELECT k.TABLE_NAME,k.COLUMN_NAME,k.CONSTRAINT_NAME,k.REFERENCED_TABLE_NAME,r.DELETE_RULE FROM information_schema.KEY_COLUMN_USAGE k LEFT JOIN information_schema.REFERENTIAL_CONSTRAINTS r ON r.CONSTRAINT_SCHEMA=k.CONSTRAINT_SCHEMA AND r.CONSTRAINT_NAME=k.CONSTRAINT_NAME AND r.TABLE_NAME=k.TABLE_NAME WHERE k.TABLE_SCHEMA=DATABASE() AND k.REFERENCED_TABLE_NAME=\x27job_cards\x27");
             foreach($rows as $row)echo "FK_REF ".json_encode($row)."\n";
             $g=\Illuminate\Support\Facades\DB::table("job_cards")->selectRaw("LOWER(COALESCE(status,\x27\x27)) as status, count(*) n")->groupByRaw("LOWER(COALESCE(status,\x27\x27))")->get();
             foreach($g as $q)echo "JOB_STATUS ".$q->status." COUNT=".$q->n."\n";
