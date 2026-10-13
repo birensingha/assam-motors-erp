@@ -1,0 +1,123 @@
+name: Assam Motors Completed ROT Audit Void Staging
+on:
+  push:
+    branches: [fix/jc-cancelled-rot-void-20261013]
+    paths: [.github/workflows/p13-rot-void-staging.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-p13-rot-void
+  cancel-in-progress: false
+jobs:
+  guarded-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify patch and SSH configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC=deployment/live-fixes/P13_ROT_VOID/APPLY_P13.php
+          php -l "$SRC"
+          grep -q 'P13_ROT_VOID_AUDIT' "$SRC"
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Scoped HR GET attendance redirect with role isolation smoke and rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p ~/jc-p13'
+          "${SCP[@]}" -r deployment/live-fixes/P13_ROT_VOID/APPLY_P13.php deployment/live-fixes/P13_ROT_VOID/payload "$REMOTE:~/jc-p13/"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/jc-p13/APPLY_P13.php"
+          test -f "$APP/artisan" && test -f "$PATCH"
+          php "$PATCH" check
+          OUTPUT="$(php "$PATCH" apply)"
+          printf '%s\n' "$OUTPUT"
+          BACKUP="$(printf '%s\n' "$OUTPUT" | sed -n 's/^P13_ROT_VOID_CODE_APPLIED: BACKUP=//p')"
+          test -n "$BACKUP" && test -f "$BACKUP/routes__web.php"
+          rollback(){
+            echo 'P13 staging test failed: restoring previous ERP source files (no ROT mutated)'
+            for rel in routes/web.php app/Services/HrOperationsService.php app/Http/Controllers/Web/AdminJobCardUnwindController.php resources/views/job-cards/unwind.blade.php resources/views/job-cards/lifecycle-panel.blade.php resources/views/job-cards/show.blade.php resources/views/job-cards/index.blade.php; do
+              key="$(printf '%s' "$rel" | sed 's,/,__,g')"
+              cp "$BACKUP/$key" "$APP/$rel"
+            done
+            rm -f "$APP/app/Http/Controllers/Web/AdminRotVoidController.php"
+            (cd "$APP" && php artisan optimize:clear >/dev/null 2>&1) || true
+          }
+          trap rollback ERR
+          php -l "$APP/app/Http/Controllers/Web/AdminRotVoidController.php"
+          php -l "$APP/app/Http/Controllers/Web/AdminJobCardUnwindController.php"
+          php -l "$APP/app/Services/HrOperationsService.php"
+          php -l "$APP/routes/web.php"
+          cd "$APP"
+          php artisan migrate --force --path=database/migrations/2026_10_13_104500_create_job_card_rot_voids.php
+          php artisan optimize:clear >/dev/null
+          php artisan view:cache >/dev/null
+          php artisan route:list --path=erp/job-cards --except-vendor | grep -F 'rot/{rot}/void'
+          php <<'PHP'
+          <?php
+          require "vendor/autoload.php";$app=require "bootstrap/app.php";
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::connection();
+          $jc=$db->table("job_cards")->where("job_no","JC-2026-0025")->first();
+          if(!$jc || strtolower((string)$jc->status)!=="cancelled")exit(2);
+          $rot=$db->table("rot_sessions")->where("job_card_id",$jc->id)->first();
+          if(!$rot || $rot->status!=="Completed" || (int)$rot->total_seconds!==1515)exit(3);
+          if(!\Illuminate\Support\Facades\Schema::hasTable("job_card_rot_voids"))exit(4);
+          if($db->table("job_card_rot_voids")->where("rot_session_id",$rot->id)->exists())exit(5);
+          $a=\App\Models\ErpAuthUser::query()->where("active",1)->get();
+          $staff=$a->first(fn($u)=>!$u->isAdmin());
+          if(!$staff)exit(6);
+          $controller=new \App\Http\Controllers\Web\AdminRotVoidController;
+          $req=\Illuminate\Http\Request::create("/erp/job-cards/".$jc->id."/reversal/rot/".$rot->id."/void","POST",
+            ["confirm_rot_id"=>$rot->id,"reason"=>"Unauthorized attempt test","acknowledge_productivity"=>1]);
+          $req->setUserResolver(static fn()=>$staff);
+          try{$controller->voidCompleted($req,$jc->id,$rot->id);exit(7);}
+          catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){if($e->getStatusCode()!==403)exit(8);}
+          $req=\Illuminate\Http\Request::create("/erp/job-cards/".$jc->id."/reversal","GET");
+          $admin=$a->first(fn($u)=>$u->isAdmin());
+          if(!$admin)exit(9);
+          $req->setUserResolver(static fn()=>$admin);
+          $view=(new \App\Http\Controllers\Web\AdminJobCardUnwindController)->show($req,$jc->id);
+          if(!array_key_exists("rotSessions",$view->getData())||!array_key_exists("voidedRotIds",$view->getData()))exit(10);
+          $after=$db->table("rot_sessions")->where("id",$rot->id)->first();
+          if($after->status!=="Completed" || (int)$after->total_seconds!==1515)exit(11);
+          echo "P13_CLOSED_JC_ROLE_403_AND_UNMODIFIED_ROT: PASS\n";
+          echo "P13_ROT_VOID_REGISTER_EMPTY: PASS\n";
+          PHP
+          grep -Fq "if(\$amLifeStatus==='cancelled') \$amLifeStage='CANCELLED'" resources/views/job-cards/lifecycle-panel.blade.php
+          grep -Fq "Void ROT from HR Productivity" resources/views/job-cards/unwind.blade.php
+          grep -Fq "whereNotExists" app/Services/HrOperationsService.php
+          echo 'P13_ROT_VOID_STAGING_SMOKE: PASS (no ROT void action executed; original data unchanged)'
+          trap - ERR
+          REMOTE_SCRIPT
+      - if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519
