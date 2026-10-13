@@ -46,7 +46,7 @@ jobs:
           cd "$APP"
           cd "$APP"
           echo '=== REAL REVERSAL VIEW RENDER (AUTHORIZED IN-MEMORY USER ONLY) ==='
-          php <<'PHP'
+          php <<'PHP' > /tmp/p13_render.out 2>&1
           <?php
           require "vendor/autoload.php";$app=require "bootstrap/app.php";
           $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
@@ -55,6 +55,7 @@ jobs:
           $admin=\App\Models\ErpAuthUser::query()->where("active",1)->get()->first(fn($u)=>$u->isAdmin());
           if(!$jc || $jc->status!=="cancelled" || !$admin)exit(2);
           \Illuminate\Support\Facades\Auth::guard("web")->setUser($admin);
+          \Illuminate\Support\Facades\View::share("errors",new \Illuminate\Support\ViewErrorBag());
           $request=\Illuminate\Http\Request::create("https://staging.assammotors.com/erp/job-cards/".$jc->id."/reversal","GET");
           $request->setUserResolver(static fn()=>$admin);
           $view=(new \App\Http\Controllers\Web\AdminJobCardUnwindController())->show($request,$jc->id);
@@ -73,6 +74,10 @@ jobs:
           if(!$entity || $entity->Null!=="YES") {echo "NO_GO_ENTITY_ID_NOT_NULLABLE\n";exit(7);}
           echo "P13_RENDERED_ADMIN_REVERSAL_PAGE_PASS\nP13_JC_CANCELLED_ROT_PRESERVED_PASS\nP13_AUDIT_ENTITY_NULLABLE_PASS\n";
           PHP
+          cat /tmp/p13_render.out
+          grep -Fq 'P13_RENDERED_ADMIN_REVERSAL_PAGE_PASS' /tmp/p13_render.out
+          grep -Fq 'P13_JC_CANCELLED_ROT_PRESERVED_PASS' /tmp/p13_render.out
+          grep -Fq 'P13_AUDIT_ENTITY_NULLABLE_PASS' /tmp/p13_render.out
           echo 'P13_RENDER_CHECK_READ_ONLY_PASS'
           REMOTE
       - name: Remove SSH key
