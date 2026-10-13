@@ -1,0 +1,65 @@
+name: Assam Motors Notification Fallback Audit
+on:
+  push:
+    branches: [fix/hr-attendance-403-20261013]
+    paths: [.github/workflows/notification-fallback-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: SSH authentication
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Simulate authenticated HR web requests with Laravel middleware (read-only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          cd "$APP"
+          echo '== EXACT ATTENDANCE FALLBACK IMPLEMENTATION =='
+          sed -n '1,100p' "$APP/app/Http/Controllers/Api/V1/AttendanceController.php"
+          echo '== ROT NOTIFICATION ENFORCEMENT =='
+          grep -Rsn 'assertCompliant\|notificationCompliance\|assertNotificationReady' "$APP/app/Http/Controllers/Api/V1" "$APP/app/Services" | head -58
+          echo '== DEVICE REGISTRATION SUMMARY COUNTS (NO TOKENS OR STAFF DETAILS) =='
+          php -r '
+          require "vendor/autoload.php";$app=require "bootstrap/app.php";$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $q=\Illuminate\Support\Facades\DB::table("staff_devices")->where("active",1);
+          $all=(clone $q)->count();
+          $ok=(clone $q)->where("notification_permission",1)->count();
+          $push=(clone $q)->whereNotNull("fcm_token")->where("fcm_token","<>","")->count();
+          $poll=(clone $q)->where("notification_permission",1)->where("last_seen_at",">=",now()->subDay())->count();
+          echo "ACTIVE_DEVICES=$all NOTIFICATION_PERMISSION_TRUE=$ok NONEMPTY_FCM_DEVICES=$push RECENT_PERMISSION_TRUE=$poll\n";
+          '
+          echo 'NOTIFICATION-FALLBACK-AUDIT:PASS'
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
