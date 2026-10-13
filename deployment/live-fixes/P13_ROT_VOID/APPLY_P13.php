@@ -85,10 +85,10 @@ BLADE;
  "\$amLifeStage='OPEN';\nif(\$amLifeStatus==='cancelled') \$amLifeStage='CANCELLED';\nelseif(\$amLifeStatus==='invoiced'",
  'Cancelled lifecycle stage');
  $s=changeOne($s," 'INVOICED'=>'Invoiced',"," 'INVOICED'=>'Invoiced',\n 'CANCELLED'=>'Cancelled',",'Cancelled stage label');
- $s=changeOne($s,"       @if(\$amLifeStage==='INVOICED' && \$amLifeInvoice)",
+ $s=changeOne($s,"@if(\$amLifeStage==='INVOICED' && \$amLifeInvoice)",
  "       @if(\$amLifeStage==='CANCELLED')\n".
  "         <p><strong>Job Card Cancelled.</strong> No Start WIP, QC or Invoice conversion actions are allowed. Visit Reversal Centre for preserved ROT, Purchase and Estimate history.</p>\n".
- "       @elseif(\$amLifeStage==='INVOICED' && \$amLifeInvoice)",
+ "@elseif(\$amLifeStage==='INVOICED' && \$amLifeInvoice)",
  'Cancelled billing safety panel');
  $map[$f]['after']=$s;
  $f='resources/views/job-cards/show.blade.php';$s=$map[$f]['before'];
