@@ -1,0 +1,105 @@
+name: Assam Motors Vendor Ledger Batch Roundoff Staging
+on:
+  push:
+    branches: [feature/jobcard-delete-purchase-settlement-20261013]
+    paths: [.github/workflows/p11-vendor-ledger-staging.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-p11-vendor-ledger
+  cancel-in-progress: false
+jobs:
+  guarded-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify patch and SSH configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC=deployment/live-fixes/P11_VENDOR_LEDGER_ROUND/APPLY_P11.php
+          php -l "$SRC"
+          grep -q 'VENDOR_LEDGER_BATCH_P11' "$SRC"
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Scoped HR GET attendance redirect with role isolation smoke and rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p ~/vendor-p11'
+          "${SCP[@]}" deployment/live-fixes/P11_VENDOR_LEDGER_ROUND/APPLY_P11.php "$REMOTE:~/vendor-p11/APPLY_P11.php"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/vendor-p11/APPLY_P11.php"
+          test -f "$APP/artisan" && test -f "$PATCH"
+          php "$PATCH" check
+          OUTPUT="$(php "$PATCH" apply)"
+          printf '%s\n' "$OUTPUT"
+          BACKUP="$(printf '%s\n' "$OUTPUT" | sed -n 's/^P11_VENDOR_ROUNDOFF_LEDGER_APPLIED: BACKUP=//p')"
+          test -n "$BACKUP" && test -f "$BACKUP/app__Services__VendorService.php"
+          rollback(){
+            cp "$BACKUP/app__Services__VendorService.php" "$APP/app/Services/VendorService.php"
+            cp "$BACKUP/resources__views__vendors__ledger.blade.php" "$APP/resources/views/vendors/ledger.blade.php"
+            (cd "$APP" && php artisan optimize:clear >/dev/null 2>&1) || true
+            echo 'P11 ROLLBACK: previous ledger service/view restored'
+          }
+          trap rollback ERR
+          php -l "$APP/app/Services/VendorService.php"
+          cd "$APP"
+          php artisan optimize:clear >/dev/null
+          php artisan view:cache >/dev/null
+          php -r '
+          require "vendor/autoload.php";$app=require "bootstrap/app.php";
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $batches=\Illuminate\Support\Facades\DB::table("workshop_purchase_batches")
+             ->where("purchase_type","PART")->where("record_status","ACTIVE")->whereNotNull("vendor_id")->get(["id","vendor_id","batch_no","grand_total"]);
+          $done=0;
+          $service=new \App\Services\VendorService;
+          $ledgers=[];
+          foreach($batches as $b){
+            $vendorId=(int)$b->vendor_id;
+            if(!isset($ledgers[$vendorId]))$ledgers[$vendorId]=$service->ledger($vendorId);
+            $rows=\Illuminate\Support\Facades\DB::table("workshop_purchases")->where("purchase_batch_no",$b->batch_no)->where("vendor_id",$vendorId)
+              ->where("purchase_type","PART")->whereRaw("COALESCE(record_status,\x27ACTIVE\x27)<>\x27DELETED\x27")->get(["total_amount"]);
+            if($rows->isEmpty())continue;
+            $delta=round((float)$b->grand_total-(float)$rows->sum("total_amount"),2);
+            if(abs($delta)<0.009)continue;
+            $entry=collect($ledgers[$vendorId]["entries"])->first(fn($e)=>$e["entry_type"]==="ROUND_OFF" && $e["entry_no"]===$b->batch_no);
+            if(!$entry || abs(round((float)$entry["credit"]-(float)$entry["debit"],2)-$delta)>=0.009){fwrite(STDERR,"NO GO batch round-off entry mismatch\n");exit(2);}
+            $done++;
+          }
+          if($done===0){fwrite(STDERR,"NO GO zero vendor-linked batch adjustments validated\n");exit(2);}
+          echo "P11_VENDOR_LEDGER_BATCHES_RECONCILED=".$done."\n";
+          '
+          grep -Fq "Batch adjustment" resources/views/vendors/ledger.blade.php
+          echo 'P11_VENDOR_ROUNDOFF_LEDGER_SMOKE: PASS (no ledger data edited)'
+          trap - ERR
+          REMOTE_SCRIPT
+      - if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519

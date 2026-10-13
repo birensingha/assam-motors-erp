@@ -1,0 +1,58 @@
+name: Assam Motors Vendor Ledger Payment Mode Audit
+on:
+  push:
+    branches: [feature/jobcard-delete-purchase-settlement-20261013]
+    paths: [.github/workflows/vendor-payment-ledger-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: SSH authentication
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Read-only routes, finance schema and application source methods
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          cd "$APP"
+          echo '=== VENDOR LEDGER SOURCE ==='
+          grep -nE 'function (ledger|show|vendorLedger)|workshop_vendor_payments|workshop_payment_vouchers|payable|credit|advance|ON_ACCOUNT' app/Services/VendorService.php app/Http/Controllers/Web/AdminVendorPageController.php resources/views/vendors/* resources/views/payments/* | head -110 || true
+          echo '=== PAYMENT SOURCE TYPE SQL ==='
+          php -r '
+          require "vendor/autoload.php";$app=require "bootstrap/app.php";$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          foreach(\Illuminate\Support\Facades\DB::select("SHOW COLUMNS FROM workshop_payment_vouchers") as $c)if(in_array($c->Field,["source_type","source_reference","vendor_id"],true))echo "FIELD ".$c->Field." TYPE=".$c->Type."\n";
+          '
+          echo '=== NO-PII VENDOR LEDGER INTEGRATION AUDIT PASS ==='
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"

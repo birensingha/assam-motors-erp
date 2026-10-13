@@ -1,0 +1,81 @@
+name: Assam Motors Job Card Delete Safety Audit
+on:
+  push:
+    branches: [feature/jobcard-delete-purchase-settlement-20261013]
+    paths: [.github/workflows/jc-delete-safety-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: SSH authentication
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Read-only routes, finance schema and application source methods
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          cd "$APP"
+          echo '== JOB DELETE AUDIT SCHEMA/FOREIGN KEYS ONLY =='
+          php -r '
+            require "vendor/autoload.php";$app=require "bootstrap/app.php";$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            foreach(["job_card_delete_audit","job_card_change_audits","job_cards"] as $t){
+              echo "TABLE_INFO ".$t."\n";
+              foreach(\Illuminate\Support\Facades\DB::select("SHOW COLUMNS FROM ".$t) as $x)echo $x->Field." ".$x->Type." NULL=".$x->Null." KEY=".$x->Key."\n";
+            }
+            $rows=\Illuminate\Support\Facades\DB::select("SELECT k.TABLE_NAME,k.COLUMN_NAME,k.CONSTRAINT_NAME,k.REFERENCED_TABLE_NAME,r.DELETE_RULE FROM information_schema.KEY_COLUMN_USAGE k LEFT JOIN information_schema.REFERENTIAL_CONSTRAINTS r ON r.CONSTRAINT_SCHEMA=k.CONSTRAINT_SCHEMA AND r.CONSTRAINT_NAME=k.CONSTRAINT_NAME AND r.TABLE_NAME=k.TABLE_NAME WHERE k.TABLE_SCHEMA=DATABASE() AND k.REFERENCED_TABLE_NAME=\x27job_cards\x27");
+            foreach($rows as $row)echo "FK_REF ".json_encode($row)."\n";
+            $g=\Illuminate\Support\Facades\DB::table("job_cards")->selectRaw("LOWER(COALESCE(status,\x27\x27)) as status, count(*) n")->groupByRaw("LOWER(COALESCE(status,\x27\x27))")->get();
+            foreach($g as $q)echo "JOB_STATUS ".$q->status." COUNT=".$q->n."\n";
+          '
+          echo '== JOB CARD RELATED TABLE NAMES AND COUNT OF EMPTY CARDS =='
+          php -r '
+            require "vendor/autoload.php";$app=require "bootstrap/app.php";$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $db=\Illuminate\Support\Facades\DB::connection();$schema=\Illuminate\Support\Facades\Schema::getFacadeRoot();
+            $tables=[];
+            foreach($db->select("SHOW TABLES") as $row){$t=(string)array_values((array)$row)[0];
+              $c=$schema->getColumnListing($t);
+              if(in_array("job_card_id",$c))$tables[]=$t;
+            }
+            foreach($tables as $t)echo "JC_LINK ".$t."\n";
+            $blank=0;foreach($db->table("job_cards")->get(["id","status","invoice_id"]) as $j){
+              if(!in_array(strtolower((string)$j->status),["open","cancelled"],true)||$j->invoice_id)continue;
+              $related=false;foreach($tables as $t){
+                if(in_array($t,["job_card_change_audits","job_card_delete_audit"],true))continue;
+                if($db->table($t)->where("job_card_id",$j->id)->exists()){$related=true;break;}
+              }if(!$related)$blank++;
+            }echo "STRICT_EMPTY_CARDS=".$blank."\n";
+          '
+          echo 'JC_DELETE_SAFETY_READONLY_PASS'
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"

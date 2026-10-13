@@ -1,0 +1,83 @@
+name: Assam Motors JC Delete & Purchase Settlement Audit
+on:
+  push:
+    branches: [feature/jobcard-delete-purchase-settlement-20261013]
+    paths: [.github/workflows/jc-payment-source-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: SSH authentication
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Read-only routes, finance schema and application source methods
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          cd "$APP"
+          echo '=== PAYMENT JS SOURCE ==='
+          nl -ba public/js/payment-voucher.js | sed -n '1,225p'
+          echo '=== EXPENSE PAYMENT SERVICE CONSTANTS ==='
+          nl -ba app/Services/ExpensePaymentService.php | sed -n '1,54p'
+          echo '=== PAYMENT MODEL ==='
+          sed -n '1,115p' app/Models/WorkshopPaymentVoucher.php
+          echo '=== JOB CARD CONTROL TOP ==='
+          sed -n '1,120p' app/Http/Controllers/Web/AdminJobCardPageController.php
+          echo '=== JOB CARD CONTROLLER SHOW ==='
+          sed -n '260,318p' app/Http/Controllers/Web/AdminJobCardPageController.php
+          echo '=== JOB CARD SERVICE TOP ==='
+          sed -n '1,115p' app/Services/JobCardService.php
+          echo '=== REFERENCED CHILD TABLE COUNTS AND KEYS ==='
+          php -r '
+            require "vendor/autoload.php";$app=require "bootstrap/app.php";$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $db=\Illuminate\Support\Facades\DB::connection();$schema=\Illuminate\Support\Facades\Schema::getFacadeRoot();
+            foreach($db->select("SHOW TABLES") as $row){$t=(string)array_values((array)$row)[0];
+              $cols=\Illuminate\Support\Facades\Schema::getColumnListing($t);
+              if(in_array("job_card_id",$cols)||in_array("job_id",$cols))
+                echo "REL_TABLE ".$t." REF_COL=".(in_array("job_card_id",$cols)?"job_card_id":"job_id")." COUNT=".$db->table($t)->count()."\n";
+            }
+            foreach(["workshop_purchase_batches","workshop_purchases"] as $t)
+              echo "BATCH_STATUSES ".$t." COUNT=".$db->table($t)->count()."\n";
+          '
+          echo '=== ROUND-OFF DELTA COUNTS (NO FINANCIAL AMOUNTS OR SUPPLIER DATA) ==='
+          php -r '
+            require "vendor/autoload.php";$app=require "bootstrap/app.php";$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $b=\Illuminate\Support\Facades\DB::table("workshop_purchase_batches")->where("purchase_type","PART")->where("record_status","ACTIVE")->get(["batch_no","grand_total"]);
+            $different=0;$matched=0;foreach($b as $p){$sum=(float)\Illuminate\Support\Facades\DB::table("workshop_purchases")->where("purchase_batch_no",$p->batch_no)->where("purchase_type","PART")->whereRaw("COALESCE(record_status,\x27ACTIVE\x27)<>\x27DELETED\x27")->sum("total_amount");
+              $matched++;if(abs(round($sum-(float)$p->grand_total,2))>=0.01)$different++;
+            }echo "ACTIVE_PART_BATCHES=".$matched." ROUNDING_DIFFERENCE_BATCHES=".$different."\n";
+          '
+          echo 'JC_PAYMENT_DETAIL_AUDIT_PASS'
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
