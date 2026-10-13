@@ -1,0 +1,106 @@
+name: Assam Motors Purchase Round Off and Payment Modes Staging
+on:
+  push:
+    branches: [feature/jobcard-delete-purchase-settlement-20261013]
+    paths: [.github/workflows/p9-purchase-payment-staging.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-p9-purchase-settlement
+  cancel-in-progress: false
+jobs:
+  guarded-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify patch and SSH configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC=deployment/live-fixes/P9_PURCHASE_SETTLEMENT/APPLY_P9.php
+          php -l "$SRC"
+          grep -q 'PAYMENT_BATCH_GRAND_TOTAL_P9' "$SRC"
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Scoped HR GET attendance redirect with role isolation smoke and rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p ~/payment-p9'
+          "${SCP[@]}" deployment/live-fixes/P9_PURCHASE_SETTLEMENT/APPLY_P9.php "$REMOTE:~/payment-p9/APPLY_P9.php"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/payment-p9/APPLY_P9.php"
+          test -f "$APP/artisan" && test -f "$PATCH"
+          php "$PATCH" check
+          OUTPUT="$(php "$PATCH" apply)"
+          printf '%s\n' "$OUTPUT"
+          BACKUP="$(printf '%s\n' "$OUTPUT" | sed -n 's/^PAYMENT_ROUND_OFF_P9_APPLIED: BACKUP=//p')"
+          test -n "$BACKUP" && test -f "$BACKUP/app__Services__ExpensePaymentService.php"
+          rollback(){
+            echo "P9 NO-GO: restoring exact PHP/Blade/JS from private backup"
+            for rel in app/Services/ExpensePaymentService.php app/Http/Controllers/Web/AdminExpensePaymentPageController.php resources/views/payments/create.blade.php resources/views/payments/index.blade.php public/js/payment-voucher.js; do
+              key="$(printf '%s' "$rel" | sed 's,/,__,g')"
+              cp "$BACKUP/$key" "$APP/$rel"
+            done
+            (cd "$APP" && php artisan optimize:clear >/dev/null 2>&1) || true
+          }
+          trap rollback ERR
+          php -l "$APP/app/Services/ExpensePaymentService.php"
+          php -l "$APP/app/Http/Controllers/Web/AdminExpensePaymentPageController.php"
+          cd "$APP"
+          php artisan optimize:clear >/dev/null
+          php artisan route:list --path=erp/payments --except-vendor | head -8
+          php -r '
+          require "vendor/autoload.php";$app=require "bootstrap/app.php";
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $service=new \App\Services\ExpensePaymentService;
+          $sources=$service->payableSources();$checked=0;
+          foreach($sources as $s) {
+            if(($s["type"]??"")!=="PURCHASE_INVOICE")continue;
+            $ref=substr((string)$s["key"],strlen("PURCHASE_INVOICE::"));
+            $batch=\Illuminate\Support\Facades\DB::table("workshop_purchase_batches")->where("batch_no",$ref)->where("record_status","ACTIVE")->where("purchase_type","PART")->first();
+            if(!$batch)continue;
+            $paid=(float)\Illuminate\Support\Facades\DB::table("workshop_payment_vouchers")->where("record_status","ACTIVE")->where("source_type","PURCHASE_INVOICE")->where("source_reference",$ref)->sum("amount");
+            $expected=round(max(0,(float)$batch->grand_total-$paid),2);
+            if(abs((float)$s["outstanding"]-$expected)>=0.009){fwrite(STDERR,"NO GO outstanding mismatch\n");exit(2);}
+            $checked++;
+          }
+          if($checked===0){fwrite(STDERR,"NO GO zero rounded sources checked\n");exit(2);}
+          if(!in_array("ON_ACCOUNT",\App\Services\ExpensePaymentService::SOURCE_TYPES,true))exit(2);
+          echo "P9_ROUNDED_PURCHASE_OUTSTANDING_MATCHED=$checked\nP9_ON_ACCOUNT_ALLOWED=YES\n";
+          '
+          grep -Fq 'ON ACCOUNT' resources/views/payments/create.blade.php
+          grep -Fq 'AGAINST REFERENCE' resources/views/payments/create.blade.php
+          grep -Fq 'PAYMENT_BATCH_GRAND_TOTAL_P9' app/Services/ExpensePaymentService.php
+          echo 'P9_ROUND_OFF_PAYMENT_MODES_SMOKE: PASS (no financial rows edited)'
+          trap - ERR
+          REMOTE_SCRIPT
+      - if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519
