@@ -1,0 +1,86 @@
+name: Assam Motors JC Reversal Dependencies Audit
+on:
+  push:
+    branches: [feature/jc-safe-unwind-20261013]
+    paths: [.github/workflows/jc-unwind-readonly-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: SSH authentication
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Read-only routes, finance schema and application source methods
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          cd "$APP"
+          echo '=== TARGET JOB CARD COUNTS, STATUS, LINKED TABLES (NO PII) ==='
+          php <<'PHP'
+          <?php
+          require "vendor/autoload.php";$app=require "bootstrap/app.php";$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::connection();$schema=\Illuminate\Support\Facades\Schema::getFacadeRoot();
+          $jc=$db->table('job_cards')->where('job_no','JC-2026-0025')->first();
+          if(!$jc){echo "TARGET_NOT_FOUND\n";exit(0);}
+          echo "JC_STATUS=".($jc->status??"null")." JC_ID=".$jc->id." HAS_INVOICE_ID=".(!empty($jc->invoice_id)?"YES":"NO").
+               " GRAND_TOTAL_POSITIVE=".((float)$jc->grand_total>0?"YES":"NO")." INSPECTION=".($jc->inspection_status??"null").
+               " DIAGNOSIS=".($jc->diagnosis_status??"null")." DECISION=".($jc->decision_status??"null")."\n";
+          foreach($db->select("SHOW TABLES") as $t){
+            $table=(string)array_values((array)$t)[0];
+            $cols=$schema->getColumnListing($table);
+            foreach(['job_card_id','job_id'] as $column){
+              if(!in_array($column,$cols,true))continue;
+              $n=$db->table($table)->where($column,$jc->id)->count();
+              if($n)echo "JC_REL ".$table." ".$column." count=".$n."\n";
+            }
+          }
+          foreach(['job_card_labour','job_card_parts','job_estimates','rot_sessions','inventory_movements','workshop_purchases','job_card_change_audits'] as $table) {
+            if(!$schema->hasTable($table))continue;
+            echo "REL_SCHEMA ".$table."=".implode(",",$schema->getColumnListing($table))."\n";
+          }
+          PHP
+          echo '=== CURRENT REVERSAL SERVICE / CONTROLLER ENTRY POINTS ==='
+          grep -RsnE --include='*.php' '(function (deletePart|returnPart|reverse|cancel|reopen|deleteLabour|removeLabour|returnEstimateReview)|REVERS|UNALLOCAT|VOID)' app/Http/Controllers/Web/AdminJobCardPageController.php app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php app/Services/JobCardService.php app/Services/RotAssignmentService.php app/Services/InventoryService.php app/Http/Controllers/Web/AdminEstimatePageController.php 2>/dev/null | head -125 || true
+          echo '=== WORKSHOP RELEVANT ROUTES ==='
+          php artisan route:list --path=erp/job-cards --except-vendor | head -60
+          php artisan route:list --path=erp/estimates --except-vendor | head -50
+          echo '=== EXISTING DELETE PART CODE ==='
+          sed -n '485,576p' app/Http/Controllers/Web/AdminJobCardPageController.php
+          echo '=== LIFECYCLE REOPEN/CANCEL METHODS ==='
+          grep -nE 'function (reopen|cancel|close|workComplete|wip)' app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php || true
+          echo '=== RELEVANT ESTIMATE STATUS HANDLERS ==='
+          grep -nE '(function |APPROV|REJECT|CANCEL|REVOK|REVERSE|converted_to_job_at)' app/Http/Controllers/Web/AdminEstimatePageController.php | head -120 || true
+          echo 'JC_SAFE_UNWIND_AUDIT_PASS'
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
