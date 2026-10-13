@@ -44,37 +44,24 @@ jobs:
           set -euo pipefail
           APP="$HOME/domains/assammotors.com/assam-erp-staging"
           cd "$APP"
-          echo '== MATCHING ROUTES (names and handlers only) =='
-          php artisan route:list --path=erp/job-cards --except-vendor | head -48
-          php artisan route:list --path=erp/payments --except-vendor | head -48
-          php artisan route:list --path=erp/purchases --except-vendor | head -48
-          echo '== CONTROLLER/SERVICE/VIEW FILES =='
-          find app/Http/Controllers app/Services resources/views -maxdepth 5 -type f \( -iname '*JobCard*' -o -iname '*Purchase*' -o -iname '*Payment*' -o -iname '*Vendor*' -o -iname '*Supplier*' \) | sort | head -125
-          echo '== JOB CARD DELETE/CANCEL IMPLEMENTATIONS =='
-          grep -RsnE --include='*.php' '(function (destroy|delete|cancel|void)|job.cards.*(delete|destroy)|JOB_CARD_CANCELLED)' app/Http/Controllers app/Services routes/web.php | head -70 || true
-          echo '== PAYMENT REFERENCE/ROUNDING IMPLEMENTATIONS =='
-          grep -RsnEi --include='*.php' '(against.reference|on.account|advance|round.?off|source_reference|payableSources|outstanding|function (store|create).*\()' app/Services/ExpensePaymentService.php app/Http/Controllers/Web/*Payment* app/Http/Controllers/*/*Payment* resources/views/payments resources/views/purchases 2>/dev/null | head -170 || true
-          echo '== DATABASE STRUCTURE: TABLES/COLUMNS ONLY =='
-          php -r '
-            require "vendor/autoload.php";$app=require "bootstrap/app.php";
-            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-            $schema=\Illuminate\Support\Facades\Schema::getFacadeRoot();
-            foreach(\Illuminate\Support\Facades\DB::select("SHOW TABLES") as $item){
-              $t=(string)array_values((array)$item)[0];
-              if(!preg_match("/job.card|purchase|payment|vendor|supplier|ledger|advance|round|stock/i",$t))continue;
-              $cols=\Illuminate\Support\Facades\Schema::getColumnListing($t);
-              echo "TABLE ".$t." COLUMNS=".implode(",",$cols)."\n";
-            }
-          '
-          echo '== CURRENT COUNTS/NO ROW DATA =='
-          php -r '
-            require "vendor/autoload.php";$app=require "bootstrap/app.php";
-            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-            foreach(["job_cards","workshop_payment_vouchers","parts_purchases","workshop_parts_purchases","purchase_bills","purchase_payments"] as $t)
-              if(\Illuminate\Support\Facades\Schema::hasTable($t))
-                echo "COUNT ".$t."=".\Illuminate\Support\Facades\DB::table($t)->count()."\n";
-          '
-          echo 'JC_PAYMENT_SOURCE_AUDIT_READONLY_PASS'
+          echo '=== PAYMENT SERVICE SOURCE ==='
+          nl -ba app/Services/ExpensePaymentService.php | sed -n '125,225p'
+          echo '=== PAYMENT CONTROLLER SOURCE ==='
+          nl -ba app/Http/Controllers/Web/AdminExpensePaymentPageController.php | sed -n '58,100p'
+          echo '=== PAYMENT CREATE BLADE SOURCE ==='
+          nl -ba resources/views/payments/create.blade.php | sed -n '1,165p'
+          echo '=== PURCHASE SERVICE / BATCH TOTAL REFERENCES ==='
+          grep -nE 'purchase_batch_no|pre_round_total|round_off|grand_total|function.*batch|workshop_purchase_batches|total_amount' app/Services/PurchaseService.php | head -72
+          echo '=== JOB CARD PAGE METHODS/DELETE LIST ==='
+          grep -nE 'function (index|show|destroy|store|edit|update|delete|cancel)|job_card_delete_audit|from .job_cards|DB::table\(.job_cards|return view' app/Http/Controllers/Web/AdminJobCardPageController.php | head -87
+          echo '=== JOB CARD LIST / SHOW UI LINKS ==='
+          for t in resources/views/job-cards/index.blade.php resources/views/job-cards/show.blade.php; do
+            echo "VIEW=$t"
+            sed -n '1,72p' "$t"
+          done
+          echo '=== ROUTES CONTEXT ==='
+          sed -n '52,98p' routes/web.php
+          echo 'SOURCE_CODE_AUDIT_NO_WRITES_PASS'
           REMOTE
       - name: Remove SSH key
         if: always()
