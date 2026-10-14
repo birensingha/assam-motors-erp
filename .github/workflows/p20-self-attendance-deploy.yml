@@ -1,0 +1,136 @@
+name: Assam Motors P20 Admin Self Attendance STAGING
+on:
+  push:
+    branches: [fix/p20-admin-self-attendance-20261014]
+    paths: [.github/workflows/p20-self-attendance-deploy.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-p20-admin-self-attendance
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pre-deployment syntax
+        run: |
+          php -l deployment/live-fixes/P20_ADMIN_SELF_ATTENDANCE/PATCH_P20.php
+          php -l deployment/live-fixes/P20_ADMIN_SELF_ATTENDANCE/payload/AdminSelfAttendanceController.php
+      - name: Configure staging SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Guarded install with authenticated real page render and no attendance writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            remote_ssh(){ ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT" "$@"; }
+            remote_scp(){ scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$@"; }
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            remote_ssh(){ sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT" "$@"; }
+            remote_scp(){ sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$@"; }
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          remote_ssh "$REMOTE" 'mkdir -p ~/assam-p20-attendance'
+          remote_scp -r deployment/live-fixes/P20_ADMIN_SELF_ATTENDANCE/PATCH_P20.php deployment/live-fixes/P20_ADMIN_SELF_ATTENDANCE/payload "$REMOTE:~/assam-p20-attendance/"
+          remote_ssh "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/assam-p20-attendance/PATCH_P20.php"
+          CTRL="$APP/app/Http/Controllers/Web/AdminSelfAttendanceController.php"
+          test -f "$APP/artisan" && test -f "$PATCH"
+          php "$PATCH" check "$APP"
+          RESULT="$(php "$PATCH" apply "$APP")"
+          printf '%s\n' "$RESULT"
+          BAK="$(printf '%s\n' "$RESULT" | sed -n 's/^P20_APPLIED_BACKUP=//p')"
+          test -n "$BAK" && test -d "$BAK"
+          for f in routes__web.php app__Http__Controllers__Web__AdminNativeModuleController.php resources__views__admin__native__attendance.blade.php; do
+            test -f "$BAK/$f"
+          done
+          rollback(){
+            echo 'P20_QA_FAILED_RESTORING_SOURCE_BACKUPS'
+            cp "$BAK/routes__web.php" "$APP/routes/web.php"
+            cp "$BAK/app__Http__Controllers__Web__AdminNativeModuleController.php" "$APP/app/Http/Controllers/Web/AdminNativeModuleController.php"
+            cp "$BAK/resources__views__admin__native__attendance.blade.php" "$APP/resources/views/admin/native/attendance.blade.php"
+            rm -f "$CTRL"
+            (cd "$APP" && php artisan view:clear >/dev/null 2>&1 && php artisan route:clear >/dev/null 2>&1) || true
+          }
+          trap rollback ERR
+          cd "$APP"
+          php -l "$CTRL"
+          php -l app/Http/Controllers/Web/AdminNativeModuleController.php
+          php -l routes/web.php
+          php artisan view:clear >/dev/null
+          php artisan route:clear >/dev/null
+          php artisan view:cache >/dev/null
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::connection();
+          $routes=\Illuminate\Support\Facades\Route::getRoutes();
+          foreach(['erp.attendance.self.checkin','erp.attendance.self.checkout'] as $name){
+            $r=$routes->getByName($name);
+            if(!$r || !in_array('POST',$r->methods(),true)){echo "P20_NO_GO_ROUTE_MISSING\n";exit(2);}
+            if(!str_contains(implode(',',$r->gatherMiddleware()),'EnsureErpAdmin')){
+              echo "P20_NO_GO_ADMIN_MIDDLEWARE_MISSING\n";exit(3);
+            }
+          }
+          $day=now('Asia/Kolkata')->toDateString();
+          $admin=\App\Models\ErpAuthUser::query()->where('active',1)->get()->first(function($u)use($db,$day){
+            return strtolower((string)$u->role)==='admin' && (int)$u->staff_id>0
+              && $db->table('attendance')->where('staff_id',$u->staff_id)
+                ->where('date',$day)->whereNotNull('check_in')->whereNull('check_out')->exists();
+          });
+          if(!$admin){echo "P20_NO_GO_NO_CHECKED_IN_ADMIN_FOR_TEST\n";exit(4);}
+          \Illuminate\Support\Facades\Auth::guard('web')->setUser($admin);
+          \Illuminate\Support\Facades\View::share('errors',new \Illuminate\Support\ViewErrorBag());
+          $req=\Illuminate\Http\Request::create('/erp/attendance','GET');
+          $req->setUserResolver(static fn()=>$admin);
+          try {
+            $view=app(\App\Http\Controllers\Web\AdminNativeModuleController::class)->attendance($req);
+            $vars=$view->getData();
+            $html=$view->render();
+          }catch(\Throwable $e){echo 'P20_RENDER_ERROR_CLASS='.get_class($e)."\n";exit(5);}
+          if(!($vars['myIsOwnerAdmin']??false)||!($vars['mySelfAttendanceEnabled']??false)
+             || ($vars['myAttendanceCount']??0)!==1){
+              echo "P20_NO_GO_ADMIN_VIEW_STATE\n";exit(6);
+          }
+          foreach(['My Attendance','Check-Out Now','View My Attendance History','am20-own-attendance'] as $needle){
+            if(!str_contains($html,$needle)){echo "P20_NO_GO_UI_MARKER\n";exit(7);}
+          }
+          if(str_contains($html,'Check-In Now')){
+              echo "P20_NO_GO_DUPLICATE_CHECKIN_SHOWN\n";exit(8);
+          }
+          echo "P20_REAL_ADMIN_PAGE_RENDER_PASS\n";
+          echo "P20_TODAY_CHECKOUT_BUTTON_VISIBLE_PASS\n";
+          echo "P20_SELF_POST_ROUTES_PROTECTED_PASS\n";
+          echo "P20_NO_CHECKIN_CHECKOUT_OR_HR_RECORDS_MUTATED\n";
+          PHP
+          trap - ERR
+          echo 'P20_STAGING_ADMIN_SELF_ATTENDANCE_DEPLOY_PASS'
+          REMOTE
+      - name: Clear SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
