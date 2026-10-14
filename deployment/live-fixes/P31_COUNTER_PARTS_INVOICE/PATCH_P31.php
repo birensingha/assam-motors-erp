@@ -25,7 +25,15 @@ foreach($edit as $p){
  if(str_contains($original[$p],'P31_COUNTER_PARTS_INVOICE')){fwrite(STDERR,"P31_NO_GO_INSTALLED_OR_PARTIAL\n");exit(4);}
 }
 foreach($payload as $p=>$f){
- if(!is_file($f)||is_link($f)||file_exists($root.'/'.$p)){fwrite(STDERR,"P31_NO_GO_DESTINATION_OR_PAYLOAD ".$p."\n");exit(4);}
+ if(!is_file($f)||is_link($f)){fwrite(STDERR,"P31_NO_GO_PAYLOAD ".$p."\n");exit(4);}
+ if(file_exists($root.'/'.$p)){
+   // A prior failed post-deploy view QA rolls back PHP/Blade sources but intentionally
+   // keeps the additive empty database tables. Accept the identical migration only.
+   if(!str_starts_with($p,'database/migrations/') || is_link($root.'/'.$p)
+      || hash_file('sha256',$root.'/'.$p)!==hash_file('sha256',$f)){
+     fwrite(STDERR,"P31_NO_GO_DESTINATION_CONFLICT ".$p."\n");exit(4);
+   }
+ }
 }
 function replace31($s,$needle,$new,$tag){
  $n=substr_count($s,$needle);
@@ -117,6 +125,11 @@ try {
  }
  foreach($payload as $p=>$source){
    $dest=$root.'/'.$p;
+   if(file_exists($dest) && str_starts_with($p,'database/migrations/')
+       && hash_file('sha256',$dest)===hash_file('sha256',$source)){
+     echo "P31_IDENTICAL_EXISTING_MIGRATION_REUSED\n";
+     continue;
+   }
    if(!is_dir(dirname($dest))&&!mkdir(dirname($dest),0755,true))throw new RuntimeException('Dir '.$p);
    if(file_exists($dest)||!copy($source,$dest))throw new RuntimeException('Payload '.$p);
    $done[]=$p;
