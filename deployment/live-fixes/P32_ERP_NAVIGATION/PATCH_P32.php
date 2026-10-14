@@ -48,7 +48,7 @@ $after=substr_replace($beforeWithoutFloat,"\n".$block."\n",$closingAt,0);
 if(substr_count($after,'P32_ERP_SIDEBAR_V2')!==1||str_contains($after,'id="am-p32-nav"'))exit(7);
 try{
  chdir($root);require 'vendor/autoload.php';$app=require 'bootstrap/app.php';
- $app->make(\\Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
+ $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
  token_get_all(app('blade.compiler')->compileString($after),TOKEN_PARSE);
  echo "P32_SIDEBAR_COMPILE_PASS\n";
 }catch(Throwable $e){fwrite(STDERR,"P32_NO_GO_BLADE ".$e->getMessage()."\n");exit(8);}
