@@ -1,0 +1,59 @@
+name: P33 Existing Stock Issue Controller Readonly Inspect
+on:
+  push:
+    branches: [feature/p33-jobcard-parts-issue-fitted-20261014]
+    paths: [.github/workflows/p33-existing-controller-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Secure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Read-only auth mapping, routes and attendance source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f "$ROOT/artisan"
+          cd "$ROOT"
+          echo '=== P33 EXISTING CONTROLLER / VIEW / ROUTES ==='
+          test -f app/Http/Controllers/Web/AdminJobCardPartIssueController.php && {
+            stat -c '%n %s bytes %y' app/Http/Controllers/Web/AdminJobCardPartIssueController.php
+            sha256sum app/Http/Controllers/Web/AdminJobCardPartIssueController.php
+            grep -n -E 'class |function |P33_|JOB_ISSUE|PART_REQUISITION|issue_status|stock_qty|job_card_change_audits' app/Http/Controllers/Web/AdminJobCardPartIssueController.php | head -n 110
+          } || echo P33_CONTROLLER_ABSENT
+          test -f resources/views/job-cards/part-stock-control.blade.php && { stat -c '%n %s bytes' resources/views/job-cards/part-stock-control.blade.php; sha256sum resources/views/job-cards/part-stock-control.blade.php; } || echo P33_VIEW_ABSENT
+          grep -n 'parts/{part}/issue\|parts/{part}/fitted\|parts/{part}/requisition\|P33_JOB_PART' routes/web.php resources/views/job-cards/show.blade.php resources/views/job-cards/lifecycle-panel.blade.php | head -n 45 || true
+          echo P33_CONTROLLER_INSPECTION_READONLY_COMPLETE
+          REMOTE
+      - if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"

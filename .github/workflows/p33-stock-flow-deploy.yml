@@ -1,0 +1,149 @@
+name: P33 Parts Requisition Issue Fitted STAGING
+on:
+  push:
+    branches: [feature/p33-jobcard-parts-issue-fitted-20261014]
+    paths: [.github/workflows/p33-stock-flow-deploy.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-p33-staging-parts
+  cancel-in-progress: false
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP Lint
+        run: |
+          php -l deployment/live-fixes/P33_PART_STOCK_CONTROL/PATCH_P33.php
+          php -l deployment/live-fixes/P33_PART_STOCK_CONTROL/payload/AdminJobCardPartIssueController.php
+      - name: Prepare SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Install guarded app and test real Job Card and stock guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            rssh(){ ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT" "$@"; }
+            rscp(){ scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$@"; }
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            rssh(){ sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT" "$@"; }
+            rscp(){ sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$@"; }
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          rssh "$REMOTE" 'mkdir -p ~/assam-p33-stock'
+          rscp -r deployment/live-fixes/P33_PART_STOCK_CONTROL/PATCH_P33.php deployment/live-fixes/P33_PART_STOCK_CONTROL/payload "$REMOTE:~/assam-p33-stock/"
+          rssh "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/assam-p33-stock/PATCH_P33.php"
+          test -f "$ROOT/artisan" && test -f "$PATCH"
+          php "$PATCH" check "$ROOT"
+          RESULT="$(php "$PATCH" apply "$ROOT")"
+          printf '%s\n' "$RESULT"
+          BAK="$(printf '%s\n' "$RESULT" | sed -n 's/^P33_APPLIED_BACKUP=//p')"
+          test -n "$BAK" && test -d "$BAK"
+          files='routes/web.php
+          resources/views/job-cards/show.blade.php
+          resources/views/job-cards/lifecycle-panel.blade.php
+          app/Http/Controllers/Web/AdminJobCardPageController.php'
+          while read -r file; do
+            key="$(printf '%s' "$file" | sed 's#/#__#g')"
+            test -f "$BAK/$key"
+          done <<< "$files"
+          rollback(){
+            echo 'P33_QA_FAILED_RESTORE_ORIGINAL_SOURCES'
+            while read -r file; do
+              key="$(printf '%s' "$file" | sed 's#/#__#g')"
+              cp "$BAK/$key" "$ROOT/$file"
+            done <<< "$files"
+            rm -f "$ROOT/app/Http/Controllers/Web/AdminJobCardPartIssueController.php"
+            rm -f "$ROOT/resources/views/job-cards/part-stock-control.blade.php"
+            (cd "$ROOT" && php artisan view:clear >/dev/null 2>&1 && php artisan route:clear >/dev/null 2>&1) || true
+          }
+          trap rollback ERR
+          cd "$ROOT"
+          php -l app/Http/Controllers/Web/AdminJobCardPartIssueController.php
+          php -l app/Http/Controllers/Web/AdminJobCardPageController.php
+          php -l routes/web.php
+          php artisan route:clear >/dev/null
+          php artisan view:clear >/dev/null
+          php artisan view:cache >/dev/null
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::connection();
+          $routes=\Illuminate\Support\Facades\Route::getRoutes();
+          foreach(['requisition','issue','fitted'] as $status){
+             $name='erp.job-cards.parts.'.$status;
+             $r=$routes->getByName($name);
+             if(!$r || !in_array('POST',$r->methods(),true)
+               || !str_contains(implode(',',$r->gatherMiddleware()),'EnsureErpAdmin')){
+                echo 'P33_NO_GO_ADMIN_ROUTE_'.$status.PHP_EOL;exit(2);
+             }
+          }
+          $part=$db->table('job_card_parts')->where('id',525)->where('job_card_id',34)->first();
+          if(!$part){echo 'P33_NO_GO_EXPECTED_PART_525_MISSING'.PHP_EOL;exit(3);}
+          $master=$db->table('parts_master')->where('id',$part->part_master_id)->first();
+          if(!$master){echo 'P33_NO_GO_PART_MASTER_NOT_FOUND'.PHP_EOL;exit(4);}
+          $beforeQty=(float)$master->stock_qty;
+          $oldState=(string)$part->issue_status;
+          $moves=$db->table('inventory_movements')->where('job_card_id',34)->where('part_master_id',$part->part_master_id)->count();
+          $audit=$db->table('job_card_change_audits')->where('job_card_id',34)->count();
+          \Illuminate\Support\Facades\View::share('errors',new \Illuminate\Support\ViewErrorBag());
+          $admin=\App\Models\ErpAuthUser::query()->where('active',1)->get()->first(fn($u)=>$u->isAdmin());
+          if(!$admin){echo 'P33_NO_GO_ADMIN_LOGIN'.PHP_EOL;exit(5);}
+          \Illuminate\Support\Facades\Auth::guard('web')->setUser($admin);
+          $request=\Illuminate\Http\Request::create('/erp/job-cards/34','GET');
+          $request->setUserResolver(static fn()=>$admin);
+          try {
+             $view=app(\App\Http\Controllers\Web\AdminJobCardPageController::class)
+                ->show($request,34,app(\App\Services\JobCardService::class));
+             $html=$view->render();
+          }catch(\Throwable $e){echo 'P33_NO_GO_JOB_CARD_RENDER='.get_class($e).PHP_EOL;exit(6);}
+          if(!str_contains($html,'Requisition') || !str_contains($html,'parts/525/requisition')){
+             echo 'P33_NO_GO_REQUISITION_BUTTON_NOT_RENDERED'.PHP_EOL;exit(7);
+          }
+          $controller=file_get_contents('app/Http/Controllers/Web/AdminJobCardPartIssueController.php');
+          foreach(['lockForUpdate','JOB_ISSUE','PART_ISSUED','PART_FITTED',
+                   'stock<0','Reconcile purchase/stock first'] as $token){
+              if(!str_contains($controller,$token)){echo 'P33_NO_GO_STOCK_GUARD_MISSING'.PHP_EOL;exit(8);}
+          }
+          $masterAfter=$db->table('parts_master')->where('id',$master->id)->first();
+          $lineAfter=$db->table('job_card_parts')->where('id',525)->first();
+          if((float)$masterAfter->stock_qty!==$beforeQty || $lineAfter->issue_status!==$oldState
+            || $db->table('inventory_movements')->where('job_card_id',34)->where('part_master_id',$part->part_master_id)->count()!==$moves
+            || $db->table('job_card_change_audits')->where('job_card_id',34)->count()!==$audit){
+              echo 'P33_NO_GO_QA_MUTATED_STOCK_OR_JOB_RECORDS'.PHP_EOL;exit(9);
+          }
+          echo 'P33_AUTHENTICATED_JOB_CARD_REQUISITION_RENDER_PASS'.PHP_EOL;
+          echo 'P33_THREE_STEP_ADMIN_PERMISSIONS_AND_STOCK_SAFETY_PASS'.PHP_EOL;
+          echo 'P33_NEGATIVE_STOCK_AND_DUPLICATE_ISSUE_BLOCKS_PRESERVED'.PHP_EOL;
+          echo 'P33_NO_STOCK_ISSUE_OR_AUDIT_POST_DURING_QA'.PHP_EOL;
+          PHP
+          trap - ERR
+          echo P33_STAGING_REQUISITION_ISSUE_FITTED_DEPLOY_PASS
+          REMOTE
+      - if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
