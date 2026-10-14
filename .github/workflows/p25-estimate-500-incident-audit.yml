@@ -1,0 +1,83 @@
+name: Assam Motors P25 Open Estimate 500 Readonly Incident Audit
+on:
+  push:
+    branches: [fix/p25-open-estimate-500-20261014]
+    paths: [.github/workflows/p25-estimate-500-incident-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Secure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Read-only auth mapping, routes and attendance source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f "$ROOT/artisan"
+          cd "$ROOT"
+          echo '=== P25 Laravel recent errors (redacted) ==='
+          php <<'PHP'
+          <?php
+          $files=glob('storage/logs/*.log')?:[];
+          usort($files,fn($a,$b)=>filemtime($b)<=>filemtime($a));
+          foreach(array_slice($files,0,3) as $file){
+            $fh=fopen($file,'rb');if(!$fh)continue;
+            $size=filesize($file);fseek($fh,max(0,$size-450000));
+            $log=stream_get_contents($fh);fclose($fh);
+            $lines=explode("\n",$log);
+            $keys=[];
+            foreach($lines as $i=>$line)if(preg_match('/\.(?:ERROR|CRITICAL|ALERT):|\b(?:ErrorException|QueryException|FatalError|InvalidArgumentException|TypeError|ViewException)\b/i',$line))$keys[]=$i;
+            echo 'LOG_BASENAME='.basename($file).' SIZE='.$size.' MATCHES='.count($keys).PHP_EOL;
+            foreach(array_slice($keys,-16) as $i){
+              $chunk=implode("\n",array_slice($lines,$i,5));
+              $chunk=preg_replace('/[a-z0-9._%+\-]+@[a-z0-9.\-]+\.[a-z]{2,}/i','[REDACTED_EMAIL]',$chunk);
+              $chunk=preg_replace('/(?:Bearer\s+|password[=:]\s*|token[=:]\s*)\S+/i','[REDACTED_SECRET]',$chunk);
+              $chunk=preg_replace('/\b[6-9]\d{9}\b/','[REDACTED_PHONE]',$chunk);
+              $chunk=mb_substr($chunk,0,1100);
+              echo "EXCEPTION_BLOCK\n".$chunk."\nEND_BLOCK\n";
+            }
+          }
+          PHP
+          echo '=== P25 Estimate route registrations ==='
+          php artisan route:list --path=erp/estimates --except-vendor | head -n 70
+          echo '=== P25 Estimate controller declarations and source ==='
+          grep -nE 'function (create|store|edit|show)\(' app/Http/Controllers/Web/AdminEstimatePageController.php | head -n 50 || true
+          sed -n '1,260p' app/Http/Controllers/Web/AdminEstimatePageController.php
+          echo '=== P25 Estimate Blade usages & source hashes ==='
+          find resources/views -type f \( -iname '*estimate*' -o -iname '*job-card*' \) | head -n 45
+          grep -nEi -C 3 'estimate.*open|route\(.*estimat|Open Estimate' resources/views/job-cards/show.blade.php resources/views/job-cards/lifecycle-panel.blade.php | head -n 100 || true
+          sha256sum app/Http/Controllers/Web/AdminEstimatePageController.php app/Services/EstimateService.php resources/views/job-cards/show.blade.php
+          echo 'P25_READONLY_INCIDENT_AUDIT_PASS'
+          REMOTE
+      - if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
