@@ -1,0 +1,123 @@
+name: Assam Motors P19 Job Card Admin Panels Bottom STAGING
+on:
+  push:
+    branches: [feature/p19-jobcard-admin-panels-bottom-20261014]
+    paths: [.github/workflows/p19-jobcard-footer-deploy.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-p19-jobcard-register
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check PHP patch syntax
+        run: php -l deployment/live-fixes/P19_JOBCARD_PANELS_BOTTOM/PATCH_P19.php
+      - name: Configure secure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Move both Job Card admin panels last, keep original routes and verify HTML render
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+            SCP=(scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p ~/assam-p19-jobcard'
+          "${SCP[@]}" deployment/live-fixes/P19_JOBCARD_PANELS_BOTTOM/PATCH_P19.php "$REMOTE:~/assam-p19-jobcard/PATCH_P19.php"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/assam-p19-jobcard/PATCH_P19.php"
+          VIEW="$ROOT/resources/views/job-cards/show.blade.php"
+          test -f "$ROOT/artisan" && test -f "$VIEW"
+          php "$PATCH" check "$ROOT"
+          OUT="$(php "$PATCH" apply "$ROOT")"
+          printf '%s\n' "$OUT"
+          BACKUP="$(printf '%s\n' "$OUT" | sed -n 's/^P19_APPLIED_BACKUP=//p')"
+          test -n "$BACKUP" && test -f "$BACKUP"
+          rollback(){
+            echo P19_RENDER_QA_FAILED_ROLLBACK
+            cp "$BACKUP" "$VIEW"
+            (cd "$ROOT" && php artisan view:clear >/dev/null 2>&1) || true
+          }
+          trap rollback ERR
+          cd "$ROOT"
+          php artisan view:clear >/dev/null
+          php artisan view:cache >/dev/null
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $admin=\App\Models\ErpAuthUser::query()->where('active',1)->get()->first(fn($u)=>$u->isAdmin());
+          if(!$admin){echo 'P19_NO_GO_ADMIN_MISSING'.PHP_EOL;exit(2);}
+          \Illuminate\Support\Facades\Auth::guard('web')->setUser($admin);
+          \Illuminate\Support\Facades\View::share('errors',new \Illuminate\Support\ViewErrorBag());
+          $open=\Illuminate\Support\Facades\DB::table('job_cards')
+              ->whereRaw("LOWER(TRIM(COALESCE(status,'')))='open'")->orderByDesc('id')->first();
+          if(!$open){echo 'P19_NO_GO_NO_OPEN_JOBCARD_FOR_RENDER_TEST'.PHP_EOL;exit(3);}
+          $req=\Illuminate\Http\Request::create('/erp/job-cards/'.$open->id,'GET');
+          $req->setUserResolver(static fn()=>$admin);
+          try{
+             $controller=app(\App\Http\Controllers\Web\AdminJobCardPageController::class);
+             $page=$controller->show($req,(int)$open->id);
+             $html=$page->render();
+          } catch(\Throwable $e){echo 'P19_RENDER_EXCEPTION_CLASS='.get_class($e).PHP_EOL;exit(4);}
+          $posLabour=strpos($html,'Labour / ROT Control');
+          $posReversal=strpos($html,'Job Card Reversal / Cancel Centre');
+          $posDelete=strpos($html,'Delete Empty Job Card');
+          if($posLabour===false||$posReversal===false||$posDelete===false){
+              echo 'P19_NO_GO_MISSING_PANEL_IN_RENDERED_OPEN_JC'.PHP_EOL;exit(5);
+          }
+          if(!($posLabour<$posReversal && $posReversal<$posDelete)){
+              echo 'P19_NO_GO_PANEL_NOT_LAST_AFTER_ROT'.PHP_EOL;exit(6);
+          }
+          $lastFooter=$posDelete;
+          if(strpos($html,'Permanently Delete Empty Job Card', $lastFooter)===false){
+             echo 'P19_NO_GO_DELETE_FORM_MISSING'.PHP_EOL;exit(7);
+          }
+          if(substr_count($html,'id="jc-delete-panel"')!==1){
+             echo 'P19_NO_GO_DUPLICATE_DELETE_PANEL'.PHP_EOL;exit(8);
+          }
+          if(!\Illuminate\Support\Facades\Route::has('erp.job-cards.destroy')||
+             !\Illuminate\Support\Facades\Route::has('erp.job-cards.reversal')){
+             echo 'P19_NO_GO_PANEL_ACTION_ROUTE_MISSING'.PHP_EOL;exit(9);
+          }
+          echo 'P19_REAL_ADMIN_OPEN_JOBCARD_RENDER_PASS'.PHP_EOL;
+          echo 'P19_LABOUR_THEN_REVERSAL_THEN_DELETE_ORDER_PASS'.PHP_EOL;
+          echo 'P19_SAME_DELETE_AND_REVERSAL_ROUTES_PASS'.PHP_EOL;
+          echo 'P19_NO_DATABASE_OR_FINANCIAL_RECORDS_MUTATED'.PHP_EOL;
+          PHP
+          trap - ERR
+          echo P19_STAGING_JOBCARD_ADMIN_FOOTER_PASS
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
