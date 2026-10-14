@@ -1,0 +1,81 @@
+name: Assam Motors P14 Point 5 Read-Only Audit
+on:
+  push:
+    branches: [feature/p14-reversal-centre-status-20261014]
+    paths: [.github/workflows/p14-point5-readonly.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Inspect Point 5 route, audit table schema, saved requests and errors
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::connection();
+          $schema=\Illuminate\Support\Facades\Schema::class;
+          $r=app('router')->getRoutes()->getByName('erp.job-cards.reversal.request');
+          echo 'P5_ROUTE='.($r?implode(',', $r->methods()):'MISSING').PHP_EOL;
+          $c=app_path('Http/Controllers/Web/AdminJobCardUnwindController.php');
+          echo 'P5_HANDLER_PRESENT='.(is_file($c)&&str_contains(file_get_contents($c),'function requestReview')?'YES':'NO').PHP_EOL;
+          echo 'P5_JOB_26_PRESENT='.($db->table('job_cards')->where('id',26)->exists()?'YES':'NO').PHP_EOL;
+          foreach(['job_card_change_audits','job_cards'] as $t){
+            echo 'P5_TABLE_'.strtoupper($t).'='.($schema::hasTable($t)?'YES':'NO').PHP_EOL;
+          }
+          foreach(['job_card_id','entity_type','entity_id','action','reason','actor_id','actor_name','before_json','after_json','created_at','updated_at'] as $col){
+            echo 'P5_AUDIT_COLUMN_'.strtoupper($col).'='.($schema::hasColumn('job_card_change_audits',$col)?'YES':'NO').PHP_EOL;
+          }
+          $counts=$db->table('job_card_change_audits')->where('job_card_id',26)
+            ->where(function($q){$q->where('action','LIKE','REVERSAL_REVIEW_%')->orWhere('action','CANCEL_REVIEW_REQUESTED');})
+            ->select('action',$db->raw('COUNT(*) AS amount'))->groupBy('action')->get();
+          foreach($counts as $v){
+            echo 'P5_REVIEW_AUDIT_'.preg_replace('/[^A-Z_]/','',strtoupper($v->action)).'='.((int)$v->amount).PHP_EOL;
+          }
+          echo 'P5_READONLY_DB_PASS'.PHP_EOL;
+          PHP
+          echo '=== RECENT SERVER ERROR TYPES (NO MESSAGE OR PII) ==='
+          for file in $(find storage/logs -maxdepth 1 -type f -name 'laravel*.log' -mtime -2 | sort); do
+            tail -n 1200 "$file" | grep -E 'production\.ERROR:|local\.ERROR:|staging\.ERROR:|SQLSTATE|ValidationException|QueryException|BadMethodCallException|TypeError|ParseError' | tail -n 20 |
+              sed -E 's/.*(SQLSTATE|ValidationException|QueryException|BadMethodCallException|TypeError|ParseError|production\.ERROR:|local\.ERROR:|staging\.ERROR:).*/P5_SERVER_ERROR_CLASS=\1/' || true
+          done
+          echo 'P5_READONLY_AUDIT_COMPLETE'
+          REMOTE
+      - name: Clean SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
