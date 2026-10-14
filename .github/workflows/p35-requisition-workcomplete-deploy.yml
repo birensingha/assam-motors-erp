@@ -1,0 +1,100 @@
+name: P35 Work Complete Requisition Safety Guard
+on:
+  push:
+    branches: [fix/p35-workcomplete-requisition-block-20261014]
+    paths: [.github/workflows/p35-requisition-workcomplete-deploy.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-p35-lifecycle-guard
+  cancel-in-progress: false
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP syntax
+        run: php -l deployment/live-fixes/P35_REQUISITION_GUARD/PATCH_P35.php
+      - name: SSH prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: One-file guarded deployment and Work Complete no-write verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            rssh(){ ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT" "$@"; }
+            rscp(){ scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$@"; }
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            rssh(){ sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT" "$@"; }
+            rscp(){ sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$@"; }
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          rssh "$REMOTE" 'mkdir -p ~/assam-p35-lifecycle'
+          rscp deployment/live-fixes/P35_REQUISITION_GUARD/PATCH_P35.php "$REMOTE:~/assam-p35-lifecycle/PATCH_P35.php"
+          rssh "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/assam-p35-lifecycle/PATCH_P35.php"
+          php "$PATCH" check "$ROOT"
+          RESULT="$(php "$PATCH" apply "$ROOT")"
+          printf '%s\n' "$RESULT"
+          BAK="$(printf '%s\n' "$RESULT" | sed -n 's/^P35_APPLIED_BACKUP=//p')"
+          test -n "$BAK" && test -f "$BAK"
+          FILE="$ROOT/app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php"
+          rollback(){
+            echo 'P35_QA_NO_GO_RESTORE_LIFECYCLE_CONTROLLER'
+            cp "$BAK" "$FILE"
+          }
+          trap rollback ERR
+          cd "$ROOT"
+          php -l "$FILE"
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $controller=app(\App\Http\Controllers\Web\AdminJobCardLifecyclePageController::class);
+          $method=new \ReflectionMethod($controller,'unfinishedWork');
+          $card=\Illuminate\Support\Facades\DB::table('job_cards')->where('id',34)->first();
+          if(!$card){echo 'P35_NO_GO_JC34_MISSING'.PHP_EOL;exit(2);}
+          $source=file_get_contents('app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php');
+          $start=strpos($source,'private function unfinishedWork(');
+          $end=strpos($source,'private function assertNotLocked(', $start);
+          if($start===false||$end===false){echo 'P35_NO_GO_UNFINISHED_WORK_SOURCE'.PHP_EOL;exit(3);}
+          $function=substr($source,$start,$end-$start);
+          if(!str_contains($function,"'requisitioned'") || !str_contains($function,"'issued'") ||
+             !str_contains($source,'P34_ROT_BILLING_CONTROL')){
+             echo 'P35_NO_GO_REQUISITION_OR_BILLING_GUARD_MISSING'.PHP_EOL;exit(4);
+          }
+          $work=$method->invoke($controller,34);
+          if(!is_array($work) || !collect($work)->contains(fn($w)=>str_contains($w,'Part line not fitted'))){
+              echo 'P35_NO_GO_PLANNED_PARTS_NOT_BLOCKED'.PHP_EOL;exit(5);
+          }
+          echo 'P35_ADMIN_LIFECYCLE_REAL_UNFINISHED_WORK_CHECK_PASS'.PHP_EOL;
+          echo 'P35_REQUISITION_AND_ISSUED_PENDING_IN_SERVER_WORKCOMPLETE_PASS'.PHP_EOL;
+          echo 'P35_NO_JOB_CARD_STOCK_ROT_INVOICE_LEDGER_OR_QC_RECORDS_CHANGED'.PHP_EOL;
+          PHP
+          trap - ERR
+          echo P35_STAGING_WORK_COMPLETE_GUARD_DEPLOY_PASS
+          REMOTE
+      - if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
