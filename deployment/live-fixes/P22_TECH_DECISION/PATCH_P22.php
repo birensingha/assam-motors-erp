@@ -39,9 +39,20 @@ function p22Once(string $data,string $old,string $fresh,string $name):string {
 }
 try{
  $routes=$src['routes/web.php'];
- $routeDiag="Route::post('/job-cards/{job}/diagnosis/complete', [AdminJobCardPageController::class,'completeDiagnosis'])->name('erp.job-cards.diagnosis.complete');";
- $routeNew="Route::post('/job-cards/{job}/diagnosis/complete', [\\App\\Http\\Controllers\\Web\\AdminDiagnosisStageController::class,'complete'])->name('erp.job-cards.diagnosis.complete'); // P22_SEQUENTIAL_WORKFLOW";
+ $routeMatches=[];
+ if(preg_match_all('/^([ \t]*Route::post\(\x27\/job-cards\/\{job\}\/diagnosis\/complete\x27[^\n]*\);)[ \t]*$/m',$routes,$routeMatches)!==1){
+    throw new RuntimeException('P22_NO_GO_DIAG_ROUTE_MATCH_COUNT');
+ }
+ $routeDiag=$routeMatches[1][0];
+ if(!str_contains($routeDiag,"[AdminJobCardPageController::class,'completeDiagnosis']")
+    || !str_contains($routeDiag,"name('erp.job-cards.diagnosis.complete')")){
+    throw new RuntimeException('P22_NO_GO_DIAG_ROUTE_GUARD');
+ }
+ $routeNew=str_replace("[AdminJobCardPageController::class,'completeDiagnosis']",
+    "[\\App\\Http\\Controllers\\Web\\AdminDiagnosisStageController::class,'complete']",
+    $routeDiag)." // P22_SEQUENTIAL_WORKFLOW";
  $routes=p22Once($routes,$routeDiag,$routeNew,'diagnosis_route');
+
  $staffRoute="Route::get('/inspections/{job}/report', [StaffPortalController::class,'inspectionReport'])->whereNumber('job')->name('staff.inspection-report');";
  $staffNew=<<<'ROUTE'
 
