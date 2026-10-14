@@ -12,16 +12,19 @@ foreach(['/counter-sales','/counter-sales/create'] as $route){
 if(str_contains($before,'P32_ERP_SIDEBAR_V3')){echo "P32_SIDEBAR_ALREADY_INSTALLED\n";exit(0);}
 // Move prior P32 section to the proper location; preserve all other sidebar items.
 $clean=$before;
-$previous='/\{\{-- P32_ERP_SIDEBAR_V2:.*?<\/div>\s*<\/div>/s';
-if(preg_match($previous,$clean)===1){$clean=preg_replace($previous,'',$clean,1);}
-// Also support first-generation floating menu if it is still present.
-$floating='/\{\{-- P32_ERP_NAVIGATION:.*?<\/nav>/s';
-if(preg_match($floating,$clean)===1){$clean=preg_replace($floating,'',$clean,1);}
+$previous='/\{\{--\s*P32_ERP_SIDEBAR_V2:.*?Counter Invoice Register<\/a>\s*<\/div>/s';
+if(preg_match_all($previous,$clean)!==1 && str_contains($clean,'P32_ERP_SIDEBAR_V2')){
+ fwrite(STDERR,"P32_NO_GO_PREVIOUS_SIDEBAR_STRUCTURE\n");exit(5);
+}
+$clean=preg_replace($previous,'',$clean,1);
+$floating='/\{\{--\s*P32_ERP_NAVIGATION:.*?<\/nav>/s';
+if(preg_match_all($floating,$clean)>1){fwrite(STDERR,"P32_NO_GO_DUPLICATE_FLOATING\n");exit(5);}
+$clean=preg_replace($floating,'',$clean,1);
 if(str_contains($clean,'P32_ERP_SIDEBAR_V2') || str_contains($clean,'id="am-p32-nav"')){
  fwrite(STDERR,"P32_NO_GO_OLD_MENU_NOT_REMOVED\n");exit(5);
 }
 // Locate the existing Workshop ERP link in the sidebar. Do not append at the bottom.
-$anchorPattern='/<a\b[^>]*>[^<]*Workshop\s+ERP[^<]*<\/a>/i';
+$anchorPattern='/<a\b[^>]*>(?:(?!<\/a>).){0,1200}?Workshop\s*ERP(?:(?!<\/a>).){0,1200}<\/a>/is';
 if(preg_match_all($anchorPattern,$clean,$anchors,PREG_OFFSET_CAPTURE)!==1){
  fwrite(STDERR,"P32_NO_GO_WORKSHOP_ERP_LINK_ANCHOR\n");exit(6);
 }
