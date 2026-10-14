@@ -118,8 +118,10 @@ jobs:
              $html=app(\App\Http\Controllers\Web\AdminJobCardPageController::class)
                 ->show($req,$job->id,app(\App\Services\JobCardService::class))->render();
           }catch(\Throwable $e){echo 'P22_JOB_CARD_VIEW_EXCEPTION='.get_class($e).PHP_EOL;exit(5);}
-          if(!str_contains($html,'Step 1 Manager Inspection')
-             || str_contains($html,'Complete & Open Estimate')){
+          $showSource=file_get_contents('resources/views/job-cards/show.blade.php');
+          if(!str_contains($html,'Inspection / Final Diagnosis')
+             || !str_contains($showSource,'Step 1 Manager Inspection')
+             || str_contains($showSource,'name="next" value="estimate"')){
              echo 'P22_NO_GO_OLD_COMBINED_DIAG_FORM'.PHP_EOL;exit(6);
           }
           $card=\App\Models\JobCard::query()->findOrFail($job->id);
