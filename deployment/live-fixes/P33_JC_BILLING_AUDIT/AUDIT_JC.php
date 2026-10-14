@@ -35,5 +35,26 @@ if(Schema::hasTable('invoices') && Schema::hasColumn('invoices','job_card_id')){
  outputRow('Invoice',$row,['id','status','parts_total','labour_total','subtotal','gst_total','tax_total','round_off','grand_total']);
  }
 }
+// Identify the actual estimate schema without printing personal/customer information.
+foreach(DB::select('SHOW TABLES') as $tableObject){
+ $tableName=(string)array_values((array)$tableObject)[0];
+ if(!preg_match('/estimate|quotation/i',$tableName))continue;
+ $cols=Schema::getColumnListing($tableName);
+ echo "ESTIMATE_TABLE ".$tableName." COLUMNS=".implode(',',$cols)."\n";
+ $matchColumn=in_array('job_card_id',$cols,true)?'job_card_id':(in_array('job_id',$cols,true)?'job_id':null);
+ if(!$matchColumn)continue;
+ $rows=DB::table($tableName)->where($matchColumn,$jc->id)->limit(10)->get();
+ foreach($rows as $item){
+  echo "  ESTIMATE_ROW";
+  foreach(['id','status','estimate_no','total','total_amount','net_total','gst_total','tax_total','grand_total','approved_at'] as $field){
+   if(in_array($field,$cols,true)){
+    $value=$item->$field;
+    if(in_array($field,['estimate_no','status'],true)){$value='[set]';}
+    echo " $field=$value";
+   }
+  }
+  echo "\n";
+ }
+}
 echo "OBSERVATION: 1330 * 0.18 = 239.40 (clue only, not definitive proof).\n";
 echo "NO WRITES PERFORMED\n";
