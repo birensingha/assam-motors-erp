@@ -24,7 +24,7 @@ if(str_contains($clean,'P32_ERP_SIDEBAR_V2') || str_contains($clean,'id="am-p32-
  fwrite(STDERR,"P32_NO_GO_OLD_MENU_NOT_REMOVED\n");exit(5);
 }
 // Locate the existing Workshop ERP link in the sidebar. Do not append at the bottom.
-$anchorPattern='/<a\b[^>]*>(?:(?!<\/a>).){0,1200}?Workshop\s*ERP(?:(?!<\/a>).){0,1200}<\/a>/is';
+$anchorPattern='/<div\s+class=["\x27]nav-group-label["\x27]\s*>\s*WORKSHOP\s+ERP\s*<\/div>/i';
 if(preg_match_all($anchorPattern,$clean,$anchors,PREG_OFFSET_CAPTURE)!==1){
  fwrite(STDERR,"P32_NO_GO_WORKSHOP_ERP_LINK_ANCHOR\\n");
  // Safe diagnosis: non-user-specific layout markup, max 5 short excerpts.
