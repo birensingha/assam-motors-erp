@@ -1,0 +1,64 @@
+name: Assam Motors P27 Estimate Lines versus Purchase Entry UI Audit
+on:
+  push:
+    branches: [feature/p27-estimate-lines-purchase-height-20261014]
+    paths: [.github/workflows/p27-estimate-lines-layout-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Secure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Read-only auth mapping, routes and attendance source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f "$ROOT/artisan"
+          cd "$ROOT"
+          echo '=== P27 ESTIMATE VIEW SOURCES AND HASHES ==='
+          ls -lh resources/views/estimates/create.blade.php
+          sha256sum resources/views/estimates/create.blade.php
+          echo '=== ESTIMATE CSS + LINE CONTAINERS ==='
+          grep -nEi -C 6 'Estimate Lines|estimate-line|line-items|row-height|line-row|table-container|rows-container|line-table|grid-template-rows|overflow-y|max-height|min-height|height:|line-list|lineItems' resources/views/estimates/create.blade.php | head -n 340 || true
+          echo '=== ESTIMATE TOP 190 ==='
+          sed -n '1,190p' resources/views/estimates/create.blade.php
+          echo '=== PURCHASE VIEW FILES ==='
+          find resources/views/purchases -maxdepth 2 -type f -printf '%p\n' | sort
+          echo '=== PURCHASE LINE STYLING ==='
+          grep -nEi -C 5 'Purchase Lines|Items|row-height|line-row|table-container|items-body|items-table|overflow-y|max-height|min-height|height:|line-list|table-wrap|purchase-grid' resources/views/purchases/create.blade.php | head -n 260 || true
+          echo '=== PURCHASE TOP 155 ==='
+          sed -n '1,155p' resources/views/purchases/create.blade.php
+          echo 'P27_ESTIMATE_PURCHASE_UI_READONLY_AUDIT_PASS'
+          REMOTE
+      - if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
