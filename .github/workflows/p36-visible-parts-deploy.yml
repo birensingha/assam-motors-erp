@@ -1,4 +1,4 @@
-name: P36 Visible Parts Requisition on JC34 STAGING
+name: P36 Visible Parts Requisition on JC34 STAGING V2
 on:
   push:
     branches: [fix/p36-visible-parts-actions-job34-20261014]
