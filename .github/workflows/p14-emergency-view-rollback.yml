@@ -50,13 +50,14 @@ jobs:
           BAK="$APP/storage/app/p14_reversal_view_backup_20261014_034150_1610243/unwind.blade.php"
           OLD=7328c50fcb2a8ef0215e55c61973e52ad6274eb7bb08d678757a939f234c62c8
           BAD=d1f9b9eb7a5fa596772951b1d8ab4286b86a2e6f7582267e12ed633a447db4dc
+          CURRENT_BROKEN=321a44629f66a844abfea121a9c20080664995f2d5b4fd28d3b16368fb0fc039
           test -f "$APP/artisan" && test -f "$DST" && test -f "$BAK"
           NOW="$(sha256sum "$DST" | cut -d ' ' -f1)"
           PREV="$(sha256sum "$BAK" | cut -d ' ' -f1)"
           test "$PREV" = "$OLD" || { echo 'NO_GO_BACKUP_HASH_MISMATCH'; exit 3; }
           if [ "$NOW" = "$OLD" ]; then
             echo 'ORIGINAL_VIEW_ALREADY_RESTORED'
-          elif [ "$NOW" = "$BAD" ]; then
+          elif [ "$NOW" = "$BAD" ] || [ "$NOW" = "$CURRENT_BROKEN" ]; then
             TMP="$(mktemp "$APP/resources/views/job-cards/.p14_revert_XXXXXX")"
             cp "$BAK" "$TMP"
             chmod --reference="$DST" "$TMP"
