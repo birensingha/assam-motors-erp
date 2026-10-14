@@ -71,7 +71,7 @@ try{
  $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
  $compiled=app('blade.compiler')->compileString($after);
  token_get_all($compiled,TOKEN_PARSE);
- if(!str_contains($compiled,'P30_LIFECYCLE_NEXT_ACTIONS')||
+ if(!str_contains($compiled,'p30-next-action')||
     !str_contains($compiled,'p30-current-stage-action')||
     !str_contains($compiled,'erp.job-cards.lifecycle')){
    throw new RuntimeException('Compiled source marker missing');
