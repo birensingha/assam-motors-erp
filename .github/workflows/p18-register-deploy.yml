@@ -83,7 +83,7 @@ jobs:
           try {
             $html=\Illuminate\Support\Facades\View::make('purchases.index',['rows'=>collect(),'filters'=>['q'=>'','type'=>'']])->render();
           } catch(\Throwable $e){echo 'P18_RENDER_ERROR_CLASS='.get_class($e).PHP_EOL;exit(3);}
-          foreach(['P18_PURCHASE_REGISTER_ANDROID_UI','p18-hero','p18-actions','p18-osl','p18-parts','p18-filter','p18-register-table'] as $marker){
+          foreach(['p18-purchase-register','p18-hero','p18-actions','p18-osl','p18-parts','p18-filter','p18-register-table'] as $marker){
             if(!str_contains($html,$marker)){echo 'P18_NO_GO_MISSING_RENDER_MARKER_'.$marker.PHP_EOL;exit(4);}
           }
           if(substr_count($html,'New OSL Purchase')!==1 || substr_count($html,'New Parts Purchase')!==1){
