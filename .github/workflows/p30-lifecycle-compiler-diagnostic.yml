@@ -1,0 +1,87 @@
+name: Assam Motors P30 Blade Directive Diagnostic ReadOnly
+on:
+  push:
+    branches: [feature/p30-lifecycle-next-actions-20261014]
+    paths: [deployment/live-fixes/P30_LIFECYCLE_NEXT_ACTIONS/**, .github/workflows/p30-lifecycle-compiler-diagnostic.yml]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check PHP patch syntax
+        run: php -l deployment/live-fixes/P30_LIFECYCLE_NEXT_ACTIONS/PATCH_P30.php
+      - name: Secure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Check existing exact staging source and compile candidate Blade without writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p ~/assam-p30-lifecycle'
+          "${SCP[@]}" deployment/live-fixes/P30_LIFECYCLE_NEXT_ACTIONS/PATCH_P30.php "$REMOTE:~/assam-p30-lifecycle/PATCH_P30.php"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          php -l "$HOME/assam-p30-lifecycle/PATCH_P30.php"
+          cd "$ROOT"
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $patch=file_get_contents(getenv('HOME').'/assam-p30-lifecycle/PATCH_P30.php');
+          if(!preg_match("/\\\$insert=<<<'BLADE'\\n(.*?)\\nBLADE;/s",$patch,$m)){
+              echo 'P30_NO_GO_DIAG_EXTRACT'.PHP_EOL;exit(3);
+          }
+          $source=file_get_contents('resources/views/job-cards/lifecycle-panel.blade.php');
+          $target=str_replace('<div class="am-life-grid">',$m[1].'<div class="am-life-grid">',$source);
+          $target=str_replace('<div class="am-life-actions">','<div class="am-life-actions" id="am-life-action-forms">',$target);
+          foreach(['ORIGINAL'=>$source,'PROPOSED'=>$target] as $label=>$view){
+              $compiled=app('blade.compiler')->compileString($view);
+              try{token_get_all($compiled,TOKEN_PARSE);echo $label.' TOKEN_PARSE_PASS'.PHP_EOL;}
+              catch(Throwable $e){echo $label.' PARSE_EXCEPTION '.$e->getMessage().PHP_EOL;}
+              $lines=explode("\n",$compiled);
+              foreach($lines as $i=>$line){
+                if(str_contains($line,'P30_LIFECYCLE') || str_contains($line,'am-next-stage') ||
+                   str_contains($line,'amNextLabel') || str_contains($line,'<?php') && $i<115){
+                   echo $label.' COMPILED_LINE '.($i+1).' '.substr($line,0,340).PHP_EOL;
+                }
+              }
+              echo $label.'_COMPILED_LINES='.count($lines).PHP_EOL;
+          }
+          echo P30_READONLY_COMPILER_DIAGNOSTIC_PASS
+          PHP
+          echo 'P30_DIAGNOSTIC_NO_STAGING_WRITES'
+          REMOTE
+      - name: Clear SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
