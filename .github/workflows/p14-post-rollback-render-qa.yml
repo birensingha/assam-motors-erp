@@ -1,0 +1,76 @@
+name: Assam Motors Reversal Centre Post-Rollback Render QA
+on:
+  push:
+    branches: [feature/p14-reversal-centre-status-20261014]
+    paths: [.github/workflows/p14-post-rollback-render-qa.yml]
+permissions:
+  contents: read
+jobs:
+  render-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Set up SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Read-only authenticated Reversal Centre render verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          cd "$APP"
+          TARGET=resources/views/job-cards/unwind.blade.php
+          test "$(sha256sum "$TARGET" | cut -d ' ' -f1)" = 7328c50fcb2a8ef0215e55c61973e52ad6274eb7bb08d678757a939f234c62c8
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::connection();
+          $jc=$db->table('job_cards')->where('job_no','JC-2026-0025')->first();
+          $admin=\App\Models\ErpAuthUser::query()->where('active',1)->get()->first(fn($u)=>$u->isAdmin());
+          if(!$jc || !$admin){echo 'NO_GO_MISSING_JC_OR_ADMIN'.PHP_EOL;exit(2);}
+          \Illuminate\Support\Facades\Auth::guard('web')->setUser($admin);
+          \Illuminate\Support\Facades\View::share('errors',new \Illuminate\Support\ViewErrorBag());
+          $req=\Illuminate\Http\Request::create('/erp/job-cards/'.$jc->id.'/reversal','GET');
+          $req->setUserResolver(static fn()=>$admin);
+          try {
+            $html=(new \App\Http\Controllers\Web\AdminJobCardUnwindController())->show($req,$jc->id)->render();
+          } catch(\Throwable $e){
+            echo 'RENDER_ERROR_CLASS='.get_class($e).PHP_EOL; exit(3);
+          }
+          foreach(['Job Card Reversal Centre','Linked records','Completed ROT'] as $marker){
+            if(stripos($html,$marker)===false){echo 'MISSING_RENDER_MARKER'.PHP_EOL;exit(4);}
+          }
+          echo 'AUTHENTICATED_REVERSAL_PAGE_RENDER_PASS'.PHP_EOL;
+          echo 'NO_FINANCIAL_OR_ROT_RECORDS_CHANGED'.PHP_EOL;
+          PHP
+          REMOTE
+      - name: Clean SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
