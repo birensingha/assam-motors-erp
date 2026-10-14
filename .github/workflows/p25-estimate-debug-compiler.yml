@@ -1,0 +1,73 @@
+name: Assam Motors P25 Patched Blade Compiler Diagnostic
+on:
+  push:
+    branches: [fix/p25-open-estimate-500-20261014]
+    paths: [.github/workflows/p25-estimate-debug-compiler.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Secure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Read-only auth mapping, routes and attendance source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f "$ROOT/artisan"
+          cd "$ROOT"
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $source=file_get_contents('resources/views/estimates/create.blade.php');
+          $old="@php(\$amEstimateWip=in_array(strtolower(trim((string)\$jobCard->status)),['in progress','in-progress','work in progress','wip']))";
+          $new=<<<'BLADE'
+          {{-- P25_ESTIMATE_BLADE_INLINE_PHP_500: multi-line PHP directive, not malformed inline @php(). --}}
+          @php
+              $amEstimateWip = in_array(strtolower(trim((string)$jobCard->status)), ['in progress','in-progress','work in progress','wip'], true);
+          @endphp
+          BLADE;
+          $patched=str_replace($old,$new,$source);
+          $compiled=app('blade.compiler')->compileString($patched);
+          $lines=explode("\n",$compiled);
+          foreach(array_slice($lines,0,120) as $i=>$line){
+             echo str_pad((string)($i+1),3,'0',STR_PAD_LEFT).' '.substr($line,0,400).PHP_EOL;
+          }
+          try{token_get_all($compiled,TOKEN_PARSE);echo 'PARSE_SUCCESS'.PHP_EOL;}
+          catch(Throwable $e){echo 'PARSE_ERROR '.$e->getMessage().PHP_EOL;}
+          PHP
+          echo P25_COMPILER_DIAGNOSTIC_READ_ONLY_PASS
+          REMOTE
+      - if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
