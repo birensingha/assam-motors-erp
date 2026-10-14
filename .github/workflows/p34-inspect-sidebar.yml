@@ -51,7 +51,7 @@ jobs:
           test -f "$ROOT/artisan"
           cd "$HOME/assam-motors-deploy"
           git fetch origin feature/p31-direct-counter-parts-invoice-20261014
-          git show origin/feature/p31-direct-counter-parts-invoice-20261014:deployment/live-fixes/P34_MODERN_WORKSHOP_SIDEBAR/AUDIT_JC.php > /tmp/assam-p34-inspect.php
+          git show origin/feature/p31-direct-counter-parts-invoice-20261014:deployment/live-fixes/P34_MODERN_WORKSHOP_SIDEBAR/INSPECT.php > /tmp/assam-p34-inspect.php
           php -l /tmp/assam-p34-inspect.php
           php /tmp/assam-p34-inspect.php "$ROOT"
           rm -f /tmp/assam-p34-inspect.php
