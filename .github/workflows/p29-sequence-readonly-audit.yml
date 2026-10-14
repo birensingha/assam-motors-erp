@@ -50,9 +50,10 @@ jobs:
           echo '=== P29 STAFF PORTAL INSPECTION SOURCES ==='
           grep -RnlE 'function (inspectionWork|inspectionReport|inspectionSave|inspectionSubmit|inspections)' app/Http/Controllers/Web app/Http/Controllers/Api/V1 | head -n 45 || true
           grep -RniE -C 3 'inspection|assigned_staff_id|technician_id' app/Http/Controllers/Web/StaffPortalController.php | head -n 165 || true
-          sed -n '1,190p' resources/views/staff/inspection-work.blade.php
+          find resources/views/staff -maxdepth 2 -type f -iname '*inspection*' -print
+          sed -n '1,190p' resources/views/staff/inspection-report.blade.php || true
           echo '=== P29 STAFF EXTRA API INSPECTION ==='
-          grep -n -A 155 -B 3 'public function inspections(' app/Http/Controllers/Api/V1/StaffExtraController.php | head -n 168
+          grep -n -A 155 -B 3 'public function inspections(' app/Http/Controllers/Api/V1/StaffExtraController.php | head -n 168 || true
           echo '=== P29 STAGE UI SOURCE AND ROUTES ==='
           grep -n -C 4 'Workshop Lifecycle & Billing' resources/views/job-cards/lifecycle-panel.blade.php || true
           grep -n -C 3 'erp.job-cards.lifecycle.work-complete' resources/views/job-cards/lifecycle-panel.blade.php routes/web.php || true
