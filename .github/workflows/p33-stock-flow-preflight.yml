@@ -1,4 +1,4 @@
-name: P33 Parts Requisition Issue Fitted Preflight
+name: P33 Parts Requisition Issue Fitted Preflight V2
 on:
   push:
     branches: [feature/p33-jobcard-parts-issue-fitted-20261014]
@@ -49,7 +49,7 @@ jobs:
           fi
           REMOTE="$SSH_USER@$SSH_HOST"
           "${SSH[@]}" "$REMOTE" 'mkdir -p ~/assam-p33-stock'
-          "${SCP[@]}" -r deployment/live-fixes/P33_PART_STOCK_CONTROL/PATCH_P33.php "$REMOTE:~/assam-p33-stock/"
+          "${SCP[@]}" -r deployment/live-fixes/P33_PART_STOCK_CONTROL/PATCH_P33.php deployment/live-fixes/P33_PART_STOCK_CONTROL/payload "$REMOTE:~/assam-p33-stock/"
           "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE'
           set -euo pipefail
           ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
