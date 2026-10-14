@@ -61,7 +61,7 @@ jobs:
           cd "$ROOT"
           php artisan view:clear
           php /tmp/assam-p32-nav.php check "$ROOT"
-          grep -q 'P32_ERP_NAVIGATION' resources/views/layouts/erp.blade.php
+          grep -q 'P32_ERP_SIDEBAR_V3' resources/views/layouts/erp.blade.php
           echo "P32_NAVIGATION_INSTALLED_STAGING_PASS"
           rm -f /tmp/assam-p32-nav.php
           REMOTE
