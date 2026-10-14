@@ -80,11 +80,11 @@ $panel=<<<'BLADE'
     .p14-status.p14-done{background:#e5e9ec;color:#66717d}.p14-status.p14-needed{background:#fce5c7;color:#8a4908}
     .jcu-card.p14-complete{background:#f4f6f8;border-color:#e0e5ea;box-shadow:none}
     .jcu-card.p14-complete h2{color:#77828e}.jcu-card.p14-pending{border:2px solid #e8a242;box-shadow:0 4px 16px #e8a2421c}
-    .p14-complete .jcu-form{opacity:.65}
+    .p14-complete .jcu-form{display:none}
     @media(max-width:640px){.p14-steps{grid-template-columns:1fr}}
   </style>
   <h3 style="margin:16px 0 5px">5-point Reversal Checklist · {{ $p14DoneCount }}/5 handled</h3>
-  <p class="jcu-small">Grey = handled, orange = pending. Status is recalculated whenever this page loads. Existing history is preserved.</p>
+  <p class="jcu-small">Grey = handled (repeat-action forms hidden), orange = pending. Status updates when this page reloads; history stays available.</p>
   <nav class="p14-steps" aria-label="Reversal checklist">
    @foreach($p14Stages as $p14Step)
     <a href="#p14-step-{{ $p14Step['id'] }}" class="p14-link {{ $p14Step['done'] ? 'p14-done' : 'p14-needed' }}">
