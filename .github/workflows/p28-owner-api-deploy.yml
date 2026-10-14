@@ -1,0 +1,147 @@
+name: Assam Motors P28 Owner Mobile Attendance and Inspection STAGING
+on:
+  push:
+    branches: [feature/p28-owner-mobile-attendance-inspection-20261014]
+    paths: [.github/workflows/p28-owner-api-deploy.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-p28-owner-mobile-api
+  cancel-in-progress: false
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 13
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static PHP syntax
+        run: |
+          php -l deployment/live-fixes/P28_OWNER_MOBILE/PATCH_P28.php
+          php -l deployment/live-fixes/P28_OWNER_MOBILE/payload/OwnerSelfAttendanceInspectionController.php
+      - name: Secure staging SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Backup-guarded API deployment and Admin GET-only tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            remote_ssh(){ ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT" "$@"; }
+            remote_scp(){ scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$@"; }
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            remote_ssh(){ sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT" "$@"; }
+            remote_scp(){ sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$@"; }
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          remote_ssh "$REMOTE" 'mkdir -p ~/assam-p28-mobile'
+          remote_scp -r deployment/live-fixes/P28_OWNER_MOBILE/PATCH_P28.php deployment/live-fixes/P28_OWNER_MOBILE/payload "$REMOTE:~/assam-p28-mobile/"
+          remote_ssh "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/assam-p28-mobile/PATCH_P28.php"
+          CTRL="$APP/app/Http/Controllers/Api/V1/OwnerSelfAttendanceInspectionController.php"
+          test -f "$APP/artisan" && test -f "$PATCH"
+          php "$PATCH" check "$APP"
+          OUT="$(php "$PATCH" apply "$APP")"
+          printf '%s\n' "$OUT"
+          BAK="$(printf '%s\n' "$OUT" | sed -n 's/^P28_APPLIED_BACKUP=//p')"
+          test -n "$BAK" && test -f "$BAK"
+          rollback(){
+            echo 'P28_BACKEND_QA_FAILED_SOURCE_ROLLBACK'
+            cp "$BAK" "$APP/routes/api.php"
+            rm -f "$CTRL"
+            (cd "$APP" && php artisan route:clear >/dev/null 2>&1) || true
+          }
+          trap rollback ERR
+          cd "$APP"
+          php -l "$CTRL"
+          php -l routes/api.php
+          php artisan route:clear >/dev/null
+          php artisan route:cache >/dev/null
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $routes=\Illuminate\Support\Facades\Route::getRoutes();
+          $base=$routes->match(\Illuminate\Http\Request::create('/api/v1/admin/mobile/workshop-dashboard','GET'));
+          $baseMiddleware=$base->gatherMiddleware();
+          foreach([
+             ['GET','/api/v1/admin/mobile/my-attendance'],
+             ['POST','/api/v1/admin/mobile/my-attendance/check-in'],
+             ['POST','/api/v1/admin/mobile/my-attendance/check-out'],
+             ['GET','/api/v1/admin/mobile/manager-inspections'],
+             ['GET','/api/v1/admin/mobile/manager-inspections/1'],
+             ['POST','/api/v1/admin/mobile/manager-inspections/1/assign'],
+             ['POST','/api/v1/admin/mobile/manager-inspections/1/complete'],
+          ] as [$method,$uri]){
+            try{$r=$routes->match(\Illuminate\Http\Request::create($uri,$method));}
+            catch(\Throwable $e){echo 'P28_NO_GO_ROUTE_MATCH_'.$method.PHP_EOL;exit(2);}
+            if(!str_contains($r->getActionName(),'OwnerSelfAttendanceInspectionController') ||
+               $r->gatherMiddleware()!==$baseMiddleware){
+              echo 'P28_NO_GO_OWNER_BEARER_AUTH_PARITY'.PHP_EOL;exit(3);
+            }
+          }
+          $admin=\App\Models\ErpAuthUser::query()->where('active',1)->get()->first(function($u){
+             return strtolower(trim((string)$u->role))==='admin' && (int)$u->staff_id>0;
+          });
+          if(!$admin){echo 'P28_NO_GO_ACTIVE_LINKED_ADMIN_MISSING'.PHP_EOL;exit(4);}
+          \Illuminate\Support\Facades\Auth::guard('web')->setUser($admin);
+          $request=\Illuminate\Http\Request::create('/api/v1/admin/mobile/my-attendance','GET');
+          $request->setUserResolver(static fn()=>$admin);
+          try {
+            $c=app(\App\Http\Controllers\Api\V1\OwnerSelfAttendanceInspectionController::class);
+            $attendance=$c->myAttendance($request)->getData(true);
+            $inspection=$c->inspections($request,app(\App\Http\Controllers\Web\ManagerInspectionWorkController::class))->getData(true);
+          }catch(\Throwable $e){
+            echo 'P28_NO_GO_REAL_ADMIN_JSON_EXCEPTION='.get_class($e).PHP_EOL;exit(5);
+          }
+          if(!($attendance['ok']??false) || !in_array($attendance['state']??'',[
+                'NOT_CHECKED_IN','CHECKED_IN','COMPLETE','HR_REVIEW_REQUIRED'],true)
+             || ($attendance['timezone']??'')!=='Asia/Kolkata'){
+            echo 'P28_NO_GO_MY_ATTENDANCE_RESPONSE_CONTRACT'.PHP_EOL;exit(6);
+          }
+          if(!($inspection['ok']??false) || !is_array($inspection['jobs']??null)
+             || !is_array($inspection['managers']??null)){
+            echo 'P28_NO_GO_MANAGER_INSPECTIONS_RESPONSE_CONTRACT'.PHP_EOL;exit(7);
+          }
+          $notAdmin=\App\Models\ErpAuthUser::query()->where('active',1)->get()->first(
+             fn($u)=>strtolower(trim((string)$u->role))!=='admin'
+          );
+          if($notAdmin){
+             $request->setUserResolver(static fn()=>$notAdmin);
+             try{$c->myAttendance($request);echo 'P28_NO_GO_STAFF_AUTHORIZED_AS_OWNER'.PHP_EOL;exit(8);}
+             catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){
+               if($e->getStatusCode()!==403){echo 'P28_NO_GO_OWNER_403'.PHP_EOL;exit(9);}
+             }
+          }
+          echo 'P28_OWNER_BEARER_ROUTE_PARITY_PASS'.PHP_EOL;
+          echo 'P28_ADMIN_SELF_ATTENDANCE_JSON_GET_PASS'.PHP_EOL;
+          echo 'P28_MANAGER_INSPECTION_QUEUE_JSON_GET_PASS'.PHP_EOL;
+          echo 'P28_NON_ADMIN_FORBIDDEN_PASS'.PHP_EOL;
+          echo 'P28_NO_CHECKIN_CHECKOUT_OR_INSPECTION_POST_SUBMITTED'.PHP_EOL;
+          PHP
+          trap - ERR
+          echo P28_STAGING_OWNER_MOBILE_APIS_DEPLOY_PASS
+          REMOTE
+      - name: Clear SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
