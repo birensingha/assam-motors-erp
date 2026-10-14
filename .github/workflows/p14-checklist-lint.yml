@@ -1,0 +1,17 @@
+name: Assam Motors P14 Five-Point Checklist Lint
+on:
+  push:
+    branches: [feature/p14-reversal-centre-status-20261014]
+    paths: [deployment/live-fixes/P14_REVERSAL_PROGRESS/PATCH_P14.php, .github/workflows/p14-checklist-lint.yml]
+permissions:
+  contents: read
+jobs:
+  php-lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check P14 patch syntax
+        run: |
+          set -euo pipefail
+          php -l deployment/live-fixes/P14_REVERSAL_PROGRESS/PATCH_P14.php
+          grep -q P14_DRY_RUN_PASS_NO_WRITES deployment/live-fixes/P14_REVERSAL_PROGRESS/PATCH_P14.php
