@@ -26,7 +26,15 @@ if(str_contains($clean,'P32_ERP_SIDEBAR_V2') || str_contains($clean,'id="am-p32-
 // Locate the existing Workshop ERP link in the sidebar. Do not append at the bottom.
 $anchorPattern='/<a\b[^>]*>(?:(?!<\/a>).){0,1200}?Workshop\s*ERP(?:(?!<\/a>).){0,1200}<\/a>/is';
 if(preg_match_all($anchorPattern,$clean,$anchors,PREG_OFFSET_CAPTURE)!==1){
- fwrite(STDERR,"P32_NO_GO_WORKSHOP_ERP_LINK_ANCHOR\n");exit(6);
+ fwrite(STDERR,"P32_NO_GO_WORKSHOP_ERP_LINK_ANCHOR\\n");
+ // Safe diagnosis: non-user-specific layout markup, max 5 short excerpts.
+ preg_match_all('/workshop/i',$clean,$hits,PREG_OFFSET_CAPTURE);
+ foreach(array_slice($hits[0],0,5) as $hit){
+   $slice=substr($clean,max(0,$hit[1]-160),420);
+   $slice=preg_replace('/\\s+/',' ',$slice);
+   fwrite(STDERR,"P32_LAYOUT_EXCERPT ".substr($slice,0,420)."\\n");
+ }
+ exit(6);
 }
 $anchor=$anchors[0][0];$insertion=$anchor[1]+strlen($anchor[0]);
 $block=<<<'BLADE'
