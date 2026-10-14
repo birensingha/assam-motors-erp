@@ -1,0 +1,146 @@
+name: Assam Motors P21 Manager Inspection STAGING
+on:
+  push:
+    branches: [feature/p21-inspection-manager-sequential-workflow-20261014]
+    paths: [.github/workflows/p21-inspection-deploy.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-p21-inspection
+  cancel-in-progress: false
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax-check P21 files
+        run: |
+          php -l deployment/live-fixes/P21_MANAGER_INSPECTION/PATCH_P21.php
+          php -l deployment/live-fixes/P21_MANAGER_INSPECTION/payload/ManagerInspectionWorkController.php
+          php -l deployment/live-fixes/P21_MANAGER_INSPECTION/payload/2026_10_14_140000_create_job_card_inspection_assignments.php
+      - name: Setup staging SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Guarded installation and Owner Manager authenticated GET render
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            remote_ssh(){ ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT" "$@"; }
+            remote_scp(){ scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$@"; }
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            remote_ssh(){ sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT" "$@"; }
+            remote_scp(){ sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$@"; }
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          remote_ssh "$REMOTE" 'mkdir -p ~/assam-p21-inspection'
+          remote_scp -r deployment/live-fixes/P21_MANAGER_INSPECTION/PATCH_P21.php deployment/live-fixes/P21_MANAGER_INSPECTION/payload "$REMOTE:~/assam-p21-inspection/"
+          remote_ssh "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/assam-p21-inspection/PATCH_P21.php"
+          test -f "$APP/artisan" && test -f "$PATCH"
+          php "$PATCH" check "$APP"
+          OUT="$(php "$PATCH" apply "$APP")"
+          printf '%s\n' "$OUT"
+          BAK="$(printf '%s\n' "$OUT" | sed -n 's/^P21_APPLIED_BACKUP=//p')"
+          test -d "$BAK" && test -n "$BAK"
+          for f in routes__web.php resources__views__layouts__erp.blade.php resources__views__job-cards__show.blade.php; do
+            test -f "$BAK/$f"
+          done
+          rollback() {
+            echo 'P21_QA_FAILED_SOURCE_ROLLBACK'
+            cp "$BAK/routes__web.php" "$APP/routes/web.php"
+            cp "$BAK/resources__views__layouts__erp.blade.php" "$APP/resources/views/layouts/erp.blade.php"
+            cp "$BAK/resources__views__job-cards__show.blade.php" "$APP/resources/views/job-cards/show.blade.php"
+            rm -f "$APP/app/Http/Controllers/Web/ManagerInspectionWorkController.php"
+            rm -f "$APP/resources/views/inspections/manager-work.blade.php"
+            rm -f "$APP/database/migrations/2026_10_14_140000_create_job_card_inspection_assignments.php"
+            (cd "$APP" && php artisan view:clear >/dev/null 2>&1 && php artisan route:clear >/dev/null 2>&1) || true
+          }
+          trap rollback ERR
+          cd "$APP"
+          php artisan migrate --path=database/migrations/2026_10_14_140000_create_job_card_inspection_assignments.php --force --no-interaction
+          php -l app/Http/Controllers/Web/ManagerInspectionWorkController.php
+          php artisan view:clear >/dev/null
+          php artisan route:clear >/dev/null
+          php artisan view:cache >/dev/null
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::connection();
+          $schema=\Illuminate\Support\Facades\Schema::class;
+          if(!$schema::hasTable('job_card_inspection_assignments')){echo 'P21_NO_ASSIGNMENT_TABLE'.PHP_EOL;exit(2);}
+          foreach(['erp.inspection-manager.index','erp.inspection-manager.work','erp.inspection-manager.assign','erp.inspection-manager.complete'] as $name){
+            $route=\Illuminate\Support\Facades\Route::getRoutes()->getByName($name);
+            if(!$route){echo 'P21_NO_GO_MISSING_ROUTE_'.$name.PHP_EOL;exit(3);}
+            $middleware=implode(',',$route->gatherMiddleware());
+            if(!str_contains($middleware,'EnsureErpAdmin')){echo 'P21_NO_GO_ADMIN_AUTH_ROUTE_'.$name.PHP_EOL;exit(4);}
+          }
+          $admin=\App\Models\ErpAuthUser::query()->where('active',1)->get()->first(function($u)use($db){
+            if(strtolower((string)$u->role)!=='admin' || !$u->staff_id)return false;
+            $s=$db->table('staff')->where('id',(int)$u->staff_id)->first();
+            return $s && strtolower(trim((string)$s->role))==='manager';
+          });
+          if(!$admin){echo 'P21_NO_GO_NO_LINKED_ADMIN_MANAGER'.PHP_EOL;exit(5);}
+          \Illuminate\Support\Facades\Auth::guard('web')->setUser($admin);
+          \Illuminate\Support\Facades\View::share('errors',new \Illuminate\Support\ViewErrorBag());
+          $req=\Illuminate\Http\Request::create('/erp/inspection-manager','GET');
+          $req->setUserResolver(static fn()=>$admin);
+          try {
+            $ctl=app(\App\Http\Controllers\Web\ManagerInspectionWorkController::class);
+            $view=$ctl->index($req);
+            $vars=$view->getData();
+            $html=$view->render();
+          }catch(\Throwable $e){echo 'P21_MANAGER_RENDER_EXCEPTION='.get_class($e).PHP_EOL;exit(6);}
+          foreach(['Manager Vehicle Inspection','Who is assigned to Vehicle Inspection?','Assign / Inspect','Inspection assigned to'] as $marker){
+            if(!str_contains($html,$marker)){echo 'P21_NO_GO_RENDER_MARKER'.PHP_EOL;exit(7);}
+          }
+          $open=$db->table('job_cards')->whereRaw("LOWER(COALESCE(status,''))='open'")
+            ->whereRaw("LOWER(COALESCE(inspection_status,''))='pending'")->orderByDesc('id')->first();
+          if($open){
+            try{$detail=$ctl->work($req,$open->id)->render();}
+            catch(\Throwable $e){echo 'P21_WORK_RENDER_EXCEPTION='.get_class($e).PHP_EOL;exit(8);}
+            if(!str_contains($detail,'Assign Inspection Manager') || !str_contains($detail,'Active Manager')){
+              echo 'P21_NO_GO_ASSIGN_MANAGER_BUTTON_MISSING'.PHP_EOL;exit(9);
+            }
+            try{
+              $show=app(\App\Http\Controllers\Web\AdminJobCardPageController::class)
+                 ->show($req,$open->id,app(\App\Services\JobCardService::class))->render();
+            } catch(\Throwable $e){echo 'P21_JOB_CARD_RENDER_EXCEPTION='.get_class($e).PHP_EOL;exit(10);}
+            if(!str_contains($show,'Inspection Assigned To:') || !str_contains($show,'Assign / Open Manager Inspection')){
+              echo 'P21_NO_GO_JOBCARD_ASSIGNMENT_STRIP'.PHP_EOL;exit(11);
+            }
+          }
+          echo 'P21_MANAGER_WORKSPACE_RENDER_PASS'.PHP_EOL;
+          echo 'P21_ADMIN_MANAGER_ROLE_LINK_PASS'.PHP_EOL;
+          echo 'P21_JOB_CARD_ASSIGNMENT_VISIBILITY_PASS'.PHP_EOL;
+          echo 'P21_NO_INSPECTION_ASSIGNMENTS_OR_SUBMISSIONS_AUTOMATED'.PHP_EOL;
+          PHP
+          trap - ERR
+          echo 'P21_STAGING_MANAGER_INSPECTION_PASS'
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
