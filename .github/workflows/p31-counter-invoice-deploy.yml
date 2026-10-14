@@ -1,0 +1,170 @@
+name: Assam Motors P31 Direct Parts Counter Invoice STAGING
+on:
+  push:
+    branches: [feature/p31-direct-counter-parts-invoice-20261014]
+    paths: [.github/workflows/p31-counter-invoice-deploy.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-p31-counter-invoice
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP syntax
+        run: |
+          php -l deployment/live-fixes/P31_COUNTER_PARTS_INVOICE/PATCH_P31.php
+          php -l deployment/live-fixes/P31_COUNTER_PARTS_INVOICE/payload/CounterPartsInvoiceController.php
+          php -l deployment/live-fixes/P31_COUNTER_PARTS_INVOICE/payload/2026_10_14_170000_create_direct_invoice_parts.php
+      - name: Configure staging SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Backup guarded staging deploy and zero-write invoice form QA
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            remote_ssh(){ ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT" "$@"; }
+            remote_scp(){ scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$@"; }
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            remote_ssh(){ sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT" "$@"; }
+            remote_scp(){ sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$@"; }
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          remote_ssh "$REMOTE" 'mkdir -p ~/assam-p31-counter'
+          remote_scp -r deployment/live-fixes/P31_COUNTER_PARTS_INVOICE/PATCH_P31.php deployment/live-fixes/P31_COUNTER_PARTS_INVOICE/payload "$REMOTE:~/assam-p31-counter/"
+          remote_ssh "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/assam-p31-counter/PATCH_P31.php"
+          test -f "$ROOT/artisan" && test -f "$PATCH"
+          php "$PATCH" check "$ROOT"
+          RESULT="$(php "$PATCH" apply "$ROOT")"
+          printf '%s\n' "$RESULT"
+          BAK="$(printf '%s\n' "$RESULT" | sed -n 's/^P31_APPLIED_BACKUP=//p')"
+          test -n "$BAK" && test -d "$BAK"
+          for file in routes__web.php app__Http__Controllers__Web__AdminJobCardLifecyclePageController.php resources__views__purchases__index.blade.php; do
+            test -f "$BAK/$file"
+          done
+          rollback(){
+            echo 'P31_QA_FAILED_RESTORING_ORIGINAL_ROUTES_INVOICE_AND_PURCHASE_SOURCES'
+            cp "$BAK/routes__web.php" "$ROOT/routes/web.php"
+            cp "$BAK/app__Http__Controllers__Web__AdminJobCardLifecyclePageController.php" "$ROOT/app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php"
+            cp "$BAK/resources__views__purchases__index.blade.php" "$ROOT/resources/views/purchases/index.blade.php"
+            rm -f "$ROOT/app/Http/Controllers/Web/CounterPartsInvoiceController.php"
+            rm -f "$ROOT/resources/views/counter-sales/index.blade.php"
+            rm -f "$ROOT/resources/views/counter-sales/create.blade.php"
+            rm -f "$ROOT/resources/views/invoices/direct-show.blade.php"
+            rm -f "$ROOT/resources/views/invoices/direct-print.blade.php"
+            rm -f "$ROOT/database/migrations/2026_10_14_170000_create_direct_invoice_parts.php"
+            (cd "$ROOT" && php artisan view:clear >/dev/null 2>&1 && php artisan route:clear >/dev/null 2>&1) || true
+          }
+          trap rollback ERR
+          cd "$ROOT"
+          php artisan migrate --path=database/migrations/2026_10_14_170000_create_direct_invoice_parts.php --force --no-interaction
+          php -l routes/web.php
+          php -l app/Http/Controllers/Web/CounterPartsInvoiceController.php
+          php -l app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php
+          php artisan view:clear >/dev/null
+          php artisan route:clear >/dev/null
+          php artisan view:cache >/dev/null
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $schema=\Illuminate\Support\Facades\Schema::class;
+          if(!$schema::hasTable('direct_invoice_requests') || !$schema::hasTable('direct_invoice_lines')){
+              echo 'P31_NO_GO_DIRECT_SALE_TABLES_MISSING'.PHP_EOL;exit(2);
+          }
+          $routes=\Illuminate\Support\Facades\Route::getRoutes();
+          foreach(['erp.counter-sales.index'=>'GET','erp.counter-sales.create'=>'GET','erp.counter-sales.store'=>'POST'] as $name=>$method){
+              $r=$routes->getByName($name);
+              if(!$r || !in_array($method,$r->methods(),true)
+                 || !str_contains(implode(',',$r->gatherMiddleware()),'EnsureErpAdmin')){
+                 echo 'P31_NO_GO_COUNTER_ROUTE_ROLE'.PHP_EOL;exit(3);
+              }
+          }
+          $admin=\App\Models\ErpAuthUser::query()->where('active',1)->get()->first(fn($u)=>$u->isAdmin());
+          if(!$admin){echo 'P31_NO_GO_ADMIN_NOT_AVAILABLE'.PHP_EOL;exit(4);}
+          \Illuminate\Support\Facades\Auth::guard('web')->setUser($admin);
+          \Illuminate\Support\Facades\View::share('errors',new \Illuminate\Support\ViewErrorBag());
+          $req=\Illuminate\Http\Request::create('/erp/counter-sales/create','GET');
+          $req->setUserResolver(static fn()=>$admin);
+          try{
+              $c=app(\App\Http\Controllers\Web\CounterPartsInvoiceController::class);
+              $listHtml=$c->index($req)->render();
+              $create=$c->create($req);
+              $html=$create->render();
+          }catch(\Throwable $e){echo 'P31_NO_GO_COUNTER_GET_EXCEPTION='.get_class($e).PHP_EOL;exit(5);}
+          foreach(['Direct Parts Sale Invoice','id="p31-counter-invoice-form"','Parts Sale Lines',
+              'Create Invoice &amp; Issue Stock'] as $marker){
+              if(!str_contains($html,$marker)){
+                echo 'P31_NO_GO_COUNTER_ENTRY_MARKER'.PHP_EOL;exit(6);
+              }
+          }
+          if(!str_contains($listHtml,'Counter Invoice Register')){
+              echo 'P31_NO_GO_COUNTER_REGISTER_RENDER'.PHP_EOL;exit(7);
+          }
+          $db=\Illuminate\Support\Facades\DB::connection();
+          $columns=$db->select("SHOW COLUMNS FROM invoices LIKE 'job_card_id'");
+          if(!$columns || $columns[0]->Null!=='YES'){
+              echo 'P31_NO_GO_INVOICE_JOB_CARD_NOT_NULLABLE'.PHP_EOL;exit(8);
+          }
+          $inv=(object)[
+            'id'=>0,'invoice_no'=>'QA-COUNTER-PRINT','invoice_date'=>now('Asia/Kolkata'),
+            'customer_name'=>'QA CUSTOMER','customer_phone'=>'','grand_total'=>118,
+            'subtotal'=>100,'gst_total'=>18,'round_off'=>0,'paid_amount'=>0,
+            'balance_due'=>118,'status'=>'issued',
+          ];
+          $line=(object)[
+            'part_name'=>'QA PART','part_code'=>'QA-P1','hsn_code'=>'8708','qty'=>1,
+            'unit'=>'PCS','rate'=>100,'discount_percent'=>0,
+            'gst_percent'=>18,'total_amount'=>118,'note'=>null,
+          ];
+          try{
+             $detail=\Illuminate\Support\Facades\View::make('invoices.direct-show',[
+               'inv'=>$inv,'lines'=>collect([$line]),'ledger'=>collect()])->render();
+             $print=\Illuminate\Support\Facades\View::make('invoices.direct-print',[
+               'inv'=>$inv,'lines'=>collect([$line]),'ledger'=>collect()])->render();
+          }catch(\Throwable $e){echo 'P31_NO_GO_COUNTER_PRINT_RENDER='.get_class($e).PHP_EOL;exit(9);}
+          if(!str_contains($detail,'QA PART') || !str_contains($print,'DIRECT PARTS SALE INVOICE')){
+             echo 'P31_NO_GO_COUNTER_DETAIL_PRINT_MARKER'.PHP_EOL;exit(10);
+          }
+          $src=file_get_contents('app/Http/Controllers/Web/CounterPartsInvoiceController.php');
+          foreach(['DB::transaction(', '->lockForUpdate()', 'direct_invoice_requests', 'inventory_movements',
+            'customer_ledger','stock_qty','job_card_id'] as $token){
+             if(!str_contains($src,$token)){echo 'P31_NO_GO_ATOMIC_STOCK_LEDGER_GUARD'.PHP_EOL;exit(11);}
+          }
+          echo 'P31_COUNTER_SALE_CREATE_AND_REGISTER_GET_RENDER_PASS'.PHP_EOL;
+          echo 'P31_INVOICE_SHOW_AND_PRINT_RENDER_PASS'.PHP_EOL;
+          echo 'P31_ADMIN_PROTECTED_ROUTES_AND_NULL_JC_PASS'.PHP_EOL;
+          echo 'P31_NO_FINANCIAL_STOCK_INVOICE_OR_LEDGER_POST_EXECUTED'.PHP_EOL;
+          PHP
+          trap - ERR
+          echo P31_STAGING_COUNTER_PARTS_INVOICE_DEPLOY_PASS
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
