@@ -1,0 +1,61 @@
+name: Assam Motors P22 Technician Decision Source Audit
+on:
+  push:
+    branches: [feature/p22-separate-technician-decision-20261014]
+    paths: [.github/workflows/p22-decision-source-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Secure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Read-only auth mapping, routes and attendance source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f "$ROOT/artisan"
+          cd "$ROOT"
+          echo '== STAFF ROUTE GROUP =='
+          grep -n -A 25 -B 5 "staff.inspection-report" routes/web.php | head -n 80 || true
+          echo '== STAFF INSPECTION REPORT VIEW =='
+          sed -n '1,210p' resources/views/staff/inspection-report.blade.php
+          echo '== STAFF PORTAL MAIN INSPECTION PANEL =='
+          sed -n '130,195p' resources/views/staff/portal.blade.php
+          echo '== SHOW JC DIAG BLOCK =='
+          sed -n '205,325p' resources/views/job-cards/show.blade.php
+          echo '== TECH ASSIGNMENT CONTROLLER =='
+          sed -n '844,915p' app/Http/Controllers/Web/AdminJobCardPageController.php
+          echo 'P22_DECISION_AUDIT_READONLY_PASS'
+          REMOTE
+      - if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
