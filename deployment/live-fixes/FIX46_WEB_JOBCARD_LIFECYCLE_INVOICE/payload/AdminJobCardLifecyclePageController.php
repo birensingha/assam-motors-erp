@@ -311,12 +311,34 @@ final class AdminJobCardLifecyclePageController extends Controller
             }
             $subtotal=round($partsTotal+$labourTotal,2);
             $gstTotal=round((float)($card->gst_total ?? 0),2);
+            // Prevent issuing a potentially incorrect GST invoice. The Job Card tax
+            // summary must be reconciled against its taxable line items first.
+            $hasTaxableLines=false;
+            foreach (['job_card_parts','job_card_labour'] as $lineTable) {
+                if (Schema::hasTable($lineTable) && Schema::hasColumn($lineTable,'gst_percent')) {
+                    $hasTaxableLines = $hasTaxableLines || DB::table($lineTable)
+                        ->where('job_card_id',$job)->where('gst_percent','>',0)->exists();
+                }
+            }
+            if ($hasTaxableLines && $gstTotal <= 0) {
+                throw ValidationException::withMessages([
+                    'status'=>'Invoice blocked: taxable Parts/Labour lines have GST rates, but Job Card GST total is zero. Recalculate and reconcile GST before issuing an invoice.'
+                ]);
+            }
             $preRound=round((float)($card->pre_round_total ?? 0),2);
             if($preRound<=0) $preRound=round($subtotal+$gstTotal,2);
             $roundOff=round((float)($card->round_off ?? 0),2);
             $grand=round((float)($card->grand_total ?? 0),2);
             if($grand<=0) $grand=round($preRound+$roundOff,2);
             if(abs($grand-($preRound+$roundOff))>0.01) $roundOff=round($grand-$preRound,2);
+
+            // Customer master is authoritative if the Job Card snapshot is empty.
+            $customerMaster=Schema::hasTable('customers')
+                ? DB::table('customers')->where('id',(int)$card->customer_id)->first()
+                : null;
+            $masterName=$customerMaster->name ?? $customerMaster->customer_name ?? null;
+            $masterPhone=$customerMaster->phone ?? $customerMaster->mobile ?? null;
+            $masterEmail=$customerMaster->email ?? null;
 
             $tmp='TMP-INV-'.strtoupper(bin2hex(random_bytes(6)));
             $row=[
@@ -333,9 +355,9 @@ final class AdminJobCardLifecyclePageController extends Controller
                 'balance_total'=>$grand,
                 'status'=>'issued',
                 'created_at'=>now('Asia/Kolkata'),
-                'customer_email'=>$card->customer_email ?: null,
-                'customer_name'=>$card->customer_name ?: null,
-                'customer_phone'=>$card->customer_phone ?: null,
+                'customer_email'=>$card->customer_email ?: $masterEmail,
+                'customer_name'=>$card->customer_name ?: $masterName,
+                'customer_phone'=>$card->customer_phone ?: $masterPhone,
                 'vehicle_reg_no'=>$card->vehicle_reg_no ?: null,
                 'subtotal'=>$subtotal,
                 'gst_total'=>$gstTotal,
@@ -398,7 +420,7 @@ final class AdminJobCardLifecyclePageController extends Controller
     public function printInvoice(Request $request, int $invoice): View
     {
         $this->admin($request);
-        return view('invoices.print',$this->invoiceData($invoice));
+        return view('invoices.print',array_merge($this->invoiceData($invoice),['costSummary'=>$request->query('format')==='summary']));
     }
 
     private function invoiceData(int $invoice): array
@@ -413,10 +435,13 @@ final class AdminJobCardLifecyclePageController extends Controller
         $labour=Schema::hasTable('job_card_labour')
             ? DB::table('job_card_labour')->where('job_card_id',$job->id)->orderBy('id')->get()
             : collect();
+        $customer=Schema::hasTable('customers') && !empty($inv->customer_id)
+            ? DB::table('customers')->where('id',(int)$inv->customer_id)->first()
+            : null;
         $ledger=Schema::hasTable('customer_ledger')
             ? DB::table('customer_ledger')->where('invoice_id',$invoice)->orderBy('id')->get()
             : collect();
-        return compact('inv','job','parts','labour','ledger');
+        return compact('inv','job','customer','parts','labour','ledger');
     }
 
     private function unfinishedWork(int $job): array
