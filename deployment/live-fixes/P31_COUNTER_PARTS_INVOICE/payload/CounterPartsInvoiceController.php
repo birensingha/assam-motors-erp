@@ -41,7 +41,7 @@ final class CounterPartsInvoiceController extends Controller
     {
         $this->admin($req);
         $customers=DB::table('am_customer_master')
-            ->orderBy('name')->limit(3000)->get(['id','customer_code','name','phone','status']);
+            ->orderBy('name')->limit(3000)->get(['id','customer_code','name','phone']);
         $parts=DB::table('parts_master')
             ->whereRaw("LOWER(TRIM(COALESCE(active,''))) IN ('yes','active','1')")
             ->orderBy('part_name')->limit(5000)
@@ -83,7 +83,7 @@ final class CounterPartsInvoiceController extends Controller
             if($requestRow->invoice_id)return (int)$requestRow->invoice_id;
 
             $customer=DB::table('am_customer_master')->where('id',(int)$data['customer_id'])->first();
-            if(!$customer || strtolower(trim((string)($customer->status??'active')))==='inactive'){
+            if(!$customer){
                 throw ValidationException::withMessages(['customer_id'=>'Select an active Customer Master record.']);
             }
             $items=[];
