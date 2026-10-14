@@ -1,4 +1,4 @@
-name: Assam Motors P31 Direct Parts Counter Invoice STAGING
+name: Assam Motors P31 Direct Parts Counter Invoice STAGING V2
 on:
   push:
     branches: [feature/p31-direct-counter-parts-invoice-20261014]
