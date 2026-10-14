@@ -1,0 +1,153 @@
+name: Assam Motors P22 Sequential Diagnosis and Technician Decision STAGING
+on:
+  push:
+    branches: [feature/p22-separate-technician-decision-20261014]
+    paths: [.github/workflows/p22-decision-deploy.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-p22-decision
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check
+        run: |
+          php -l deployment/live-fixes/P22_TECH_DECISION/PATCH_P22.php
+          php -l deployment/live-fixes/P22_TECH_DECISION/payload/AdminDiagnosisStageController.php
+          php -l deployment/live-fixes/P22_TECH_DECISION/payload/StaffTechnicianDecisionController.php
+      - name: SSH configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Backup-guarded source deployment and authenticated web rendering
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            remote_ssh(){ ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT" "$@"; }
+            remote_scp(){ scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$@"; }
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            remote_ssh(){ sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT" "$@"; }
+            remote_scp(){ sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$@"; }
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          remote_ssh "$REMOTE" 'mkdir -p ~/assam-p22-decision'
+          remote_scp -r deployment/live-fixes/P22_TECH_DECISION/PATCH_P22.php deployment/live-fixes/P22_TECH_DECISION/payload "$REMOTE:~/assam-p22-decision/"
+          remote_ssh "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/assam-p22-decision/PATCH_P22.php"
+          test -f "$APP/artisan" && test -f "$PATCH"
+          php "$PATCH" check "$APP"
+          OUT="$(php "$PATCH" apply "$APP")"
+          printf '%s\n' "$OUT"
+          BAK="$(printf '%s\n' "$OUT" | sed -n 's/^P22_APPLIED_BACKUP=//p')"
+          test -n "$BAK" && test -d "$BAK"
+          for f in routes__web.php app__Http__Controllers__Web__AdminJobCardPageController.php app__Http__Controllers__Web__StaffPortalController.php resources__views__job-cards__show.blade.php resources__views__staff__inspection-report.blade.php resources__views__staff__portal.blade.php; do
+            test -f "$BAK/$f"
+          done
+          rollback() {
+            echo P22_QA_NO_GO_RESTORING_ORIGINAL_FILES
+            cp "$BAK/routes__web.php" "$APP/routes/web.php"
+            cp "$BAK/app__Http__Controllers__Web__AdminJobCardPageController.php" "$APP/app/Http/Controllers/Web/AdminJobCardPageController.php"
+            cp "$BAK/app__Http__Controllers__Web__StaffPortalController.php" "$APP/app/Http/Controllers/Web/StaffPortalController.php"
+            cp "$BAK/resources__views__job-cards__show.blade.php" "$APP/resources/views/job-cards/show.blade.php"
+            cp "$BAK/resources__views__staff__inspection-report.blade.php" "$APP/resources/views/staff/inspection-report.blade.php"
+            cp "$BAK/resources__views__staff__portal.blade.php" "$APP/resources/views/staff/portal.blade.php"
+            rm -f "$APP/app/Http/Controllers/Web/AdminDiagnosisStageController.php" "$APP/app/Http/Controllers/Web/StaffTechnicianDecisionController.php"
+            (cd "$APP" && php artisan view:clear >/dev/null 2>&1 && php artisan route:clear >/dev/null 2>&1) || true
+          }
+          trap rollback ERR
+          cd "$APP"
+          php -l routes/web.php
+          php -l app/Http/Controllers/Web/AdminDiagnosisStageController.php
+          php -l app/Http/Controllers/Web/StaffTechnicianDecisionController.php
+          php -l app/Http/Controllers/Web/AdminJobCardPageController.php
+          php -l app/Http/Controllers/Web/StaffPortalController.php
+          php artisan view:clear >/dev/null
+          php artisan route:clear >/dev/null
+          php artisan view:cache >/dev/null
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::connection();
+          $routes=\Illuminate\Support\Facades\Route::getRoutes();
+          $diagnosisRoute=$routes->getByName('erp.job-cards.diagnosis.complete');
+          $decisionRoute=$routes->getByName('staff.technician-decision.save');
+          if(!$diagnosisRoute || !$decisionRoute
+             || !str_contains($diagnosisRoute->getActionName(),'AdminDiagnosisStageController')
+             || !str_contains($decisionRoute->getActionName(),'StaffTechnicianDecisionController')){
+             echo 'P22_NO_GO_ROUTE_MISSING_OR_OLD_COMBINED_ROUTE'.PHP_EOL;exit(2);
+          }
+          if(!in_array('POST',$decisionRoute->methods(),true)
+             || !str_contains(implode(',',$decisionRoute->gatherMiddleware()),'EnsureStaffUser')){
+             echo 'P22_NO_GO_STAFF_DECISION_PERMISSION'.PHP_EOL;exit(3);
+          }
+          $admin=\App\Models\ErpAuthUser::query()->where('active',1)->get()->first(fn($u)=>$u->isAdmin());
+          $job=$db->table('job_cards')->whereRaw("LOWER(COALESCE(status,''))='open'")
+               ->orderByDesc('id')->first();
+          if(!$admin || !$job){echo 'P22_NO_GO_ADMIN_OR_JOB_MISSING'.PHP_EOL;exit(4);}
+          \Illuminate\Support\Facades\Auth::guard('web')->setUser($admin);
+          \Illuminate\Support\Facades\View::share('errors',new \Illuminate\Support\ViewErrorBag());
+          $req=\Illuminate\Http\Request::create('/erp/job-cards/'.$job->id,'GET');
+          $req->setUserResolver(static fn()=>$admin);
+          try {
+             $html=app(\App\Http\Controllers\Web\AdminJobCardPageController::class)
+                ->show($req,$job->id,app(\App\Services\JobCardService::class))->render();
+          }catch(\Throwable $e){echo 'P22_JOB_CARD_VIEW_EXCEPTION='.get_class($e).PHP_EOL;exit(5);}
+          $showSource=file_get_contents('resources/views/job-cards/show.blade.php');
+          if(!str_contains($html,'Inspection / Final Diagnosis')
+             || !str_contains($showSource,'Step 1 Manager Inspection')
+             || str_contains($showSource,'name="next" value="estimate"')){
+             echo 'P22_NO_GO_OLD_COMBINED_DIAG_FORM'.PHP_EOL;exit(6);
+          }
+          $card=\App\Models\JobCard::query()->findOrFail($job->id);
+          $card->inspection_status='completed';
+          $card->diagnosis_status='completed';
+          $card->decision_status='pending';
+          $card->status='open';
+          try{$report=\Illuminate\Support\Facades\View::make('staff.inspection-report',[
+               'job'=>$card,'items'=>collect(),'submittedBy'=>null])->render();}
+          catch(\Throwable $e){echo 'P22_STAFF_REPORT_EXCEPTION='.get_class($e).PHP_EOL;exit(7);}
+          if(!str_contains($report,'Step 3 — Technician Decision')
+             || !str_contains($report,'Submit Technician Decision')){
+             echo 'P22_NO_GO_STAFF_FORM_NOT_RENDERED'.PHP_EOL;exit(8);
+          }
+          $service=file_get_contents('app/Services/EstimateService.php');
+          if(!str_contains($service,'decision_status') || !str_contains($service,'estimate_allowed')){
+             echo 'P22_NO_GO_ESTIMATE_GUARDS_NOT_FOUND'.PHP_EOL;exit(9);
+          }
+          echo 'P22_REAL_JOBCARD_SEQUENTIAL_RENDER_PASS'.PHP_EOL;
+          echo 'P22_STAFF_TECH_DECISION_FORM_RENDER_PASS'.PHP_EOL;
+          echo 'P22_ESTIMATE_GATE_RETAINED_PASS'.PHP_EOL;
+          echo 'P22_NO_DIAGNOSIS_DECISION_OR_ESTIMATE_RECORDS_MUTATED'.PHP_EOL;
+          PHP
+          trap - ERR
+          echo 'P22_STAGING_SEQUENTIAL_WORKFLOW_DEPLOY_PASS'
+          REMOTE
+      - name: Clear SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
