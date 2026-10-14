@@ -59,7 +59,7 @@ BLADE;
  $show=$old['resources/views/job-cards/show.blade.php'];
  $needle='$latestDiagnosisEvent=$diagnosisEvents->first();';
  $inject=<<<'BLADE'
-{{-- P21_MANAGER_INSPECTION_WORK --}} 
+// P21_MANAGER_INSPECTION_WORK
 $p21InspectionAssignment=\Illuminate\Support\Facades\Schema::hasTable('job_card_inspection_assignments')
   ? \Illuminate\Support\Facades\DB::table('job_card_inspection_assignments as ia')
        ->leftJoin('staff as s','s.id','=','ia.assigned_staff_id')
