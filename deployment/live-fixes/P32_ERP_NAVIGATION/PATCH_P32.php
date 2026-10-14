@@ -9,43 +9,44 @@ $before=(string)file_get_contents($file);$routes=(string)file_get_contents($rout
 foreach(['/counter-sales','/counter-sales/create'] as $route){
  if(!str_contains($routes,$route)){fwrite(STDERR,"P32_ROUTE_MISSING $route\n");exit(4);}
 }
-if(str_contains($before,'P32_ERP_SIDEBAR_V2')){echo "P32_SIDEBAR_ALREADY_INSTALLED\n";exit(0);}
-// Remove only the previous P32 floating navigation block, never other UI.
-$oldStart='{{-- P32_ERP_NAVIGATION:';
-if(str_contains($before,$oldStart)){
- $start=strpos($before,$oldStart);
- $end=strpos($before,'</nav>',$start);
- if($end===false || !str_contains(substr($before,$start,$end-$start),'id="am-p32-nav"')){
-  fwrite(STDERR,"P32_UNSAFE_PREVIOUS_BLOCK\n");exit(5);
- }
- $beforeWithoutFloat=substr_replace($before,'', $start,$end+strlen('</nav>')-$start);
-}else{$beforeWithoutFloat=$before;}
+if(str_contains($before,'P32_ERP_SIDEBAR_V3')){echo "P32_SIDEBAR_ALREADY_INSTALLED\n";exit(0);}
+// Move prior P32 section to the proper location; preserve all other sidebar items.
+$clean=$before;
+$previous='/\{\{-- P32_ERP_SIDEBAR_V2:.*?<\/div>\s*<\/div>/s';
+if(preg_match($previous,$clean)===1){$clean=preg_replace($previous,'',$clean,1);}
+// Also support first-generation floating menu if it is still present.
+$floating='/\{\{-- P32_ERP_NAVIGATION:.*?<\/nav>/s';
+if(preg_match($floating,$clean)===1){$clean=preg_replace($floating,'',$clean,1);}
+if(str_contains($clean,'P32_ERP_SIDEBAR_V2') || str_contains($clean,'id="am-p32-nav"')){
+ fwrite(STDERR,"P32_NO_GO_OLD_MENU_NOT_REMOVED\n");exit(5);
+}
+// Locate the existing Workshop ERP link in the sidebar. Do not append at the bottom.
+$anchorPattern='/<a\b[^>]*>[^<]*Workshop\s+ERP[^<]*<\/a>/i';
+if(preg_match_all($anchorPattern,$clean,$anchors,PREG_OFFSET_CAPTURE)!==1){
+ fwrite(STDERR,"P32_NO_GO_WORKSHOP_ERP_LINK_ANCHOR\n");exit(6);
+}
+$anchor=$anchors[0][0];$insertion=$anchor[1]+strlen($anchor[0]);
 $block=<<<'BLADE'
-{{-- P32_ERP_SIDEBAR_V2: real ERP left sidebar links, not a floating menu. --}}
-<div class="am-p32-sidebar" style="padding:8px 10px;margin:9px 0;border-top:1px solid #d4dde8">
- <div style="font-size:11px;font-weight:800;letter-spacing:.06em;opacity:.8;margin:4px 8px 9px">WORKSHOP &amp; SALES</div>
- <a href="{{ url('/erp/inspection-manager') }}" style="display:block;padding:10px 12px">Inspection Manager</a>
- <a href="{{ url('/erp/job-cards') }}" style="display:block;padding:10px 12px">Job Cards / Lifecycle &amp; QC</a>
- <a href="{{ url('/erp/counter-sales/create') }}" style="display:block;padding:10px 12px">+ Direct Parts Sale</a>
- <a href="{{ url('/erp/counter-sales') }}" style="display:block;padding:10px 12px">Counter Invoice Register</a>
+{{-- P32_ERP_SIDEBAR_V3: modern Workshop ERP submenu; no floating links. --}}
+<style>
+.am-p32-workshop{margin:5px 8px 12px;padding:7px;background:rgba(255,255,255,.045);border:1px solid rgba(185,214,244,.17);border-radius:11px}
+.am-p32-workshop .am-p32-caption{font-size:10px;letter-spacing:.09em;font-weight:800;color:#a9cce9;padding:8px 10px}
+.am-p32-workshop a,.am-p32-workshop a:visited{display:flex;align-items:center;gap:10px;padding:11px 10px;margin:2px 0;border-radius:8px;text-decoration:none!important;color:#f1f6ff!important;font-size:12px;font-weight:600;line-height:1.25}
+.am-p32-workshop a:hover,.am-p32-workshop a:focus-visible{background:#214e7d;color:#fff!important;outline:none}
+.am-p32-workshop a.active{background:#185d93;color:#fff!important;border-left:3px solid #45cba5}
+.am-p32-workshop .am-p32-icon{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:7px;background:rgba(255,255,255,.09);font-size:13px;flex-shrink:0}
+@media print{.am-p32-workshop{display:none!important}}
+</style>
+<div class="am-p32-workshop">
+ <div class="am-p32-caption">WORKSHOP OPERATIONS</div>
+ <a class="{{ request()->is('erp/inspection-manager*')?'active':'' }}" href="{{ url('/erp/inspection-manager') }}"><span class="am-p32-icon">✓</span>Inspection Manager</a>
+ <a class="{{ request()->is('erp/job-cards*')?'active':'' }}" href="{{ url('/erp/job-cards') }}"><span class="am-p32-icon">⚙</span>Job Card / Lifecycle &amp; QC</a>
+ <a class="{{ request()->is('erp/counter-sales/create')?'active':'' }}" href="{{ url('/erp/counter-sales/create') }}"><span class="am-p32-icon">＋</span>Direct Parts Sale</a>
+ <a class="{{ request()->is('erp/counter-sales')?'active':'' }}" href="{{ url('/erp/counter-sales') }}"><span class="am-p32-icon">▤</span>Counter Invoice Register</a>
 </div>
 BLADE;
-// Only patch an actual left sidebar element, not arbitrary navigation or content.
-$match=null;
-foreach([
- '/<aside\\b[^>]*(?:class|id)\\s*=\\s*["\x27][^"\x27]*(?:sidebar|side-nav|side_menu)[^"\x27]*["\x27][^>]*>/i',
- '/<nav\\b[^>]*(?:class|id)\\s*=\\s*["\x27][^"\x27]*(?:sidebar|side-nav|side_menu)[^"\x27]*["\x27][^>]*>/i'
-] as $pattern){
- if(preg_match_all($pattern,$beforeWithoutFloat,$matches,PREG_OFFSET_CAPTURE)===1){$match=$matches[0][0];break;}
-}
-if(!$match){fwrite(STDERR,"P32_NO_GO_SIDEBAR_ANCHOR_NOT_UNIQUE\n");exit(6);}
-$tag=strtolower(substr($match[0],1,strcspn(substr($match[0],1)," >")));
-$afterOpen=$match[1]+strlen($match[0]);
-$closing='</'.$tag.'>';
-$closingAt=strpos($beforeWithoutFloat,$closing,$afterOpen);
-if($closingAt===false){fwrite(STDERR,"P32_NO_GO_CLOSING_SIDEBAR\n");exit(6);}
-$after=substr_replace($beforeWithoutFloat,"\n".$block."\n",$closingAt,0);
-if(substr_count($after,'P32_ERP_SIDEBAR_V2')!==1||str_contains($after,'id="am-p32-nav"'))exit(7);
+$after=substr_replace($clean,"\n".$block."\n",$insertion,0);
+if(substr_count($after,'P32_ERP_SIDEBAR_V3')!==1)exit(7);
 try{
  chdir($root);require 'vendor/autoload.php';$app=require 'bootstrap/app.php';
  $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
