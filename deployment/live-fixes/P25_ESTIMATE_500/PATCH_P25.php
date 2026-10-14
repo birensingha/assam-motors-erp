@@ -24,7 +24,7 @@ if(hash('sha256',$before)!==$oldSha){
 }
 $needle="@php(\$amEstimateWip=in_array(strtolower(trim((string)\$jobCard->status)),['in progress','in-progress','work in progress','wip']))";
 $fix=<<<'BLADE'
-{{-- P25_ESTIMATE_BLADE_INLINE_PHP_500: multi-line PHP directive, not malformed inline @php(). --}}
+{{-- P25_ESTIMATE_BLADE_INLINE_PHP_500: safe multi-line initialization with explicitly closed PHP block. --}}
 @php
     $amEstimateWip = in_array(strtolower(trim((string)$jobCard->status)), ['in progress','in-progress','work in progress','wip'], true);
 @endphp
