@@ -1,0 +1,77 @@
+name: Assam Motors P31 Direct Parts Invoice Accounting Readonly Audit
+on:
+  push:
+    branches: [feature/p31-direct-counter-parts-invoice-20261014]
+    paths: [.github/workflows/p31-counter-invoice-schema-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Secure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Read-only auth mapping, routes and attendance source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f "$ROOT/artisan"
+          cd "$ROOT"
+          echo '=== P31 TABLE STRUCTURE AND CONSTRAINTS ==='
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';$app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::connection();
+          foreach(['invoices','job_cards','customers','parts_master','stock_movements','inventory_movements','customer_ledger','money_receipts','payments','invoice_parts','invoice_labour','customer_payments'] as $t){
+           echo 'TABLE_'.$t.PHP_EOL;
+           try{
+             $rows=$db->select('SHOW FULL COLUMNS FROM `'.$t.'`');
+             foreach($rows as $c)echo $c->Field.' TYPE='.$c->Type.' NULL='.$c->Null.' KEY='.$c->Key.' DEFAULT='.($c->Default??'NULL').PHP_EOL;
+             $create=$db->selectOne('SHOW CREATE TABLE `'.$t.'`');
+             $sql=$create->{'Create Table'}??'';
+             foreach(explode("\n",$sql) as $line)if(str_contains($line,'FOREIGN KEY')||str_contains($line,'UNIQUE KEY'))echo 'CONSTRAINT '.trim($line).PHP_EOL;
+           }catch(\Throwable $e){echo 'TABLE_MISSING_OR_INACCESSIBLE'.PHP_EOL;}
+          }
+          $moves=$db->table('stock_movements')->select('movement_type','reference_type')->distinct()->limit(35)->get();
+          foreach($moves as $m)echo 'EXISTING_STOCK_MOVEMENT_TYPE='.$m->movement_type.' REF='.$m->reference_type.PHP_EOL;
+          echo 'P31_METADATA_NO_RECORDS_MUTATED'.PHP_EOL;
+          PHP
+          echo '=== P31 STOCK WRITE SOURCE PATTERNS ==='
+          grep -Rni -C 5 --include='*.php' -e "table('stock_movements')->insert" -e "table('inventory_movements')->insert" -e "parts_master.*stock_qty" app/Services app/Http/Controllers/Web | head -n 205 || true
+          echo '=== P31 CUSTOMER AND PAYMENT CONTROLLER ==='
+          grep -Rnl "customer_ledger.*invoice_id\|reference_type.*INVOICE" app/Services app/Http/Controllers/Web | head -n 40 || true
+          echo '=== P31 SALES EXISTING PRINT VIEW ==='
+          sed -n '1,200p' resources/views/invoices/show.blade.php
+          echo 'P31_DIRECT_SALES_READONLY_AUDIT_PASS'
+          REMOTE
+      - if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
