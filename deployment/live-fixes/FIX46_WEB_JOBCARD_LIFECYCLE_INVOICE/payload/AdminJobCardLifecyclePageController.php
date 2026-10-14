@@ -420,7 +420,7 @@ final class AdminJobCardLifecyclePageController extends Controller
     public function printInvoice(Request $request, int $invoice): View
     {
         $this->admin($request);
-        return view('invoices.print',$this->invoiceData($invoice));
+        return view('invoices.print',array_merge($this->invoiceData($invoice),['costSummary'=>$request->query('format')==='summary']));
     }
 
     private function invoiceData(int $invoice): array
