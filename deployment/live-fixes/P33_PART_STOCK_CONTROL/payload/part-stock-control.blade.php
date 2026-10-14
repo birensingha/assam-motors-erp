@@ -1,5 +1,7 @@
 {{-- P33_JOB_PART_REQUISITION_ISSUE_FITTED --}}
-@php($p33State=strtoupper(trim((string)($p->issue_status??'PLANNED'))))
+@php
+  $p33State=strtoupper(trim((string)($p->issue_status??'PLANNED')));
+@endphp
 @if(in_array(strtolower(trim((string)$job->status)),['open','in-progress','in progress','wip','work in progress'],true))
   @if(in_array($p33State,['','PLANNED','PENDING','NOT ISSUED','NOT_ISSUED'],true))
    <details class="action-pop" style="margin:5px 0">
