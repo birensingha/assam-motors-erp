@@ -1,4 +1,4 @@
-name: Assam Motors P30 Lifecycle Next Action STAGING
+name: Assam Motors P30 Lifecycle Next Action STAGING V2
 on:
   push:
     branches: [feature/p30-lifecycle-next-actions-20261014]
