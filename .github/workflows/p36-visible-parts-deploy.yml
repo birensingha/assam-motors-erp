@@ -1,0 +1,139 @@
+name: P36 Visible Parts Requisition on JC34 STAGING V2
+on:
+  push:
+    branches: [fix/p36-visible-parts-actions-job34-20261014]
+    paths: [.github/workflows/p36-visible-parts-deploy.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-p36-visible-parts
+  cancel-in-progress: false
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax
+        run: php -l deployment/live-fixes/P36_VISIBLE_PARTS/PATCH_P36.php
+      - name: SSH prerequisites
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Guarded deploy with real JC34 button visibility DOM test
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            rssh(){ ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT" "$@"; }
+            rscp(){ scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$@"; }
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            rssh(){ sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT" "$@"; }
+            rscp(){ sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$@"; }
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          rssh "$REMOTE" 'mkdir -p ~/assam-p36-visible'
+          rscp -r deployment/live-fixes/P36_VISIBLE_PARTS/PATCH_P36.php deployment/live-fixes/P36_VISIBLE_PARTS/payload "$REMOTE:~/assam-p36-visible/"
+          rssh "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/assam-p36-visible/PATCH_P36.php"
+          test -f "$ROOT/artisan" && test -f "$PATCH"
+          php "$PATCH" check "$ROOT"
+          OUT="$(php "$PATCH" apply "$ROOT")"
+          printf '%s\n' "$OUT"
+          BAK="$(printf '%s\n' "$OUT" | sed -n 's/^P36_APPLIED_BACKUP=//p')"
+          test -n "$BAK" && test -f "$BAK/resources__views__job-cards__show.blade.php" && test -f "$BAK/resources__views__job-cards__lifecycle-panel.blade.php"
+          rollback(){
+            echo 'P36_QA_FAILED_RESTORING_EXACT_TWO_ORIGINAL_VIEWS'
+            cp "$BAK/resources__views__job-cards__show.blade.php" "$ROOT/resources/views/job-cards/show.blade.php"
+            cp "$BAK/resources__views__job-cards__lifecycle-panel.blade.php" "$ROOT/resources/views/job-cards/lifecycle-panel.blade.php"
+            rm -f "$ROOT/resources/views/job-cards/part-actions-visible.blade.php"
+            (cd "$ROOT" && php artisan view:clear >/dev/null 2>&1) || true
+          }
+          trap rollback ERR
+          cd "$ROOT"
+          php artisan view:clear >/dev/null
+          php artisan view:cache >/dev/null
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::connection();
+          $line=$db->table('job_card_parts')->where('job_card_id',34)->where('id',525)->first();
+          $job=$db->table('job_cards')->where('id',34)->first();
+          if(!$line || !$job){echo 'P36_NO_GO_EXPECTED_JC34_PART525_MISSING'.PHP_EOL;exit(2);}
+          $beforeStatus=(string)$line->issue_status;
+          $beforeJCStatus=(string)$job->status;
+          $beforeAudit=$db->table('job_card_change_audits')->where('job_card_id',34)->count();
+          $master=$db->table('parts_master')->where('id',$line->part_master_id)->first();
+          $beforeStock=(float)$master->stock_qty;
+          $beforeMoves=$db->table('inventory_movements')->where('job_card_id',34)->count();
+          $admin=\App\Models\ErpAuthUser::query()->where('active',1)->get()->first(fn($u)=>$u->isAdmin());
+          if(!$admin){echo 'P36_NO_GO_ADMIN_LOGIN_MISSING'.PHP_EOL;exit(3);}
+          \Illuminate\Support\Facades\Auth::guard('web')->setUser($admin);
+          \Illuminate\Support\Facades\View::share('errors',new \Illuminate\Support\ViewErrorBag());
+          $request=\Illuminate\Http\Request::create('/erp/job-cards/34','GET');
+          $request->setUserResolver(static fn()=>$admin);
+          try {
+            $html=app(\App\Http\Controllers\Web\AdminJobCardPageController::class)
+              ->show($request,34,app(\App\Services\JobCardService::class))->render();
+          }catch(\Throwable $e){echo 'P36_NO_GO_REAL_JOBCARD_RENDER='.get_class($e).PHP_EOL;exit(4);}
+          $start=strpos($html,'id="p36-parts-actions"');
+          $form=strpos($html,'/job-cards/34/parts/525/requisition');
+          $tableStart=strpos($html,'jc-purchase-block jc-parts-block');
+          $table=$tableStart!==false?strpos($html,'<table',$tableStart):false;
+          $jump=strpos($html,'href="#p36-parts-actions"');
+          if($start===false || $form===false || $table===false
+             || $jump===false || !($jump<$start && $start<$form && $form<$table)){
+             echo 'P36_NO_GO_VISIBLE_ABOVE_TABLE_LINK_ORDER'.PHP_EOL;exit(5);
+          }
+          $dom=new \DOMDocument();
+          libxml_use_internal_errors(true);$dom->loadHTML($html);libxml_clear_errors();
+          $xp=new \DOMXPath($dom);
+          $forms=$xp->query('//div[@id="p36-parts-actions"]//form[contains(@action,"/job-cards/34/parts/525/requisition")]');
+          $links=$xp->query('//a[@href="#p36-parts-actions"]');
+          if($forms->length!==1 || $links->length!==1){
+             echo 'P36_NO_GO_ACTION_NOT_VISIBLE_IN_PRIMARY_PANEL'.PHP_EOL;exit(6);
+          }
+          $button=$xp->query('//div[@id="p36-parts-actions"]//form[contains(@action,"/parts/525/requisition")]//button[@type="submit"]');
+          if($button->length!==1 || !str_contains($button->item(0)->textContent,'Create Part Requisition')){
+             echo 'P36_NO_GO_ACTUAL_SUBMIT_BUTTON_MISSING'.PHP_EOL;exit(7);
+          }
+          $after=$db->table('job_card_parts')->where('id',525)->first();
+          $afterJob=$db->table('job_cards')->where('id',34)->first();
+          $afterMaster=$db->table('parts_master')->where('id',$line->part_master_id)->first();
+          if($after->issue_status!==$beforeStatus || $afterJob->status!==$beforeJCStatus
+             || (float)$afterMaster->stock_qty!==$beforeStock
+             || $db->table('inventory_movements')->where('job_card_id',34)->count()!==$beforeMoves
+             || $db->table('job_card_change_audits')->where('job_card_id',34)->count()!==$beforeAudit){
+            echo 'P36_NO_GO_QA_CHANGED_BUSINESS_DATA'.PHP_EOL;exit(8);
+          }
+          echo 'P36_JC34_TOP_NEXT_STEP_LINK_TO_PART_ACTION_PASS'.PHP_EOL;
+          echo 'P36_PART525_REQUISITION_VISIBLE_ABOVE_TABLE_PASS'.PHP_EOL;
+          echo 'P36_ACTUAL_ADMIN_JOBCARD_RENDER_AND_DOM_BUTTON_PASS'.PHP_EOL;
+          echo 'P36_NO_STOCK_AUDIT_OR_JC_DATA_CHANGED'.PHP_EOL;
+          PHP
+          trap - ERR
+          echo P36_STAGING_VISIBLE_PARTS_ACTIONS_DEPLOY_PASS
+          REMOTE
+      - if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
