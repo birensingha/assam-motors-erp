@@ -1,0 +1,127 @@
+name: Assam Motors P17 Dedicated Approval Desk STAGING
+on:
+  push:
+    branches: [feature/p17-separate-admin-approval-desk-20261014]
+    paths: [.github/workflows/p17-separate-desk-deploy.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-p17-dedicated-approval
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 13
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP syntax
+        run: php -l deployment/live-fixes/P17_STANDALONE_APPROVAL/PATCH_P17.php
+      - name: Configure secure staging SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Staging install with rollback and authenticated dual-page QA
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+            SCP=(scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p ~/assam-p17-approval'
+          "${SCP[@]}" -r deployment/live-fixes/P17_STANDALONE_APPROVAL/PATCH_P17.php deployment/live-fixes/P17_STANDALONE_APPROVAL/payload "$REMOTE:~/assam-p17-approval/"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/assam-p17-approval/PATCH_P17.php"
+          test -f "$APP/artisan" && test -f "$PATCH"
+          php "$PATCH" check "$APP"
+          OUT="$(php "$PATCH" apply "$APP")"
+          printf '%s\n' "$OUT"
+          BAK="$(printf '%s\n' "$OUT" | sed -n 's/^P17_APPLIED_BACKUP=//p')"
+          test -n "$BAK" && test -d "$BAK"
+          for f in routes__web.php app__Http__Controllers__Web__AdminJobCardUnwindController.php resources__views__job-cards__unwind.blade.php; do test -f "$BAK/$f"; done
+          rollback(){
+            echo 'P17_QA_NO_GO_RESTORING_PREVIOUS_APPROVAL_DESK'
+            cp "$BAK/routes__web.php" "$APP/routes/web.php"
+            cp "$BAK/app__Http__Controllers__Web__AdminJobCardUnwindController.php" "$APP/app/Http/Controllers/Web/AdminJobCardUnwindController.php"
+            cp "$BAK/resources__views__job-cards__unwind.blade.php" "$APP/resources/views/job-cards/unwind.blade.php"
+            rm -f "$APP/resources/views/job-cards/reversal-approvals.blade.php"
+            (cd "$APP" && php artisan view:clear >/dev/null 2>&1 && php artisan route:clear >/dev/null 2>&1) || true
+          }
+          trap rollback ERR
+          cd "$APP"
+          php -l routes/web.php
+          php -l app/Http/Controllers/Web/AdminJobCardUnwindController.php
+          php artisan route:clear >/dev/null
+          php artisan view:clear >/dev/null
+          php artisan view:cache >/dev/null
+          php artisan route:list --path=erp/job-cards | grep -F 'reversal/approvals'
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::connection();
+          $jc=$db->table('job_cards')->where('job_no','JC-2026-0025')->first();
+          $users=\App\Models\ErpAuthUser::query()->where('active',1)->get();
+          $admin=$users->first(fn($u)=>$u->isAdmin());
+          if(!$jc || !$admin){ echo 'P17_NO_GO_JC_OR_ADMIN_MISSING'.PHP_EOL; exit(2); }
+          \Illuminate\Support\Facades\Auth::guard('web')->setUser($admin);
+          \Illuminate\Support\Facades\View::share('errors',new \Illuminate\Support\ViewErrorBag());
+          $req=\Illuminate\Http\Request::create('/erp/job-cards/'.$jc->id.'/reversal/approvals','GET');
+          $req->setUserResolver(static fn()=>$admin);
+          try {
+            $controller=new \App\Http\Controllers\Web\AdminJobCardUnwindController();
+            $approvals=$controller->approvalDesk($req,$jc->id);
+            $aHtml=$approvals->render();
+            $reversal=$controller->show($req,$jc->id);
+            $rHtml=$reversal->render();
+          } catch(\Throwable $e){echo 'P17_RENDER_EXCEPTION='.get_class($e).PHP_EOL;exit(3);}
+          foreach(['Admin Approval Desk','Save Admin Approval Decision','p17-review-','Back to Reversal Centre'] as $t){
+            if(!str_contains($aHtml,$t)){echo 'P17_NO_GO_MISSING_APPROVAL_MARKER'.PHP_EOL;exit(4);}
+          }
+          if(!str_contains($rHtml,'Open Admin Approval Desk') || str_contains($rHtml,'Save Admin Approval Decision')){
+            echo 'P17_NO_GO_REVERSAL_STILL_CONTAINS_APPROVAL_FORM'.PHP_EOL;exit(5);
+          }
+          $url=\Illuminate\Support\Facades\Route::has('erp.job-cards.reversal.approvals');
+          if(!$url){echo 'P17_NO_GO_ROUTE_MISSING'.PHP_EOL;exit(6);}
+          $staff=$users->first(fn($u)=>!$u->isAdmin());
+          if($staff){
+            $sReq=\Illuminate\Http\Request::create('/erp/job-cards/'.$jc->id.'/reversal/approvals','GET');
+            $sReq->setUserResolver(static fn()=>$staff);
+            try{$controller->approvalDesk($sReq,$jc->id);echo 'P17_NO_GO_NON_ADMIN_ACCESS'.PHP_EOL;exit(7);}
+            catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){if($e->getStatusCode()!==403)exit(8);}
+          }
+          echo 'P17_SEPARATE_ADMIN_PAGE_RENDER_PASS'.PHP_EOL;
+          echo 'P17_REVERSAL_PAGE_LINK_ONLY_PASS'.PHP_EOL;
+          echo 'P17_ACTIVE_ADMIN_PERMISSION_PASS'.PHP_EOL;
+          echo 'P17_NO_APPROVAL_ACTION_OR_BUSINESS_DATA_MUTATED'.PHP_EOL;
+          PHP
+          trap - ERR
+          echo P17_STAGING_SEPARATE_APPROVAL_DESK_PASS
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
