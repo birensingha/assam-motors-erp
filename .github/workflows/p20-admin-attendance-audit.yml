@@ -1,0 +1,107 @@
+name: Assam Motors P20 Admin Self Attendance Readonly Audit
+on:
+  push:
+    branches: [fix/p20-admin-self-attendance-20261014]
+    paths: [.github/workflows/p20-admin-attendance-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Secure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Read-only auth mapping, routes and attendance source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f "$ROOT/artisan"
+          cd "$ROOT"
+          echo '=== P20 WEB ATTENDANCE ROUTES ==='
+          php artisan route:list --path=erp/attendance -v --except-vendor | head -n 55
+          echo '=== P20 API ATTENDANCE ROUTES ==='
+          php artisan route:list --path=api/v1/attendance -v --except-vendor | head -n 45
+          echo '=== P20 ADMIN CONTROLLER ATTENDANCE METHODS ==='
+          grep -nE -A 64 'function (attendance|checkIn|checkOut|attendanceCheckIn|attendanceCheckOut)\(' app/Http/Controllers/Web/AdminNativeModuleController.php | head -n 200 || true
+          echo '=== P20 ATTENDANCE SERVICE METHOD DECLARATIONS ==='
+          grep -nE -A 90 'function (today|checkIn|checkOut)\(' app/Services/AttendanceService.php | head -n 280 || true
+          echo '=== P20 WEB VIEW ATTENDANCE SELF ACTIONS ==='
+          find resources/views -type f \( -iname '*attendance*' -o -iname '*dashboard*' \) -print | head -n 28
+          grep -Rnl 'erp.attendance' resources/views/admin resources/views/erp resources/views/layouts 2>/dev/null | head -n 18 || true
+          echo '=== P20 DB AUTH AND STAFF LINK (FLAGS ONLY, NO NAMES/EMAILS) ==='
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::connection();
+          $schema=\Illuminate\Support\Facades\Schema::class;
+          $email=strtolower('birensingha@outlook.com');
+          $users=$db->table('erp_auth_users')->whereRaw('LOWER(email)=?',[$email])->get();
+          echo 'AUTH_MATCH_COUNT='.$users->count().PHP_EOL;
+          foreach($users as $u){
+            echo 'AUTH_ACTIVE='.(int)($u->active??0).PHP_EOL;
+            echo 'AUTH_ROLE='.str_replace(["\n","\r"],' ',(string)($u->role??'UNKNOWN')).PHP_EOL;
+            echo 'AUTH_STAFF_LINK_PRESENT='.(int)((int)($u->staff_id??0)>0).PHP_EOL;
+            $sid=(int)($u->staff_id??0);
+            if($sid>0){
+              $staff=$db->table('staff')->where('id',$sid)->first();
+              echo 'STAFF_ROW_EXISTS='.(int)(bool)$staff.PHP_EOL;
+              if($staff){
+                echo 'STAFF_RECORD_STATUS='.str_replace(["\n","\r"],' ',(string)($staff->status??'UNKNOWN')).PHP_EOL;
+                echo 'STAFF_ROLE='.str_replace(["\n","\r"],' ',(string)($staff->role??'UNKNOWN')).PHP_EOL;
+                if(\Illuminate\Support\Facades\Schema::hasTable('attendance')){
+                   $today=now('Asia/Kolkata')->toDateString();
+                   $found=$db->table('attendance')->where('staff_id',$sid)->where('date',$today)->get();
+                   echo 'TODAY_ATTENDANCE_ROW_COUNT='.$found->count().PHP_EOL;
+                   foreach($found as $a) {
+                     echo 'TODAY_ATTENDANCE_STATUS='.str_replace(["\n","\r"],' ',(string)($a->status??'UNKNOWN')).PHP_EOL;
+                     echo 'TODAY_HAS_CHECKIN='.(int)!empty($a->check_in).PHP_EOL;
+                     echo 'TODAY_HAS_CHECKOUT='.(int)!empty($a->check_out).PHP_EOL;
+                   }
+                }
+              }
+            }
+          }
+          foreach(['erp_auth_users','staff','attendance'] as $table) {
+            echo 'DB_SCHEMA_'.$table.'='.implode(',',array_filter(
+                \Illuminate\Support\Facades\Schema::getColumnListing($table),
+                fn($c)=>in_array($c,['id','email','staff_id','role','active','status','date','check_in','check_out','latitude','longitude','accuracy_m','geofence_status','staff_code','created_at','updated_at'],true)
+            )).PHP_EOL;
+          }
+          echo 'ATTENDANCE_CONTROLLER_SHA256='.(is_file('app/Http/Controllers/Web/AdminNativeModuleController.php')?hash_file('sha256','app/Http/Controllers/Web/AdminNativeModuleController.php'):'MISSING').PHP_EOL;
+          echo 'ATTENDANCE_SERVICE_SHA256='.(is_file('app/Services/AttendanceService.php')?hash_file('sha256','app/Services/AttendanceService.php'):'MISSING').PHP_EOL;
+          echo 'ERP_AUTH_MODEL_SHA256='.(is_file('app/Models/ErpAuthUser.php')?hash_file('sha256','app/Models/ErpAuthUser.php'):'MISSING').PHP_EOL;
+          PHP
+          echo 'P20_READONLY_AUDIT_PASS'
+          REMOTE
+      - if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
