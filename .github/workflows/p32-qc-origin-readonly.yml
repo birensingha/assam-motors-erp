@@ -1,0 +1,74 @@
+name: P32 QC PASS Origin and Audit Status Readonly
+on:
+  push:
+    branches: [fix/p32-qc-pass-ready-delivery-20261014]
+    paths: [.github/workflows/p32-qc-origin-readonly.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Secure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Read-only auth mapping, routes and attendance source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f "$ROOT/artisan"
+          cd "$ROOT"
+          echo '=== P32 ALL QC PASS WRITERS AND ROUTES ==='
+          grep -Rni -C 3 -E "QC_PASS|Quality Check Passed|workshop_qc_checks" app/Http/Controllers/Web app/Services | head -n 235 || true
+          echo '=== P32 QC, ROAD TEST AND CLOSE ROUTES ==='
+          grep -n -i -C 3 -E 'qc-|road.test|lifecycle/|ready-for-delivery|quality.check|work.complete|qcResult' routes/web.php | head -n 190 || true
+          echo '=== P32 AUDIT STATUS BEFORE/AFTER WITHOUT PERSONAL DATA ==='
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';$app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $rows=\Illuminate\Support\Facades\DB::table('job_card_change_audits')
+             ->where('job_card_id',34)->whereIn('action',['WIP_START','WORK_COMPLETE','QC_PENDING','QC_PASS','QC_FAIL','QC_REWORK'])
+             ->orderBy('id')->get();
+          foreach($rows as $r){
+             $pre=json_decode((string)$r->before_json,true)??[];
+             $post=json_decode((string)$r->after_json,true)??[];
+             echo 'P32_AUDIT_TRANSITION action='.$r->action.' id='.$r->id.
+              ' from='.($pre['status']??'NULL').' to='.($post['status']??'NULL').
+              ' old_public='.($pre['customer_public_status']??'NULL').
+              ' new_public='.($post['customer_public_status']??'NULL').
+              ' old_completed='.($pre['completed_at']??'NULL').
+              ' new_completed='.($post['completed_at']??'NULL').PHP_EOL;
+          }
+          echo 'P32_AUDIT_TRANSITIONS_READONLY_COMPLETE'.PHP_EOL;
+          PHP
+          REMOTE
+      - if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"

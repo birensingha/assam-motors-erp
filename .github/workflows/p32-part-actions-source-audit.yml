@@ -1,0 +1,57 @@
+name: P32 Parts Issue and Delete Buttons Exact Audit
+on:
+  push:
+    branches: [fix/p32-qc-pass-ready-delivery-20261014]
+    paths: [.github/workflows/p32-part-actions-source-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Secure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Read-only auth mapping, routes and attendance source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f "$ROOT/artisan"
+          cd "$ROOT"
+          echo '=== PART TABLE ROW HTML AND ACTION BUTTONS ==='
+          sed -n '382,468p' resources/views/job-cards/show.blade.php
+          echo '=== PART ROUTES ==='
+          grep -n 'job-cards.*parts\|parts.*issue\|parts.*fit' routes/web.php | head -n 60 || true
+          echo '=== ALL PART ISSUE STATUS WRITES ==='
+          grep -Rni -C 4 --include='*.php' -E "issue_status.?=|'issue_status'.?=>|issue_status.*update|stock.*issue" app/Services/JobCardService.php app/Http/Controllers/Web/AdminJobCardPageController.php | head -n 140 || true
+          echo P32_PART_ISSUE_SOURCE_READONLY_DONE
+          REMOTE
+      - if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
