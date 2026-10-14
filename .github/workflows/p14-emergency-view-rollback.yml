@@ -1,0 +1,77 @@
+name: Assam Motors P14 Emergency Reversal View Rollback
+on:
+  push:
+    branches: [feature/p14-reversal-centre-status-20261014]
+    paths: [.github/workflows/p14-emergency-view-rollback.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-p14-emergency-rollback
+  cancel-in-progress: false
+jobs:
+  restore-original-view:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Restore backed-up Reversal Centre view only
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          DST="$APP/resources/views/job-cards/unwind.blade.php"
+          BAK="$APP/storage/app/p14_reversal_view_backup_20261014_034150_1610243/unwind.blade.php"
+          OLD=7328c50fcb2a8ef0215e55c61973e52ad6274eb7bb08d678757a939f234c62c8
+          BAD=d1f9b9eb7a5fa596772951b1d8ab4286b86a2e6f7582267e12ed633a447db4dc
+          test -f "$APP/artisan" && test -f "$DST" && test -f "$BAK"
+          NOW="$(sha256sum "$DST" | cut -d ' ' -f1)"
+          PREV="$(sha256sum "$BAK" | cut -d ' ' -f1)"
+          test "$PREV" = "$OLD" || { echo 'NO_GO_BACKUP_HASH_MISMATCH'; exit 3; }
+          if [ "$NOW" = "$OLD" ]; then
+            echo 'ORIGINAL_VIEW_ALREADY_RESTORED'
+          elif [ "$NOW" = "$BAD" ]; then
+            TMP="$(mktemp "$APP/resources/views/job-cards/.p14_revert_XXXXXX")"
+            cp "$BAK" "$TMP"
+            chmod --reference="$DST" "$TMP"
+            test "$(sha256sum "$TMP" | cut -d ' ' -f1)" = "$OLD"
+            mv -f "$TMP" "$DST"
+            echo 'P14_ORIGINAL_VIEW_RESTORED'
+          else
+            echo 'NO_GO_CONCURRENT_VIEW_CHANGE'; exit 4
+          fi
+          cd "$APP"
+          php artisan view:clear
+          test "$(sha256sum "$DST" | cut -d ' ' -f1)" = "$OLD"
+          echo 'P14_BACKUP_VERIFIED_AND_CACHE_CLEARED_PASS'
+          echo 'NO_DATABASE_OR_BUSINESS_RECORDS_CHANGED'
+          REMOTE
+      - name: Clear SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
