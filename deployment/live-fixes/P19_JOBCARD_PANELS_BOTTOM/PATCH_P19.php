@@ -41,7 +41,7 @@ try{
     $reversal=substr($source,$revStart,$delStart-$revStart);
     $delete=substr($source,$delStart,$end-$delStart);
     if(substr_count($source,'Job Card Reversal / Cancel Centre')!==1
-        ||substr_count($source,'Delete Empty Job Card')!==1
+        ||substr_count($source,'<h3 style="margin:0 0 7px;color:#991b1b">🗑 Delete Empty Job Card</h3>')!==1
         ||substr_count($source,'id="jc-delete-panel"')!==1
         ||substr_count($source,"@endsection")!==1
         ||substr_count($source,"@include('job-cards.lifecycle-panel')")!==1){
