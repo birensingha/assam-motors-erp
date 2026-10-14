@@ -1,0 +1,64 @@
+name: Assam Motors P19 Job Card Admin Panel Source Discovery
+on:
+  push:
+    branches: [feature/p19-jobcard-admin-panels-bottom-20261014]
+    paths: [deployment/live-fixes/P19_JOBCARD_PANELS_BOTTOM/**, .github/workflows/p19-jobcard-source-discovery.yml]
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Secure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Check existing exact staging source and compile candidate Blade without writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p ~/assam-p17-approval'
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          TARGET="$ROOT/resources/views/job-cards/show.blade.php"
+          test -f "$TARGET" || { echo P19_NO_GO_SHOW_VIEW_MISSING; exit 3; }
+          echo P19_VIEW_HASH
+          sha256sum "$TARGET"
+          echo P19_KEY_SECTION_LOCATIONS
+          grep -nF -e "Job Card Reversal / Cancel Centre" -e "Delete Empty Job Card" -e "jc-delete-panel" -e "@include(" -e "@endsection" -e "@push(" -e "@endpush" -e "</section>" "$TARGET" | tail -n 80
+          echo P19_TOP_OF_VIEW
+          sed -n "1,105p" "$TARGET"
+          echo P19_VIEW_END
+          tail -n 120 "$TARGET"
+          echo P19_READ_ONLY_DISCOVERY_PASS
+          REMOTE
+      - name: Clear SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
