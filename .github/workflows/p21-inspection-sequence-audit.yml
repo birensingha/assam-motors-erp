@@ -1,0 +1,92 @@
+name: Assam Motors P21 Inspection Manager & Sequential Gates Audit
+on:
+  push:
+    branches: [feature/p21-inspection-manager-sequential-workflow-20261014]
+    paths: [.github/workflows/p21-inspection-sequence-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Secure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Read-only auth mapping, routes and attendance source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f "$ROOT/artisan"
+          cd "$ROOT"
+          echo '== INSPECTION WEB ROUTES =='
+          php artisan route:list --path=erp/inspections -v --except-vendor | head -n 95
+          php artisan route:list --path=erp/job-cards -v --except-vendor | grep -Ei 'inspection|diagnosis|estimate|technician|decision|labour|parts' | head -n 95 || true
+          php artisan route:list --path=staff -v --except-vendor | grep -Ei 'inspection|portal|login' | head -n 65 || true
+          echo '== INSPECTION CONTROLLERS AND BLADE =='
+          grep -RnlE --include='*.php' --exclude-dir=vendor 'function (assignInspection|completeInspection|inspection|saveInspection|completeDiagnosis|completeDecision|technicianDecision)\(' app/Http/Controllers | head -n 50 || true
+          grep -nEi 'function (assignInspection|inspection|completeInspection|diagnosis|decision|estimate|addParts|addLabour)' app/Http/Controllers/Web/AdminJobCardPageController.php | head -n 85 || true
+          grep -nEi 'function (assignInspection|inspection|completeInspection|diagnosis|decision|estimate|addParts|addLabour)' app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php | head -n 85 || true
+          grep -nEi 'function (inspection|completeInspection|diagnosis|technicianDecision|estimate|create)' app/Http/Controllers/Web/StaffPortalController.php | head -n 100 || true
+          grep -nEi 'inspection|diagnosis|decision|estimate|assigned|staff_id|technician_id' resources/views/job-cards/show.blade.php | head -n 125 || true
+          grep -nEi 'inspection|diagnosis|decision|estimate|assigned' resources/views/job-cards/lifecycle-panel.blade.php | head -n 100 || true
+          grep -nEi 'inspection|assign|technician|staff_id|isAdmin|isStaff' resources/views/staff/portal.blade.php | head -n 110 || true
+          echo '== STAGING ROLE AND INSPECTION DB FLAGS (NO IDENTITIES) =='
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::connection();
+          $schema=\Illuminate\Support\Facades\Schema::class;
+          foreach(['job_cards','vehicle_inspections','job_card_inspections','job_card_diagnosis_events','job_card_change_audits','estimates','staff','erp_auth_users'] as $t){
+            echo 'TABLE_'.$t.'='.(int)$schema::hasTable($t).PHP_EOL;
+            if($schema::hasTable($t)){
+             $cols=$schema::getColumnListing($t);
+             $relevant=array_values(array_filter($cols,fn($c)=>preg_match('/inspection|diagnosis|decision|assign|staff|technician|manager|status|estimate|job_card|completed|created_at|id$/i',$c)));
+             echo 'COLS_'.$t.'='.implode(',',$relevant).PHP_EOL;
+            }
+          }
+          $u=$db->table('erp_auth_users')->whereRaw('LOWER(email)=?', ['birensingha@outlook.com'])->first();
+          if($u){
+            echo 'ADMIN_PRESENT=1 ACTIVE='.(int)$u->active.' ROLE='.strtolower((string)$u->role).' STAFF_LINK_PRESENT='.(int)((int)$u->staff_id>0).PHP_EOL;
+            $st=$db->table('staff')->where('id',(int)$u->staff_id)->first();
+            echo 'LINKED_MANAGER_ROLE='.(int)(bool)$st.' ROLE_MANAGER='.(int)(strtolower(trim((string)($st->role??'')))==='manager').PHP_EOL;
+          }
+          if($schema::hasTable('job_cards')){
+            $open=$db->table('job_cards')->whereRaw("LOWER(COALESCE(status,''))='open'")->count();
+            $pending=$db->table('job_cards')->whereRaw("LOWER(COALESCE(inspection_status,''))='pending'")->count();
+            $bad=$db->table('job_cards')->whereRaw("LOWER(COALESCE(inspection_status,'')) NOT IN ('completed','skipped')")->whereRaw("LOWER(COALESCE(diagnosis_status,''))='completed'")->count();
+            echo 'OPEN_JOBS='.$open.' PENDING_INSPECTIONS='.$pending.' HISTORIC_DIAG_BEFORE_INSPECTION='.$bad.PHP_EOL;
+          }
+          PHP
+          echo 'P21_AUDIT_READONLY_PASS'
+          REMOTE
+      - if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"

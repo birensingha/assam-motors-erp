@@ -1,0 +1,79 @@
+name: Assam Motors P21 Inspection Controller and Assignment Detail Audit
+on:
+  push:
+    branches: [feature/p21-inspection-manager-sequential-workflow-20261014]
+    paths: [.github/workflows/p21-inspection-detail-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Secure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Read-only auth mapping, routes and attendance source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f "$ROOT/artisan"
+          cd "$ROOT"
+          echo '== STAFF INSPECTION API SOURCE =='
+          grep -nE 'function (inspections|inspection|saveInspection|staff)\(' app/Http/Controllers/Api/V1/StaffExtraController.php | head -n 35
+          sed -n '1,265p' app/Http/Controllers/Api/V1/StaffExtraController.php
+          echo '== WEB DIAGNOSIS CONTROLLER SOURCE =='
+          grep -nE 'function (assignDecidingTechnician|completeDiagnosis|reopenDiagnosis|inspectionReport|show)\(' app/Http/Controllers/Web/AdminJobCardPageController.php | head -n 50 || true
+          grep -Rnl 'function completeDiagnosis' app/Http/Controllers/Web | head -n 12 || true
+          sed -n '900,1150p' app/Http/Controllers/Web/AdminJobCardPageController.php
+          echo '== ESTIMATE CREATE GATES =='
+          grep -nE 'function (create|store)\(' app/Http/Controllers/Web/AdminEstimatePageController.php | head -n 14 || true
+          grep -nEi -C 4 'inspection_status|diagnosis_status|decision_status|estimate_allowed|technician_decision' app/Http/Controllers/Web/AdminEstimatePageController.php | head -n 155 || true
+          echo '== STAFF INSPECTION PORTAL PAGE =='
+          sed -n '1,190p' resources/views/staff/inspection-work.blade.php || true
+          echo '== INSPECTION DB AND HISTORY =='
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::connection();
+          $schema=\Illuminate\Support\Facades\Schema::class;
+          foreach(['inspection_reports','vehicle_inspection_reports','job_card_inspection_reports','job_card_inspection_assignments','job_card_diagnosis_events'] as $t){
+            echo 'TABLE_'.$t.'='.(int)$schema::hasTable($t).PHP_EOL;
+            if($schema::hasTable($t))echo 'COLS_'.$t.'='.implode(',',$schema::getColumnListing($t)).PHP_EOL;
+          }
+          foreach(['job_cards','job_card_diagnosis_events'] as $t){
+            echo 'COLS_'.$t.'='.implode(',',$schema::getColumnListing($t)).PHP_EOL;
+          }
+          echo 'P21_DETAIL_READONLY_PASS'.PHP_EOL;
+          PHP
+          REMOTE
+      - if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
