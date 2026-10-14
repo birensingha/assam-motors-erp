@@ -1,4 +1,4 @@
-name: Assam Motors P30 Lifecycle Next Action STAGING V2
+name: Assam Motors P30 Lifecycle Next Action STAGING V3
 on:
   push:
     branches: [feature/p30-lifecycle-next-actions-20261014]
@@ -76,8 +76,8 @@ jobs:
           $app=require 'bootstrap/app.php';
           $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
           $source=file_get_contents('resources/views/job-cards/lifecycle-panel.blade.php');
-          foreach(['P30_LIFECYCLE_NEXT_ACTIONS','am-life-action-forms','min-height:46px',
-            'Complete / resolve first','Close Job Card','Convert to Invoice'] as $marker){
+          foreach(['P30_LIFECYCLE_NEXT_ACTIONS','p30-current-stage-action','min-height:45px',
+            'Work Complete locked','Close Job Card','Convert to Invoice'] as $marker){
              if(!str_contains($source,$marker)){echo 'P30_NO_GO_STAGE_SOURCE_MISSING'.PHP_EOL;exit(2);}
           }
           foreach(['work-complete','qc-pending','qc-result','ready','close','invoice.create'] as $suffix){
