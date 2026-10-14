@@ -86,6 +86,51 @@ jobs:
           done
           echo '=== APPLICATION RESPONSE HEALTH ==='
           curl -sS -L --max-time 12 -o /dev/null -w 'STAGING_GET_HOME_HTTP=%{http_code} STAGING_GET_HOME_SECS=%{time_total}\n' 'https://staging.assammotors.com/erp/login' || true
+          echo '=== RECENT DB CONNECTION FAILURE COUNT ==='
+          for f in storage/logs/laravel*.log; do
+            test -f "$f" || continue
+            tail -n 2000 "$f" | grep -F '[2026-10-14 ' | grep -Ec 'SQLSTATE|database|PDOException|Lock wait timeout|Deadlock|Gateway|timed out' || true
+          done
+          echo '=== TARGETED ROLLBACK-ONLY ROT VOID CODE PATH TEST ==='
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';$app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::connection();
+          $jc=$db->table('job_cards')->where('job_no','JC-2026-0025')->first();
+          if(!$jc || strtolower($jc->status)!=='cancelled') {echo "NO_GO_JC_STATE_CHANGED\n";exit(2);}
+          $rotId='ROT26100501344375FC';
+          if($db->table('job_card_rot_voids')->where('rot_session_id',$rotId)->exists()){echo "ALREADY_VOIDED_SKIP_TEST\n";exit(0);}
+          $admin=\App\Models\ErpAuthUser::query()->where('active',1)->get()->first(fn($u)=>$u->isAdmin());
+          if(!$admin){echo "NO_GO_NO_ADMIN\n";exit(3);}
+          $request=\Illuminate\Http\Request::create('/erp/job-cards/'.$jc->id.'/reversal/rot/'.$rotId.'/void','POST',[
+            'confirm_rot_id'=>$rotId,
+            'reason'=>'Transactional simulation only, rollback guaranteed, no real adjustment',
+            'acknowledge_productivity'=>'1'
+          ]);
+          $request->setUserResolver(static fn()=>$admin);
+          \Illuminate\Support\Facades\Auth::guard('web')->setUser($admin);
+          $db->statement('SET SESSION innodb_lock_wait_timeout=3');
+          $started=microtime(true);
+          $db->beginTransaction();
+          try {
+            $result=(new \App\Http\Controllers\Web\AdminRotVoidController())->voidCompleted($request,$jc->id,$rotId);
+            echo 'DRYRUN_HANDLER_STATUS='.$result->getStatusCode()."\n";
+            echo 'DRYRUN_WITHIN_TX_VOID_ROWS='.$db->table('job_card_rot_voids')->where('rot_session_id',$rotId)->count()."\n";
+          }catch(\Throwable $e) {
+            echo 'DRYRUN_ERROR_CLASS='.get_class($e)."\n";
+            echo 'DRYRUN_ERROR_CODE='.preg_replace('/[^A-Za-z0-9_-]/','',(string)$e->getCode())."\n";
+            echo 'DRYRUN_DURATION_SEC='.round(microtime(true)-$started,3)."\n";
+            $db->rollBack();
+            echo 'DRYRUN_ROLLBACK_COMPLETED\n';
+            exit(4);
+          }
+          $db->rollBack();
+          echo 'DRYRUN_DURATION_SEC='.round(microtime(true)-$started,3)."\n";
+          echo 'DRYRUN_AFTER_ROLLBACK_VOID_ROWS='.$db->table('job_card_rot_voids')->where('rot_session_id',$rotId)->count()."\n";
+          echo 'DRYRUN_AFTER_ROLLBACK_AUDIT_ROWS='.$db->table('job_card_change_audits')->where('job_card_id',$jc->id)->where('action','ROT_VOIDED_FOR_REPORTING')->count()."\n";
+          echo 'ROT_VOID_TRANSACTIONAL_DRY_RUN_NO_PERSISTENT_WRITES_PASS'."\n";
+          PHP
           echo 'ROT_504_READONLY_COMPLETE'
           REMOTE
       - name: Remove SSH key
