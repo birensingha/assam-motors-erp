@@ -7,7 +7,8 @@ $s=file_get_contents($file);
 $start=strpos($s,'<div class="nav-group-label">WORKSHOP ERP</div>');
 if($start===false){echo "P34_HEADING_MISSING\n";exit(3);}
 $end=strpos($s,'<div class="nav-group-label">',$start+30);
-if($end===false){echo "P34_NEXT_GROUP_MISSING\n";exit(4);}
+if($end===false)$end=strpos($s,'</nav>',$start+30);
+if($end===false){echo "P34_NAV_CLOSE_MISSING\n";exit(4);}
 echo "P34_WORKSHOP_BEGIN\n";
 echo substr($s,$start,min($end-$start,13000));
 echo "\nP34_WORKSHOP_END\n";
