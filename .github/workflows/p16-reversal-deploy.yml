@@ -1,0 +1,115 @@
+name: Assam Motors P16 Admin Approval Desk STAGING Deployment
+on:
+  push:
+    branches: [feature/p16-reversal-admin-approval-20261014]
+    paths: [.github/workflows/p16-reversal-deploy.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-p16-approval
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pre-deployment PHP lint
+        run: php -l deployment/live-fixes/P16_REVERSAL_APPROVAL/PATCH_P16.php
+      - name: Secure staging SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Guarded source-only deployment and authenticated render QA
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+            SCP=(scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p ~/assam-p16-approval'
+          "${SCP[@]}" deployment/live-fixes/P16_REVERSAL_APPROVAL/PATCH_P16.php "$REMOTE:~/assam-p16-approval/PATCH_P16.php"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/assam-p16-approval/PATCH_P16.php"
+          test -f "$APP/artisan" && test -f "$PATCH"
+          php "$PATCH" check "$APP"
+          OUT="$(php "$PATCH" apply "$APP")"
+          printf '%s\n' "$OUT"
+          if printf '%s' "$OUT" | grep -Fq P16_ALREADY_INSTALLED_NOOP; then exit 0; fi
+          BACKUP="$(printf '%s\n' "$OUT" | sed -n 's/^P16_APPLIED_BACKUP=//p')"
+          test -n "$BACKUP" && test -d "$BACKUP"
+          for f in routes__web.php app__Http__Controllers__Web__AdminJobCardUnwindController.php resources__views__job-cards__unwind.blade.php; do test -f "$BACKUP/$f"; done
+          rollback() {
+            echo 'P16_VERIFY_FAILED_ROLLING_BACK_TO_VERIFIED_BACKUPS'
+            cp "$BACKUP/routes__web.php" "$APP/routes/web.php"
+            cp "$BACKUP/app__Http__Controllers__Web__AdminJobCardUnwindController.php" "$APP/app/Http/Controllers/Web/AdminJobCardUnwindController.php"
+            cp "$BACKUP/resources__views__job-cards__unwind.blade.php" "$APP/resources/views/job-cards/unwind.blade.php"
+            (cd "$APP" && php artisan view:clear >/dev/null 2>&1 && php artisan route:clear >/dev/null 2>&1) || true
+          }
+          trap rollback ERR
+          cd "$APP"
+          php -l app/Http/Controllers/Web/AdminJobCardUnwindController.php
+          php -l routes/web.php
+          php artisan view:clear >/dev/null
+          php artisan route:clear >/dev/null
+          php artisan view:cache >/dev/null
+          php artisan route:list --path=erp/job-cards | grep -F 'reversal/reviews/{review}/decision'
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::connection();
+          $jc=$db->table('job_cards')->where('job_no','JC-2026-0025')->first();
+          $admin=\App\Models\ErpAuthUser::query()->where('active',1)->get()->first(fn($u)=>$u->isAdmin());
+          if(!$jc || !$admin){echo 'P16_NO_GO_ADMIN_OR_JC_MISSING'.PHP_EOL;exit(2);}
+          \Illuminate\Support\Facades\Auth::guard('web')->setUser($admin);
+          \Illuminate\Support\Facades\View::share('errors',new \Illuminate\Support\ViewErrorBag());
+          $req=\Illuminate\Http\Request::create('/erp/job-cards/'.$jc->id.'/reversal','GET');
+          $req->setUserResolver(static fn()=>$admin);
+          try {
+            $view=(new \App\Http\Controllers\Web\AdminJobCardUnwindController)->show($req,$jc->id);
+            $data=$view->getData();$html=$view->render();
+          }catch(\Throwable $e){echo 'P16_VIEW_ERROR_CLASS='.get_class($e).PHP_EOL;exit(3);}
+          foreach(['Admin Approval Desk','Approve for Reconciliation','Save Admin Approval Decision','p16-review-'] as $mark){
+            if(!str_contains($html,$mark)){echo 'P16_RENDER_MISSING_'.str_replace(' ','_',$mark).PHP_EOL;exit(4);}
+          }
+          $reviews=$data['reversalReviews']??collect();
+          if($reviews->count()<1){echo 'P16_NO_REQUESTS_IN_TEST_JOB'.PHP_EOL;exit(5);}
+          $estimate=$reviews->first(fn($r)=>$r['action']==='REVERSAL_REVIEW_ESTIMATE');
+          if(!$estimate || $estimate['status']!=='REQUESTED'){echo 'P16_ESTIMATE_REVIEW_NOT_PENDING'.PHP_EOL;exit(6);}
+          echo 'P16_REAL_ADMIN_REVIEW_RENDER_PASS'.PHP_EOL;
+          echo 'P16_REVIEW_QUEUE_COUNT='.$reviews->count().PHP_EOL;
+          echo 'P16_ESTIMATE_REVIEW_PENDING_PASS'.PHP_EOL;
+          echo 'P16_NO_REQUEST_DECISION_OR_BUSINESS_DATA_MUTATED'.PHP_EOL;
+          PHP
+          trap - ERR
+          echo 'P16_STAGING_APPROVAL_DESK_DEPLOY_PASS'
+          REMOTE
+      - name: Clear SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
