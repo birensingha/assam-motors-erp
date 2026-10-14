@@ -1,0 +1,117 @@
+name: Assam Motors P15 Verified Reversal Tracker Staging
+on:
+  push:
+    branches: [feature/p15-reversal-checklist-verified-20261014]
+    paths: [.github/workflows/p15-reversal-deploy.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-p15-reversal-deploy
+  cancel-in-progress: false
+jobs:
+  deploy-and-render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify source
+        run: php -l deployment/live-fixes/P15_REVERSAL_TRACKER/PATCH_P15.php
+      - name: Configure staging SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Deploy with backup and verify authenticated page rendering
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+            SCP=(scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p ~/assam-p15-reversal'
+          "${SCP[@]}" deployment/live-fixes/P15_REVERSAL_TRACKER/PATCH_P15.php "$REMOTE:~/assam-p15-reversal/PATCH_P15.php"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/assam-p15-reversal/PATCH_P15.php"
+          test -f "$APP/artisan"
+          php "$PATCH" check "$APP"
+          OUT="$(php "$PATCH" apply "$APP")"
+          printf '%s\n' "$OUT"
+          BACKUP="$(printf '%s\n' "$OUT" | sed -n 's/^P15_APPLIED_VIEW_AND_CONTROLLER_BACKUP=//p')"
+          test -n "$BACKUP" && test -d "$BACKUP"
+          SRC_CONTROLLER="$APP/app/Http/Controllers/Web/AdminJobCardUnwindController.php"
+          SRC_VIEW="$APP/resources/views/job-cards/unwind.blade.php"
+          rollback(){
+            echo 'P15_RENDER_QA_FAILED_SOURCE_ROLLBACK'
+            cp "$BACKUP/app__Http__Controllers__Web__AdminJobCardUnwindController.php" "$SRC_CONTROLLER"
+            cp "$BACKUP/resources__views__job-cards__unwind.blade.php" "$SRC_VIEW"
+            (cd "$APP" && php artisan view:clear >/dev/null 2>&1) || true
+          }
+          trap rollback ERR
+          cd "$APP"
+          php -l "$SRC_CONTROLLER"
+          php artisan view:clear >/dev/null
+          php artisan view:cache >/dev/null
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::connection();
+          $jc=$db->table('job_cards')->where('job_no','JC-2026-0025')->first();
+          $admin=\App\Models\ErpAuthUser::query()->where('active',1)->get()->first(fn($u)=>$u->isAdmin());
+          if(!$jc || !$admin){echo 'P15_NO_GO_JC_OR_ADMIN_MISSING'.PHP_EOL;exit(2);}
+          \Illuminate\Support\Facades\Auth::guard('web')->setUser($admin);
+          \Illuminate\Support\Facades\View::share('errors',new \Illuminate\Support\ViewErrorBag());
+          $req=\Illuminate\Http\Request::create('/erp/job-cards/'.$jc->id.'/reversal','GET');
+          $req->setUserResolver(static fn()=>$admin);
+          try {
+            $view=(new \App\Http\Controllers\Web\AdminJobCardUnwindController)->show($req,$jc->id);
+            $data=$view->getData();
+            $html=$view->render();
+          }catch(\Throwable $e){echo 'P15_VIEW_ERROR_CLASS='.get_class($e).PHP_EOL;exit(3);}
+          foreach(['5-point Job Card Reversal Progress','r15-step-1','r15-step-2','r15-step-3','r15-step-4','r15-step-5'] as $m){
+            if(!str_contains($html,$m)){echo 'P15_NO_GO_MARKER_MISSING'.PHP_EOL;exit(4);}
+          }
+          if(strtolower((string)$jc->status)==='cancelled' && ($data['stageStates'][4]['state']??'')!=='DONE'){
+            echo 'P15_CANCELLED_STAGE_NOT_HANDLED'.PHP_EOL;exit(5);
+          }
+          if(($data['reviewCounts']['ESTIMATE']??0)>0 && ($data['stageStates'][3]['state']??'')!=='REQUESTED'){
+            echo 'P15_ESTIMATE_REQUEST_WRONGLY_MARKED_DONE'.PHP_EOL;exit(6);
+          }
+          if(str_contains($html,'Cancel / Archive Job Card →')){
+            echo 'P15_CANCEL_BUTTON_SHOULD_BE_HIDDEN'.PHP_EOL;exit(7);
+          }
+          echo 'P15_REAL_ADMIN_RENDER_PASS'.PHP_EOL;
+          echo 'P15_DONE_STEPS='.(int)$data['stageDone'].' P15_PENDING_STEPS='.(int)$data['stagePending'].PHP_EOL;
+          echo 'P15_ESTIMATE_REVIEW_REQUESTS='.(int)$data['reviewCounts']['ESTIMATE'].PHP_EOL;
+          echo 'P15_NO_BUSINESS_DATA_CHANGED'.PHP_EOL;
+          PHP
+          trap - ERR
+          echo P15_STAGING_DEPLOY_VERIFIED_PASS
+          REMOTE
+      - name: Clear SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
