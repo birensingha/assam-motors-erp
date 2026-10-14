@@ -1,0 +1,93 @@
+name: Assam Motors ROT 504 Readonly Diagnosis
+on:
+  push:
+    branches: [fix/rot-void-504-diagnosis-20261014]
+    paths: [.github/workflows/rot-void-504-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: SSH authentication
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Read-only routes, finance schema and application source methods
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          cd "$APP"
+          echo '=== P13 POST STATE, READ ONLY ==='
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::connection();
+          $db->statement('SET SESSION innodb_lock_wait_timeout = 3');
+          $jc=$db->table('job_cards')->where('job_no','JC-2026-0025')->first();
+          if(!$jc){echo "JC_MISSING\n";exit(2);}
+          $rotId='ROT26100501344375FC';
+          $rot=$db->table('rot_sessions')->where('job_card_id',$jc->id)->where('id',$rotId)->first();
+          echo 'JC_STATUS='.($jc->status??'null')."\n";
+          echo 'ROT_STATUS='.($rot->status??'not_found')."\n";
+          echo 'ROT_SECONDS='.($rot->total_seconds??'unknown')."\n";
+          echo 'ROT_VOID_TABLE_PRESENT='.(\Illuminate\Support\Facades\Schema::hasTable('job_card_rot_voids')?'YES':'NO')."\n";
+          if(\Illuminate\Support\Facades\Schema::hasTable('job_card_rot_voids')){
+            $records=$db->table('job_card_rot_voids')->where('rot_session_id',$rotId)->count();
+            echo "ROT_VOID_RECORD_COUNT=$records\n";
+          }
+          $audit=$db->table('job_card_change_audits')->where('job_card_id',$jc->id)->where('action','ROT_VOIDED_FOR_REPORTING')->count();
+          echo "ROT_VOID_AUDIT_COUNT=$audit\n";
+          try{
+            $sql="SELECT COUNT(*) AS n FROM information_schema.INNODB_TRX";
+            $rs=$db->select($sql);
+            echo "ACTIVE_INNODB_TRANSACTIONS=".($rs[0]->n??'unknown')."\n";
+          }catch(\Throwable $e){echo "TRX_COUNT_UNAVAILABLE=".get_class($e)."\n";}
+          try{
+            $rows=$db->select("SHOW PROCESSLIST");
+            foreach($rows as $p)if((int)($p->Time??0)>10){
+              echo "DB_LONG_PROCESS seconds=".(int)$p->Time." state=".preg_replace('/[^A-Za-z 0-9_-]/','',(string)($p->State??'')).
+                   " command=".preg_replace('/[^A-Za-z]/','',(string)($p->Command??''))."\n";
+            }
+          }catch(\Throwable $e){echo "PROCESSLIST_UNAVAILABLE=".get_class($e)."\n";}
+          echo "ROT_504_DB_READONLY_AUDIT_PASS\n";
+          PHP
+          echo '=== PHP LOG ERROR CATEGORIES (REDACTED, NO TOKENS OR ROW DATA) ==='
+          find storage/logs -maxdepth 1 -type f -name 'laravel*.log' -mtime -3 -print0 | while IFS= read -r -d '' logfile; do
+            tail -n 1500 "$logfile" | grep -Ei 'Lock wait timeout|Deadlock|SQLSTATE|Maximum execution time|QueryException|AdminRotVoidController|ROT_VOIDED_FOR_REPORTING|Allowed memory size|Cannot acquire lock|Serialization failure' | tail -n 12 | sed -E 's/(SQLSTATE|QueryException|Lock wait timeout|Deadlock|Maximum execution time|AdminRotVoidController|Allowed memory size).*/\1 ... (redacted)/I' || true
+          done
+          echo '=== APPLICATION RESPONSE HEALTH ==='
+          curl -sS -L --max-time 12 -o /dev/null -w 'STAGING_GET_HOME_HTTP=%{http_code} STAGING_GET_HOME_SECS=%{time_total}\n' 'https://staging.assammotors.com/erp/login' || true
+          echo 'ROT_504_READONLY_COMPLETE'
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
