@@ -1,0 +1,97 @@
+name: P36 Actual Job Card 34 Parts Action Visibility Audit
+on:
+  push:
+    branches: [fix/p36-visible-parts-actions-job34-20261014]
+    paths: [.github/workflows/p36-actual-parts-render-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Secure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Read-only auth mapping, routes and attendance source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f "$ROOT/artisan"
+          cd "$ROOT"
+          echo '=== P36 EXACT VIEW SOURCE NEAR PART ROW ==='
+          grep -n -B 15 -A 29 "job-cards.part-stock-control" resources/views/job-cards/show.blade.php || true
+          echo '=== P36 SOURCE SLOT AND AUTH VIEW TEST ==='
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $user=\App\Models\ErpAuthUser::query()->where('active',1)->get()->first(fn($u)=>$u->isAdmin());
+          if(!$user)exit(2);
+          \Illuminate\Support\Facades\Auth::guard('web')->setUser($user);
+          \Illuminate\Support\Facades\View::share('errors',new \Illuminate\Support\ViewErrorBag());
+          $request=\Illuminate\Http\Request::create('/erp/job-cards/34','GET');
+          $request->setUserResolver(static fn()=>$user);
+          try{$html=app(\App\Http\Controllers\Web\AdminJobCardPageController::class)
+            ->show($request,34,app(\App\Services\JobCardService::class))->render();}
+          catch(\Throwable $e){echo 'P36_RENDER_ERROR='.get_class($e).' MESSAGE='.$e->getMessage().PHP_EOL;exit(3);}
+          $pos=strpos($html,'parts/525/requisition');
+          echo 'P36_ACTION_POST_ROUTE_FOUND='.(int)($pos!==false).PHP_EOL;
+          echo 'P36_PARTS_GRID_COUNT='.substr_count($html,'Parts').PHP_EOL;
+          echo 'P36_REQUISITION_LABEL_COUNT='.substr_count($html,'Requisition').PHP_EOL;
+          echo 'P36_FORM_ACTIONS='.(int)(strpos($html,'part-stock-control')!==false).PHP_EOL;
+          $part=\Illuminate\Support\Facades\DB::table('job_card_parts')->where('id',525)->where('job_card_id',34)->first();
+          $j=\Illuminate\Support\Facades\DB::table('job_cards')->where('id',34)->first();
+          echo 'P36_LINE525_ISSUE_STATUS='.($part->issue_status??'MISSING').' JOB_STATUS='.($j->status??'MISSING').PHP_EOL;
+          if($pos!==false){
+             $snippet=substr($html,max(0,$pos-1800),min(strlen($html)-max(0,$pos-1800),3000));
+             $snippet=preg_replace('/value="[^"]*"|\bname="[^"]*"/i','[ATTR]', $snippet);
+             $snippet=preg_replace('/\s+/',' ',$snippet);
+             echo 'P36_ACTION_CONTEXT_REDACTED='.substr($snippet,0,3000).PHP_EOL;
+          }
+          $doc=new \DOMDocument();
+          libxml_use_internal_errors(true);
+          $doc->loadHTML($html);libxml_clear_errors();
+          $xp=new \DOMXPath($doc);
+          $forms=$xp->query('//form[contains(@action,"/job-cards/34/parts/525/")]');
+          echo 'P36_PART525_FORMS_DOM_COUNT='.$forms->length.PHP_EOL;
+          foreach($forms as $form){
+            $parents=[];$p=$form;
+            for($i=0;$p&&$i<7;$i++,$p=$p->parentNode) {
+               if($p->nodeType!==XML_ELEMENT_NODE)continue;
+               $parents[]=$p->nodeName.'#'.($p->attributes?->getNamedItem('id')?->nodeValue??'').'['.($p->attributes?->getNamedItem('class')?->nodeValue??'').']';
+            }
+            echo 'P36_FORM_DOM_PARENTS='.implode(' > ',$parents).PHP_EOL;
+          }
+          echo 'P36_HTML_REAL_RENDER_READONLY_PASS'.PHP_EOL;
+          PHP
+          REMOTE
+      - if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
