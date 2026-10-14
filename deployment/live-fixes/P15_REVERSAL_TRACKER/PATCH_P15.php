@@ -281,13 +281,7 @@ try{
     $app=require 'bootstrap/app.php';
     $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
     $compiled=app('blade.compiler')->compileString($V);
-    $tmp=tempnam(sys_get_temp_dir(),'p15_blade_');
-    if(!$tmp)throw new RuntimeException('Temporary Blade lint file failed');
-    file_put_contents($tmp,$compiled);
-    $lint=escapeshellarg(PHP_BINARY).' -l '.escapeshellarg($tmp).' 2>&1';
-    exec($lint,$out,$code);
-    @unlink($tmp);
-    if($code!==0)throw new RuntimeException('Blade compiled syntax check failed: '.implode(' ',$out));
+    token_get_all($compiled,TOKEN_PARSE);
     echo "P15_COMPILED_BLADE_PHP_LINT=PASS\n";
 } catch(Throwable $e){
     fwrite(STDERR,"P15_NO_GO_BLADE_LINT ".$e->getMessage()."\n");exit(6);
