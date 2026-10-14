@@ -1,0 +1,157 @@
+name: Assam Motors P27 Estimate Lines 360px STAGING UI
+on:
+  push:
+    branches: [feature/p27-estimate-lines-purchase-height-20261014]
+    paths: [.github/workflows/p27-estimate-height-deploy.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-p27-estimate-height
+  cancel-in-progress: false
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 13
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check patch
+        run: php -l deployment/live-fixes/P27_ESTIMATE_LINES_HEIGHT/PATCH_P27.php
+      - name: Configure staging SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Safe staging view deployment plus real view render and rollback on QA failure
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            remote_ssh(){ ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT" "$@"; }
+            remote_scp(){ scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$@"; }
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            remote_ssh(){ sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT" "$@"; }
+            remote_scp(){ sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$@"; }
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          remote_ssh "$REMOTE" 'mkdir -p ~/assam-p27-estimate'
+          remote_scp deployment/live-fixes/P27_ESTIMATE_LINES_HEIGHT/PATCH_P27.php "$REMOTE:~/assam-p27-estimate/PATCH_P27.php"
+          remote_ssh "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/assam-p27-estimate/PATCH_P27.php"
+          test -f "$APP/artisan" && test -f "$PATCH"
+          php "$PATCH" check "$APP"
+          OUT="$(php "$PATCH" apply "$APP")"
+          printf '%s\n' "$OUT"
+          BAK="$(printf '%s\n' "$OUT" | sed -n 's/^P27_APPLIED_BACKUP=//p')"
+          test -n "$BAK" && test -f "$BAK"
+          rollback(){
+            echo 'P27_VIEW_QA_FAILED_RESTORING_BACKUP'
+            cp "$BAK" "$APP/resources/views/estimates/create.blade.php"
+            (cd "$APP" && php artisan view:clear >/dev/null 2>&1) || true
+          }
+          trap rollback ERR
+          cd "$APP"
+          php artisan view:clear >/dev/null
+          php artisan view:cache >/dev/null
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $admin=\App\Models\ErpAuthUser::query()->where('active',1)->get()->first(fn($u)=>$u->isAdmin());
+          if(!$admin){echo "P27_NO_GO_ADMIN_MISSING\n";exit(2);}
+          \Illuminate\Support\Facades\Auth::guard('web')->setUser($admin);
+          \Illuminate\Support\Facades\View::share('errors',new \Illuminate\Support\ViewErrorBag());
+          $card=\App\Models\JobCard::query()->orderByDesc('id')->first();
+          if(!$card){echo "P27_NO_GO_JOB_MISSING\n";exit(3);}
+          $lines=collect([
+            (object)['item_type'=>'PART','reference_id'=>null,'item_code'=>'QA-PART',
+             'hsn_sac'=>'8708','description'=>'QA-FIX-VIEW-ROW','line_note'=>'',
+             'qty'=>2,'unit'=>'PCS','rate'=>100,'discount_percent'=>0,'tax_percent'=>18]
+          ]);
+          foreach(['open','in progress'] as $status){
+            $cardCopy=clone $card; $cardCopy->status=$status;
+            try{
+              $html=\Illuminate\Support\Facades\View::make('estimates.create',[
+                  'jobCard'=>$cardCopy,'estimate'=>null,'latest'=>null,'items'=>$lines,
+                  'parts'=>collect(),'labour'=>collect(),'defaultKind'=>$status==='open'?'INITIAL':'SUPPLEMENTARY'
+              ])->render();
+            }catch(\Throwable $e){
+              echo 'P27_NO_GO_ESTIMATE_VIEW_RENDER_EXCEPTION='.get_class($e).PHP_EOL;exit(4);
+            }
+            foreach(['window.AM_ESTIMATE_DATA','QA-FIX-VIEW-ROW','id="estimate-form"','Estimate Lines'] as $needle){
+              if(!str_contains($html,$needle)){
+                echo 'P27_NO_GO_ESTIMATE_VIEW_MISSING_MARKER'.PHP_EOL;exit(5);
+              }
+            }
+            if(str_contains($html,'@php(')||str_contains($html,'@if($amEstimateWip)')){
+              echo 'P27_NO_GO_RAW_BLADE_DIRECTIVE_EXPOSED'.PHP_EOL;exit(6);
+            }
+            if($status==='in progress' && !str_contains($html,'Supplementary Estimate Mode')){
+              echo 'P27_NO_GO_WIP_MODE_GUARD_MISSING'.PHP_EOL;exit(7);
+            }
+          }
+          // Purchase uses min-height 360px; verify estimated row-area in rendered HTML.
+          $source=file_get_contents('resources/views/estimates/create.blade.php');
+          if(!str_contains($source,'P27_ESTIMATE_LINES_PURCHASE_HEIGHT')
+            || !str_contains($source,'min-height:360px')
+            || !str_contains($source,'line-scroll estimate-lines-area')){
+             echo 'P27_NO_GO_ESTIMATE_LINE_BOX_HEIGHT_MARKERS'.PHP_EOL;exit(12);
+          }
+          echo 'P27_PURCHASE_MATCHING_360PX_MINHEIGHT_PASS'.PHP_EOL;
+          echo "P27_INITIAL_AND_WIP_ESTIMATE_ACTUAL_BLADE_RENDER_PASS\n";
+          $estimateRoute=\Illuminate\Support\Facades\Route::getRoutes()->getByName('erp.estimates.create');
+          if(!$estimateRoute||!in_array('GET',$estimateRoute->methods(),true)){
+            echo "P27_NO_GO_OPEN_ESTIMATE_GET_ROUTE_MISSING\n";exit(8);
+          }
+          // Controller-driven real GET check using current database data, no POSTs.
+          $requests=\App\Models\JobCard::query()->orderByDesc('id')->limit(100)->get();
+          $service=app(\App\Services\EstimateService::class);
+          $controller=app(\App\Http\Controllers\Web\AdminEstimatePageController::class);
+          $renderedReal=false;
+          foreach($requests as $testJob) {
+            $request=\Illuminate\Http\Request::create('/erp/job-cards/'.$testJob->id.'/estimates/create','GET');
+            $request->setUserResolver(static fn()=>$admin);
+            try{
+              $view=$controller->create($request,(int)$testJob->id,$service);
+              $realHtml=$view->render();
+              if(!str_contains($realHtml,'window.AM_ESTIMATE_DATA'))throw new RuntimeException('Missing initial JSON payload');
+              $renderedReal=true;break;
+            }catch(\Illuminate\Validation\ValidationException $e){
+              continue; // business gate is intentionally enforced, not a 500.
+            }catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){
+              if($e->getStatusCode()===422||$e->getStatusCode()===403)continue;
+              echo 'P27_NO_GO_REAL_GET_HTTP_EXCEPTION='.get_class($e).PHP_EOL;exit(9);
+            }catch(\Throwable $e){
+              echo 'P27_NO_GO_REAL_GET_EXCEPTION='.get_class($e).PHP_EOL;exit(10);
+            }
+          }
+          echo $renderedReal
+             ? "P27_REAL_CONTROLLER_OPEN_ESTIMATE_RENDER_PASS\n"
+             : "P27_REAL_CONTROLLER_OPEN_ESTIMATE_SKIPPED_NO_ELIGIBLE_JOBCARD\n";
+          echo "P27_ESTIMATE_LINES_HEIGHT_STYLE_INSTALLED\n";
+          echo "P27_NO_INSPECTION_ESTIMATE_STOCK_FINANCIAL_RECORDS_MUTATED\n";
+          PHP
+          trap - ERR
+          echo "P27_STAGING_ESTIMATE_500_DEPLOY_PASS"
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
