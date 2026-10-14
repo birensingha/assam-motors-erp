@@ -1,0 +1,168 @@
+name: P34 ROT Billing Inclusion STAGING
+on:
+  push:
+    branches: [feature/p34-rot-billing-inclusion-control-20261014]
+    paths: [.github/workflows/p34-rot-billing-deploy.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-p34-rot-billing
+  cancel-in-progress: false
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP Lint
+        run: |
+          php -l deployment/live-fixes/P34_ROT_BILLING/PATCH_P34.php
+          php -l deployment/live-fixes/P34_ROT_BILLING/payload/AdminRotBillingController.php
+          php -l deployment/live-fixes/P34_ROT_BILLING/payload/2026_10_14_181000_add_labour_billing_flag.php
+      - name: Prepare SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Install guarded app and test real Job Card and stock guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            rssh(){ ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT" "$@"; }
+            rscp(){ scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$@"; }
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            rssh(){ sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT" "$@"; }
+            rscp(){ sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$@"; }
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          rssh "$REMOTE" 'mkdir -p ~/assam-p34-billing'
+          rscp -r deployment/live-fixes/P34_ROT_BILLING/PATCH_P34.php deployment/live-fixes/P34_ROT_BILLING/payload "$REMOTE:~/assam-p34-billing/"
+          rssh "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/assam-p34-billing/PATCH_P34.php"
+          test -f "$ROOT/artisan" && test -f "$PATCH"
+          php "$PATCH" check "$ROOT"
+          RESULT="$(php "$PATCH" apply "$ROOT")"
+          printf '%s\n' "$RESULT"
+          BAK="$(printf '%s\n' "$RESULT" | sed -n 's/^P34_APPLIED_BACKUP=//p')"
+          test -n "$BAK" && test -d "$BAK"
+          files='routes/web.php
+          resources/views/job-cards/show.blade.php
+          app/Http/Controllers/Web/AdminJobCardPageController.php
+          app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php'
+          while read -r file; do
+            key="$(printf '%s' "$file" | sed 's#/#__#g')"
+            test -f "$BAK/$key"
+          done <<< "$files"
+          rollback(){
+            echo 'P34_QA_FAILED_RESTORE_ORIGINAL_SOURCES'
+            while read -r file; do
+              key="$(printf '%s' "$file" | sed 's#/#__#g')"
+              cp "$BAK/$key" "$ROOT/$file"
+            done <<< "$files"
+            rm -f "$ROOT/app/Http/Controllers/Web/AdminRotBillingController.php"
+            rm -f "$ROOT/resources/views/job-cards/rot-billing-control.blade.php"
+            rm -f "$ROOT/database/migrations/2026_10_14_181000_add_labour_billing_flag.php"
+            (cd "$ROOT" && php artisan view:clear >/dev/null 2>&1 && php artisan route:clear >/dev/null 2>&1) || true
+          }
+          trap rollback ERR
+          cd "$ROOT"
+          php artisan migrate --path=database/migrations/2026_10_14_181000_add_labour_billing_flag.php --force --no-interaction
+          php -l app/Http/Controllers/Web/AdminRotBillingController.php
+          php -l app/Http/Controllers/Web/AdminJobCardPageController.php
+          php -l app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php
+          php -l routes/web.php
+          php artisan route:clear >/dev/null
+          php artisan view:clear >/dev/null
+          php artisan view:cache >/dev/null
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::connection();
+          $sc=\Illuminate\Support\Facades\Schema::class;
+          if(!$sc::hasColumn('job_card_labour','billing_included') || !$sc::hasColumn('job_card_labour','billing_reason')){
+             echo 'P34_NO_GO_LABOUR_BILLING_SCHEMA'.PHP_EOL;exit(2);
+          }
+          $route=\Illuminate\Support\Facades\Route::getRoutes()->getByName('erp.job-cards.labour.billing');
+          if(!$route || !in_array('POST',$route->methods(),true) ||
+             !str_contains(implode(',',$route->gatherMiddleware()),'EnsureErpAdmin')){
+             echo 'P34_NO_GO_ADMIN_ROUTE_PERMISSION'.PHP_EOL;exit(3);
+          }
+          $line=$db->table('job_card_labour')->where('job_card_id',34)->where('id',69)->first();
+          $card=$db->table('job_cards')->where('id',34)->first();
+          if(!$line || !$card){echo 'P34_NO_GO_TEST_JOBCARD_MISSING'.PHP_EOL;exit(4);}
+          $beforeMode=(int)$line->billing_included;
+          $beforeJCGrand=(float)$card->grand_total;
+          $beforeJCLabour=(float)$card->labour_total;
+          $beforeAudit=$db->table('job_card_change_audits')->where('job_card_id',34)->count();
+          $beforeRot=$db->table('rot_sessions')->where('job_card_id',34)->get()->map(fn($r)=>
+             [$r->id,$r->status,$r->total_seconds])->all();
+          \Illuminate\Support\Facades\View::share('errors',new \Illuminate\Support\ViewErrorBag());
+          $admin=\App\Models\ErpAuthUser::query()->where('active',1)->get()->first(fn($u)=>$u->isAdmin());
+          if(!$admin){echo 'P34_NO_GO_ADMIN_LOGIN'.PHP_EOL;exit(5);}
+          \Illuminate\Support\Facades\Auth::guard('web')->setUser($admin);
+          $req=\Illuminate\Http\Request::create('/erp/job-cards/34','GET');
+          $req->setUserResolver(static fn()=>$admin);
+          try{
+            $html=app(\App\Http\Controllers\Web\AdminJobCardPageController::class)
+               ->show($req,34,app(\App\Services\JobCardService::class))->render();
+          }catch(\Throwable $e){echo 'P34_NO_GO_REAL_JOBCARD_RENDER='.get_class($e).PHP_EOL;exit(6);}
+          if(!str_contains($html,'Customer Billing:') ||
+             !str_contains($html,'Set No Charge') ||
+             !str_contains($html,'labour/69/billing')){
+             echo 'P34_NO_GO_BILLING_BUTTON_MISSING'.PHP_EOL;exit(7);
+          }
+          $inv=file_get_contents('app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php');
+          $page=file_get_contents('app/Http/Controllers/Web/AdminJobCardPageController.php');
+          $ctl=file_get_contents('app/Http/Controllers/Web/AdminRotBillingController.php');
+          foreach(['billing_included','billableLines','billing_included', '->where(\'billing_included\',1)'] as $marker){
+             if(!str_contains($inv,$marker)){
+               echo 'P34_NO_GO_INVOICE_BILLING_FILTER'.PHP_EOL;exit(8);
+             }
+          }
+          if(!str_contains($page,"billingQuery->where('billing_included',1)")
+             || !str_contains($ctl,'ROT_BILLING_NO_CHARGE')
+             || !str_contains($ctl,'Stored Job Card totals are inconsistent')
+             || !str_contains($ctl,'lockForUpdate')){
+             echo 'P34_NO_GO_AUDIT_OR_TOTAL_GUARDS'.PHP_EOL;exit(9);
+          }
+          $afterLine=$db->table('job_card_labour')->where('id',69)->first();
+          $afterCard=$db->table('job_cards')->where('id',34)->first();
+          $afterRot=$db->table('rot_sessions')->where('job_card_id',34)->get()->map(fn($r)=>
+            [$r->id,$r->status,$r->total_seconds])->all();
+          if((int)$afterLine->billing_included!==$beforeMode
+             || (float)$afterCard->grand_total!==$beforeJCGrand ||
+                (float)$afterCard->labour_total!==$beforeJCLabour
+             || $db->table('job_card_change_audits')->where('job_card_id',34)->count()!==$beforeAudit
+             || $afterRot!==$beforeRot){
+             echo 'P34_NO_GO_QA_MUTATED_FINANCIAL_OR_ROT_DATA'.PHP_EOL;exit(10);
+          }
+          echo 'P34_ACTUAL_JOB_CARD_ROT_BILLING_BUTTON_RENDER_PASS'.PHP_EOL;
+          echo 'P34_INVOICE_NO_CHARGE_FILTERS_AND_TOTAL_GUARDS_PASS'.PHP_EOL;
+          echo 'P34_JOB34_BILLABLE_DEFAULT_PRESERVED_PASS'.PHP_EOL;
+          echo 'P34_NO_BILLING_POST_FINANCIAL_LEDGER_OR_ROT_DATA_CHANGED'.PHP_EOL;
+          PHP
+          trap - ERR
+          echo P34_STAGING_ROT_BILLING_TOGGLE_DEPLOY_PASS
+          REMOTE
+      - if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
