@@ -95,7 +95,7 @@ jobs:
             $view=(new \App\Http\Controllers\Web\AdminJobCardUnwindController)->show($req,$jc->id);
             $data=$view->getData();$html=$view->render();
           }catch(\Throwable $e){echo 'P16_VIEW_ERROR_CLASS='.get_class($e).PHP_EOL;exit(3);}
-          foreach(['Admin Approval Desk','Approve for Reconciliation','P16_REVERSAL_APPROVAL_DESK','p16-review-'] as $mark){
+          foreach(['Admin Approval Desk','Approve for Reconciliation','Save Admin Approval Decision','p16-review-'] as $mark){
             if(!str_contains($html,$mark)){echo 'P16_RENDER_MISSING_'.str_replace(' ','_',$mark).PHP_EOL;exit(4);}
           }
           $reviews=$data['reversalReviews']??collect();
