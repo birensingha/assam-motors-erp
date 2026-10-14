@@ -54,9 +54,9 @@ jobs:
           sed -n '900,1150p' app/Http/Controllers/Web/AdminJobCardPageController.php
           echo '== ESTIMATE CREATE GATES =='
           grep -nE 'function (create|store)\(' app/Http/Controllers/Web/AdminEstimatePageController.php | head -n 14 || true
-          grep -nEi -C 4 'inspection_status|diagnosis_status|decision_status|estimate_allowed|technician_decision' app/Http/Controllers/Web/AdminEstimatePageController.php | head -n 155
+          grep -nEi -C 4 'inspection_status|diagnosis_status|decision_status|estimate_allowed|technician_decision' app/Http/Controllers/Web/AdminEstimatePageController.php | head -n 155 || true
           echo '== STAFF INSPECTION PORTAL PAGE =='
-          sed -n '1,190p' resources/views/staff/inspection-work.blade.php
+          sed -n '1,190p' resources/views/staff/inspection-work.blade.php || true
           echo '== INSPECTION DB AND HISTORY =='
           php <<'PHP'
           <?php
