@@ -1,0 +1,123 @@
+name: Assam Motors P23 Manager Inspection Mobile API Staging
+on:
+  push:
+    branches: [fix/p23-inspection-owner-api-gates-20261014]
+    paths: [.github/workflows/p23-inspection-api-deploy.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-p23-inspection-api
+  cancel-in-progress: false
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax
+        run: php -l deployment/live-fixes/P23_INSPECTION_API_GATES/PATCH_P23.php
+      - name: SSH configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Staging API guard deployment, backup and no-mutation permission QA
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            remote_ssh(){ ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT" "$@"; }
+            remote_scp(){ scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$@"; }
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            remote_ssh(){ sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT" "$@"; }
+            remote_scp(){ sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$@"; }
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          remote_ssh "$REMOTE" 'mkdir -p ~/assam-p23-api'
+          remote_scp deployment/live-fixes/P23_INSPECTION_API_GATES/PATCH_P23.php "$REMOTE:~/assam-p23-api/PATCH_P23.php"
+          remote_ssh "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/assam-p23-api/PATCH_P23.php"
+          test -f "$APP/artisan" && test -f "$PATCH"
+          php "$PATCH" check "$APP"
+          OUT="$(php "$PATCH" apply "$APP")"
+          printf '%s\n' "$OUT"
+          BAK="$(printf '%s\n' "$OUT" | sed -n 's/^P23_APPLIED_BACKUP=//p')"
+          test -n "$BAK" && test -d "$BAK"
+          for f in app__Http__Controllers__Api__V1__StaffExtraController.php app__Http__Controllers__Api__V1__OwnerWorkshopController.php; do
+            test -f "$BAK/$f"
+          done
+          rollback(){
+            echo 'P23_API_QA_FAILED_RESTORING_SOURCES'
+            cp "$BAK/app__Http__Controllers__Api__V1__StaffExtraController.php" "$APP/app/Http/Controllers/Api/V1/StaffExtraController.php"
+            cp "$BAK/app__Http__Controllers__Api__V1__OwnerWorkshopController.php" "$APP/app/Http/Controllers/Api/V1/OwnerWorkshopController.php"
+          }
+          trap rollback ERR
+          cd "$APP"
+          php -l app/Http/Controllers/Api/V1/StaffExtraController.php
+          php -l app/Http/Controllers/Api/V1/OwnerWorkshopController.php
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          if(!\Illuminate\Support\Facades\Schema::hasTable('job_card_inspection_assignments')){
+             echo 'P23_NO_GO_MANAGER_ASSIGNMENT_TABLE_MISSING'.PHP_EOL;exit(2);
+          }
+          $staffCode=file_get_contents('app/Http/Controllers/Api/V1/StaffExtraController.php');
+          $ownerCode=file_get_contents('app/Http/Controllers/Api/V1/OwnerWorkshopController.php');
+          if(!str_contains($staffCode,'P23_MANAGER_INSPECTION_API_GATES')
+             || !str_contains($staffCode,'job_card_inspection_assignments')
+             || !str_contains($ownerCode,'Combined Diagnosis + Technician Decision is disabled.')
+             || !str_contains($ownerCode,'INSPECTION_MANAGER_ASSIGNED')){
+              echo 'P23_NO_GO_API_SOURCE_MARKER_MISSING'.PHP_EOL;exit(3);
+          }
+          $db=\Illuminate\Support\Facades\DB::connection();
+          $admin=\App\Models\ErpAuthUser::query()->where('active',1)->get()->first(function($u) use ($db){
+            if(!$u->isAdmin() || !(int)$u->staff_id)return false;
+            $s=$db->table('staff')->where('id',$u->staff_id)->first();
+            return $s && strtolower(trim((string)$s->role))==='manager';
+          });
+          if(!$admin){echo 'P23_NO_GO_MANAGER_AUTH_MISSING'.PHP_EOL;exit(4);}
+          \Illuminate\Support\Facades\Auth::guard('web')->setUser($admin);
+          $req=\Illuminate\Http\Request::create('/api/v1/staff/inspections','GET');
+          $req->setUserResolver(static fn()=>$admin);
+          try{$result=app(\App\Http\Controllers\Api\V1\StaffExtraController::class)->inspections($req);}
+          catch(\Throwable $e){echo 'P23_NO_GO_INSPECTION_LIST_EXCEPTION='.get_class($e).PHP_EOL;exit(5);}
+          $json=$result->getData(true);
+          if(!($json['ok']??false) || !is_array($json['jobs']??null)){
+             echo 'P23_NO_GO_INSPECTION_LIST_RESPONSE'.PHP_EOL;exit(6);
+          }
+          foreach(($json['jobs']??[]) as $row){
+            $ok=$db->table('job_card_inspection_assignments')
+              ->where('job_card_id',$row['id'])->where('assigned_staff_id',(int)$admin->staff_id)->exists();
+            if(!$ok){echo 'P23_NO_GO_LEGACY_TECHNICIAN_EXPOSED_AS_INSPECTOR'.PHP_EOL;exit(7);}
+          }
+          echo 'P23_MANAGER_ASSIGNED_INSPECTION_LIST_PASS'.PHP_EOL;
+          echo 'P23_MOBILE_COMBINED_DIAGNOSIS_LOCK_PASS'.PHP_EOL;
+          echo 'P23_API_PHP_SYNTAX_PASS'.PHP_EOL;
+          echo 'P23_NO_ADMIN_OR_STAFF_INSPECTION_POST_EXECUTED'.PHP_EOL;
+          PHP
+          trap - ERR
+          echo 'P23_STAGING_API_GUARDS_DEPLOY_PASS'
+          REMOTE
+      - name: Clear SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
