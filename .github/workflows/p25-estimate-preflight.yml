@@ -47,7 +47,7 @@ jobs:
           fi
           REMOTE="$SSH_USER@$SSH_HOST"
           "${SSH[@]}" "$REMOTE" 'mkdir -p ~/assam-p25-estimate'
-          "${SCP[@]}" -r deployment/live-fixes/P25_ESTIMATE_500/PATCH_P25.php deployment/live-fixes/P25_ESTIMATE_500/payload "$REMOTE:~/assam-p25-estimate/"
+          "${SCP[@]}" deployment/live-fixes/P25_ESTIMATE_500/PATCH_P25.php "$REMOTE:~/assam-p25-estimate/PATCH_P25.php"
           "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE'
           set -euo pipefail
           ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
