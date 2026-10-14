@@ -1,0 +1,61 @@
+name: Assam Motors P29 Staff Portal and Action Button Source Audit
+on:
+  push:
+    branches: [feature/p29-inspection-any-staff-lifecycle-counter-invoice-20261014]
+    paths: [.github/workflows/p29-portal-and-action-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Secure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Read-only auth mapping, routes and attendance source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f "$ROOT/artisan"
+          cd "$ROOT"
+          echo '=== PORTAL CONTROLLER SOURCE ==='
+          sed -n '1,145p' app/Http/Controllers/Web/StaffPortalController.php
+          echo '=== STAFF PORTAL BLADE TOP ==='
+          sed -n '1,200p' resources/views/staff/portal.blade.php
+          echo '=== ROUTE STAFF GROUP ==='
+          sed -n '27,70p' routes/web.php
+          echo '=== INSPECTION MANAGER VIEW EXACT HTML ==='
+          sed -n '1,195p' resources/views/inspections/manager-work.blade.php
+          echo '=== LIFECYCLE PANEL 90-185 ==='
+          sed -n '90,190p' resources/views/job-cards/lifecycle-panel.blade.php
+          echo P29_PORTAL_ACTION_AUDIT_PASS
+          REMOTE
+      - if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"

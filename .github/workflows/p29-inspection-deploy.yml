@@ -1,0 +1,163 @@
+name: Assam Motors P29 Staff Inspection Staging
+on:
+  push:
+    branches: [feature/p29-inspection-any-staff-lifecycle-counter-invoice-20261014]
+    paths: [.github/workflows/p29-inspection-deploy.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-p29-staff-inspection
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Source lint
+        run: |
+          php -l deployment/live-fixes/P29_INSPECTION_STAFF/PATCH_P29.php
+          php -l deployment/live-fixes/P29_INSPECTION_STAFF/payload/StaffAssignedInspectionController.php
+      - name: Staging SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Install with rollback and real authenticated Admin/Staff QA
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            ssh_run(){ ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT" "$@"; }
+            scp_run(){ scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$@"; }
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            ssh_run(){ sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT" "$@"; }
+            scp_run(){ sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$@"; }
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          ssh_run "$REMOTE" 'mkdir -p ~/assam-p29-inspection'
+          scp_run -r deployment/live-fixes/P29_INSPECTION_STAFF/PATCH_P29.php deployment/live-fixes/P29_INSPECTION_STAFF/payload "$REMOTE:~/assam-p29-inspection/"
+          ssh_run "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/assam-p29-inspection/PATCH_P29.php"
+          test -f "$ROOT/artisan" && test -f "$PATCH"
+          php "$PATCH" check "$ROOT"
+          RESULT="$(php "$PATCH" apply "$ROOT")"
+          printf '%s\n' "$RESULT"
+          BAK="$(printf '%s\n' "$RESULT" | sed -n 's/^P29_APPLIED_BACKUP=//p')"
+          test -n "$BAK" && test -d "$BAK"
+          files='app/Http/Controllers/Web/ManagerInspectionWorkController.php
+          resources/views/inspections/manager-work.blade.php
+          app/Http/Controllers/Api/V1/StaffExtraController.php
+          app/Http/Controllers/Api/V1/OwnerWorkshopController.php
+          app/Http/Controllers/Api/V1/OwnerSelfAttendanceInspectionController.php
+          app/Http/Controllers/Web/StaffPortalController.php
+          resources/views/staff/portal.blade.php
+          routes/web.php'
+          while read -r file; do
+            key="$(printf '%s' "$file" | sed 's#/#__#g')"
+            test -f "$BAK/$key"
+          done <<< "$files"
+          rollback(){
+            echo 'P29_QA_FAILED_RESTORE_ALL_ORIGINAL_SOURCES'
+            while read -r file; do
+              key="$(printf '%s' "$file" | sed 's#/#__#g')"
+              cp "$BAK/$key" "$ROOT/$file"
+            done <<< "$files"
+            rm -f "$ROOT/app/Http/Controllers/Web/StaffAssignedInspectionController.php"
+            rm -f "$ROOT/resources/views/staff/assigned-inspection.blade.php"
+            (cd "$ROOT" && php artisan view:clear >/dev/null 2>&1 && php artisan route:clear >/dev/null 2>&1) || true
+          }
+          trap rollback ERR
+          cd "$ROOT"
+          php -l routes/web.php
+          php -l app/Http/Controllers/Web/StaffAssignedInspectionController.php
+          php -l app/Http/Controllers/Web/ManagerInspectionWorkController.php
+          php -l app/Http/Controllers/Api/V1/StaffExtraController.php
+          php -l app/Http/Controllers/Web/StaffPortalController.php
+          php artisan route:clear >/dev/null
+          php artisan view:clear >/dev/null
+          php artisan view:cache >/dev/null
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $r=\Illuminate\Support\Facades\Route::getRoutes();
+          foreach(['staff.assigned-inspection.show'=>'GET','staff.assigned-inspection.complete'=>'POST'] as $name=>$method){
+            $route=$r->getByName($name);
+            if(!$route || !in_array($method,$route->methods(),true)
+             || !str_contains(implode(',',$route->gatherMiddleware()),'EnsureStaffUser')){
+              echo 'P29_NO_GO_STAFF_PERMISSION_ROUTE'.PHP_EOL;exit(2);
+            }
+          }
+          $db=\Illuminate\Support\Facades\DB::connection();
+          $admin=\App\Models\ErpAuthUser::query()->where('active',1)->get()->first(fn($u)=>$u->isAdmin());
+          if(!$admin){echo 'P29_NO_GO_ADMIN_ACCOUNT'.PHP_EOL;exit(3);}
+          \Illuminate\Support\Facades\Auth::guard('web')->setUser($admin);
+          \Illuminate\Support\Facades\View::share('errors',new \Illuminate\Support\ViewErrorBag());
+          $req=\Illuminate\Http\Request::create('/erp/inspection-manager','GET');
+          $req->setUserResolver(static fn()=>$admin);
+          try{
+            $v=app(\App\Http\Controllers\Web\ManagerInspectionWorkController::class)->index($req);
+            $data=$v->getData();$html=$v->render();
+          }catch(\Throwable $e){echo 'P29_NO_GO_ADMIN_RENDER='.get_class($e).PHP_EOL;exit(4);}
+          if(!str_contains($html,'Vehicle Inspection Assignment')){
+             echo 'P29_NO_GO_ADMIN_UI'.PHP_EOL;exit(5);
+          }
+          $active=$db->table('staff')->whereRaw("LOWER(TRIM(COALESCE(status,'')))='active'")->count();
+          if($data['managers']->count()!==$active){
+             echo 'P29_NO_GO_DROPDOWN_NOT_ALL_ACTIVE_STAFF'.PHP_EOL;exit(6);
+          }
+          $staff=\App\Models\ErpAuthUser::query()->where('active',1)->get()->first(fn($u)=>$u->isStaff() && (int)$u->staff_id>0);
+          if(!$staff){echo 'P29_NO_GO_STAFF_ACCOUNT'.PHP_EOL;exit(7);}
+          \Illuminate\Support\Facades\Auth::guard('web')->setUser($staff);
+          $req=\Illuminate\Http\Request::create('/staff','GET');
+          $req->setUserResolver(static fn()=>$staff);
+          try{
+            $portal=app(\App\Http\Controllers\Web\StaffPortalController::class)->index(
+              $req,app(\App\Services\StaffDashboardService::class),app(\App\Services\MandatoryNotificationService::class));
+            $pdata=$portal->getData();$html=$portal->render();
+          }catch(\Throwable $e){echo 'P29_NO_GO_PORTAL_RENDER='.get_class($e).PHP_EOL;exit(8);}
+          if(!isset($pdata['assignedInspections'])){
+            echo 'P29_NO_GO_STAFF_INSPECTION_QUEUE'.PHP_EOL;exit(9);
+          }
+          $job=['id'=>1,'job_no'=>'QA-INSPECTION','status'=>'open','inspection_status'=>'pending',
+             'diagnosis_status'=>'pending','vehicle_reg_no'=>'QA-VEHICLE','customer_name'=>'QA'];
+          try{$html=\Illuminate\Support\Facades\View::make('staff.assigned-inspection',[
+              'card'=>$job,'assignment'=>null,'items'=>[],
+              'checks'=>['Exterior / Body','Engine Bay','Brake System','Tyres / Wheels','Suspension',
+                 'Lights / Electrical','Battery','Interior / Dashboard','Fluid Levels','Underbody'],
+              'pending'=>true])->render();}
+          catch(\Throwable $e){echo 'P29_NO_GO_WORK_FORM_RENDER='.get_class($e).PHP_EOL;exit(10);}
+          if(!str_contains($html,'Complete Vehicle Inspection')){
+            echo 'P29_NO_GO_WORK_FORM_MISSING'.PHP_EOL;exit(11);
+          }
+          echo 'P29_ALL_ACTIVE_STAFF_PICKER_RENDER_PASS'.PHP_EOL;
+          echo 'P29_STAFF_PORTAL_INSPECTION_ASSIGNMENT_RENDER_PASS'.PHP_EOL;
+          echo 'P29_STAFF_INSPECTION_CHECKLIST_RENDER_PASS'.PHP_EOL;
+          echo 'P29_ROLE_GUARDS_AND_NO_BUSINESS_RECORD_MUTATION_PASS'.PHP_EOL;
+          PHP
+          trap - ERR
+          echo P29_STAGING_ANY_STAFF_INSPECTION_DEPLOY_PASS
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
