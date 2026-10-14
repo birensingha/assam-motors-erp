@@ -40,10 +40,61 @@ $panel=<<<'BLADE'
    $p14StockCount=(int)($counts['inventory_movements'] ?? 0);
    $p14FinanceCount=(int)($counts['invoices'] ?? 0)+(int)($counts['customer_ledger'] ?? 0)+(int)($counts['customer_payments'] ?? 0);
    $p14Cancelled=strtolower(trim((string)$card->status))==='cancelled';
+
+   $p14VoidMap=array_fill_keys(array_map('strval',$voidedRotIds ?? []),true);
+   $p14UnresolvedRot=0;
+   foreach(($rotSessions ?? collect()) as $rs) {
+      if(!isset($p14VoidMap[(string)$rs->id])) $p14UnresolvedRot++;
+   }
+   $p14UnresolvedLabour=0;
+   foreach($labour as $line) {
+      if(empty($line->rot_session_id) || !isset($p14VoidMap[(string)$line->rot_session_id])) $p14UnresolvedLabour++;
+   }
+   // Handled means HR reporting exclusion done. Original Labour/ROT history stays.
+   $p14Step1Done=$p14Cancelled && $p14UnresolvedRot===0 && $p14UnresolvedLabour===0;
+   $p14Step2Done=$parts->isEmpty();
+   $p14Step3Done=$estimates->every(fn($e)=>in_array(strtolower(trim((string)$e->status)),['cancelled','voided','reversed'],true));
+   $p14Step4Done=$p14Cancelled;
+   // Retained Purchase/Stock/Finance records need verified reconciliation, not auto-clear.
+   $p14Step5Done=$p14Step1Done && $p14Step2Done && $p14Step3Done && $p14Step4Done
+       && $p14PurchaseCount===0 && $p14StockCount===0 && $p14FinanceCount===0;
+   $p14Stages=[
+      ['id'=>1,'title'=>'Labour / ROT','done'=>$p14Step1Done,'note'=>'ROT HR-reporting void / Labour review'],
+      ['id'=>2,'title'=>'Allotted Parts','done'=>$p14Step2Done,'note'=>'Active Job Card part allocations'],
+      ['id'=>3,'title'=>'Estimate Reversal','done'=>$p14Step3Done,'note'=>'Approved / released Estimate review'],
+      ['id'=>4,'title'=>'Cancel / Archive','done'=>$p14Step4Done,'note'=>'Job Card cancellation status'],
+      ['id'=>5,'title'=>'Final Reconciliation','done'=>$p14Step5Done,'note'=>'Purchase / Stock / Finance checks'],
+   ];
+   $p14DoneCount=count(array_filter($p14Stages,fn($x)=>$x['done']));
  @endphp
  <section class="jcu-card" style="border-top:4px solid #1674ad" aria-label="Reversal progress and safety">
   <h2>Reversal progress &amp; safe next actions</h2>
   <p class="jcu-small">A ROT reporting void is not a Job Card deletion or an Estimate/Parts/Purchase reversal. Every linked obligation needs a separate reviewed action.</p>
+
+  <style>
+    .p14-steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:9px;margin:14px 0}
+    .p14-link{display:block;text-decoration:none;border-radius:12px;border:2px solid #e6a24a;background:#fff7e8;color:#7d4812;padding:12px}
+    .p14-link.p14-done{border:1px solid #e1e5ea;background:#f3f5f7;color:#78818c}
+    .p14-link strong{display:block;font-size:13px}.p14-link small{display:block;font-size:11px;margin-top:5px}
+    .p14-status{display:inline-block;font-size:11px;font-weight:800;border-radius:12px;padding:4px 9px;margin-top:7px}
+    .p14-status.p14-done{background:#e5e9ec;color:#66717d}.p14-status.p14-needed{background:#fce5c7;color:#8a4908}
+    .jcu-card.p14-complete{background:#f4f6f8;border-color:#e0e5ea;box-shadow:none}
+    .jcu-card.p14-complete h2{color:#77828e}.jcu-card.p14-pending{border:2px solid #e8a242;box-shadow:0 4px 16px #e8a2421c}
+    .p14-complete .jcu-form{opacity:.65}
+    @media(max-width:640px){.p14-steps{grid-template-columns:1fr}}
+  </style>
+  <h3 style="margin:16px 0 5px">5-point Reversal Checklist · {{ $p14DoneCount }}/5 handled</h3>
+  <p class="jcu-small">Grey = handled, orange = pending. Status is recalculated whenever this page loads. Existing history is preserved.</p>
+  <nav class="p14-steps" aria-label="Reversal checklist">
+   @foreach($p14Stages as $p14Step)
+    <a href="#p14-step-{{ $p14Step['id'] }}" class="p14-link {{ $p14Step['done'] ? 'p14-done' : 'p14-needed' }}">
+     <strong>{{ $p14Step['id'] }}. {{ $p14Step['title'] }}</strong>
+     <span class="p14-status {{ $p14Step['done'] ? 'p14-done' : 'p14-needed' }}">{{ $p14Step['done'] ? 'HANDLED' : 'PENDING' }}</span>
+     <small>{{ $p14Step['note'] }}</small>
+    </a>
+   @endforeach
+  </nav>
+
   <div class="jcu-grid">
    <div class="jcu-box"><span class="jcu-small">Job Card</span><b>{{ $p14Cancelled ? 'CANCELLED — ARCHIVED' : strtoupper((string)$card->status) }}</b></div>
    <div class="jcu-box"><span class="jcu-small">ROT HR-reporting void</span><b>{{ $p14VoidedCount }} of {{ $p14RotCount }}</b><small>Original ROT records remain in history</small></div>
@@ -66,6 +117,28 @@ if (substr_count($before,$anchor)!==1) {
     fwrite(STDERR,"NO-GO: status panel insertion anchor changed\n");exit(3);
 }
 $after=str_replace($anchor,$panel."\n".$anchor,$before);
+
+function p14ReplaceOnce(string $s,string $old,string $new,string $label):string {
+    $count=substr_count($s,$old);
+    if($count!==1)throw new RuntimeException('P14_ANCHOR_MISMATCH_'.$label.'='.$count);
+    return str_replace($old,$new,$s);
+}
+$sections=[
+  ['id'=>1,'done'=>'$p14Step1Done','heading'=>'1 · Labour / ROT removal','prefix'=>' <section class="jcu-card">'],
+  ['id'=>2,'done'=>'$p14Step2Done','heading'=>'2 · Allotted Parts / Stock Return','prefix'=>' <section class="jcu-card">'],
+  ['id'=>3,'done'=>'$p14Step3Done','heading'=>'3 · Estimate Reversal','prefix'=>' <section class="jcu-card">'],
+  ['id'=>4,'done'=>'$p14Step4Done','heading'=>'4 · Cancel &amp; archive the Job Card safely','prefix'=>' <section class="jcu-card" style="border-top:5px solid #e25b22">'],
+  ['id'=>5,'done'=>'$p14Step5Done','heading'=>'5 · Full reversal / cancellation review (any status)','prefix'=>' <section class="jcu-card">'],
+];
+foreach($sections as $step){
+  $head=$step['prefix']."\n  <h2>".$step['heading']."</h2>";
+  $when=$step['done'];
+  $out=' <section id="p14-step-'.$step['id'].'" class="jcu-card {{ '.$when.' ? \'p14-complete\' : \'p14-pending\' }}"';
+  if($step['id']===4)$out.=' style="border-top:5px solid #e25b22"';
+  $out.=">\n  <h2>".$step['heading'].' <span class="p14-status {{ '.$when.' ? \'p14-done\' : \'p14-needed\'.' }}">{{ '.$when.' ? \'HANDLED\' : \'PENDING\' }}</span></h2>';
+  $after=p14ReplaceOnce($after,$head,$out,'STEP_'.$step['id']);
+}
+
 if (substr_count($after,$marker)!==1) {
     fwrite(STDERR,"NO-GO: replacement integrity failed\n");exit(3);
 }
