@@ -1,0 +1,70 @@
+name: Assam Motors P28 Mobile Owner Attendance Inspection Security Audit
+on:
+  push:
+    branches: [feature/p28-owner-mobile-attendance-inspection-20261014]
+    paths: [.github/workflows/p28-owner-api-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Secure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Read-only auth mapping, routes and attendance source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f "$ROOT/artisan"
+          cd "$ROOT"
+          echo '=== P28 API ROUTES CONTEXT ==='
+          grep -n -C 5 -e "admin/mobile/workshop-dashboard" -e "admin/mobile/attendance" routes/api.php | head -n 120 || true
+          echo '=== P28 SERVICE SOURCES ==='
+          sed -n '1,230p' app/Http/Controllers/Web/AdminSelfAttendanceController.php
+          sed -n '1,220p' app/Http/Controllers/Web/ManagerInspectionWorkController.php
+          echo '=== P28 ATTENDANCE & AUDIT SCHEMA KEYS ==='
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $schema=\Illuminate\Support\Facades\Schema::class;
+          foreach(['attendance','hr_audit_logs','job_card_diagnosis_events','job_card_inspection_assignments','job_card_inspection','staff'] as $t){
+             echo 'P28_TABLE_'.$t.'='.(int)$schema::hasTable($t).PHP_EOL;
+             if($schema::hasTable($t))echo 'P28_COLS_'.$t.'='.implode(',',$schema::getColumnListing($t)).PHP_EOL;
+          }
+          $u=\Illuminate\Support\Facades\DB::table('erp_auth_users')->whereRaw('LOWER(email)=?', ['birensingha@outlook.com'])->first();
+          if($u)echo 'P28_ADMIN_LINKED_STAFF='.(int)($u->staff_id>0).' ROLE='.$u->role.PHP_EOL;
+          echo 'P28_API_AUDIT_READ_ONLY_PASS'.PHP_EOL;
+          PHP
+          REMOTE
+      - if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
