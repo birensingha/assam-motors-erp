@@ -113,11 +113,14 @@ final class AdminSelfAttendanceController extends Controller
                 throw ValidationException::withMessages(['attendance'=>'Check-Out time cannot be earlier than Check-In.']);
             }
             $worked=round(($clock->getTimestamp()-$in->getTimestamp())/3600,2);
-            DB::table('attendance')->where('id',(int)$a->id)
+            $updated=DB::table('attendance')->where('id',(int)$a->id)
                 ->whereNull('check_out')->update([
                     'check_out'=>$clock->format('Y-m-d H:i:s'),
                     'worked_hours'=>$worked,
                 ]);
+            if($updated!==1)throw ValidationException::withMessages([
+                'attendance'=>'Attendance changed during Check-Out. Refresh and retry.',
+            ]);
             $this->audit($staffId,(int)$user->id,(int)$a->id,'OWNER_ADMIN_SELF_CHECK_OUT',$clock);
         },3);
 
