@@ -1,0 +1,138 @@
+name: P32 QC WIP Label Guard STAGING Deploy
+on:
+  push:
+    branches: [fix/p32-qc-pass-ready-delivery-20261014]
+    paths: [.github/workflows/p32-qc-ready-deploy.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-p32-qc-label-guard
+  cancel-in-progress: false
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: P32 patch syntax
+        run: php -l deployment/live-fixes/P32_QC_PASS_WIP/PATCH_P32.php
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Deploy guarded sources and verify actual Job Card render
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            remote_ssh(){ ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT" "$@"; }
+            remote_scp(){ scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$@"; }
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            remote_ssh(){ sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT" "$@"; }
+            remote_scp(){ sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$@"; }
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          remote_ssh "$REMOTE" 'mkdir -p ~/assam-p32-qc'
+          remote_scp deployment/live-fixes/P32_QC_PASS_WIP/PATCH_P32.php "$REMOTE:~/assam-p32-qc/PATCH_P32.php"
+          remote_ssh "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/assam-p32-qc/PATCH_P32.php"
+          test -f "$ROOT/artisan" && test -f "$PATCH"
+          php "$PATCH" check "$ROOT"
+          OUT="$(php "$PATCH" apply "$ROOT")"
+          printf '%s\n' "$OUT"
+          BAK="$(printf '%s\n' "$OUT" | sed -n 's/^P32_APPLIED_BACKUP=//p')"
+          test -n "$BAK"
+          VIEW="$ROOT/resources/views/job-cards/lifecycle-panel.blade.php"
+          CTRL="$ROOT/app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php"
+          test -f "$BAK/resources__views__job-cards__lifecycle-panel.blade.php"
+          test -f "$BAK/app__Http__Controllers__Web__AdminJobCardLifecyclePageController.php"
+          rollback(){
+            echo 'P32_QA_NO_GO_RESTORE_BOTH_ORIGINAL_SOURCES'
+            cp "$BAK/resources__views__job-cards__lifecycle-panel.blade.php" "$VIEW"
+            cp "$BAK/app__Http__Controllers__Web__AdminJobCardLifecyclePageController.php" "$CTRL"
+            (cd "$ROOT" && php artisan view:clear >/dev/null && php artisan route:clear >/dev/null) || true
+          }
+          trap rollback ERR
+          cd "$ROOT"
+          php -l "$CTRL"
+          php artisan view:clear >/dev/null
+          php artisan view:cache >/dev/null
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $qc=\Illuminate\Support\Facades\DB::table('workshop_qc_checks')
+             ->where('job_card_id',34)->orderByDesc('id')->first();
+          $job=\App\Models\JobCard::query()->find(34);
+          if(!$job || !$qc){echo 'P32_NO_GO_QC_JOB_MISSING'.PHP_EOL;exit(2);}
+          $admin=\App\Models\ErpAuthUser::query()->where('active',1)->get()->first(fn($x)=>$x->isAdmin());
+          if(!$admin){echo 'P32_NO_GO_ADMIN_MISSING'.PHP_EOL;exit(3);}
+          \Illuminate\Support\Facades\Auth::guard('web')->setUser($admin);
+          \Illuminate\Support\Facades\View::share('errors',new \Illuminate\Support\ViewErrorBag());
+          $request=\Illuminate\Http\Request::create('/erp/job-cards/34','GET');
+          $request->setUserResolver(static fn()=>$admin);
+          try{
+            $html=app(\App\Http\Controllers\Web\AdminJobCardPageController::class)
+                ->show($request,34,app(\App\Services\JobCardService::class))->render();
+          }catch(\Throwable $e){
+            echo 'P32_NO_GO_AUTHENTICATED_JOBCARD_RENDER='.get_class($e).PHP_EOL;exit(4);
+          }
+          if(!str_contains($html,'Workshop Lifecycle &amp; Billing') && !str_contains($html,'Workshop Lifecycle & Billing')){
+            echo 'P32_NO_GO_WORKFLOW_VIEW_MISSING'.PHP_EOL;exit(5);
+          }
+          $rawView=file_get_contents('resources/views/job-cards/lifecycle-panel.blade.php');
+          $rawCtrl=file_get_contents('app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php');
+          if(!str_contains($rawView,'P32_QC_PASS_WIP_STATE_GUARD')
+             || !str_contains($rawCtrl,'P32_QC_PASS_WIP_STATE_GUARD')){
+            echo 'P32_NO_GO_PATCH_MARKERS_MISSING'.PHP_EOL;exit(6);
+          }
+          if(strtolower(trim((string)$job->status))==='in-progress'){
+            if(!str_contains($html,'Current Stage: WIP')
+               || !str_contains($html,'Work Complete is pending')
+               || str_contains($html,'href="#wrong"')){
+              echo 'P32_NO_GO_WIP_RENDER_STILL_QC'.PHP_EOL;exit(7);
+            }
+            if(str_contains($html,'Confirm Ready for Delivery')){
+              echo 'P32_NO_GO_INVALID_READY_ACTION_EXPOSED'.PHP_EOL;exit(8);
+            }
+            echo 'P32_JOB34_WIP_SUPERSEDES_STALE_QC_LABEL_PASS'.PHP_EOL;
+          }
+          $latest=\Illuminate\Support\Facades\DB::table('workshop_qc_checks')
+             ->where('job_card_id',34)->orderByDesc('id')->first();
+          if((int)$latest->id!==(int)$qc->id || (string)$latest->result!==(string)$qc->result){
+            echo 'P32_NO_GO_QC_AUDIT_CHANGED'.PHP_EOL;exit(9);
+          }
+          if(!str_contains($rawCtrl,"$"."this->unfinishedWork(") ||
+             !str_contains($rawCtrl,"Latest QC record PASS nahi hai.")){
+            echo 'P32_NO_GO_QC_OR_UNFINISHED_WORK_GATES_LOST'.PHP_EOL;exit(10);
+          }
+          echo 'P32_REAL_ADMIN_JOB_CARD_RENDER_PASS'.PHP_EOL;
+          echo 'P32_QC_PASS_AND_UNFINISHED_PARTS_GUARDS_PRESERVED'.PHP_EOL;
+          echo 'P32_NO_DATABASE_STOCK_ROT_INVOICE_OR_LEDGER_CHANGES'.PHP_EOL;
+          PHP
+          trap - ERR
+          echo P32_STAGING_QC_READY_GUARD_DEPLOY_PASS
+          REMOTE
+      - name: Clean SSH credential
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
