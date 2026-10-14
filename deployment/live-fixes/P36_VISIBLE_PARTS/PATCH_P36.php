@@ -47,7 +47,7 @@ BLADE;
    token_get_all(app('blade.compiler')->compileString($contents),TOKEN_PARSE);
  }
  token_get_all(app('blade.compiler')->compileString((string)file_get_contents($payload)),TOKEN_PARSE);
- if(!str_contains($show,'p36')||!str_contains($life,'p36-parts-actions'))throw new RuntimeException('Panel injection lost');
+ if(!str_contains($show,"@include('job-cards.part-actions-visible')")||!str_contains($life,'p36-parts-actions'))throw new RuntimeException('Panel injection lost');
  echo "P36_COMPILED_SOURCE_AND_PARTIAL_PASS\n";
  echo "P36_MOVE_OUT_OF_HORIZONTAL_ACTION_COLUMN_PASS\n";
  echo "P36_TOP_NEXT_STEP_LINK_TO_PENDING_PARTS_PASS\n";
