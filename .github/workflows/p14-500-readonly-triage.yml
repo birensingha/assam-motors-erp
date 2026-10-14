@@ -1,0 +1,68 @@
+name: Assam Motors P14 500 Readonly Triage
+on:
+  push:
+    branches: [feature/p14-reversal-centre-status-20261014]
+    paths: [.github/workflows/p14-500-readonly-triage.yml]
+permissions:
+  contents: read
+jobs:
+  read-only-triage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Staging source hash and redacted exception categories
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          cd "$APP"
+          FILE=resources/views/job-cards/unwind.blade.php
+          echo '=== SOURCE HASH ==='
+          sha256sum "$FILE"
+          echo '=== P14 CURRENT MARKERS ==='
+          grep -n -E 'P14_REVERSAL_PROGRESS_STATUS|5-point Reversal Checklist|P14_STAGE|p14Step1Done|p14-step-1|View completed details' "$FILE" | head -n 18 || true
+          echo '=== CURRENT BACKUPS ==='
+          for B in storage/app/p14_reversal_view_backup_*/unwind.blade.php; do
+            test -f "$B" || continue
+            sha256sum "$B"
+          done
+          echo '=== RECENT REDACTED LARAVEL EXCEPTION HEADLINES ==='
+          find storage/logs -maxdepth 1 -type f -name 'laravel*.log' -mtime -3 -print0 | while IFS= read -r -d '' logfile; do
+            tail -n 650 "$logfile" | grep -E '^\[20[0-9]{2}-.*(ERROR|CRITICAL|ALERT|EMERGENCY):' | tail -n 12 | sed -E 's/(ERROR|CRITICAL|ALERT|EMERGENCY):.*/\1: [redacted]/' || true
+            tail -n 650 "$logfile" | grep -E 'ViewException|Undefined variable|syntax error|unexpected|ParseError|unwind.blade.php|p14Step|Call to a member function|Undefined property' | tail -n 15 | sed -E 's@/home/[^ ]+@/[server-file]@g;s@\"[^\"]{50,}\"@[redacted]@g' | cut -c 1-260 || true
+          done
+          echo '=== STAGING UNAUTHENTICATED GET ==='
+          curl -sS --max-time 15 -o /dev/null -w 'REVERSAL_UNAUTH_HTTP=%{http_code}\n' 'https://staging.assammotors.com/erp/job-cards/26/reversal' || true
+          echo 'P14_TRIAGE_READONLY_DONE'
+          REMOTE
+      - name: Clear SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
