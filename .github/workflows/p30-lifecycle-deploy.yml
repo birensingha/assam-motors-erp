@@ -1,4 +1,4 @@
-name: Assam Motors P30 Lifecycle Next Action STAGING V3
+name: Assam Motors P30 Lifecycle Next Action STAGING V4
 on:
   push:
     branches: [feature/p30-lifecycle-next-actions-20261014]
@@ -97,7 +97,7 @@ jobs:
             try{
               $html=app(\App\Http\Controllers\Web\AdminJobCardPageController::class)
                   ->show($request,(int)$jc->id,app(\App\Services\JobCardService::class))->render();
-              if(str_contains($html,'am-life-action-forms') && str_contains($html,'Next Action')){
+              if(str_contains($html,'p30-current-stage-action') && str_contains($html,'Next Step')){
                  $verified=true;break;
               }
             }catch(\Throwable $e){
