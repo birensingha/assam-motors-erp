@@ -87,7 +87,7 @@ jobs:
           $req->setUserResolver(static fn()=>$admin);
           try{
              $controller=app(\App\Http\Controllers\Web\AdminJobCardPageController::class);
-             $page=$controller->show($req,(int)$open->id);
+             $page=$controller->show($req,(int)$open->id,app(\App\Services\JobCardService::class));
              $html=$page->render();
           } catch(\Throwable $e){echo 'P19_RENDER_EXCEPTION_CLASS='.get_class($e).PHP_EOL;exit(4);}
           $posLabour=strpos($html,'Labour / ROT Control');
