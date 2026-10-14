@@ -1,0 +1,64 @@
+name: Assam Motors P25 Estimate Blade Compiled Scope Audit
+on:
+  push:
+    branches: [fix/p25-open-estimate-500-20261014]
+    paths: [.github/workflows/p25-estimate-compiled-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Secure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Read-only auth mapping, routes and attendance source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f "$ROOT/artisan"
+          cd "$ROOT"
+          echo '=== P25 Complied estimate PHP first 155 lines ==='
+          nl -ba storage/framework/views/7e9e41a38add8cc2f06bbbc52ae13b74.php | head -n 155 || true
+          echo '=== P25 PHP direct compiling validation ==='
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $p=app('blade.compiler')->compileString(file_get_contents('resources/views/estimates/create.blade.php'));
+          $lines=explode("\n",$p);
+          foreach($lines as $k=>$line)if(str_contains($line,'$initial') || str_contains($line,'$estimateInitialData'))echo 'COMPILED_LINE '.($k+1).' '.trim($line).PHP_EOL;
+          try{token_get_all($p,TOKEN_PARSE);echo 'COMPILED_TOKEN_PARSER_PASS'.PHP_EOL;}catch(Throwable $e){echo 'COMPILED_PARSE_ERROR '.get_class($e).PHP_EOL;}
+          PHP
+          echo P25_COMPILED_SCOPE_AUDIT_PASS
+          REMOTE
+      - if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
