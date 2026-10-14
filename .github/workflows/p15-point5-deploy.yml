@@ -1,0 +1,104 @@
+name: Assam Motors P15 Point 5 Review Status Staging
+on:
+  push:
+    branches: [fix/p15-point5-review-status-20261014]
+    paths: [.github/workflows/p15-point5-deploy.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-p15-point5
+  cancel-in-progress: false
+jobs:
+  staging-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate view-only patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -l deployment/live-fixes/P15_POINT5_REVIEW_STATUS/PATCH_P15.php
+          grep -Fq 'P15_DRY_RUN_NO_WRITES=PASS' deployment/live-fixes/P15_POINT5_REVIEW_STATUS/PATCH_P15.php
+      - name: SSH setup
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Apply guarded P14 to staging and render-check
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p ~/assam-p15-point5'
+          "${SCP[@]}" deployment/live-fixes/P15_POINT5_REVIEW_STATUS/PATCH_P15.php "$REMOTE:~/assam-p15-point5/PATCH_P15.php"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/assam-p15-point5/PATCH_P15.php"
+          test -f "$APP/artisan"
+          php "$PATCH" check "$APP"
+          RESULT="$(php "$PATCH" apply "$APP")"
+          printf '%s\n' "$RESULT"
+          if echo "$RESULT" | grep -Fq P15_ALREADY_INSTALLED; then exit 0; fi
+          BACKUP="$(printf '%s\n' "$RESULT" | sed -n 's/^P15_APPLY_PASS BACKUP=//p')"
+          test -n "$BACKUP" && test -f "$BACKUP"
+          rollback() {
+            echo P15_QA_NO_GO_ROLLBACK
+            cp "$BACKUP" "$APP/resources/views/job-cards/unwind.blade.php"
+            (cd "$APP" && php artisan view:clear >/dev/null 2>&1) || true
+          }
+          trap rollback ERR
+          cd "$APP"
+          php artisan view:cache >/dev/null
+          grep -Fq 'P15_POINT5_REVIEW_STATUS' resources/views/job-cards/unwind.blade.php
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::connection();
+          $jc=$db->table('job_cards')->where('job_no','JC-2026-0025')->first();
+          $admin=\App\Models\ErpAuthUser::query()->where('active',1)->get()->first(fn($u)=>$u->isAdmin());
+          if(!$jc || !$admin){ echo 'NO_GO_TARGET_OR_ADMIN'.PHP_EOL; exit(2); }
+          \Illuminate\Support\Facades\Auth::guard('web')->setUser($admin);
+          \Illuminate\Support\Facades\View::share('errors',new \Illuminate\Support\ViewErrorBag());
+          $req=\Illuminate\Http\Request::create('/erp/job-cards/'.$jc->id.'/reversal','GET');
+          $req->setUserResolver(static fn()=>$admin);
+          $html=(new \App\Http\Controllers\Web\AdminJobCardUnwindController())->show($req,$jc->id)->render();
+          foreach(['P15_POINT5_REVIEW_STATUS','p14-step-1','p14-step-2','p14-step-3','p14-step-4','p14-step-5'] as $term){
+            if(!str_contains($html,$term)){echo 'NO_GO_MISSING_'.$term.PHP_EOL;exit(3);}
+          }
+          if(strpos($html,'REGISTERED')===false || strpos($html,'REVIEW PENDING')===false){echo 'P15_NO_GO_REVIEW_LABEL_MISSING'.PHP_EOL;exit(4);}
+          $voids=$db->table('job_card_rot_voids')->where('job_card_id',$jc->id)->count();
+          echo 'P15_RENDER_PASS VOID_COUNT='.$voids.PHP_EOL;
+          PHP
+          trap - ERR
+          echo P15_POINT5_STAGING_PASS
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
