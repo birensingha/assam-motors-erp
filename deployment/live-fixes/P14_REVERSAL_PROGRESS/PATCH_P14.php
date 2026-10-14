@@ -135,7 +135,10 @@ foreach($sections as $step){
   $when=$step['done'];
   $out=' <section id="p14-step-'.$step['id'].'" class="jcu-card {{ '.$when.' ? \'p14-complete\' : \'p14-pending\' }}"';
   if($step['id']===4)$out.=' style="border-top:5px solid #e25b22"';
-  $out.=">\n  <h2>".$step['heading'].' <span class="p14-status {{ '.$when.' ? \'p14-done\' : \'p14-needed\'.' }}">{{ '.$when.' ? \'HANDLED\' : \'PENDING\' }}</span></h2>';
+  $badge=<<<'BADGE'
+ <span class="p14-status {{ %1$s ? 'p14-done' : 'p14-needed' }}">{{ %1$s ? 'HANDLED' : 'PENDING' }}</span>
+BADGE;
+  $out.=">\n  <h2>".$step['heading'].sprintf($badge,$when)."</h2>";
   $after=p14ReplaceOnce($after,$head,$out,'STEP_'.$step['id']);
 }
 
