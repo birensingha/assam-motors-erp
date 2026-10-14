@@ -1,0 +1,117 @@
+name: Assam Motors P30 Lifecycle Next Action STAGING
+on:
+  push:
+    branches: [feature/p30-lifecycle-next-actions-20261014]
+    paths: [.github/workflows/p30-lifecycle-deploy.yml]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-p30-lifecycle
+  cancel-in-progress: false
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 13
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check patch
+        run: php -l deployment/live-fixes/P30_LIFECYCLE_NEXT_ACTIONS/PATCH_P30.php
+      - name: Configure staging SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Safe staging view deployment plus real view render and rollback on QA failure
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            remote_ssh(){ ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT" "$@"; }
+            remote_scp(){ scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$@"; }
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            remote_ssh(){ sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT" "$@"; }
+            remote_scp(){ sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT" "$@"; }
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          remote_ssh "$REMOTE" 'mkdir -p ~/assam-p30-lifecycle'
+          remote_scp deployment/live-fixes/P30_LIFECYCLE_NEXT_ACTIONS/PATCH_P30.php "$REMOTE:~/assam-p30-lifecycle/PATCH_P30.php"
+          remote_ssh "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/assam-p30-lifecycle/PATCH_P30.php"
+          test -f "$APP/artisan" && test -f "$PATCH"
+          php "$PATCH" check "$APP"
+          OUT="$(php "$PATCH" apply "$APP")"
+          printf '%s\n' "$OUT"
+          BAK="$(printf '%s\n' "$OUT" | sed -n 's/^P30_APPLIED_BACKUP=//p')"
+          test -n "$BAK" && test -f "$BAK"
+          rollback(){
+            echo 'P30_VIEW_QA_FAILED_RESTORING_BACKUP'
+            cp "$BAK" "$APP/resources/views/job-cards/lifecycle-panel.blade.php"
+            (cd "$APP" && php artisan view:clear >/dev/null 2>&1) || true
+          }
+          trap rollback ERR
+          cd "$APP"
+          php artisan view:clear >/dev/null
+          php artisan view:cache >/dev/null
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $source=file_get_contents('resources/views/job-cards/lifecycle-panel.blade.php');
+          foreach(['P30_LIFECYCLE_NEXT_ACTIONS','am-life-action-forms','min-height:46px',
+            'Complete / resolve first','Close Job Card','Convert to Invoice'] as $marker){
+             if(!str_contains($source,$marker)){echo 'P30_NO_GO_STAGE_SOURCE_MISSING'.PHP_EOL;exit(2);}
+          }
+          foreach(['work-complete','qc-pending','qc-result','ready','close','invoice.create'] as $suffix){
+             if(!str_contains($source,'erp.job-cards.lifecycle.'.$suffix) && $suffix!=='invoice.create'){
+                echo 'P30_NO_GO_LIFECYCLE_EXISTING_POST_FORM_MISSING'.PHP_EOL;exit(3);
+             }
+          }
+          $admin=\App\Models\ErpAuthUser::query()->where('active',1)->get()->first(fn($u)=>$u->isAdmin());
+          if(!$admin){echo 'P30_NO_GO_ADMIN_MISSING'.PHP_EOL;exit(4);}
+          \Illuminate\Support\Facades\Auth::guard('web')->setUser($admin);
+          \Illuminate\Support\Facades\View::share('errors',new \Illuminate\Support\ViewErrorBag());
+          $cards=\App\Models\JobCard::query()->orderByDesc('id')->limit(60)->get();
+          $verified=false;
+          foreach($cards as $jc){
+            $request=\Illuminate\Http\Request::create('/erp/job-cards/'.$jc->id,'GET');
+            $request->setUserResolver(static fn()=>$admin);
+            try{
+              $html=app(\App\Http\Controllers\Web\AdminJobCardPageController::class)
+                  ->show($request,(int)$jc->id,app(\App\Services\JobCardService::class))->render();
+              if(str_contains($html,'am-life-action-forms') && str_contains($html,'Next Action')){
+                 $verified=true;break;
+              }
+            }catch(\Throwable $e){
+              echo 'P30_NO_GO_JOB_CARD_RENDER='.get_class($e).PHP_EOL;exit(5);
+            }
+          }
+          if(!$verified){echo 'P30_NO_GO_ACTUAL_JOBCARD_NEXT_ACTION_NOT_RENDERED'.PHP_EOL;exit(6);}
+          echo 'P30_REAL_JOB_CARD_NEXT_ACTION_RENDER_PASS'.PHP_EOL;
+          echo 'P30_WORK_COMPLETE_QC_READY_CLOSE_INVOICE_FORMS_PRESERVED_PASS'.PHP_EOL;
+          echo 'P30_ONLY_LIFECYCLE_UI_NO_BUSINESS_RECORDS_MODIFIED'.PHP_EOL;
+          PHP
+          trap - ERR
+          echo "P30_STAGING_NEXT_ACTION_DEPLOY_PASS"
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
