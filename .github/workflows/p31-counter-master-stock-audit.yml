@@ -1,0 +1,76 @@
+name: Assam Motors P31 Customer Master and Stock Sale Contracts Audit
+on:
+  push:
+    branches: [feature/p31-direct-counter-parts-invoice-20261014]
+    paths: [.github/workflows/p31-counter-master-stock-audit.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Secure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Read-only auth mapping, routes and attendance source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=12 -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f "$ROOT/artisan"
+          cd "$ROOT"
+          echo '=== P31 CUSTOMER/PART/MOVEMENT TABLES ==='
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';$app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::connection();
+          foreach($db->select('SHOW TABLES') as $obj){
+             $name=(string)array_values((array)$obj)[0];
+             if(preg_match('/customer|stock|part|invoice|payment/i',$name))echo 'RELATED_TABLE='.$name.PHP_EOL;
+          }
+          foreach(['customer_master','customers_master','customer_accounts','customer_vehicles','vehicles','vehicle_master'] as $t){
+           try{$rows=$db->select('SHOW COLUMNS FROM `'.$t.'`');echo 'TABLE_'.$t.'='.implode(',',array_map(fn($c)=>$c->Field,$rows)).PHP_EOL;}
+           catch(\Throwable $e){}
+          }
+          $rows=$db->table('inventory_movements')->select('movement_type')->distinct()->limit(25)->get();
+          foreach($rows as $r)echo 'INVENTORY_MOVEMENT_TYPE='.$r->movement_type.PHP_EOL;
+          $rows=$db->table('stock_movements')->select('movement_type')->distinct()->limit(25)->get();
+          foreach($rows as $r)echo 'STOCK_MOVEMENT_TYPE='.$r->movement_type.PHP_EOL;
+          PHP
+          echo '=== CUSTOMER LOOKUP SOURCE ==='
+          grep -n -A 40 -B 6 'function customers(Request' app/Http/Controllers/Web/AdminNativeModuleController.php | head -n 78 || true
+          echo '=== STOCK ISSUE EXISTING ==='
+          grep -Rni -A 16 -B 8 --include='*.php' -e "'movement_type'=>'ISSUE'" -e "'movement_type' => 'ISSUE'" -e "'qty_out' =>" app/Services/JobCardService.php app/Http/Controllers/Web/AdminJobCardPageController.php app/Services/PurchaseService.php | head -n 190 || true
+          echo '=== COUNTER INVOICE NAV AREA ==='
+          grep -n -C 5 -E 'erp.invoices|Invoice|Purchase Register|Purchases' resources/views/layouts/erp.blade.php | head -n 165 || true
+          echo P31_COUNTER_MASTER_STOCK_READONLY_PASS
+          REMOTE
+      - if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"

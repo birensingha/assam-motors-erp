@@ -1,0 +1,61 @@
+name: P34 Read-only Sidebar Layout Inspection
+on:
+  push:
+    branches:
+      - feature/p31-direct-counter-parts-invoice-20261014
+    paths:
+      - 'deployment/live-fixes/P34_MODERN_WORKSHOP_SIDEBAR/**'
+      - '.github/workflows/p34-inspect-sidebar.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure staging SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_USER" && test -n "$SSH_PORT"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+          fi
+      - name: Audit specified staging Job Card without writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i ~/.ssh/id_ed25519 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" bash -s -- "$APP_ROOT" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          test -f "$ROOT/artisan"
+          cd "$HOME/assam-motors-deploy"
+          git fetch origin feature/p31-direct-counter-parts-invoice-20261014
+          git show origin/feature/p31-direct-counter-parts-invoice-20261014:deployment/live-fixes/P34_MODERN_WORKSHOP_SIDEBAR/INSPECT.php > /tmp/assam-p34-inspect.php
+          php -l /tmp/assam-p34-inspect.php
+          php /tmp/assam-p34-inspect.php "$ROOT"
+          rm -f /tmp/assam-p34-inspect.php
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519

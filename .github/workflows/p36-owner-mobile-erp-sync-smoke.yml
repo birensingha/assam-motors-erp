@@ -1,0 +1,78 @@
+name: P36 Owner Android ERP API Readonly Smoke
+on:
+  push:
+    branches:
+      - feature/p31-direct-counter-parts-invoice-20261014
+    paths:
+      - '.github/workflows/p36-owner-mobile-erp-sync-smoke.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    env:
+      BASE: https://staging.assammotors.com/api/v1
+      ADMIN_LOGIN: ${{ secrets.STAGING_ADMIN_LOGIN }}
+      ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+    steps:
+      - name: Authenticate Owner API without logging identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ADMIN_LOGIN" && test -n "$ADMIN_PASSWORD"
+          python3 - <<'PY' >/tmp/owner-login.json
+          import os,json
+          print(json.dumps({"email":os.environ["ADMIN_LOGIN"],"password":os.environ["ADMIN_PASSWORD"],"device_name":"ERP_MOBILE_PARITY_READONLY_QA"}))
+          PY
+          code="$(curl -sS -o /tmp/owner-auth.json -w '%{http_code}' -H 'Content-Type: application/json' --data @/tmp/owner-login.json "$BASE/auth/login")"
+          test "$code" = "200" || { echo "OWNER_AUTH_HTTP=$code";exit 1; }
+          python3 - <<'PY'
+          import json
+          j=json.load(open('/tmp/owner-auth.json'))
+          assert j.get("token")
+          assert j.get("user",{}).get("is_admin") is True
+          with open("/tmp/owner-token","w") as f:f.write(j["token"])
+          print("OWNER_ADMIN_AUTH_PASS")
+          PY
+      - name: Ensure Android and Web ERP read same Job Card state
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOKEN="$(cat /tmp/owner-token)"
+          jc="34"
+          for suffix in "admin/mobile/job-cards/$jc/control" "admin/mobile/documents/job-card/$jc"; do
+            target="$(echo "$suffix" | tr / -)"
+            code="$(curl -sS -o "/tmp/$target.json" -w '%{http_code}' -H "Authorization: Bearer $TOKEN" -H 'Cache-Control: no-cache' "$BASE/$suffix")"
+            test "$code" = "200" || { echo "FAIL_READ_$target HTTP=$code";exit 1; }
+          done
+          python3 - <<'PY'
+          import json
+          control=json.load(open('/tmp/admin-mobile-job-cards-34-control.json'))
+          doc=json.load(open('/tmp/admin-mobile-documents-job-card-34.json'))
+          assert control.get('ok') is True and isinstance(control.get('job'),dict)
+          assert doc.get('ok') is True
+          d=doc.get('document') or {}
+          header=d.get('header') or {}
+          assert header.get('id')==34
+          assert isinstance(d.get('parts'),list) and isinstance(d.get('labour'),list)
+          est=d.get('estimate') or {}
+          inv=d.get('invoice') or {}
+          assert est and inv,'This test expects an estimate and an existing invoice on JC 34'
+          print('OWNER_JOB_CONTROL_API_PASS')
+          print('OWNER_JOB_DOCUMENT_CANONICAL_PASS')
+          print('ESTIMATE_GST='+str(est.get('tax_total')))
+          print('JC_GST='+str(header.get('gst_total')))
+          print('INVOICE_GST='+str(inv.get('gst_total')))
+          print('ESTIMATE_GRAND_TOTAL='+str(est.get('grand_total')))
+          print('JC_GRAND_TOTAL='+str(header.get('grand_total')))
+          print('INVOICE_GRAND_TOTAL='+str(inv.get('grand_total')))
+          PY
+      - name: Logout temporary QA token, remove credentials
+        if: always()
+        shell: bash
+        run: |
+          set +e
+          TOKEN="$(cat /tmp/owner-token 2>/dev/null)"
+          if [ -n "$TOKEN" ]; then curl -sS -o /dev/null -X POST -H "Authorization: Bearer $TOKEN" "$BASE/auth/logout"; fi
+          rm -f /tmp/owner-auth.json /tmp/owner-login.json /tmp/owner-token /tmp/admin-mobile-*.json

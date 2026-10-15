@@ -1,0 +1,93 @@
+name: P38 ERP Desktop Login 403 Safe Recovery Deploy
+on:
+  push:
+    branches:
+      - feature/p31-direct-counter-parts-invoice-20261014
+    paths:
+      - 'deployment/live-fixes/P38_ERP_LOGIN_403/PATCH_P38.php'
+      - 'deployment/live-fixes/P38_ERP_LOGIN_403/SMOKE_P38.php'
+      - '.github/workflows/p38-erp-login-403-fix-deploy.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: assam-p38-erp-auth-staging
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate PHP patch and smoke
+        run: |
+          php -l deployment/live-fixes/P38_ERP_LOGIN_403/PATCH_P38.php
+          php -l deployment/live-fixes/P38_ERP_LOGIN_403/SMOKE_P38.php
+      - name: Prepare SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_USER" && test -n "$SSH_PORT"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -H -p "$SSH_PORT" "$SSH_HOST" >> ~/.ssh/known_hosts
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+          fi
+      - name: Apply auth fix to STAGING only, test, rollback on failure
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i ~/.ssh/id_ed25519 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" bash -s -- "$APP_ROOT" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          test -f "$ROOT/artisan"
+          DEPLOY="$HOME/assam-motors-deploy"
+          test -d "$DEPLOY/.git"
+          cd "$DEPLOY"
+          git fetch origin feature/p31-direct-counter-parts-invoice-20261014
+          git show origin/feature/p31-direct-counter-parts-invoice-20261014:deployment/live-fixes/P38_ERP_LOGIN_403/PATCH_P38.php > /tmp/assam-p38-fix.php
+          git show origin/feature/p31-direct-counter-parts-invoice-20261014:deployment/live-fixes/P38_ERP_LOGIN_403/SMOKE_P38.php > /tmp/assam-p38-smoke.php
+          php -l /tmp/assam-p38-fix.php
+          php -l /tmp/assam-p38-smoke.php
+          php /tmp/assam-p38-fix.php check "$ROOT"
+          RESULT="$(php /tmp/assam-p38-fix.php apply "$ROOT")"
+          echo "$RESULT"
+          BAK="$(printf '%s\n' "$RESULT" | sed -n 's/^P38_BACKUP_DIR=//p')"
+          restore(){
+            if [ -n "$BAK" ] && [ -d "$BAK" ]; then
+              for p in app/Http/Controllers/Web/WebAuthController.php app/Http/Middleware/EnsureErpAdmin.php; do
+                cp "$BAK/$(printf '%s' "$p" | sed 's#/#__#g')" "$ROOT/$p"
+              done
+              echo 'P38_AUTH_ROLLBACK_APPLIED'
+            fi
+          }
+          trap restore ERR
+          php -l "$ROOT/app/Http/Controllers/Web/WebAuthController.php"
+          php -l "$ROOT/app/Http/Middleware/EnsureErpAdmin.php"
+          php /tmp/assam-p38-smoke.php "$ROOT"
+          grep -q 'P38_ERP_LOGIN_ROLE_SWITCH' "$ROOT/app/Http/Controllers/Web/WebAuthController.php"
+          grep -q 'P38_ERP_STAFF_BROWSER_RECOVERY' "$ROOT/app/Http/Middleware/EnsureErpAdmin.php"
+          trap - ERR
+          echo 'P38_ERP_LOGIN_403_STAGING_AUTH_SMOKE_PASS'
+          rm -f /tmp/assam-p38-fix.php /tmp/assam-p38-smoke.php
+          REMOTE
+      - name: Remove SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
