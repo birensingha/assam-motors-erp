@@ -38,7 +38,7 @@ $r=Request::create('/erp/job-cards/'.$jc->id,'GET');
 $r->setUserResolver(static fn()=>$admin);
 safeTest('ADMIN_JC_SHOW',static function()use($r,$jc){
  $c=app(\App\Http\Controllers\Web\AdminJobCardPageController::class);
- return $c->show($r,(int)$jc->id);
+ return app()->call([$c,'show'],['request'=>$r,'job'=>(int)$jc->id]);
 });
 Auth::guard('web')->setUser($staff);
 $r=Request::create('/staff','GET');
@@ -47,7 +47,7 @@ try{
  $m=new ReflectionMethod(\App\Http\Controllers\Web\StaffPortalController::class,'index');
  echo "P39_STAFF_METHOD_PARAMS=".implode(',',array_map(fn($p)=>$p->getName().':'.(string)$p->getType(),$m->getParameters()))."\n";
  safeTest('STAFF_PORTAL',static function()use($r){
-   return app(\App\Http\Controllers\Web\StaffPortalController::class)->index($r);
+   return app()->call([app(\App\Http\Controllers\Web\StaffPortalController::class),'index'],['request'=>$r]);
  });
 }catch(Throwable $e){
  echo "P39_STAFF_METHOD_EXCEPTION=".get_class($e)."\n";
