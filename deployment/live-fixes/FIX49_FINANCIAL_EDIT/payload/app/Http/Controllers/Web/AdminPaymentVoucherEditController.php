@@ -90,7 +90,9 @@ final class AdminPaymentVoucherEditController extends Controller
         $type=strtoupper((string)($old->source_type??''));
         if(in_array($type,['ADVANCE','ON_ACCOUNT','OTHER'],true)) return null;
         $reference=(string)($old->source_reference??'');
-        if($reference==='') return null;
+        // An allocated purchase/OSL/expense without source reference must
+        // not bypass the payable cap during a voucher amount correction.
+        if($reference==='') return -1.0;
         $known=['PURCHASE_INVOICE','OSL_JOB','EXPENSE_VOUCHER'];
         if(!in_array($type,$known,true)) return null;
         // payableSources() already nets posted payment vouchers, vendor and
