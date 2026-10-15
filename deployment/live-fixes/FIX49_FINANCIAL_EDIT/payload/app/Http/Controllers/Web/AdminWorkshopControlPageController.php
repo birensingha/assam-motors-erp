@@ -143,17 +143,8 @@ final class AdminWorkshopControlPageController extends Controller
             if(abs((float)$row->total-(float)$data['expected_old_total'])>0.009){
                 throw ValidationException::withMessages(['rate'=>'This line changed on another device. Refresh before editing.']);
             }
-            // Standard ROT hours are pricing quantity only; session productive time is untouched.
-            if(!in_array('total_amount',$cols,true) && !in_array('total',$cols,true)){
-                throw ValidationException::withMessages(['reason'=>'Purchase row does not have a verified payable total column.']);
-            }
-            if(Schema::hasTable('workshop_payment_vouchers')){
-                $refs=array_filter([(string)($row->purchase_batch_no??''),(string)($row->purchase_no??'')]);
-                if($refs && DB::table('workshop_payment_vouchers')->where('record_status','ACTIVE')
-                    ->where('source_type','OSL_JOB')->whereIn('source_reference',$refs)->exists()){
-                    throw ValidationException::withMessages(['reason'=>'OSL source already has payment allocation. Reverse/reissue before changing supplier cost.']);
-                }
-            }
+            // JC pricing amount edit does not touch purchase settlements or ROT session clocks.
+            // Purchase/OSL payment guards belong only in updateOsl(), not this method.
             $q=$this->quoteFromLine((float)$data['quantity'],(float)$data['rate'],(float)$data['discount_percent'],(float)$data['gst_percent']);
             $fields=$this->filtered($table,[
                 $qtyCol=>(float)$data['quantity'],$rateCol=>(float)$data['rate'],
