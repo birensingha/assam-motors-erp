@@ -51,9 +51,9 @@ jobs:
             SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
           fi
           REMOTE="$SSH_USER@$SSH_HOST"
-          SCRATCH="$HOME/fix49-readonly-preflight-$GITHUB_RUN_ID"
-          # SCRATCH resolves on the remote system, never touches the Laravel application tree.
-          REMOTE_DIR="\$HOME/fix49-readonly-preflight-$GITHUB_RUN_ID"
+          # Use an absolute path for SFTP-based scp. A literal remote $HOME
+          # is not expanded by every SFTP server and caused the initial failure.
+          REMOTE_DIR="/home/$SSH_USER/fix49-readonly-preflight-$GITHUB_RUN_ID"
           "${SSH[@]}" "$REMOTE" "mkdir -p $REMOTE_DIR"
           for f in CHECK.sh INSPECT.sh PREFLIGHT_PAYMENTS.php PATCH_FIX48.php;do
             "${SCP[@]}" "deployment/live-fixes/FIX49_FINANCIAL_EDIT/$f" "$REMOTE:$REMOTE_DIR/$f"
