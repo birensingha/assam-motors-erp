@@ -14,7 +14,7 @@ php <<'PHP'
 require 'vendor/autoload.php';
 $app=require 'bootstrap/app.php';
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-foreach(['job_cards','job_card_parts','job_card_labour','workshop_purchases','workshop_purchase_batches','purchase_audit_logs','workshop_vendors','workshop_vendor_payments','customer_ledger','invoices'] as $table){
+foreach(['job_cards','job_card_parts','job_card_labour','workshop_purchases','workshop_purchase_batches','purchase_audit_logs','job_card_change_audits','workshop_payment_vouchers','workshop_payment_edit_audits','workshop_vendors','workshop_vendor_payments','customer_ledger','invoices'] as $table){
  if(!Illuminate\Support\Facades\Schema::hasTable($table)){echo "$table=MISSING\n";continue;}
  echo "$table: ".implode(', ',Illuminate\Support\Facades\Schema::getColumnListing($table))."\n";
 }
