@@ -102,5 +102,15 @@ if(isset($actor)){
  }catch(Throwable $e){echo "P37_SCREENSHOT_JOB_LOOKUP_UNAVAILABLE\n";}
 }
 
+
+$p=$root.'/app/Http/Controllers/Web/StaffPortalController.php';
+if(is_file($p)){
+ $lines=explode("\n",(string)file_get_contents($p));
+ foreach($lines as $i=>$line)if(str_contains($line,'function inspectionReport(')){
+  echo "P37_STAFF_REPORT_METHOD\n";
+  foreach(range($i,min(count($lines)-1,$i+85)) as $k)echo ($k+1).": ".trim($lines[$k])."\n";
+ }
+}
+
 echo "P37_NO_BUSINESS_DATA_WRITES\n";
 
