@@ -175,6 +175,25 @@ final class AdminWorkshopControlPageController extends Controller
             if((float)($card->gst_total??0)<0.005 && $taxableLines->isNotEmpty()){
                 throw ValidationException::withMessages(['rate'=>'Historical Job Card GST basis is ambiguous: existing amount may ALREADY INCLUDE GST. Do not add GST again. Tax-basis reconciliation must be completed before changing this Job Card. No values saved.']);
             }
+            // A price edit must never recalculate unrelated historical lines if
+            // their stored totals already disagree with the JC header. Avoid
+            // silently increasing or decreasing a customer's bill.
+            $existingParts=DB::table('job_card_parts')->where('job_card_id',$job)->get();
+            $existingLabour=DB::table('job_card_labour')->where('job_card_id',$job)
+                ->when(Schema::hasColumn('job_card_labour','billing_included'),
+                    fn($q)=>$q->where('billing_included',1))->get();
+            $partsBase=round((float)$existingParts->sum('total'),2);
+            $labourBase=round((float)$existingLabour->sum('total'),2);
+            $originalTax=round((float)$existingParts->concat($existingLabour)
+                ->sum(fn($ln)=>round((float)($ln->total??0)*(float)($ln->gst_percent??0)/100,2)),2);
+            $oldPreRound=round($partsBase+$labourBase+$originalTax,2);
+            $oldFinal=round($oldPreRound+(float)($card->round_off??0),2);
+            if(abs((float)$card->parts_total-$partsBase)>0.02 ||
+               abs((float)$card->labour_total-$labourBase)>0.02 ||
+               abs((float)($card->gst_total??0)-$originalTax)>0.02 ||
+               abs((float)$card->grand_total-$oldFinal)>0.02) {
+                throw ValidationException::withMessages(['rate'=>'Stored Job Card totals disagree with Parts/Labour/GST line totals. A full historical reconciliation is needed before adjusting this amount; no changes were saved.']);
+            }
             // JC pricing amount edit does not touch purchase settlements or ROT session clocks.
             // Purchase/OSL payment guards belong only in updateOsl(), not this method.
             $q=$this->quoteFromLine((float)$data['quantity'],(float)$data['rate'],(float)$data['discount_percent'],(float)$data['gst_percent']);
