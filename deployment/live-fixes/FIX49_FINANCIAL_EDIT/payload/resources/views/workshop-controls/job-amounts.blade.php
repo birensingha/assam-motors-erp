@@ -12,16 +12,18 @@ body{margin:0}.wrap{max-width:1420px;margin:auto;padding:24px}.head{background:#
 @if($errors->any())<div class="note danger">@foreach($errors->all() as $message)<div>{{ $message }}</div>@endforeach</div>@endif
 @if($invoiced)
 <div class="note danger"><b>Issued invoice is linked to this Job Card.</b> Direct overwriting is blocked. An audited invoice financial revision must update the original invoice reference, GST breakup and customer ledger together. You can inspect values here, but Save is disabled until that revision workflow is available.</div>
+@elseif($taxBasisUnverified)
+<div class="note danger"><b>Historical GST requires review.</b> The stored Job Card GST is zero although lines show taxable GST rates. The existing gross amount may ALREADY INCLUDE GST. Save is disabled rather than adding GST a second time. Compare original Invoice/Estimate and approve a tax-basis correction first.</div>
 @elseif(strtolower((string)$card->status)==='closed')
 <div class="note">Closed but not invoiced: Admin financial correction is allowed only with modification reason. Previous amount is preserved in the change audit.</div>
-@else<div class="note">Enter taxable rate (before GST). Display is Rate → Discount → GST → Final. ROT session time is NOT modified by changing billable standard hours.</div>@endif
+@else<div class="note">Enter taxable rate (before GST). Display is Rate → Discount → GST → Final. Part Qty and ROT Standard Hours are readonly; use stock/ROT operational workflow to adjust quantity or performance time.</div>@endif
 <div class="summary">
 <div class="stat"><small>Parts (stored taxable)</small><strong>₹{{ number_format((float)($card->parts_total ?? 0),2) }}</strong></div>
 <div class="stat"><small>Labour (stored taxable)</small><strong>₹{{ number_format((float)($card->labour_total ?? 0),2) }}</strong></div>
 <div class="stat"><small>GST (stored)</small><strong>₹{{ number_format((float)($card->gst_total ?? 0),2) }}</strong></div>
 <div class="stat"><small>Grand Total</small><strong>₹{{ number_format((float)($card->grand_total ?? 0),2) }}</strong></div></div>
 @foreach(['parts'=>$parts,'labour'=>$labour] as $kind=>$rows)
-<section class="panel"><h2>{{ $kind==='parts'?'🔩 Parts & Materials':'🔧 Labour / ROT' }}</h2><div class="subtitle">Item-wise edit. Each Save runs a locked database transaction and writes Admin change audit.</div>
+<section class="panel"><h2>{{ $kind==='parts'?'🔩 Parts & Materials':'🔧 Labour / ROT' }}</h2><div class="subtitle">Item-wise edit. Each Save runs a locked database transaction and writes Admin change audit. Quantity/ROT standard hours cannot be edited as a financial price adjustment.</div>
 <div class="tablewrap"><table><thead><tr><th>Item</th><th>Qty / Std Hours</th><th>Rate</th><th>Discount %</th><th>GST %</th><th>Stored Amount</th><th>Corrected Final Preview</th><th>Reason / Action</th></tr></thead><tbody>
 @forelse($rows as $r)
 @php($qty=$kind==='parts'?($r->qty ?? 1):($r->standard_hours ?? 1))
@@ -30,14 +32,14 @@ body{margin:0}.wrap{max-width:1420px;margin:auto;padding:24px}.head{background:#
 <td colspan="7" style="padding:0"><form class="editline" method="post" action="{{ route('erp.fix48.job-line',[$card->id,$kind,$r->id]) }}" style="display:grid;grid-template-columns:repeat(5,minmax(105px,1fr)) minmax(105px,1fr) minmax(135px,1fr) minmax(215px,1.6fr);align-items:start;gap:8px;padding:9px">
 @csrf
 <input type="hidden" name="expected_old_total" value="{{ $r->total ?? 0 }}">
-<div><label>{{ $kind==='parts'?'Qty':'Std Hours' }}</label><input name="quantity" type="number" min="0.01" step="0.01" value="{{ $qty }}" required {{ $invoiced?'disabled':'' }}></div>
-<div><label>Taxable Rate</label><input name="rate" type="number" min="0" step="0.01" value="{{ $rate }}" required {{ $invoiced?'disabled':'' }}></div>
-<div><label>Discount %</label><input name="discount_percent" type="number" min="0" max="100" step="0.01" value="{{ $r->discount_percent ?? 0 }}" required {{ $invoiced?'disabled':'' }}></div>
-<div><label>GST %</label><input name="gst_percent" type="number" min="0" max="100" step="0.01" value="{{ $r->gst_percent ?? 0 }}" required {{ $invoiced?'disabled':'' }}></div>
+<div><label>{{ $kind==='parts'?'Qty':'Std Hours' }}</label><input name="quantity" type="number" min="0.01" step="0.01" value="{{ $qty }}" required readonly title="Change quantity from Stock/ROT workflow, not billing editor" {{ ($invoiced||$taxBasisUnverified)?'disabled':'' }}></div>
+<div><label>Taxable Rate</label><input name="rate" type="number" min="0" step="0.01" value="{{ $rate }}" required {{ ($invoiced||$taxBasisUnverified)?'disabled':'' }}></div>
+<div><label>Discount %</label><input name="discount_percent" type="number" min="0" max="100" step="0.01" value="{{ $r->discount_percent ?? 0 }}" required {{ ($invoiced||$taxBasisUnverified)?'disabled':'' }}></div>
+<div><label>GST %</label><input name="gst_percent" type="number" min="0" max="100" step="0.01" value="{{ $r->gst_percent ?? 0 }}" required {{ ($invoiced||$taxBasisUnverified)?'disabled':'' }}></div>
 <div><label>Stored taxable</label><strong>₹{{ number_format((float)($r->total ?? 0),2) }}</strong></div>
 <div><label>New GST</label><b data-gst>—</b></div>
 <div><label>New Final</label><strong data-final style="color:#12783b">—</strong></div>
-<div><label>Modification Reason *</label><textarea name="reason" minlength="5" maxlength="1000" required placeholder="Reason for correcting amount" {{ $invoiced?'disabled':'' }}></textarea><button class="green" type="submit" {{ $invoiced?'disabled':'' }}>Save Line Amount</button></div>
+<div><label>Modification Reason *</label><textarea name="reason" minlength="5" maxlength="1000" required placeholder="Reason for correcting amount" {{ ($invoiced||$taxBasisUnverified)?'disabled':'' }}></textarea><button class="green" type="submit" {{ ($invoiced||$taxBasisUnverified)?'disabled':'' }}>Save Line Amount</button></div>
 </form></td></tr>
 @empty<tr><td colspan="8">No {{ $kind }} entries on this Job Card.</td></tr>@endforelse
 </tbody></table></div></section>
