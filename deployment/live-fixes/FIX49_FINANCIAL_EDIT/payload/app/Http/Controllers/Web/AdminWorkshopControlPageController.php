@@ -325,7 +325,7 @@ final class AdminWorkshopControlPageController extends Controller
                 $batchKey=in_array('batch_no',$bc,true)?'batch_no':'purchase_batch_no';
                 $batch=DB::table('workshop_purchase_batches')->where($batchKey,$batchNo)->lockForUpdate()->first();
                 if(!$batch) throw ValidationException::withMessages(['reason'=>'OSL batch header missing. Edit not saved.']);
-                if(in_array(strtolower((string)$this->value($batch,['status','payment_status'],'open')),['posted','paid','settled','closed','locked'],true)){
+                if(in_array(strtolower((string)$this->value($batch,['record_status','status','payment_status'],'open')),['posted','paid','settled','closed','locked'],true)){
                     throw ValidationException::withMessages(['reason'=>'Supplier batch is posted/paid: use finance revision.']);
                 }
             }
