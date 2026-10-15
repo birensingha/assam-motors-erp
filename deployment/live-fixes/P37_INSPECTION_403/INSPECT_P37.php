@@ -74,5 +74,33 @@ try {
  echo "P37_DISTINCT_LOGIN_ROLES=".implode(',',array_map(
  static fn($x)=>strtolower((string)$x->role),$roles->all()))."\n";
 }catch(Throwable $e){echo "P37_ACCOUNT_CHECK_UNAVAILABLE=".get_class($e)."\n";}
+
+$p=$root.'/app/Http/Controllers/Web/AdminJobCardPageController.php';
+if(is_file($p)){
+ $lines=explode("\n",(string)file_get_contents($p));
+ foreach($lines as $i=>$line)if(str_contains($line,'function inspectionReport(')){
+  echo "P37_REPORT_METHOD\n";
+  foreach(range($i,min(count($lines)-1,$i+100)) as $k)echo ($k+1).": ".trim($lines[$k])."\n";
+ }
+}
+$p=$root.'/routes/web.php';
+if(is_file($p)){
+ $lines=explode("\n",(string)file_get_contents($p));
+ echo "P37_ROUTE_GROUP_LINES\n";
+ foreach(range(24,min(count($lines)-1,92)) as $k)echo ($k+1).": ".trim($lines[$k])."\n";
+}
+if(isset($actor)){
+ echo "P37_STAFF_MASTER_ROLE=".strtolower((string)($actor->role??''))."\n";
+ try{
+  $x=\Illuminate\Support\Facades\DB::table('job_cards')->where('job_no','JC-20261009-00030')->first();
+  if($x){
+   echo 'P37_SCREENSHOT_JOB_EXISTS=1'.PHP_EOL;
+   echo 'P37_SCREENSHOT_JOB_TECHNICIAN_MATCH='.(int)((int)$x->technician_id===(int)$actor->id).PHP_EOL;
+   $as=\Illuminate\Support\Facades\DB::table('job_card_inspection_assignments')->where('job_card_id',$x->id)->first();
+   echo 'P37_SCREENSHOT_INSPECTION_ASSIGNEE_MATCH='.(int)(($as?->assigned_staff_id??0)==$actor->id).PHP_EOL;
+  }else echo 'P37_SCREENSHOT_JOB_EXISTS=0'.PHP_EOL;
+ }catch(Throwable $e){echo "P37_SCREENSHOT_JOB_LOOKUP_UNAVAILABLE\n";}
+}
+
 echo "P37_NO_BUSINESS_DATA_WRITES\n";
 
