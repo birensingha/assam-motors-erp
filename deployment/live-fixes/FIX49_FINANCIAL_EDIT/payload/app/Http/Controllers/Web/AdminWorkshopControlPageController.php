@@ -106,10 +106,15 @@ final class AdminWorkshopControlPageController extends Controller
         $card = DB::table('job_cards')->where('id',$job)->first();
         abort_unless($card,404);
         $invoiced = $this->activeInvoice($job) || !empty($card->invoice_id) || strtolower((string)$card->status)==='invoiced';
+        $parts=DB::table('job_card_parts')->where('job_card_id',$job)->orderBy('id')->get();
+        $labour=DB::table('job_card_labour')->where('job_card_id',$job)->orderBy('id')->get();
+        $taxBasisUnverified=(float)($card->gst_total??0)<0.005
+            && $parts->concat($labour)->contains(fn($ln)=>(float)($ln->total??0)>0
+                && (float)($ln->gst_percent??0)>0);
         return view('workshop-controls.job-amounts',[
             'card'=>$card,'invoiced'=>$invoiced,
-            'parts'=>DB::table('job_card_parts')->where('job_card_id',$job)->orderBy('id')->get(),
-            'labour'=>DB::table('job_card_labour')->where('job_card_id',$job)->orderBy('id')->get(),
+            'taxBasisUnverified'=>$taxBasisUnverified,
+            'parts'=>$parts,'labour'=>$labour,
         ]);
     }
 
