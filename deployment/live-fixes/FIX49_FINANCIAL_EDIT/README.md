@@ -63,3 +63,6 @@ The **historical issued-invoice correction** and **posted/paid OSL financial rev
 ## FIX49 extra read-only protection
 
 `PREFLIGHT_PAYMENTS.php` verifies Payment Voucher schema, VendorService's voucher-derived ledger, existing P9 source types, and scans for obvious materialized payment journal links. Any unknown posting dependency must stop deployment. After staged installation (with backup) run the newly created payment register and audit migration, and test posted-voucher ledger reconciliation on isolated test records. The installer will never mass-edit existing vouchers.
+## 2026-10-16 staging validation note
+
+FIX49 was installed on Hostinger staging in Actions run 38783968055. The read-only detail QA (38784216344) and enterprise UI deployment/browser QA (38785782719) succeeded. This does not prove financial POST or ledger reconciliation. The first-install CHECK.sh intentionally fails once installed and is not a post-install health check. Older detail QA title expectations are outdated after the premium UI rename. Financial Save and issued-invoice revisions remain unverified. The OSL batch record_status guard correction is prepared in the source branch but not deployed to staging.
