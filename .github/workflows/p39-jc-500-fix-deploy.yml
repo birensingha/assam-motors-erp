@@ -73,7 +73,7 @@ jobs:
           cd "$ROOT"
           php artisan view:clear
           php artisan view:cache
-          git show origin/feature/p31-direct-counter-parts-invoice-20261014:deployment/live-fixes/P39_STAFF_PORTAL_SUMMARY/RENDER_P39.php > /tmp/assam-p39-render.php
+          git -C "$DEPLOY" show origin/feature/p31-direct-counter-parts-invoice-20261014:deployment/live-fixes/P39_STAFF_PORTAL_SUMMARY/RENDER_P39.php > /tmp/assam-p39-render.php
           php -l /tmp/assam-p39-render.php
           php /tmp/assam-p39-render.php "$ROOT" | tee /tmp/assam-p39-qa.out
           grep -q 'P39_RENDER_ADMIN_JC_SHOW_PASS' /tmp/assam-p39-qa.out
