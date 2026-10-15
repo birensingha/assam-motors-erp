@@ -5,7 +5,7 @@
 <div class="panel"><div class="grid"><div><strong>Vendor:</strong> {{ $row->vendor_name ?? $row->vendor ?? $row->vendor_id ?? '—' }}</div><div><strong>Against JC:</strong> {{ $job->job_no ?? $row->job_card_id ?? '—' }}</div><div><strong>Existing Total:</strong> ₹{{ number_format((float)($row->total_amount ?? $row->total ?? $row->grand_total ?? 0),2) }}</div></div></div>
 <form method="post" action="{{ route('erp.fix48.osl-save',$row->id) }}" class="panel">@csrf<input type="hidden" name="expected_old_total" value="{{ $row->total_amount ?? $row->total ?? $row->grand_total ?? 0 }}"><div class="grid">
 <label>Quantity *<input type="number" name="quantity" step="0.01" min="0.01" value="{{ $row->qty ?? $row->quantity ?? 1 }}" required {{ $blocked?'disabled':'' }}></label>
-<label>Vendor Rate *<input type="number" name="vendor_rate" step="0.01" min="0" value="{{ $row->vendor_rate ?? $row->rate ?? 0 }}" required {{ $blocked?'disabled':'' }}></label>
+<label>Vendor Rate *<input type="number" name="vendor_rate" step="0.01" min="0" value="{{ $row->unit_cost ?? $row->vendor_rate ?? $row->rate ?? 0 }}" required {{ $blocked?'disabled':'' }}></label>
 <label>Vendor Discount % *<input type="number" name="discount_percent" step="0.01" min="0" max="100" value="{{ $row->discount_percent ?? 0 }}" required {{ $blocked?'disabled':'' }}></label>
 <label>Purchase GST % *<input type="number" name="gst_percent" step="0.01" min="0" max="100" value="{{ $row->gst_percent ?? 0 }}" required {{ $blocked?'disabled':'' }}></label>
 </div><div class="warning"><b>Purchase Cost Preview:</b> <span id="result">—</span><p>Supplier purchase correction only; the linked Job Card customer billing and OSL Labour pricing cannot be silently changed from this form.</p></div>
