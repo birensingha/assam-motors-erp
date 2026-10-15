@@ -1,0 +1,61 @@
+name: P40 Android Loading - Authenticated API Health
+on:
+  push:
+    branches: [feature/p31-direct-counter-parts-invoice-20261014]
+    paths: ['.github/workflows/p40-android-loading-api-smoke.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      BASE: https://staging.assammotors.com/api/v1
+      ADMIN_LOGIN: ${{ secrets.STAGING_ADMIN_LOGIN }}
+      ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+    steps:
+      - name: Read only mobile screen API health and latencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$ADMIN_LOGIN" && test -n "$ADMIN_PASSWORD"
+          python3 - <<'PY'
+          import json,os,urllib.request,urllib.error,time,sys
+          base=os.environ['BASE'].rstrip('/')
+          body=json.dumps({'email':os.environ['ADMIN_LOGIN'],'password':os.environ['ADMIN_PASSWORD'],'device_name':'MOBILE_SCREEN_LOADING_READ_ONLY_TEST'}).encode()
+          def call(method,path,token=None,payload=None,timeout=12):
+            req=urllib.request.Request(base+path,data=payload,method=method,headers={
+              'Accept':'application/json','Content-Type':'application/json','Cache-Control':'no-store',
+              **({'Authorization':'Bearer '+token} if token else {})
+            })
+            t=time.monotonic()
+            try:
+              with urllib.request.urlopen(req,timeout=timeout) as res:
+                b=res.read(300000)
+                return res.status,round(time.monotonic()-t,2),json.loads(b)
+            except urllib.error.HTTPError as e:
+              return e.code,round(time.monotonic()-t,2),{}
+            except Exception as e:
+              print('P40_NETWORK_ERROR',path,type(e).__name__,flush=True)
+              return 0,round(time.monotonic()-t,2),{}
+          status,lat,auth=call('POST','/auth/login',payload=body)
+          print('P40_AUTH',status,'latency_sec',lat,flush=True)
+          token=auth.get('token')
+          if status!=200 or not token or not auth.get('user',{}).get('is_admin'):
+            print('P40_NO_GO_AUTH');sys.exit(2)
+          paths=['/admin/mobile/workshop-dashboard','/admin/mobile/dashboard','/admin/mobile/workshop-floor',
+                 '/admin/mobile/staff','/admin/mobile/staff-locations?latest=1','/admin/mobile/alerts',
+                 '/admin/mobile/job-cards','/admin/mobile/job-cards/34/control',
+                 '/admin/mobile/documents/job-card/34']
+          fail=[]
+          for path in paths:
+            st,d,js=call('GET',path,token)
+            shape=','.join(sorted(str(k) for k in js.keys())[:12]) if isinstance(js,dict) else '[non-object]'
+            print('P40_ENDPOINT',path.split('?')[0],'status',st,'sec',d,'keys',shape,flush=True)
+            if st!=200:fail.append(path)
+          call('POST','/auth/logout',token,payload=b'{}')
+          print('P40_TOTAL_FAILED',len(fail))
+          if fail:sys.exit(3)
+          print('P40_ALL_OWNER_MOBILE_READ_APIS_PASS')
+          PY
