@@ -3,6 +3,10 @@ set -euo pipefail
 BASE="$(cd "$(dirname "$0")" && pwd)"
 for f in "$BASE"/*.sh; do bash -n "$f"; done
 for f in "$BASE"/*.php "$BASE"/scripts/*.php "$BASE"/payload/app/Http/Controllers/Web/*.php "$BASE"/payload/database/migrations/*.php; do php -l "$f" > /dev/null; done
+php "$BASE/scripts/SELFTEST.php"
+grep -Fq 'Historical Job Card GST basis is ambiguous' "$BASE/payload/app/Http/Controllers/Web/AdminWorkshopControlPageController.php"
+grep -Fq 'Part Qty is stock-linked' "$BASE/payload/app/Http/Controllers/Web/AdminWorkshopControlPageController.php"
+grep -Fq 'taxBasisUnverified' "$BASE/payload/resources/views/workshop-controls/job-amounts.blade.php"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/routes" "$TMP/resources/views/job-cards" "$TMP/resources/views/payments"
