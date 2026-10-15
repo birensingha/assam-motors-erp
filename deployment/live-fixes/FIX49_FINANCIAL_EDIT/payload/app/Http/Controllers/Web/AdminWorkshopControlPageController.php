@@ -51,7 +51,8 @@ final class AdminWorkshopControlPageController extends Controller
             'job_card_id'=>$job,'entity_type'=>$entity,'entity_id'=>$id,'action'=>'FIX48_ADMIN_AMOUNT_EDIT',
             'before_json'=>json_encode($before, JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE),
             'after_json'=>json_encode($after, JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE),
-            'reason'=>$reason,'actor'=>$user->email ?: $user->name ?: 'Admin',
+            'reason'=>$reason,'actor_id'=>$user->id,
+            'actor_name'=>$user->name ?: $user->email ?: 'Admin',
             'created_at'=>now(),'updated_at'=>now(),
         ]);
         DB::table('job_card_change_audits')->insert($row);
@@ -73,7 +74,11 @@ final class AdminWorkshopControlPageController extends Controller
     private function recalculateJob(int $job): array
     {
         $parts = DB::table('job_card_parts')->where('job_card_id',$job)->get();
-        $labour = DB::table('job_card_labour')->where('job_card_id',$job)->get();
+        // Respect P34 ROT billing_included control. Non-billable labour affects
+        // technician productivity but must not be added back to customer totals.
+        $labour = DB::table('job_card_labour')->where('job_card_id',$job)
+            ->when(Schema::hasColumn('job_card_labour','billing_included'),
+                fn($q)=>$q->where('billing_included',1))->get();
         $partsTotal = round((float)$parts->sum('total'),2);
         $labourTotal = round((float)$labour->sum('total'),2);
         $gst = 0.0;
@@ -109,8 +114,9 @@ final class AdminWorkshopControlPageController extends Controller
         $parts=DB::table('job_card_parts')->where('job_card_id',$job)->orderBy('id')->get();
         $labour=DB::table('job_card_labour')->where('job_card_id',$job)->orderBy('id')->get();
         $taxBasisUnverified=(float)($card->gst_total??0)<0.005
-            && $parts->concat($labour)->contains(fn($ln)=>(float)($ln->total??0)>0
-                && (float)($ln->gst_percent??0)>0);
+            && $parts->concat($labour->filter(fn($ln)=>(int)($ln->billing_included??1)===1))
+                ->contains(fn($ln)=>(float)($ln->total??0)>0
+                    && (float)($ln->gst_percent??0)>0);
         return view('workshop-controls.job-amounts',[
             'card'=>$card,'invoiced'=>$invoiced,
             'taxBasisUnverified'=>$taxBasisUnverified,
@@ -161,7 +167,9 @@ final class AdminWorkshopControlPageController extends Controller
             // zero header GST plus non-zero line GST does NOT prove exclusive
             // rates. Do not reapply 18% to untouched historical lines.
             $allLines=DB::table('job_card_parts')->where('job_card_id',$job)->get(['total','gst_percent'])
-                ->concat(DB::table('job_card_labour')->where('job_card_id',$job)->get(['total','gst_percent']));
+                ->concat(DB::table('job_card_labour')->where('job_card_id',$job)
+                    ->when(Schema::hasColumn('job_card_labour','billing_included'),
+                        fn($q)=>$q->where('billing_included',1))->get(['total','gst_percent']));
             $taxableLines=$allLines->filter(fn($ln)=>(float)($ln->total??0)>0
                 && (float)($ln->gst_percent??0)>0);
             if((float)($card->gst_total??0)<0.005 && $taxableLines->isNotEmpty()){
