@@ -143,6 +143,14 @@ final class AdminWorkshopControlPageController extends Controller
             if(abs((float)$row->total-(float)$data['expected_old_total'])>0.009){
                 throw ValidationException::withMessages(['rate'=>'This line changed on another device. Refresh before editing.']);
             }
+            // Changing the quantity of a physically issued/fitted part would desync stock.
+            // Price, discount and GST corrections remain available for such lines.
+            if($kind==='parts' && abs((float)$row->qty-(float)$data['quantity'])>0.0001){
+                $issueStatus=strtolower(trim((string)($row->issue_status??'planned')));
+                if(!in_array($issueStatus,['','planned','pending','not issued','not_issued'],true)){
+                    throw ValidationException::withMessages(['quantity'=>'Issued/Fitted Part quantity is stock-linked. Correct its issue/return first; only price, discount and GST may be edited here.']);
+                }
+            }
             // JC pricing amount edit does not touch purchase settlements or ROT session clocks.
             // Purchase/OSL payment guards belong only in updateOsl(), not this method.
             $q=$this->quoteFromLine((float)$data['quantity'],(float)$data['rate'],(float)$data['discount_percent'],(float)$data['gst_percent']);
