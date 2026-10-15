@@ -55,9 +55,11 @@ jobs:
           # is not expanded by every SFTP server and caused the initial failure.
           REMOTE_DIR="/home/$SSH_USER/fix49-readonly-preflight-$GITHUB_RUN_ID"
           "${SSH[@]}" "$REMOTE" "mkdir -p $REMOTE_DIR"
-          for f in CHECK.sh INSPECT.sh PREFLIGHT_PAYMENTS.php PATCH_FIX48.php;do
-            "${SCP[@]}" "deployment/live-fixes/FIX49_FINANCIAL_EDIT/$f" "$REMOTE:$REMOTE_DIR/$f"
-          done
+          # Package full patch tree so CHECK.sh can inspect all payload PHP.
+          # Still preflight-only: no Laravel source/data files are changed.
+          tar -czf /tmp/fix49-readonly-preflight.tgz -C deployment/live-fixes/FIX49_FINANCIAL_EDIT .
+          "${SCP[@]}" /tmp/fix49-readonly-preflight.tgz "$REMOTE:$REMOTE_DIR/preflight.tgz"
+          "${SSH[@]}" "$REMOTE" "cd $REMOTE_DIR && tar -xzf preflight.tgz && rm preflight.tgz"
           "${SSH[@]}" "$REMOTE" "APP_ROOT='$APP_ROOT' PREFLIGHT_DIR=$REMOTE_DIR bash -s" <<'REMOTE_SCRIPT'
           set -uo pipefail
           trap 'rm -rf "$PREFLIGHT_DIR"' EXIT
