@@ -6,6 +6,7 @@ for f in "$BASE"/*.php "$BASE"/scripts/*.php "$BASE"/payload/app/Http/Controller
 php "$BASE/scripts/SELFTEST.php"
 grep -Fq 'Historical Job Card GST basis is ambiguous' "$BASE/payload/app/Http/Controllers/Web/AdminWorkshopControlPageController.php"
 grep -Fq 'Part Qty is stock-linked' "$BASE/payload/app/Http/Controllers/Web/AdminWorkshopControlPageController.php"
+grep -Fq "\$this->value(\$batch,['record_status','status','payment_status'],'open')" "$BASE/payload/app/Http/Controllers/Web/AdminWorkshopControlPageController.php"
 grep -Fq 'taxBasisUnverified' "$BASE/payload/resources/views/workshop-controls/job-amounts.blade.php"
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
