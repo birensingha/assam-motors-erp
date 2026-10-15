@@ -143,13 +143,24 @@ final class AdminWorkshopControlPageController extends Controller
             if(abs((float)$row->total-(float)$data['expected_old_total'])>0.009){
                 throw ValidationException::withMessages(['rate'=>'This line changed on another device. Refresh before editing.']);
             }
-            // Changing the quantity of a physically issued/fitted part would desync stock.
-            // Price, discount and GST corrections remain available for such lines.
-            if($kind==='parts' && abs((float)$row->qty-(float)$data['quantity'])>0.0001){
-                $issueStatus=strtolower(trim((string)($row->issue_status??'planned')));
-                if(!in_array($issueStatus,['','planned','pending','not issued','not_issued'],true)){
-                    throw ValidationException::withMessages(['quantity'=>'Issued/Fitted Part quantity is stock-linked. Correct its issue/return first; only price, discount and GST may be edited here.']);
-                }
+            // Billing edits must never silently change inventory quantity or
+            // technician ROT standard hours. Edit quantity via the corresponding
+            // stock issue/reversal or ROT workflow, not this finance form.
+            $oldQty=(float)$row->{$qtyCol};
+            if(abs($oldQty-(float)$data['quantity'])>0.0001){
+                $label=$kind==='parts'?'Part Qty is stock-linked':'ROT Standard Hours affect technician performance';
+                throw ValidationException::withMessages(['quantity'=>$label.'. Use the dedicated stock/ROT editing workflow; this screen edits prices only.']);
+            }
+            // Historical GST ambiguity guard: invoices and older Job Cards may
+            // store gross line totals with GST already embedded. A previous
+            // zero header GST plus non-zero line GST does NOT prove exclusive
+            // rates. Do not reapply 18% to untouched historical lines.
+            $allLines=DB::table('job_card_parts')->where('job_card_id',$job)->get(['total','gst_percent'])
+                ->concat(DB::table('job_card_labour')->where('job_card_id',$job)->get(['total','gst_percent']));
+            $taxableLines=$allLines->filter(fn($ln)=>(float)($ln->total??0)>0
+                && (float)($ln->gst_percent??0)>0);
+            if((float)($card->gst_total??0)<0.005 && $taxableLines->isNotEmpty()){
+                throw ValidationException::withMessages(['rate'=>'Historical Job Card GST basis is ambiguous: existing amount may ALREADY INCLUDE GST. Do not add GST again. Tax-basis reconciliation must be completed before changing this Job Card. No values saved.']);
             }
             // JC pricing amount edit does not touch purchase settlements or ROT session clocks.
             // Purchase/OSL payment guards belong only in updateOsl(), not this method.
