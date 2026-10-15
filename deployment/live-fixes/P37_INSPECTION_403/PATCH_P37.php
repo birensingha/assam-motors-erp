@@ -46,7 +46,10 @@ BLADE;
 $newReview=<<<'BLADE'
 {{-- P37_INSPECTION_REPORT_STAFF_READONLY: technician report GET checks own Staff ID in StaffPortalController. --}}
 @php
-  $p37TechnicianRead=$p37IsStaff && (int)$p37CurrentUser->staff_id===(int)$job->technician_id;
+  $p37ReportUser=auth()->user();
+  $p37TechnicianRead=$p37ReportUser instanceof \App\Models\ErpAuthUser && $p37ReportUser->active
+    && $p37ReportUser->isStaff() && (int)$p37ReportUser->staff_id>0
+    && (int)$p37ReportUser->staff_id===(int)$job->technician_id;
 @endphp
 <a class="btn ghost" href="{{ $p37TechnicianRead ? route('staff.inspection-report',$job->id) : route('erp.job-cards.inspection-report',$job->id) }}">Review Manager Inspection</a>
 BLADE;
