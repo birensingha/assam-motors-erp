@@ -5,6 +5,7 @@ on:
       - feature/fix49-financial-edit-controls-20261015
     paths:
       - .github/workflows/fix49-staging-preflight-20261015.yml
+      - 'deployment/live-fixes/FIX49_FINANCIAL_EDIT/INSPECT.sh'
   workflow_dispatch:
 permissions:
   contents: read
