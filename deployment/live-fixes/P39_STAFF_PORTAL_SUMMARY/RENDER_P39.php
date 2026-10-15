@@ -27,6 +27,13 @@ function safeTest($name,callable $fn):void {
  }catch(Throwable $e){
   $file=str_replace(getcwd(),'',$e->getFile());
   echo "P39_RENDER_".$name."_FAIL class=".get_class($e)." file=".$file." line=".$e->getLine()."\n";
+  $prev=$e->getPrevious();
+  for($i=0;$i<3 && $prev;$i++,$prev=$prev->getPrevious()){
+   $line=str_replace(getcwd(),'',$prev->getFile());
+   $msg=preg_replace('/[^A-Za-z0-9_:\- .]/',' ',(string)$prev->getMessage());
+   $msg=substr($msg,0,150);
+   echo "P39_CAUSE class=".get_class($prev)." source=".$line." line=".$prev->getLine()." reason=".$msg."\n";
+  }
   foreach(array_slice($e->getTrace(),0,7) as $t){
    $f=str_replace(getcwd(),'',$t['file']??'');
    echo "TRACE ".$f.':'.($t['line']??0)." fn=".($t['function']??'')."\n";
