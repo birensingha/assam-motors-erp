@@ -249,7 +249,7 @@ final class AdminWorkshopControlPageController extends Controller
                 throw ValidationException::withMessages(['reason'=>'Supplier bill changed elsewhere. Reload before editing.']);
             }
             $cols=$this->cols('workshop_purchases');
-            $rateCol=in_array('vendor_rate',$cols,true)?'vendor_rate':'rate';
+            $rateCol=in_array('unit_cost',$cols,true)?'unit_cost':(in_array('vendor_rate',$cols,true)?'vendor_rate':'rate');
             $qtyCol=in_array('qty',$cols,true)?'qty':'quantity';
             foreach([$qtyCol,$rateCol,'discount_percent','gst_percent'] as $col){
                 if(!in_array($col,$cols,true)) throw ValidationException::withMessages(['reason'=>'Purchase schema mapping incomplete: '.$col]);
@@ -306,20 +306,28 @@ final class AdminWorkshopControlPageController extends Controller
             if($batch){
                 $batchLines=DB::table('workshop_purchases')->where('purchase_batch_no',$batchNo)->get();
                 $batchCols=$this->cols('workshop_purchase_batches');
-                $sumTaxable=0.0;$sumTax=0.0;$sumTotal=0.0;
+                $sumGross=0.0;$sumDiscount=0.0;$sumTaxable=0.0;$sumTax=0.0;$sumTotal=0.0;$sumQty=0.0;
                 foreach($batchLines as $ln){
+                    if(strtoupper((string)($ln->record_status??'ACTIVE'))==='DELETED')continue;
+                    $sumQty+=(float)($ln->qty??0);
+                    $sumGross+=round((float)($ln->qty??0)*(float)($ln->unit_cost??0),2);
+                    $sumDiscount+=round((float)($ln->discount_amount??0),2);
                     $sumTotal+=round((float)$this->value($ln,['total_amount','total','grand_total'],0),2);
                     $sumTaxable+=round((float)$this->value($ln,['taxable_amount','net_amount'],0),2);
                     $sumTax+=round((float)$this->value($ln,['tax_amount','gst_amount'],0),2);
                 }
-                // Only update financial headers with recognized semantics.
+                // Matches inspected Hostinger staging workshop_purchase_batches:
+                // gross_amount, discount_amount, taxable_amount, gst_amount,
+                // pre_round_total, round_off and grand_total.
                 $fields=$this->filtered('workshop_purchase_batches',[
-                    'subtotal'=>round($sumTaxable,2),
-                    'taxable_total'=>round($sumTaxable,2),
-                    'gst_total'=>round($sumTax,2),
-                    'tax_total'=>round($sumTax,2),
+                    'item_count'=>$batchLines->where('record_status','!=','DELETED')->count(),
+                    'total_qty'=>round($sumQty,2),
+                    'gross_amount'=>round($sumGross,2),
+                    'discount_amount'=>round($sumDiscount,2),
+                    'taxable_amount'=>round($sumTaxable,2),
+                    'gst_amount'=>round($sumTax,2),
+                    'pre_round_total'=>round($sumTotal,2),
                     'grand_total'=>round($sumTotal+(float)($batch->round_off??0),2),
-                    'total_amount'=>round($sumTotal+(float)($batch->round_off??0),2),
                     'updated_at'=>now(),
                 ]);
                 $availableTotals=array_intersect(['grand_total','total_amount'],array_keys($fields));
