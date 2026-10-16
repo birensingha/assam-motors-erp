@@ -1,4 +1,5 @@
 name: Deploy Permanent ERP Admin and Staff Browser Session Isolation
+# Retry after improving Laravel middleware-alias assertions; previous attempt rolled back.
 on:
   push:
     branches: [main]
