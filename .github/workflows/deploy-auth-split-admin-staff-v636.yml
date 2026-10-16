@@ -13,11 +13,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     env:
-      SSH_HOST: \${{ secrets.STAGING_SSH_HOST }}
-      SSH_PORT: \${{ secrets.STAGING_SSH_PORT }}
-      SSH_USER: \${{ secrets.STAGING_SSH_USER }}
-      SSH_PRIVATE_KEY: \${{ secrets.STAGING_SSH_PRIVATE_KEY }}
-      SSH_PASSWORD: \${{ secrets.STAGING_SSH_PASSWORD }}
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
       APP_ROOT: /home/u956497103/domains/assammotors.com/assam-erp-staging
     steps:
       - uses: actions/checkout@v4
@@ -53,7 +53,7 @@ jobs:
             export SSHPASS="$SSH_PASSWORD"
             CMD=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "$SSH_PORT")
           fi
-          "\${CMD[@]}" "$SSH_USER@$SSH_HOST" "bash -s -- '$APP_ROOT'" \
+          "${CMD[@]}" "$SSH_USER@$SSH_HOST" "bash -s -- '$APP_ROOT'" \
             < deployment/live-fixes/FIX_AUTH_WEB_GUARDS_20261016/APPLY.sh
       - name: Verify staging HTTPS still directs unauthenticated Admin and Staff separately
         shell: bash
