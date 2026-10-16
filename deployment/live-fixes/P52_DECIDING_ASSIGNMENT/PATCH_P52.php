@@ -88,20 +88,15 @@ BLADE
  p52once($s,'if ($changed) {',
             "/* P52_ALWAYS_AUDIT_EXPLICIT_SAVE: Admin confirms even existing JC technician */\n        {",
             'assignment_explicit_audit');
- $old=<<<'PHP'
-        if ((int)$card->technician_id !== (int)$staff->id) {
-            throw ValidationException::withMessages(['technician_id'=>'Assign the Deciding Technician first so the technician can review the Inspection Report before completing Diagnosis.']);
-        }
-PHP;
- $new=<<<'PHP'
-        if ((int)$card->technician_id !== (int)$staff->id ||
-            !JobCardDiagnosisEvent::query()->where('job_card_id',$job)
-                ->where('event_type','DECIDING_TECHNICIAN_ASSIGNED')
-                ->where('technician_id',$staff->id)->exists()) {
-            throw ValidationException::withMessages(['technician_id'=>'Admin must explicitly Assign the Deciding Technician after Inspection; selecting the technician during JC creation is not a decision assignment.']);
-        }
-PHP;
- p52once($s,$old,$new,'legacy_diagnosis_guard');
+ p52once($s,'if ((int)$card->technician_id !== (int)$staff->id) {',
+   "if ((int)\$card->technician_id !== (int)\$staff->id ||\n".
+   "            !JobCardDiagnosisEvent::query()->where('job_card_id',\$job)\n".
+   "              ->where('event_type','DECIDING_TECHNICIAN_ASSIGNED')\n".
+   "              ->where('technician_id',\$staff->id)->exists()) {",
+   'legacy_diagnosis_guard');
+ p52once($s,'Assign the Deciding Technician first so the technician can review the Inspection Report before completing Diagnosis.',
+         'Admin must explicitly select the Deciding Technician after Inspection; a Job Card technician is not automatically the Deciding Officer.',
+         'legacy_diagnosis_guard_message');
  unset($s);
  $p=$names[3];$s=&$updated[$p];
  p52once($s,'<div class="deciding-tech-box">',<<<'BLADE'
