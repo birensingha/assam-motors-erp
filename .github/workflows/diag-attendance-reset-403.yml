@@ -43,6 +43,28 @@ jobs:
           grep -RIn --include='*.php' -E 'function reset\(|attendance.*reset|function admin\(' app/Http/Controllers/Web routes | head -90 || true
           echo "== GUARD / ROLE CLASS REFERENCES =="
           grep -RIn --include='*.php' -E '(isAdmin|isSupervisor|isStaff|hasPermission|class .*Middleware)' app/Http/Controllers/Web app/Http/Middleware app/Models | head -85 || true
+          echo "== FULL SMALL MODEL AND ADMIN MIDDLEWARE =="
+          sed -n '1,125p' app/Models/ErpAuthUser.php
+          sed -n '1,125p' app/Http/Middleware/EnsureErpAdmin.php
+          echo "== WEB ADMIN LOGIN AND STAFF LOGIN =="
+          sed -n '1,135p' app/Http/Controllers/Web/WebAuthController.php | grep -vEi '(password|secret|token)'
+          sed -n '1,118p' app/Http/Controllers/Web/StaffWebAuthController.php | grep -vEi '(password|secret|token)'
+          echo "== RESET CONTROLLER FILE METHOD CONTEXT =="
+          grep -nE '(function resetAttendance|function admin\\(|function attendance|resetAttendance)' app/Http/Controllers/Web/AdminNativeModuleController.php
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('app/Http/Controllers/Web/AdminNativeModuleController.php')
+          rows=p.read_text().splitlines()
+          marks=[i for i,l in enumerate(rows) if 'function resetAttendance' in l or 'private function admin(' in l]
+          for i in marks:
+            print('CONTROLLER_LINES',i+1)
+            for j in range(max(0,i-6),min(len(rows),i+90)):
+              if j>i+5 and 'function ' in rows[j] and rows[j].lstrip().startswith(('public','private','protected')):break
+              v=rows[j]
+              if 'password' not in v.lower() and 'secret' not in v.lower() and 'token' not in v.lower():print(str(j+1)+': '+v[:195])
+          PY
+          echo "== SESSION AUTH CONFIG SOURCE =="
+          grep -nE '(providers|guards|driver|model)' config/auth.php | head -75
           REMOTE
       - if: always()
         run: rm -f ~/.ssh/diagnose
