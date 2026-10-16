@@ -38,7 +38,7 @@ function scanFiles(string $root,array $dirs):array {
 }
 state('MODE','READ_ONLY_METADATA_NO_BUSINESS_ROWS');
 state('STAGING_ARTISAN','YES');
-$docroot=dirname(dirname($root)).'/public_html';
+$docroot=dirname($root).'/public_html'; // Hostinger domain docroot adjacent to staging Laravel app
 $candidates=[
  $root.'/public/legacy',
  $docroot.'/staging/legacy',
@@ -46,6 +46,25 @@ $candidates=[
  $docroot.'/admin'
 ];
 foreach($candidates as $idx=>$loc)state('LEGACY_PATH_'.$idx,is_dir($loc)?'DIRECTORY_PRESENT':'NOT_FOUND');
+foreach(['workshop','admin','staging/legacy','staging/legacy/admin','staging/legacy/workshop'] as $legacySubdir){
+ $dir=$docroot.'/'.$legacySubdir;
+ if(!is_dir($dir)){state('LEGACY_MODULE_AREA',$legacySubdir.'|NOT_FOUND');continue;}
+ $found=[];
+ try{
+  $it=new RecursiveIteratorIterator(new RecursiveDirectoryIterator($dir,FilesystemIterator::SKIP_DOTS));
+  $seen=0;
+  foreach($it as $file) {
+   if(!$file->isFile() || ++$seen>3000)break;
+   if(!preg_match('~\\.(?:php|html)$~i',$file->getFilename()))continue;
+   $rel=substr($file->getPathname(),strlen($dir)+1);
+   if(preg_match('~(?:customers?|vehicles?|job.?cards?|estimates?|parts?|purchases?|payments?|receipts?|invoices?|vendors?|staff|attendance|stock|rot|inspection|expense|account|dashboard|setting|login)~i',$rel))
+     $found[]=str_replace(['=',"\\n"],['_','_'],$rel);
+   if(count($found)>=85)break;
+  }
+ }catch(Throwable $e){state('LEGACY_MODULE_SCAN_ERROR',get_class($e));}
+ state('LEGACY_MODULE_AREA',$legacySubdir.'|PRESENT|MODULE_PAGES='.count($found));
+ foreach($found as $p)state('LEGACY_PAGE',$legacySubdir.'/'.$p);
+}
 $routeStats=['total'=>0,'erp'=>0,'admin'=>0,'legacy'=>0,'staff'=>0,'api'=>0];
 $legacyRoutes=[];$adminRoutes=[];$erpRoutes=[];
 foreach(Route::getRoutes() as $r){
