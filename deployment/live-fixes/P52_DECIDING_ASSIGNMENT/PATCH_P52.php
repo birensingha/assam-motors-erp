@@ -161,7 +161,19 @@ PHP;
  foreach($names as $i=>$file){
   echo 'P52_CHECKING_FILE='.basename($file)."\n";
   if(str_ends_with($file,'.blade.php')){
-   token_get_all(app('blade.compiler')->compileString($updated[$file]),TOKEN_PARSE);
+   $compiled=app('blade.compiler')->compileString($updated[$file]);
+   try{token_get_all($compiled,TOKEN_PARSE);}
+   catch(ParseError $parseError){
+     try{token_get_all(app('blade.compiler')->compileString($original[$file]),TOKEN_PARSE);
+         echo "P52_ORIGINAL_TEMPLATE_PARSE=PASS\n";
+     }catch(ParseError $oldError){echo "P52_ORIGINAL_TEMPLATE_PARSE=FAIL_".$oldError->getMessage()."\n";}
+     echo "P52_UPDATED_TEMPLATE_PARSE_ERROR=".$parseError->getMessage()."\n";
+     $line=$parseError->getLine();
+     $compiledLines=explode("\n",$compiled);
+     for($i=max(0,$line-6);$i<min(count($compiledLines),$line+4);$i++)
+       echo "P52_COMPILED_NEAR=".($i+1)." ".substr(trim($compiledLines[$i]),0,260)."\n";
+     throw $parseError;
+   }
   }else{token_get_all($updated[$file],TOKEN_PARSE);}
  }
  echo "P52_PREFLIGHT_SOURCE_AND_BLADE_COMPILE_PASS\n";
