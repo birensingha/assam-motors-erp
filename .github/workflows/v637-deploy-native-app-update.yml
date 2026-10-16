@@ -59,7 +59,7 @@ jobs:
             SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$PORT")
           fi
           "${SCP[@]}" /tmp/v637-native-bundle.tgz "$USERNAME@$HOST:$TEMP_DIR.tgz"
-          "${SSH[@]}" "$USERNAME@$HOST" "mkdir -p '$TEMP_DIR' && tar -xzf '$TEMP_DIR.tgz' -C '$TEMP_DIR' && bash '$TEMP_DIR/APPLY.sh' '\$HOME/domains/assammotors.com/assam-erp-staging'; result=\$?; rm -rf '$TEMP_DIR' '$TEMP_DIR.tgz'; exit \$result"
+          "${SSH[@]}" "$USERNAME@$HOST" "mkdir -p '$TEMP_DIR' && tar -xzf '$TEMP_DIR.tgz' -C '$TEMP_DIR' && bash '$TEMP_DIR/APPLY.sh' '/home/u956497103/domains/assammotors.com/assam-erp-staging'; result=\$?; rm -rf '$TEMP_DIR' '$TEMP_DIR.tgz'; exit \$result"
       - name: Verify unauthenticated HTTP denial, no public release leak
         shell: bash
         run: |
