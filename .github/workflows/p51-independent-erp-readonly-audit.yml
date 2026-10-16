@@ -2,7 +2,9 @@ name: P51 Legacy Independence and Admin Separation — Readonly Staging Audit
 on:
   push:
     branches: [feature/p51-legacy-independence-audit-20261016]
-    paths: ['.github/workflows/p51-independent-erp-readonly-audit.yml']
+    paths:
+      - '.github/workflows/p51-independent-erp-readonly-audit.yml'
+      - 'deployment/live-fixes/P51_STANDALONE_AUDIT/READONLY_AUDIT.php'
   workflow_dispatch:
 permissions:
   contents: read
