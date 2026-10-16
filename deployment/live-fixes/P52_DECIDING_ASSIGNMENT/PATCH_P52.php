@@ -159,6 +159,7 @@ PHP;
   if(!\Illuminate\Support\Facades\Route::has($route))throw new RuntimeException('P52_MISSING_ROUTE_'.$route);
  }
  foreach($names as $i=>$file){
+  echo 'P52_CHECKING_FILE='.basename($file)."\n";
   if(str_ends_with($file,'.blade.php')){
    token_get_all(app('blade.compiler')->compileString($updated[$file]),TOKEN_PARSE);
   }else{token_get_all($updated[$file],TOKEN_PARSE);}
