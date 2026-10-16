@@ -43,6 +43,12 @@ jobs:
           find app/Http/Controllers -iname '*Inspect*' -o -iname '*JobCard*' | head -45
           echo "== LEGACY STAFF API FILES =="
           find "$HOME/domains/assammotors.com/public_html/staging" "$ROOT/public" -maxdepth 5 -name 'staff-inspection*.php' -print 2>/dev/null | head -25 || true
+          echo "== NATIVE STAFF INSPECTION READ METHOD =="
+          php -r '$p="app/Http/Controllers/Api/V1/StaffExtraController.php";$s=file($p);foreach($s as $i=>$l){if(preg_match("/function (inspections|inspection|saveInspection)\\s*\\(/",$l)){echo "METHOD: $p LINE ".($i+1)."\n";for($j=$i;$j<min(count($s),$i+100);$j++){if($j>$i && preg_match("/^    (public|private|protected) function /",$s[$j]))break; echo ($j+1).": ".substr($s[$j],0,220);}}}' | head -185
+          echo "== WEB ADMIN ASSIGNMENT IMPLEMENTATION =="
+          php -r '$p="app/Http/Controllers/Web/AdminInspectionPageController.php";$s=file($p);foreach($s as $i=>$l){if(preg_match("/function .*assign/i",$l)){echo "METHOD: $p LINE ".($i+1)."\n";for($j=$i;$j<min(count($s),$i+130);$j++){if($j>$i && preg_match("/^    (public|private|protected) function /",$s[$j]))break; echo ($j+1).": ".substr($s[$j],0,220);}}}' | head -165
+          echo "== LEGACY STAFF INSPECTION PHP SELECT/GATE REFS =="
+          grep -nEi "SELECT |FROM |staff_id|assigned|job_card|inspections|response|json_encode|staff_code|API" "$HOME/domains/assammotors.com/public_html/staging/legacy/api/staff-inspections.php" | head -115 || true
           echo "== TABLE STRUCTURE (COLUMNS ONLY) =="
           php artisan tinker --execute='foreach(["job_cards","inspections","job_card_inspections","staff","erp_auth_users"] as $t){if(\\Illuminate\\Support\\Facades\\Schema::hasTable($t)){echo $t." ".implode(",",\\Illuminate\\Support\\Facades\\Schema::getColumnListing($t))."\n";}}' 2>/dev/null | head -15 || true
           REMOTE
