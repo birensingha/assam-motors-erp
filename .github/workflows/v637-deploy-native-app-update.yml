@@ -1,0 +1,72 @@
+name: Deploy v6.3.7 Native Signed App Update Metadata for All Roles
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/v637-deploy-native-app-update.yml"
+      - "deployment/live-fixes/V637_ROLE_UPDATE_NATIVE_API/**"
+permissions: { contents: read }
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'fix/v637-role-update-admin-assigned-rot-20261016'
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Check targeted updater controller and guarded deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n deployment/live-fixes/V637_ROLE_UPDATE_NATIVE_API/APPLY.sh
+          php -l deployment/live-fixes/V637_ROLE_UPDATE_NATIVE_API/NativeAppUpdateController.php
+          grep -Fq 'auth/logout' deployment/live-fixes/V637_ROLE_UPDATE_NATIVE_API/APPLY.sh
+      - name: Deploy to Hostinger staging via existing secure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/v637
+            chmod 600 ~/.ssh/v637
+            SSH=(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -i ~/.ssh/v637 -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "$PORT")
+          fi
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          TEMP_DIR="/tmp/v637-native-update-${GITHUB_RUN_ID}"
+          # Stage authenticated PHP only in the Laravel project folder.
+          tar -czf /tmp/v637-native-bundle.tgz -C deployment/live-fixes/V637_ROLE_UPDATE_NATIVE_API APPLY.sh NativeAppUpdateController.php
+          if [ -n "$KEY" ]; then
+            SCP=(scp -o StrictHostKeyChecking=accept-new -i ~/.ssh/v637 -P "$PORT")
+          else
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$PORT")
+          fi
+          "${SCP[@]}" /tmp/v637-native-bundle.tgz "$USERNAME@$HOST:$TEMP_DIR.tgz"
+          "${SSH[@]}" "$USERNAME@$HOST" "mkdir -p '$TEMP_DIR' && tar -xzf '$TEMP_DIR.tgz' -C '$TEMP_DIR' && bash '$TEMP_DIR/APPLY.sh' '\$HOME/domains/assammotors.com/assam-erp-staging'; result=\$?; rm -rf '$TEMP_DIR' '$TEMP_DIR.tgz'; exit \$result"
+      - name: Verify unauthenticated HTTP denial, no public release leak
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=$(curl -sS --max-time 25 -o /tmp/v637-response -w '%{http_code}' 'https://staging.assammotors.com/api/v1/app-update?platform=android&version_code=60306')
+          echo "NATIVE_SIGNED_UPDATE_UNAUTH_HTTP=$status"
+          test "$status" = 401 || test "$status" = 403
+          echo 'V637_AUTHENTICATED_APP_UPDATE_SECURITY=VERIFIED'
+      - if: always()
+        run: rm -f ~/.ssh/v637 /tmp/v637-native-bundle.tgz /tmp/v637-response
