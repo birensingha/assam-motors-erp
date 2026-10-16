@@ -152,6 +152,47 @@ body.erp-app :is(.erp-topbar,.erp-sidebar,.page-shell) *{box-sizing:border-box}
  body.erp-app .page-shell{padding:16px 12px 36px!important}
  body.erp-app .page-shell>.page-head{align-items:flex-start}
 }
+/* Real 390px Job Cards overflow source: .jc-stats and .jc-register
+   inherited 976px min-content width from multi-column desktop grids.
+   Keep the table horizontally scrollable INSIDE its card, not the document. */
+@media(max-width:700px){
+ body.erp-app .page-shell .jc-stats,
+ body.erp-app .page-shell .jc-register{
+   width:100%!important;max-width:100%!important;min-width:0!important;
+   box-sizing:border-box!important
+ }
+ body.erp-app .page-shell .jc-stats{
+   display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr))!important;
+   gap:9px!important
+ }
+ body.erp-app .page-shell .jc-stats .jc-stat{
+   width:auto!important;max-width:100%!important;min-width:0!important;
+   padding:10px!important;overflow-wrap:anywhere
+ }
+ body.erp-app .page-shell .jc-register .jc-head{
+   display:flex!important;flex-wrap:wrap!important;align-items:center!important;
+   width:100%!important;min-width:0!important;max-width:100%!important;gap:10px!important
+ }
+ body.erp-app .page-shell .jc-register .jc-actions{
+   max-width:100%!important;min-width:0!important;flex-wrap:wrap!important
+ }
+ body.erp-app .page-shell .jc-register .jc-filter{
+   display:grid!important;grid-template-columns:minmax(0,1fr)!important;
+   width:100%!important;max-width:100%!important;min-width:0!important;
+   gap:9px!important
+ }
+ body.erp-app .page-shell .jc-register .jc-filter :is(input,select,button){
+   display:block!important;width:100%!important;max-width:100%!important;
+   min-width:0!important;box-sizing:border-box!important
+ }
+ body.erp-app .page-shell .jc-register>div:not(.jc-head){
+   width:100%!important;max-width:100%!important;min-width:0!important;
+   overflow-x:auto!important;-webkit-overflow-scrolling:touch
+ }
+ body.erp-app .page-shell .jc-register .jc-table{
+   min-width:900px!important;width:max-content!important;max-width:none!important
+ }
+}
 @media(prefers-reduced-motion:reduce){
  body.erp-app .erp-sidebar,body.erp-app .am50-overlay,body.erp-app .am50-top-shortcuts a{transition:none!important}
 }
