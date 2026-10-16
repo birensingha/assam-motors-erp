@@ -18,5 +18,12 @@ try{
      return {body:rect('body'),sidebar:rect('.erp-sidebar'),topbar:rect('.erp-topbar'),main:rect('.page-shell'),nav:rect('.sidebar-nav'),links:document.querySelectorAll('.sidebar-nav a').length,financeLinks:[...document.querySelectorAll('.sidebar-nav a')].filter(x=>/Voucher Edit|Vendor Database|OSL Purchases|JC Amount/.test(x.textContent)).length,overflowX:document.documentElement.scrollWidth-innerWidth,styles:[...document.querySelectorAll('link[rel=stylesheet]')].map(x=>x.getAttribute('href')).map(h=>h&&h.split('?')[0])};
    });
    console.log('FIX50_BASELINE '+width+' '+JSON.stringify(m));
+   if(width===390){
+     const candidates=await page.evaluate(()=>[...document.querySelectorAll('main *')]
+      .map(e=>{const r=e.getBoundingClientRect();return {tag:e.tagName.toLowerCase(),cls:String(e.className||'').slice(0,110),width:Math.round(r.width),right:Math.round(r.right),scroll:e.scrollWidth,overflow:getComputedStyle(e).overflowX}})
+      .filter(o=>o.right>innerWidth+25 && o.width>200)
+      .sort((a,b)=>b.right-a.right).slice(0,22));
+     console.log('FIX50_MOBILE_OVERRUN_NODES '+JSON.stringify(candidates));
+   }
  }
 }finally{await browser.close()}
