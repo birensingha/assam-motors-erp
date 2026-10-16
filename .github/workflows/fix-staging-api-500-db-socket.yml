@@ -1,0 +1,77 @@
+name: Repair Staging App Intermittent MySQL 500 With Local Unix Socket
+# Retry after improving Laravel middleware-alias assertions; previous attempt rolled back.
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/fix-staging-api-500-db-socket.yml"]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: /home/u956497103/domains/assammotors.com/assam-erp-staging
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate repo-backed deployment patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f deployment/live-fixes/FIX_STAGING_MYSQL_SOCKET_20261016/APPLY.sh
+          bash -n deployment/live-fixes/FIX_STAGING_MYSQL_SOCKET_20261016/APPLY.sh
+          grep -q "STAGING_MYSQL_SOCKET_PATCH=DEPLOYED_AND_TESTED" deployment/live-fixes/FIX_STAGING_MYSQL_SOCKET_20261016/APPLY.sh
+      - name: Configure Hostinger staging access
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/dbsocket
+            chmod 600 ~/.ssh/dbsocket
+          else
+            test -n "$SSH_PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Apply exact-match source patch and verify Laravel guards on Hostinger
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            CMD=(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -i ~/.ssh/dbsocket -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            CMD=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "$SSH_PORT")
+          fi
+          "${CMD[@]}" "$SSH_USER@$SSH_HOST" "bash -s -- '$APP_ROOT'" \
+            < deployment/live-fixes/FIX_STAGING_MYSQL_SOCKET_20261016/APPLY.sh
+      - name: Verify staging HTTPS and protected Native API route are available
+        shell: bash
+        run: |
+          set -euo pipefail
+          code_admin="$(curl -sS -L --max-time 18 -o /tmp/erp-login -w '%{http_code}' https://staging.assammotors.com/erp/login)"
+          code_staff="$(curl -sS -L --max-time 18 -o /tmp/staff-login -w '%{http_code}' https://staging.assammotors.com/staff/login)"
+          echo "ADMIN_LOGIN_HTTP=$code_admin"
+          echo "STAFF_LOGIN_HTTP=$code_staff"
+          test "$code_admin" = 200
+          test "$code_staff" = 200
+          if grep -q 'Admin/Supervisor permission required' /tmp/erp-login; then exit 1; fi
+          echo "STAGING_BROWSER_LOGIN_ENTRYPOINTS=AVAILABLE"
+          native_status="$(curl -sS --max-time 18 -o /tmp/native-protected -w '%{http_code}' 'https://staging.assammotors.com/api/v1/attendance/today')"
+          echo "NATIVE_ATTENDANCE_UNAUTH_HTTP=$native_status"
+          test "$native_status" = 401 || test "$native_status" = 403
+          echo "STAGING_NATIVE_API_PROTECTED_ROUTE=AVAILABLE"
+      - name: Clean temporary runner SSH material
+        if: always()
+        run: rm -f ~/.ssh/dbsocket /tmp/erp-login /tmp/staff-login
