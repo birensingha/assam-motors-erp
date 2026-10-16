@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/p52-deciding-assignment-staging-fix.yml'
       - 'deployment/live-fixes/P52_DECIDING_ASSIGNMENT/PATCH_P52.php'
+      - 'deployment/live-fixes/P52_DECIDING_ASSIGNMENT/QA_P52.mjs'
 permissions:
   contents: read
 concurrency:
