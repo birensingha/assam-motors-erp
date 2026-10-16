@@ -2,7 +2,9 @@ name: P52 Deciding Technician Assignment — STAGING Readonly Audit
 on:
   push:
     branches: [feature/p51-legacy-independence-audit-20261016]
-    paths: ['.github/workflows/p52-deciding-assignment-readonly.yml']
+    paths:
+      - '.github/workflows/p52-deciding-assignment-readonly.yml'
+      - 'deployment/live-fixes/P52_DECIDING_ASSIGNMENT/AUDIT_P52.php'
 permissions:
   contents: read
 jobs:
