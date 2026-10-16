@@ -48,24 +48,28 @@ jobs:
           php -l "$ROOT/app/Http/Controllers/Api/V1/NativeAppUpdateController.php"
           cd "$ROOT"
           echo 'V637_NATIVE_AUTHORIZATION_AND_ASSIGNED_ROT_SELF_TEST'
-          php artisan tinker --execute='
-          $u=\App\Models\ErpAuthUser::query()->where("staff_id",4)->where("role","admin")->firstOrFail();
-          if(!$u->active || !$u->isStaff()){throw new \RuntimeException("AM5077 linked Admin identity not active");}
-          $req=\Illuminate\Http\Request::create("/api/v1/app-update","GET",["platform"=>"android","version_code"=>60306]);
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $u=\App\Models\ErpAuthUser::query()->where('staff_id',4)->where('role','admin')->firstOrFail();
+          if(!$u->active || !$u->isStaff())throw new \RuntimeException('Linked Admin identity not active');
+          $req=\Illuminate\Http\Request::create('/api/v1/app-update','GET',['platform'=>'android','version_code'=>60306]);
           $req->setUserResolver(fn()=>$u);
-          $resp=app(\App\Http\Controllers\Api\V1\NativeAppUpdateController::class)->index($req);
+          $resp=$app->make(\App\Http\Controllers\Api\V1\NativeAppUpdateController::class)->index($req);
           $data=json_decode($resp->getContent(),true);
-          if(($data["ok"]??false)!==true || ($data["latest"]["version_code"]??0)<60306 || !preg_match("/^[a-f0-9]{64}$/",($data["latest"]["sha256"]??""))){throw new \RuntimeException("Authenticated native signed update metadata check failed");}
-          $url=$data["latest"]["download_url"]??"";
-          if(!str_starts_with($url,"https://staging.assammotors.com/legacy/api/staff-app-download.php?file=") || !str_contains($url,"&expires=")||!str_contains($url,"&sig=")){throw new \RuntimeException("Official signed download URL invalid");}
+          if(($data['ok']??false)!==true || ($data['latest']['version_code']??0)<60306 || !preg_match('/^[a-f0-9]{64}$/',$data['latest']['sha256']??''))throw new \RuntimeException('Native signed update metadata failed');
+          $url=$data['latest']['download_url']??'';
+          if(!str_starts_with($url,'https://staging.assammotors.com/legacy/api/staff-app-download.php?file=') || !str_contains($url,'&expires=') || !str_contains($url,'&sig='))throw new \RuntimeException('Official signed download URL invalid');
           echo "ADMIN_NATIVE_UPDATE_SIGNED_URL=VERIFIED\n";
-          $rots=app(\App\Services\StaffDashboardService::class)->rots(4);
-          if(!collect($rots)->contains(fn($r)=>(($r["rot_code"]??"")==="ROT-DIA-007" && ($r["job_card_no"]??"")==="JC-20261016-00036"))){throw new \RuntimeException("AM5077 personal ROT not visible through linked Staff service");}
-          $rotResp=app(\App\Http\Controllers\Api\V1\StaffDashboardController::class)->rots($req,app(\App\Services\StaffDashboardService::class));
-          $nativeRows=json_decode($rotResp->getContent(),true)["rots"]??[];
-          if(!collect($nativeRows)->contains(fn($r)=>(($r["rot_code"]??"")==="ROT-DIA-007" && ($r["job_card_no"]??"")==="JC-20261016-00036"))){throw new \RuntimeException("Native Admin self-assigned ROT missing");}
+          $rots=$app->make(\App\Services\StaffDashboardService::class)->rots(4);
+          if(!collect($rots)->contains(fn($r)=>(($r['rot_code']??'')==='ROT-DIA-007' && ($r['job_card_no']??'')==='JC-20261016-00036')))throw new \RuntimeException('AM5077 personal ROT not visible');
+          $rotResp=$app->make(\App\Http\Controllers\Api\V1\StaffDashboardController::class)->rots($req,$app->make(\App\Services\StaffDashboardService::class));
+          $nativeRows=json_decode($rotResp->getContent(),true)['rots']??[];
+          if(!collect($nativeRows)->contains(fn($r)=>(($r['rot_code']??'')==='ROT-DIA-007' && ($r['job_card_no']??'')==='JC-20261016-00036')))throw new \RuntimeException('Admin native own ROT missing');
           echo "AM5077_NATIVE_MY_ROT_007=VERIFIED\n";
-          '
+          PHP
           cd "$SITE"
           echo 'WAITING_FOR_SHA_VERIFIED_ORIGINAL_SIGNED_V637_APK'
           for attempt in $(seq 1 90);do [ -f "$FILE" ] && break;sleep 10;done
