@@ -1,0 +1,67 @@
+name: FIX50 Readonly ERP Shell Layout Inspection
+on:
+  push:
+    branches: [feature/fix49-financial-edit-controls-20261015]
+    paths: ['.github/workflows/fix50-erp-shell-inspect.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: SSH setup
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+          fi
+      - name: Inspect static Blade layout only (no DB access, no writes)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ];then SSH=(ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          else export SSHPASS="$SSH_PASSWORD"; SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT"); fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "ROOT='$APP_ROOT' bash -s" <<'REMOTE'
+          set -euo pipefail
+          php -r '
+          $f=getenv("ROOT")."/resources/views/layouts/erp.blade.php";
+          if(!is_file($f)){echo "NO_GO_LAYOUT_NOT_FOUND\n";exit(3);}
+          $lines=file($f);
+          echo "FIX50_LAYOUT_SHA256=".hash_file("sha256",$f)." LINES=".count($lines)."\n";
+          echo "FIX50_MARKERS=";
+          foreach(["P34_SIDEBAR_V1","P35_COUNTER_SALES_NATIVE_V1","FIX48_WORKSHOP_DIRECT_CONTROLS"] as $marker)
+             echo $marker.":".(str_contains(file_get_contents($f),$marker)?"YES":"NO")." ";
+          echo "\nFIX50_LAYOUT_ANCHORS_BEGIN\n";
+          $wanted=[];
+          foreach($lines as $i=>$ln){
+            if(preg_match("~<aside\\b|<header\\b|<main\\b|<nav\\b|</nav>|<div class=\\\"nav-group-label|<div class=\\\"topbar|<div class=\\\"sidebar|@yield\\(\\x27content|@yield\\(\\x22content|<body\\b|<style>|</style>|<footer\\b|<div class=\\\"app|<div class=\\\"content|<div class=\\\"page-wrap|<div class=\\\"layout~i",$ln)){
+              for($j=max(0,$i-2);$j<=min(count($lines)-1,$i+3);$j++)$wanted[$j]=true;
+            }
+          }
+          ksort($wanted);
+          $n=0;foreach($wanted as $i=>$_){if($n++>=220)break;
+            $v=trim($lines[$i]);$v=preg_replace("/\\{\\{.*?\\}\\}/","[BLADE]",$v);
+            echo ($i+1)." ".substr($v,0,300)."\n";
+          }
+          echo "FIX50_WORKSHOP_LINKS_BEGIN\n";
+          $fstr=implode("",$lines);$a=strpos($fstr,"<div class=\\\"nav-group-label\\\">WORKSHOP ERP</div>");
+          if($a!==false){$b=strpos($fstr,"</nav>",$a);echo substr($fstr,$a,min(12500,$b-$a))."\n";}
+          echo "FIX50_WORKSHOP_LINKS_END\n";
+          '
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
