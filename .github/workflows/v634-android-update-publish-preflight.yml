@@ -16,16 +16,20 @@ jobs:
       SSH_USER: ${{ secrets.STAGING_SSH_USER }}
       SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
       SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      API_TOKEN: ${{ github.token }}
     steps:
-      - name: Verify configured staging SSH deployment route without exposing credentials
+      - name: Check staging Hostinger SSH and locate existing app updater
         shell: bash
         run: |
           set -euo pipefail
-          if [ -z "$SSH_HOST" ] || [ -z "$SSH_PORT" ] || [ -z "$SSH_USER" ] || { [ -z "$SSH_PRIVATE_KEY" ] && [ -z "$SSH_PASSWORD" ]; }; then
+          if [ -z "$SSH_HOST" ] || [ -z "$SSH_PORT" ] || [ -z "$SSH_USER" ]; then
             echo "STAGING_SSH_CONFIGURED=NO"
             exit 0
           fi
-          echo "STAGING_SSH_CONFIGURED=YES"
+          if [ -z "$SSH_PRIVATE_KEY" ] && [ -z "$SSH_PASSWORD" ]; then
+            echo "STAGING_SSH_CREDENTIAL=ABSENT"
+            exit 0
+          fi
           mkdir -p ~/.ssh
           chmod 700 ~/.ssh
           ssh-keyscan -T 8 -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
@@ -44,83 +48,32 @@ jobs:
           ROOT="$HOME/domains/assammotors.com"
           echo "HOSTINGER_SSH=CONNECTED"
           if [ -d "$ROOT" ]; then echo "DOMAIN_ROOT=EXISTS"; else echo "DOMAIN_ROOT=MISSING"; fi
-          for base in "$ROOT/public_html" "$ROOT/staging/public_html" "$ROOT/staging.assammotors.com/public_html"; do
-            if [ -d "$base" ]; then
-              echo "WEBROOT_CANDIDATE_FOUND=$(basename "$(dirname "$base")")"
-              if [ -e "$base/legacy/api/staff-app-update.php" ]; then
-                echo "UPDATE_FEED_FILE=PRESENT"
-              else
-                echo "UPDATE_FEED_FILE=NOT_FOUND_AT_CANDIDATE"
-              fi
-              if [ -e "$base/updates/staff/latest.json" ]; then
-                echo "LATEST_JSON=PRESENT"
-              else
-                echo "LATEST_JSON=NOT_FOUND_AT_CANDIDATE"
-              fi
-            fi
-          done
-          echo "== READ-ONLY EXISTING UPDATE FILE DISCOVERY =="
-          find "$ROOT" -maxdepth 8 -type f -name 'staff-app-update.php' -print 2>/dev/null | head -12
-          find "$ROOT" -maxdepth 8 -type f -name 'latest.json' -path '*/staff/*' -print 2>/dev/null | head -12
-          echo "== DOMAIN DIRECTORY NAMES =="
-          find "$ROOT" -maxdepth 2 -type d -print 2>/dev/null | head -32
+          echo "UPDATER_FILE_PATHS"
+          find "$ROOT" -maxdepth 8 -type f -name staff-app-update.php -print 2>/dev/null | head -12 || true
+          echo "UPDATE_MANIFEST_PATHS"
+          find "$ROOT" -maxdepth 8 -type f -name latest.json -print 2>/dev/null | head -12 || true
+          echo "TOP_LEVEL_DIRECTORY_PATHS"
+          find "$ROOT" -maxdepth 2 -type d -print 2>/dev/null | head -30 || true
           REMOTE
-      - name: Verify production-signed v6.3.4 cross-repository artifact readability
-        env:
-          API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Test whether ERP runner can read signed Android artifact in sibling repo
         shell: bash
         run: |
           set +e
-          curl -L --max-time 40 --silent --show-error \
-            -H "Authorization: Bearer $API_TOKEN" \
-            -H "Accept: application/vnd.github+json" \
-            -o /tmp/v634-cross.zip \
-            -w "CROSS_REPO_SIGNED_APK_HTTP=%{http_code}\n" \
-            'https://api.github.com/repos/birensingha/assam-motors-staff-app/actions/artifacts/12022694649/zip'
-          if unzip -tq /tmp/v634-cross.zip >/dev/null 2>&1; then
-            echo "CROSS_REPO_SIGNED_APK_ZIP=VERIFIED"
-            unzip -Z -1 /tmp/v634-cross.zip | grep 'apk
-        shell: bash
-        run: |
-          set +e
-          code=$(curl --max-time 12 --silent --show-error --output /tmp/update-response --write-out '%{http_code}' 'https://staging.assammotors.com/legacy/api/staff-app-update.php?platform=android&version_code=60303')
-          echo "LIVE_UPDATE_ENDPOINT_HTTP=$code"
-          if [ "$code" = 200 ]; then
-            python3 - <<'PY'
-          import json
-          try:
-            x=json.load(open('/tmp/update-response'))
-            print("VERSION_ON_SITE="+str(x.get('latest',{}).get('version_code','UNKNOWN')))
-          except Exception:
-            print('INVALID_UPDATE_JSON=yes')
-          PY
-          fi
-      - name: Erase temporary authentication material
-        if: always()
-        shell: bash
-        run: rm -f ~/.ssh/preflight_key /tmp/update-response
- | head -5
+          code=$(curl -L --max-time 35 --silent --show-error -H "Authorization: Bearer $API_TOKEN" -H "Accept: application/vnd.github+json" -o /tmp/cross-v634.zip -w '%{http_code}' 'https://api.github.com/repos/birensingha/assam-motors-staff-app/actions/artifacts/12022694649/zip')
+          echo "CROSS_REPO_ARTIFACT_HTTP=$code"
+          if unzip -tq /tmp/cross-v634.zip >/dev/null 2>&1; then
+            echo "CROSS_REPO_SIGNED_APK=ACCESSIBLE"
           else
-            echo "CROSS_REPO_SIGNED_APK_ZIP=NOT_ACCESSIBLE"
+            echo "CROSS_REPO_SIGNED_APK=INACCESSIBLE"
           fi
-          rm -f /tmp/v634-cross.zip
-      - name: Verify public updater HTTP code from runner network
+          rm -f /tmp/cross-v634.zip
+      - name: Test existing updater response from GitHub runner
         shell: bash
         run: |
           set +e
-          code=$(curl --max-time 12 --silent --show-error --output /tmp/update-response --write-out '%{http_code}' 'https://staging.assammotors.com/legacy/api/staff-app-update.php?platform=android&version_code=60303')
+          code=$(curl --max-time 14 -sS -o /tmp/update-response -w '%{http_code}' 'https://staging.assammotors.com/legacy/api/staff-app-update.php?platform=android&version_code=60303')
           echo "LIVE_UPDATE_ENDPOINT_HTTP=$code"
-          if [ "$code" = 200 ]; then
-            python3 - <<'PY'
-          import json
-          try:
-            x=json.load(open('/tmp/update-response'))
-            print("VERSION_ON_SITE="+str(x.get('latest',{}).get('version_code','UNKNOWN')))
-          except Exception:
-            print('INVALID_UPDATE_JSON=yes')
-          PY
-          fi
-      - name: Erase temporary authentication material
+      - name: Erase temporary credentials
         if: always()
         shell: bash
-        run: rm -f ~/.ssh/preflight_key /tmp/update-response
+        run: rm -f ~/.ssh/preflight_key /tmp/update-response /tmp/cross-v634.zip
