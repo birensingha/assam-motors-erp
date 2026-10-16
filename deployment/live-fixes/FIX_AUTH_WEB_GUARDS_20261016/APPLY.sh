@@ -111,7 +111,7 @@ try:
     ]
     for uri,expected in pairs:
         r=next((v for v in routes if v.get('uri')==uri),None)
-        if r is None or not any(expected==m for m in r.get('middleware',[])):
+        if r is None or not any(str(m)==expected or str(m).endswith('\\Authenticate:'+expected.split(':',1)[1]) for m in r.get('middleware',[])):
             raise RuntimeError("GUARDED_ROUTE_MISSING: "+uri+" "+expected)
         print("ROUTE_GUARD_OK="+uri+" "+expected)
     # Staff linkage alone must never confer Admin privileges.
