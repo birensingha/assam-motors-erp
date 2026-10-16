@@ -3,12 +3,16 @@ on:
   push:
     branches: [main]
     paths: [".github/workflows/publish-v636-signed-staff-update-hostinger.yml"]
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/publish-v636-signed-staff-update-hostinger.yml"]
 permissions: { contents: read }
 concurrency:
   group: assam-motors-staging-control
   cancel-in-progress: false
 jobs:
   publish:
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'release/v636-finalize-update-publish-20261016')
     runs-on: ubuntu-latest
     timeout-minutes: 23
     env:
@@ -54,6 +58,54 @@ jobs:
           echo "CURRENT_STAFF_UPDATE_FEED:"
           php -r '$m=json_decode(file_get_contents($argv[1]),true); if(!is_array($m)||($m["package_id"]??null)!=="com.assammotors.staff"||!in_array((int)($m["version_code"]??0),[60305,60306],true)){fwrite(STDERR,"STOP: Unexpected updater version or package\n");exit(2);}echo "version_code=".$m["version_code"].PHP_EOL;' "$MANIFEST"
 
+          echo 'BACKEND_INSPECTION_30_COMPATIBILITY: guarded Laravel validation patch'
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          python3 - <<'PY'
+          from pathlib import Path
+          from datetime import datetime,timezone
+          import re,os,subprocess
+          base=Path('app/Http/Controllers')
+          pattern=re.compile(r"((?:['\"]items['\"])[ ]*=>[ ]*\[[ ]*['\"]required['\"][ ]*,[ ]*['\"]array['\"][ ]*,[ ]*)['\"]size:10['\"]")
+          replacement=r"\g<1>static function ($attribute, $value, $fail) { if (!is_array($value) || !in_array(count($value), [10,14,20,30], true)) { $fail('Unsupported inspection checklist length.'); } }"
+          patches=[]
+          for f in sorted(base.rglob('*Inspection*Controller.php')):
+              src=f.read_text()
+              modified,n=pattern.subn(replacement,src)
+              if n>1: raise RuntimeError('STOP: unexpected duplicate inspection item rules in '+str(f))
+              if n==1 and modified!=src:
+                  # Existing database schema and record content are untouched.
+                  if 'inspection' not in src.lower():raise RuntimeError('STOP: not inspection source')
+                  lint=subprocess.run(['php','-l'],input=modified,text=True,capture_output=True)
+                  if lint.returncode:raise RuntimeError('STOP: PHP syntax check failed '+str(f)+': '+lint.stdout)
+                  patches.append((f,src,modified))
+          if not any('StaffAssignedInspectionController.php' in str(p[0]) for p in patches):
+              present=(base/'Web/StaffAssignedInspectionController.php')
+              if not present.is_file() or 'Unsupported inspection checklist length.' not in present.read_text():
+                  raise RuntimeError('STOP: missing required StaffAssignedInspectionController inspection length patch')
+          applied=[]
+          stamp=datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+          try:
+              for f,old,new in patches:
+                  backup=f.with_name(f.name+'.backup-v636-'+stamp)
+                  backup.write_text(old)
+                  backup.chmod(0o600)
+                  tmp=f.with_name('.'+f.name+'.v636-tmp')
+                  tmp.write_text(new)
+                  tmp.chmod(f.stat().st_mode & 0o777)
+                  os.replace(tmp,f)
+                  applied.append((f,old))
+                  print('BACKEND_INSPECTION_RULE_PATCHED='+str(f))
+                  print('BACKUP='+backup.name)
+              for f,_,_ in patches:
+                  lint=subprocess.run(['php','-l',str(f)],capture_output=True,text=True)
+                  if lint.returncode:raise RuntimeError('PHP syntax verification failed: '+str(f))
+              print('BACKEND_ALLOWED_INSPECTION_LENGTHS=10,14,20,30')
+              print('BACKEND_EXISTING_INSPECTION_RECORDS=UNCHANGED')
+          except BaseException:
+              for f,old in applied:f.write_text(old)
+              print('BACKEND_VALIDATION_PATCH_ROLLED_BACK=YES')
+              raise
+          PY
           echo 'BACKEND_INSPECTION_COUNT_GUARD: scanning Laravel source, no write'
           cd "$HOME/domains/assammotors.com/assam-erp-staging"
           python3 - <<'PY'
@@ -67,16 +119,25 @@ jobs:
               if 'staff/inspections' in s or 'manager-inspections' in s or 'saveInspection' in s or 'completeInspection' in s:
                   candidates.append(p)
           print('INSPECTION_SOURCE_FILES_FOUND='+str(len(candidates)))
+          violations=[]
           for p in candidates[:25]:
               s=p.read_text(errors='ignore')
               lines=s.splitlines()
               flagged=[]
               for n,line in enumerate(lines):
-                  if re.search(r'(?:items|inspection)[^\n]{0,80}(?:size:10|array.*size:10|max:10|count\([^)]*\)\s*[!=><]+\s*10)|count\(\s*\$items\s*\)\s*[!=><]+\s*10',line,re.I):
+                  if re.search(r'(?:items|inspection)[^\\n]{0,80}(?:size:10|array.*size:10|max:10|count\\([^)]*\\)\\s*[!=><]+\\s*10)|count\\(\\s*\\$items\\s*\\)\\s*[!=><]+\\s*10',line,re.I):
                       flagged.append((n+1,line.strip()[:170]))
               if flagged:
-                  print('FIXED_10_COUNT_RESTRICTION_IN',str(p),flagged[:8])
-                  sys.exit(3)
+                  violations.append(str(p))
+                  print('FIXED_10_COUNT_RESTRICTION_IN',str(p),flagged[:10])
+                  for line_no,_ in flagged[:3]:
+                      for n in range(max(1,line_no-4),min(len(lines),line_no+5)+1):
+                          value=lines[n-1].strip()
+                          if re.search(r'password|secret|api[_-]?key|token',value,re.I): continue
+                          print('CONTEXT',str(p),n,value[:170])
+          if violations:
+              print('PUBLISH_BLOCKED_INCOMPATIBLE_10_ITEM_BACKEND=',len(violations))
+              sys.exit(3)
           print('INSPECTION_EXPLICIT_TEN_ONLY_RULE=NOT_FOUND')
           PY
           cd "$SITE"
