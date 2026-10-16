@@ -1,0 +1,143 @@
+name: Publish v6.3.7 Signed Staff App to Protected In-App Updater
+on:
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/v637-publish-signed-app-update.yml"]
+permissions: { contents: read }
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'fix/v637-role-update-admin-assigned-rot-20261016'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Secure Hostinger staging connection
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then printf '%s\n' "$KEY" > ~/.ssh/v637;chmod 600 ~/.ssh/v637
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Verify linked AM5077 ROT and signed update generation, then publish atomically
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then SSH=(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -o ServerAliveInterval=30 -i ~/.ssh/v637 -p "$PORT")
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -o ServerAliveInterval=30 -p "$PORT");fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          FILE="$SITE/private/Assam-Motors-Staff-v6.3.7-ROLE-UPDATE-ADMIN-MY-ROT-SIGNED.apk"
+          test -f "$SITE/latest.json"
+          test -f "$ROOT/app/Http/Controllers/Api/V1/NativeAppUpdateController.php"
+          php -l "$ROOT/app/Http/Controllers/Api/V1/NativeAppUpdateController.php"
+          cd "$ROOT"
+          echo 'V637_NATIVE_AUTHORIZATION_AND_ASSIGNED_ROT_SELF_TEST'
+          php artisan tinker --execute='
+          $u=\App\Models\ErpAuthUser::query()->where("staff_id",4)->where("role","admin")->firstOrFail();
+          if(!$u->active || !$u->isStaff()){throw new \RuntimeException("AM5077 linked Admin identity not active");}
+          $req=\Illuminate\Http\Request::create("/api/v1/app-update","GET",["platform"=>"android","version_code"=>60306]);
+          $req->setUserResolver(fn()=>$u);
+          $resp=app(\App\Http\Controllers\Api\V1\NativeAppUpdateController::class)->index($req);
+          $data=json_decode($resp->getContent(),true);
+          if(($data["ok"]??false)!==true || ($data["latest"]["version_code"]??0)<60306 || !preg_match("/^[a-f0-9]{64}$/",($data["latest"]["sha256"]??""))){throw new \RuntimeException("Authenticated native signed update metadata check failed");}
+          $url=$data["latest"]["download_url"]??"";
+          if(!str_starts_with($url,"https://staging.assammotors.com/legacy/api/staff-app-download.php?file=") || !str_contains($url,"&expires=")||!str_contains($url,"&sig=")){throw new \RuntimeException("Official signed download URL invalid");}
+          echo "ADMIN_NATIVE_UPDATE_SIGNED_URL=VERIFIED\n";
+          $rots=app(\App\Services\StaffDashboardService::class)->rots(4);
+          if(!collect($rots)->contains(fn($r)=>(($r["rot_code"]??"")==="ROT-DIA-007" && ($r["job_card_no"]??"")==="JC-20261016-00036"))){throw new \RuntimeException("AM5077 personal ROT not visible through linked Staff service");}
+          $rotResp=app(\App\Http\Controllers\Api\V1\StaffDashboardController::class)->rots($req,app(\App\Services\StaffDashboardService::class));
+          $nativeRows=json_decode($rotResp->getContent(),true)["rots"]??[];
+          if(!collect($nativeRows)->contains(fn($r)=>(($r["rot_code"]??"")==="ROT-DIA-007" && ($r["job_card_no"]??"")==="JC-20261016-00036"))){throw new \RuntimeException("Native Admin self-assigned ROT missing");}
+          echo "AM5077_NATIVE_MY_ROT_007=VERIFIED\n";
+          '
+          cd "$SITE"
+          echo 'WAITING_FOR_SHA_VERIFIED_ORIGINAL_SIGNED_V637_APK'
+          for attempt in $(seq 1 90);do [ -f "$FILE" ] && break;sleep 10;done
+          test -f "$FILE" || { echo 'SIGNED_APK_NOT_DELIVERED_MANIFEST_UNCHANGED';exit 1; }
+          test "$(wc -c < "$FILE")" = 3336948
+          echo "3abcda9c8e08f599481481789fd5b1873eacd7b0554edc0d04a78f2bfc519826  $FILE" | sha256sum -c -
+          echo 'V637_SIGNED_PRIVATE_APK=VERIFIED'
+          python3 - <<'PY'
+          import json,hashlib,os,tempfile
+          from pathlib import Path
+          from datetime import datetime,timezone
+          root=Path.cwd()
+          manifest=root/'latest.json'
+          data=json.loads(manifest.read_text())
+          assert data.get('package_id')=='com.assammotors.staff','Wrong target package'
+          assert data.get('licence_file'),'Existing licence metadata missing'
+          assert int(data.get('version_code',0)) in (60306,60307),'Unexpected current live APK version'
+          name='Assam-Motors-Staff-v6.3.7-ROLE-UPDATE-ADMIN-MY-ROT-SIGNED.apk'
+          sha='3abcda9c8e08f599481481789fd5b1873eacd7b0554edc0d04a78f2bfc519826'
+          f=root/'private'/name
+          assert f.is_file() and f.stat().st_size==3336948
+          assert hashlib.sha256(f.read_bytes()).hexdigest()==sha
+          if int(data['version_code'])==60307:
+              assert data.get('sha256')==sha and data.get('apk_file')==name,'Existing 60307 release mismatch'
+              print('V637_RELEASE=ALREADY_PUBLISHED')
+          else:
+              stamp=datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+              backup=root/('latest.json.backup-before-v637-'+stamp)
+              backup.write_bytes(manifest.read_bytes())
+              backup.chmod(0o600)
+              notes='ASSAM-MOTORS-STAFF-v6.3.7-OWNER-MY-ROT-ALL-ROLES-UPDATE.txt'
+              (root/notes).write_text('ASSAM MOTORS STAFF v6.3.7 (60307)\n'+
+              'Admin/Owner linked personal My Assigned ROT; retain complete Staff/Manager 30-point inspection, GPS, ROT and HR features.\n'+
+              'All roles: native Laravel-authenticated Check for App Update and signed 15-minute download URL.\n'+
+              'Existing production signing identity and in-app SHA-256 APK verification retained.\n'+
+              'Real-device installation, Admin ROT control and HR update verification required for acceptance.\n')
+              data.update({
+                'version_code':60307,'version_name':'6.3.7','apk_file':name,'sha256':sha,
+                'release_notes_file':notes,
+                'published_at':datetime.now(timezone.utc).isoformat(timespec='seconds').replace('+00:00','Z')
+              })
+              fd,temp=tempfile.mkstemp(dir=root,prefix='.v637-latest-')
+              try:
+                with os.fdopen(fd,'w') as stream:
+                  json.dump(data,stream,indent=2);stream.write('\n')
+                os.chmod(temp,0o644)
+                os.replace(temp,manifest)
+              finally:
+                if os.path.exists(temp):os.unlink(temp)
+              print('V637_MANIFEST_BACKUP='+backup.name)
+              print('V637_RELEASE_MANIFEST=PUBLISHED')
+          final=json.loads(manifest.read_text())
+          assert final.get('version_code')==60307 and final.get('sha256')==sha and final.get('apk_file')==name
+          assert (root/str(final.get('release_notes_file'))).is_file()
+          print('V637_OFFICIAL_AUTO_UPDATE_VERSION=60307')
+          PY
+          if [ -f "$SITE/v637-upload-once.php" ];then
+            grep -Fq '3abcda9c8e08f599481481789fd5b1873eacd7b0554edc0d04a78f2bfc519826' "$SITE/v637-upload-once.php"
+            rm -f "$SITE/v637-upload-once.php"
+            echo 'V637_TEMP_RECEIVER=REMOVED'
+          fi
+          echo 'V637_SIGNED_UPDATE_FEED=VERIFIED'
+          REMOTE
+      - name: HTTPS protected endpoints deny anonymous access
+        shell: bash
+        run: |
+          set -euo pipefail
+          for target in 'https://staging.assammotors.com/api/v1/app-update?platform=android&version_code=60306' 'https://staging.assammotors.com/legacy/api/staff-app-update.php?platform=android&version_code=60306'; do
+            code=$(curl -sS --max-time 18 -o /tmp/v637-security -w '%{http_code}' "$target")
+            echo "PROTECTED_UPDATE_UNAUTH_HTTP=$code"
+            test "$code" = 401 || test "$code" = 403
+          done
+          echo 'V637_UPDATE_AUTH_GATES=VERIFIED'
+      - if: always()
+        run: rm -f ~/.ssh/v637 /tmp/v637-security
