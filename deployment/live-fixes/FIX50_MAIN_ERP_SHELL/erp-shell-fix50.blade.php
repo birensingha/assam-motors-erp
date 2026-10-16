@@ -96,6 +96,7 @@ body.erp-app .page-shell .am50-integrated-page{
   background:transparent!important;min-height:0!important;
   color:#173453!important;max-width:100%!important;
 }
+body.erp-app .page-shell .am50-integrated-page .am-content{padding:0!important;max-width:none!important;margin:0!important}
 body.erp-app .page-shell .am50-integrated-page .wrap{
   width:100%!important;max-width:none!important;margin:0!important;
   padding:0!important
