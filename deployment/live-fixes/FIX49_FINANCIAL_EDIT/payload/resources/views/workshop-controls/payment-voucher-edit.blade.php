@@ -2,7 +2,7 @@
 @section('title','Edit Payment Voucher — ASSAM MOTORS')
 @section('content')
 @include('workshop-controls.enterprise-theme')
-<div class="am-modern">@include('workshop-controls.enterprise-navigation')<main class="am-content">
+<div class="am-modern am50-integrated-page"><main class="am-content">
 @php
   $number=$voucher->voucher_no??$voucher->payment_no??('Voucher #'.$voucher->id);
   $existingNote=$voucher->narration??$voucher->notes??$voucher->note??'';
