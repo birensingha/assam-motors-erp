@@ -99,33 +99,33 @@ BLADE
          'legacy_diagnosis_guard_message');
  unset($s);
  $p=$names[3];$s=&$updated[$p];
- p52once($s,'<div class="deciding-tech-box">',<<<'BLADE'
-{{-- P52_FORMAL_DECIDER_STATUS: do not convert JC creation default into deciding assignment. --}}
-@php
-$p52LatestDeciderId=\Illuminate\Support\Facades\DB::table('job_card_diagnosis_events')
-   ->where('job_card_id',$job->id)->where('event_type','DECIDING_TECHNICIAN_ASSIGNED')
-   ->orderByDesc('id')->value('technician_id');
-$p52ConfirmedDecider=(int)$p52LatestDeciderId>0
-   && (int)$p52LatestDeciderId===(int)$job->technician_id;
-@endphp
-<div class="deciding-tech-box" id="deciding-technician">
-BLADE
-,'job_form_decider_status');
+ p52once($s,'<div class="deciding-tech-box">',
+         '<div class="deciding-tech-box" id="deciding-technician"><!-- P52_FORMAL_DECIDER_STATUS -->',
+         'decider_focus_anchor');
+ // Read latest explicit Admin assignment, never infer it from JC creation.
+ $auditQuery=<<<'BLADE'
+\Illuminate\Support\Facades\DB::table('job_card_diagnosis_events')
+ ->where('job_card_id',$job->id)
+ ->where('event_type','DECIDING_TECHNICIAN_ASSIGNED')
+ ->orderByDesc('id')->value('technician_id')
+BLADE;
+ $confirmed="(int)($auditQuery)===(int)\$job->technician_id && (int)\$job->technician_id>0";
  p52once($s,"<strong>{{ \$job->technician ?: 'Not Assigned' }}</strong>",
-          "<strong>{{ \$p52ConfirmedDecider ? \$job->technician : 'NOT ASSIGNED — Admin selection pending' }}</strong>",
-          'job_form_decider_label');
- // Only replace two guards inside the deciding-technician section.
+   "<strong>{{ ($confirmed) ? \$job->technician : 'NOT ASSIGNED — Admin selection pending' }}</strong>",
+   'explicit_only_decider_label');
+ // Every Admin selection starts blank until consciously chosen; do not
+ // preselect a JC create-stage technician.
+ p52once($s,"old('technician_id',\$job->technician_id)",
+           "old('technician_id')",'decider_dropdown_not_preselected');
+ // Both status note and final-diagnosis editor must respect the recorded
+ // Admin assignment. Do not insert nested @php blocks into legacy Blade.
  $start=strpos($s,'<div class="deciding-tech-box" id="deciding-technician">');
  $end=strpos($s,'<div class="workflow-message locked">',$start);
- if($start===false||$end===false||$end<=$start)throw new RuntimeException('P52_NO_GO_JOB_FORM_BOUNDARY');
+ if($start===false||$end==false||$end<=$start)throw new RuntimeException('P52_NO_GO_JOB_FORM_BOUNDARY');
  $section=substr($s,$start,$end-$start);
  if(substr_count($section,'@if($job->technician_id)')!==2)
-     throw new RuntimeException('P52_NO_GO_JOB_FORM_GUARDS_'.substr_count($section,'@if($job->technician_id)'));
- $section=str_replace('@if($job->technician_id)','@if($p52ConfirmedDecider)',$section);
- $section=str_replace("old('technician_id',\$job->technician_id)",
-                      "old('technician_id',\$p52ConfirmedDecider ? \$job->technician_id : null)",$section);
- if(!str_contains($section,"old('technician_id',\$p52ConfirmedDecider ? \$job->technician_id : null)"))
-     throw new RuntimeException('P52_NO_GO_DROPDOWN_NOT_CLEARED');
+    throw new RuntimeException('P52_NO_GO_DECIDER_GUARD_COUNT');
+ $section=str_replace('@if($job->technician_id)',"@if($confirmed)",$section);
  $s=substr_replace($s,$section,$start,$end-$start);
  unset($s);
  $p=$names[4];$s=&$updated[$p];
