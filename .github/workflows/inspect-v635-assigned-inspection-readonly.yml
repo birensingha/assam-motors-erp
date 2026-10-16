@@ -49,6 +49,12 @@ jobs:
           php -r '$p="app/Http/Controllers/Web/AdminInspectionPageController.php";$s=file($p);foreach($s as $i=>$l){if(preg_match("/function .*assign/i",$l)){echo "METHOD: $p LINE ".($i+1)."\n";for($j=$i;$j<min(count($s),$i+130);$j++){if($j>$i && preg_match("/^    (public|private|protected) function /",$s[$j]))break; echo ($j+1).": ".substr($s[$j],0,220);}}}' | head -165
           echo "== LEGACY STAFF INSPECTION PHP SELECT/GATE REFS =="
           grep -nEi "SELECT |FROM |staff_id|assigned|job_card|inspections|response|json_encode|staff_code|API" "$HOME/domains/assammotors.com/public_html/staging/legacy/api/staff-inspections.php" | head -115 || true
+          echo "== DEPLOYED LEGACY INSPECTION IMPLEMENTATION (lines 1-105) =="
+          sed -n '1,105p' "$HOME/domains/assammotors.com/public_html/staging/legacy/api/staff-inspections.php" | sed -E '/(password|JWT_SECRET|DB_PASS|token[_ ]?=|secret)/Id' | head -100 || true
+          echo "== NATIVE STAFF LINKED ID IMPLEMENTATION =="
+          sed -n '1,37p' app/Http/Controllers/Api/V1/StaffExtraController.php || true
+          echo "== ASSIGNMENT ADMIN CONTROLLER METHODS =="
+          grep -nE 'function |job_card_inspection_assignments|assigned_staff_id|inspection_assigned' app/Http/Controllers/Web/AdminInspectionPageController.php | head -85 || true
           echo "== TABLE STRUCTURE (COLUMNS ONLY) =="
           php artisan tinker --execute='foreach(["job_cards","inspections","job_card_inspections","staff","erp_auth_users"] as $t){if(\\Illuminate\\Support\\Facades\\Schema::hasTable($t)){echo $t." ".implode(",",\\Illuminate\\Support\\Facades\\Schema::getColumnListing($t))."\n";}}' 2>/dev/null | head -15 || true
           REMOTE
