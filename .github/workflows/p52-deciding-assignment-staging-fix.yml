@@ -1,0 +1,151 @@
+name: P52 Correct Inspection vs Deciding Technician — STAGING
+on:
+  push:
+    branches: [feature/p51-legacy-independence-audit-20261016]
+    paths: ['.github/workflows/p52-deciding-assignment-staging-fix.yml']
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  correct-assignment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+      STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL || 'https://staging.assammotors.com' }}
+      STAGING_ADMIN_LOGIN: ${{ secrets.STAGING_ADMIN_LOGIN }}
+      STAGING_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint P52 guarded source patch and browser acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -l deployment/live-fixes/P52_DECIDING_ASSIGNMENT/PATCH_P52.php
+          node --check deployment/live-fixes/P52_DECIDING_ASSIGNMENT/QA_P52.mjs
+          echo 'P52_LINT_PASS'
+      - name: Prepare SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+          fi
+      - name: Staging backup, preflight and guarded source patch (no JC data writes)
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            SSH=(ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          TEMP="/home/$SSH_USER/p52-staging-fix-$GITHUB_RUN_ID"
+          "${SSH[@]}" "$REMOTE" "mkdir -p '$TEMP'"
+          "${SCP[@]}" deployment/live-fixes/P52_DECIDING_ASSIGNMENT/PATCH_P52.php "$REMOTE:$TEMP/PATCH_P52.php"
+          "${SSH[@]}" "$REMOTE" "APP_ROOT='$APP_ROOT' TEMP='$TEMP' RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          ROOT="$APP_ROOT"
+          test -f "$ROOT/artisan"
+          BACKUP="$(dirname "$ROOT")/ASSAM_P52_DECIDING_BACKUP_$RUN_ID"
+          test ! -e "$BACKUP"
+          mkdir -p "$BACKUP"
+          files=(
+            app/Http/Controllers/Web/ManagerInspectionWorkController.php
+            resources/views/inspections/manager-work.blade.php
+            app/Http/Controllers/Web/AdminJobCardPageController.php
+            resources/views/job-cards/show.blade.php
+            app/Http/Controllers/Web/AdminDiagnosisStageController.php
+          )
+          for file in "${files[@]}";do
+            test -f "$ROOT/$file"
+            cp -p "$ROOT/$file" "$BACKUP/$(printf '%s' "$file" | tr / _)"
+          done
+          rollback(){
+             echo 'P52_SOURCE_ROLLBACK_START'
+             for file in "${files[@]}";do
+               cp -p "$BACKUP/$(printf '%s' "$file" | tr / _)" "$ROOT/$file" || true
+             done
+             (cd "$ROOT" && php artisan view:clear && php artisan view:cache) >/dev/null 2>&1 || true
+             echo 'P52_SOURCE_ROLLBACK_COMPLETE'
+          }
+          trap rollback ERR
+          php "$TEMP/PATCH_P52.php" check "$ROOT"
+          php "$TEMP/PATCH_P52.php" apply "$ROOT"
+          cd "$ROOT"
+          php artisan view:clear
+          php artisan view:cache
+          php -l app/Http/Controllers/Web/AdminJobCardPageController.php
+          php -l app/Http/Controllers/Web/AdminDiagnosisStageController.php
+          php -l app/Http/Controllers/Web/ManagerInspectionWorkController.php
+          echo 'P52_SOURCE_DEPLOY_STAGING_OK_NO_FINANCIAL_CHANGES'
+          echo "P52_SAFE_BACKUP=$BACKUP"
+          rm -rf "$TEMP"
+          trap - ERR
+          REMOTE_SCRIPT
+      - uses: actions/setup-node@v4
+        if: steps.deploy.outcome == 'success'
+        with:
+          node-version: '22'
+      - name: Install Chromium for authenticated UI acceptance
+        if: steps.deploy.outcome == 'success'
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Prove JC-36 requires official Admin deciding assignment, inspection kept
+        id: browser
+        if: steps.deploy.outcome == 'success'
+        run: node deployment/live-fixes/P52_DECIDING_ASSIGNMENT/QA_P52.mjs
+      - name: Rollback visual/controller code on any failed authenticated QA
+        if: failure() && steps.deploy.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            SSH=(ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "APP_ROOT='$APP_ROOT' RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$APP_ROOT";BACKUP="$(dirname "$ROOT")/ASSAM_P52_DECIDING_BACKUP_$RUN_ID"
+          test -d "$BACKUP"
+          files=(app/Http/Controllers/Web/ManagerInspectionWorkController.php
+            resources/views/inspections/manager-work.blade.php
+            app/Http/Controllers/Web/AdminJobCardPageController.php
+            resources/views/job-cards/show.blade.php
+            app/Http/Controllers/Web/AdminDiagnosisStageController.php)
+          for file in "${files[@]}";do
+            cp -p "$BACKUP/$(printf '%s' "$file" | tr / _)" "$ROOT/$file"
+          done
+          cd "$ROOT"
+          php artisan view:clear && php artisan view:cache
+          echo 'P52_ROLLBACK_PASS'
+          REMOTE
+      - name: Report checks accurately
+        if: always()
+        run: |
+          echo "P52 source deployment: ${{ steps.deploy.outcome }}"
+          echo "P52 browser regression: ${{ steps.browser.outcome }}"
+          echo "No actual Admin staff decisions, Job Card records, invoices or inspection assignments were modified by this run."
+      - name: Remove runner credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
