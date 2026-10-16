@@ -15,18 +15,22 @@ try{
  async function check(path,title,label){
   const r=await p.goto(base+path,{waitUntil:'domcontentloaded',timeout:35000});
   const body=await p.locator('body').innerText().catch(()=>'');
-  const ok=r?.status()===200 && body.includes(title) && !/SQLSTATE|Fatal error|Internal Server Error|Whoops|Admin permission required/i.test(body);
+  const nativeSide=(await p.locator('.erp-sidebar .am50-finance').count())===4;
+  const nativeTop=(await p.locator('.erp-topbar .am50-top-shortcuts a').count())===4;
+  const noDuplicate=(await p.locator('.am-suite').count())===0;
+  const ok=r?.status()===200 && body.includes(title) && nativeSide && nativeTop && noDuplicate &&
+    !/SQLSTATE|Fatal error|Internal Server Error|Whoops|Admin permission required/i.test(body);
   console.log('FIX49_DETAIL '+label+' HTTP '+(r?.status()||0)+' '+(ok?'PASS':'FAIL'));
   attempted++;if(!ok)failures.push(label+': '+(r?.status()||0));
  }
  const jobs=await p.goto(base+'/erp/job-cards',{waitUntil:'domcontentloaded'});
  const anchors=await p.locator('a[href]').evaluateAll(as=>as.map(a=>a.getAttribute('href')||''));
  const match=anchors.map(u=>u.match(/\/erp\/job-cards\/(\d+)(?:\?|$)/)).find(Boolean);
- if(match)await check('/erp/workshop-tools/job-cards/'+match[1]+'/billing-edit','Edit Job Card Amount','Job Card Editor');
+ if(match)await check('/erp/workshop-tools/job-cards/'+match[1]+'/billing-edit','Job Card Amount Editor','Job Card Editor');
  else console.log('FIX49_DETAIL Job Card Editor SKIP: no discoverable Job Card links');
  await p.goto(base+'/erp/workshop-tools/osl/register',{waitUntil:'domcontentloaded'});
  const osl=await p.locator('a[href*="/workshop-tools/osl/"][href*="/edit"]').first().getAttribute('href').catch(()=>null);
- if(osl)await check(new URL(osl,base).pathname,'Edit Cost','OSL Editor');
+ if(osl)await check(new URL(osl,base).pathname,'OSL Purchase Cost Editor','OSL Editor');
  else console.log('FIX49_DETAIL OSL Editor SKIP: no purchase edit links found');
  await p.goto(base+'/erp/workshop-tools/payment-vouchers',{waitUntil:'domcontentloaded'});
  const pay=await p.locator('a[href*="/workshop-tools/payment-vouchers/"][href*="/edit"]').first().getAttribute('href').catch(()=>null);
