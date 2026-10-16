@@ -2,7 +2,9 @@ name: FIX50 Native ERP Finance Navigation and Aligned Shell Deploy
 on:
   push:
     branches: [feature/fix49-financial-edit-controls-20261015]
-    paths: ['.github/workflows/fix50-global-nav-deploy.yml']
+    paths:
+      - '.github/workflows/fix50-global-nav-deploy.yml'
+      - 'deployment/live-fixes/FIX50_MAIN_ERP_SHELL/PATCH_FIX50.php'
 permissions:
   contents: read
 concurrency:
