@@ -1,0 +1,174 @@
+name: Publish Signed Assam Motors Staff v6.3.6 In-App Update
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/publish-v636-signed-staff-update-hostinger.yml"]
+permissions: { contents: read }
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 23
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Authenticate to existing protected Hostinger channel
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/v636publish
+            chmod 600 ~/.ssh/v636publish
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Wait for SHA-verified signed APK and publish atomically
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ConnectTimeout=25 -i ~/.ssh/v636publish -p "$PORT")
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ConnectTimeout=25 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          FILE="$SITE/private/Assam-Motors-Staff-v6.3.6-INSPECTION-30-POINT-SIGNED.apk"
+          MANIFEST="$SITE/latest.json"
+          test -f "$MANIFEST"
+          test -f "$SITE/../legacy/api/staff-app-update.php"
+          php -l "$SITE/../legacy/api/staff-app-update.php"
+          echo "CURRENT_STAFF_UPDATE_FEED:"
+          php -r '$m=json_decode(file_get_contents($argv[1]),true); if(!is_array($m)||($m["package_id"]??null)!=="com.assammotors.staff"||!in_array((int)($m["version_code"]??0),[60305,60306],true)){fwrite(STDERR,"STOP: Unexpected updater version or package\n");exit(2);}echo "version_code=".$m["version_code"].PHP_EOL;' "$MANIFEST"
+
+          echo 'BACKEND_INSPECTION_COUNT_GUARD: scanning Laravel source, no write'
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          python3 - <<'PY'
+          from pathlib import Path
+          import re,sys
+          route_files=[p for p in Path('routes').rglob('*.php')]
+          ctrl_files=[p for p in Path('app/Http/Controllers').rglob('*.php')]
+          candidates=[]
+          for p in route_files+ctrl_files:
+              s=p.read_text(errors='ignore')
+              if 'staff/inspections' in s or 'manager-inspections' in s or 'saveInspection' in s or 'completeInspection' in s:
+                  candidates.append(p)
+          print('INSPECTION_SOURCE_FILES_FOUND='+str(len(candidates)))
+          for p in candidates[:25]:
+              s=p.read_text(errors='ignore')
+              lines=s.splitlines()
+              flagged=[]
+              for n,line in enumerate(lines):
+                  if re.search(r'(?:items|inspection)[^\n]{0,80}(?:size:10|array.*size:10|max:10|count\([^)]*\)\s*[!=><]+\s*10)|count\(\s*\$items\s*\)\s*[!=><]+\s*10',line,re.I):
+                      flagged.append((n+1,line.strip()[:170]))
+              if flagged:
+                  print('FIXED_10_COUNT_RESTRICTION_IN',str(p),flagged[:8])
+                  sys.exit(3)
+          print('INSPECTION_EXPLICIT_TEN_ONLY_RULE=NOT_FOUND')
+          PY
+          cd "$SITE"
+          echo 'WAITING_FOR_ORIGINAL_SIGNED_V636_APK'
+          for i in $(seq 1 90); do
+            [ -f "$FILE" ] && break
+            sleep 10
+          done
+          test -f "$FILE" || { echo 'V636_TRANSFER_MISSING: updater unchanged'; exit 1; }
+          test "$(wc -c < "$FILE")" = 3336948
+          echo "686f678d8f984789551718746cd049f48ec19f486d8ec8f33ce2674205e68964  $FILE" | sha256sum -c -
+          echo 'V636_PROTECTED_APK_SHA256=VERIFIED'
+
+          python3 - <<'PY'
+          import os,json,hashlib,tempfile
+          from datetime import datetime,timezone
+          from pathlib import Path
+          root=Path.cwd()
+          manifest=root/'latest.json'
+          original=manifest.read_bytes()
+          data=json.loads(original)
+          assert data.get('package_id')=='com.assammotors.staff','Wrong signed app package'
+          assert data.get('licence_file'),'Existing license metadata missing'
+          assert int(data.get('version_code',0)) in [60305,60306],'Unexpected current version'
+          filename='Assam-Motors-Staff-v6.3.6-INSPECTION-30-POINT-SIGNED.apk'
+          expected='686f678d8f984789551718746cd049f48ec19f486d8ec8f33ce2674205e68964'
+          apk=root/'private'/filename
+          assert apk.is_file() and apk.stat().st_size==3336948,'Signed APK missing or invalid length'
+          assert hashlib.sha256(apk.read_bytes()).hexdigest()==expected,'Signed APK checksum mismatch'
+          old=int(data['version_code'])
+          if old==60306:
+              assert data.get('sha256')==expected and data.get('apk_file')==filename,'Existing v6.3.6 release differs'
+              print('V636_RELEASE_MANIFEST=ALREADY_PUBLISHED')
+          else:
+              stamp=datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+              backup=root/('latest.json.backup-before-v636-'+stamp)
+              backup.write_bytes(original)
+              backup.chmod(0o600)
+              notes='ASSAM-MOTORS-STAFF-v6.3.6-30-POINT-INSPECTION.txt'
+              (root/notes).write_text(
+                'ASSAM MOTORS STAFF APP v6.3.6 (Build 60306)\n'
+                'Vehicle inward inspection now has 30 professional checks across five groups, including keys, fuel level, spare tyre, jack/wrench, battery serial, all glass, warning lights and oil seepage.\n'
+                'Staff and Manager use one shared list. Mandatory readings and Fair/Poor remarks.\n'
+                'Existing Staff, HR, Owner, geofence, attendance and ROT controls retained.\n'
+                'Approved QA build signed with existing Assam Motors signing identity.\n'
+              )
+              data.update({
+                  'version_code':60306,
+                  'version_name':'6.3.6',
+                  'apk_file':filename,
+                  'sha256':expected,
+                  'release_notes_file':notes,
+                  'published_at':datetime.now(timezone.utc).isoformat(timespec='seconds').replace('+00:00','Z')
+              })
+              fd,temp=tempfile.mkstemp(prefix='.v636-latest-',dir=root)
+              try:
+                  with os.fdopen(fd,'w') as handle:
+                      json.dump(data,handle,indent=2)
+                      handle.write('\n')
+                  os.chmod(temp,0o644)
+                  os.replace(temp,manifest)
+              finally:
+                  if os.path.exists(temp):os.unlink(temp)
+              print('UPDATE_MANIFEST_BACKUP='+backup.name)
+              print('V636_RELEASE_MANIFEST=PUBLISHED')
+          read=json.loads(manifest.read_text())
+          assert int(read['version_code'])==60306
+          assert read['sha256']==expected and read['apk_file']==filename
+          assert read.get('licence_file')
+          print('STAFF_AUTO_UPDATE_VERSION=60306')
+          print('STAFF_APP_SIGNED_V636=VERIFIED')
+          PY
+          if [ -f "$SITE/v636-upload-once.php" ]; then
+            grep -Fq '686f678d8f984789551718746cd049f48ec19f486d8ec8f33ce2674205e68964' "$SITE/v636-upload-once.php"
+            rm -f "$SITE/v636-upload-once.php"
+            echo 'V636_TEMP_RECEIVER=REMOVED'
+          fi
+          echo 'V636_HOSTINGER_PUBLISH=VERIFIED'
+          REMOTE
+      - name: HTTPS smoke check - Staff update endpoint remains protected
+        shell: bash
+        run: |
+          set -euo pipefail
+          for target in erp staff; do
+            code=$(curl -sS -L --max-time 20 -o "/tmp/$target-page" -w '%{http_code}' "https://staging.assammotors.com/$target/login")
+            echo "$target login HTTP=$code"
+            test "$code" = 200
+          done
+          update=$(curl -sS --max-time 20 -o /tmp/v636-update-response -w '%{http_code}' 'https://staging.assammotors.com/legacy/api/staff-app-update.php?platform=android&version_code=60305')
+          echo "PROTECTED_UPDATE_UNAUTH_HTTP=$update"
+          test "$update" = 401 || test "$update" = 403
+          echo 'V636_FEED_HTTPS_SECURITY=VERIFIED'
+      - name: Erase runner credentials
+        if: always()
+        run: rm -f ~/.ssh/v636publish /tmp/erp-page /tmp/staff-page /tmp/v636-update-response
