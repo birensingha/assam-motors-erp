@@ -8,5 +8,41 @@ permissions:
 jobs:
   inspect:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
     steps:
-      - run: echo 'Inspection setup'
+      - name: Open staging SSH read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/diagnose
+            chmod 600 ~/.ssh/diagnose
+            CMD=(ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -i ~/.ssh/diagnose -p "$SSH_PORT")
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$SSH_PASSWORD"
+            CMD=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "$SSH_PORT")
+          fi
+          "${CMD[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          echo "== ATTENDANCE RESET ROUTE =="
+          php artisan route:list --json | python3 -c 'import json,sys; rows=json.load(sys.stdin); [print(x.get("method"),x.get("uri"),x.get("action"),x.get("middleware")) for x in rows if "attendance" in x.get("uri","") and "reset" in x.get("uri","")]'
+          echo "== EXACT 403 TEXT REFERENCES =="
+          grep -RIn --include='*.php' -F 'Admin/Supervisor permission required.' app routes | head -50 || true
+          echo "== RESET METHODS =="
+          grep -RIn --include='*.php' -E 'function reset\(|attendance.*reset|function admin\(' app/Http/Controllers/Web routes | head -90 || true
+          echo "== GUARD / ROLE CLASS REFERENCES =="
+          grep -RIn --include='*.php' -E '(isAdmin|isSupervisor|isStaff|hasPermission|class .*Middleware)' app/Http/Controllers/Web app/Http/Middleware app/Models | head -85 || true
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/diagnose
