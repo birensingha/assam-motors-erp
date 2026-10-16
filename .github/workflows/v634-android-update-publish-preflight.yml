@@ -59,7 +59,51 @@ jobs:
               fi
             fi
           done
+          echo "== READ-ONLY EXISTING UPDATE FILE DISCOVERY =="
+          find "$ROOT" -maxdepth 8 -type f -name 'staff-app-update.php' -print 2>/dev/null | head -12
+          find "$ROOT" -maxdepth 8 -type f -name 'latest.json' -path '*/staff/*' -print 2>/dev/null | head -12
+          echo "== DOMAIN DIRECTORY NAMES =="
+          find "$ROOT" -maxdepth 2 -type d -print 2>/dev/null | head -32
           REMOTE
+      - name: Verify production-signed v6.3.4 cross-repository artifact readability
+        env:
+          API_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set +e
+          curl -L --max-time 40 --silent --show-error \
+            -H "Authorization: Bearer $API_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            -o /tmp/v634-cross.zip \
+            -w "CROSS_REPO_SIGNED_APK_HTTP=%{http_code}\n" \
+            'https://api.github.com/repos/birensingha/assam-motors-staff-app/actions/artifacts/12022694649/zip'
+          if unzip -tq /tmp/v634-cross.zip >/dev/null 2>&1; then
+            echo "CROSS_REPO_SIGNED_APK_ZIP=VERIFIED"
+            unzip -Z -1 /tmp/v634-cross.zip | grep 'apk
+        shell: bash
+        run: |
+          set +e
+          code=$(curl --max-time 12 --silent --show-error --output /tmp/update-response --write-out '%{http_code}' 'https://staging.assammotors.com/legacy/api/staff-app-update.php?platform=android&version_code=60303')
+          echo "LIVE_UPDATE_ENDPOINT_HTTP=$code"
+          if [ "$code" = 200 ]; then
+            python3 - <<'PY'
+          import json
+          try:
+            x=json.load(open('/tmp/update-response'))
+            print("VERSION_ON_SITE="+str(x.get('latest',{}).get('version_code','UNKNOWN')))
+          except Exception:
+            print('INVALID_UPDATE_JSON=yes')
+          PY
+          fi
+      - name: Erase temporary authentication material
+        if: always()
+        shell: bash
+        run: rm -f ~/.ssh/preflight_key /tmp/update-response
+ | head -5
+          else
+            echo "CROSS_REPO_SIGNED_APK_ZIP=NOT_ACCESSIBLE"
+          fi
+          rm -f /tmp/v634-cross.zip
       - name: Verify public updater HTTP code from runner network
         shell: bash
         run: |
