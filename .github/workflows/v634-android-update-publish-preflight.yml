@@ -54,6 +54,19 @@ jobs:
           find "$ROOT" -maxdepth 8 -type f -name latest.json -print 2>/dev/null | head -12 || true
           echo "TOP_LEVEL_DIRECTORY_PATHS"
           find "$ROOT" -maxdepth 2 -type d -print 2>/dev/null | head -30 || true
+          echo "EXISTING_STAFF_APP_ASSETS"
+          STAGING="$ROOT/public_html/staging"
+          if [ -d "$STAGING/staff-app" ]; then
+            find "$STAGING/staff-app" -maxdepth 2 -type f -name '*.apk' -printf '%P %s bytes\n' 2>/dev/null | head -16 || true
+          fi
+          if [ -f "$STAGING/staff-app/latest.json" ]; then
+            python3 -c 'import json,sys; x=json.load(open(sys.argv[1])); print("CURRENT_MANIFEST_FIELDS",repr({k:x.get(k) for k in ("version_code","version_name","apk_file","channel","mandatory")}))' "$STAGING/staff-app/latest.json" || true
+          fi
+          if [ -f "$STAGING/legacy/api/staff-app-update.php" ]; then
+            php -l "$STAGING/legacy/api/staff-app-update.php"
+            echo "UPDATER_CODE_MANIFEST_REFERENCES"
+            grep -nE "latest.json|version_code|download_url|sha256|staff-app/" "$STAGING/legacy/api/staff-app-update.php" | head -24 || true
+          fi
           REMOTE
       - name: Test whether ERP runner can read signed Android artifact in sibling repo
         shell: bash
