@@ -1,0 +1,133 @@
+name: Stage v6.3.4 One-time Checksum-Restricted APK Receiver
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/v634-secure-oneshot-upload-receiver.yml"]
+permissions:
+  contents: read
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Configure Hostinger staging SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 8 -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/v634
+            chmod 600 ~/.ssh/v634
+          else
+            test -n "$SSH_PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Install short-lived exact-hash-only upload receiver without touching existing updater
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            CMD=(ssh -o BatchMode=yes -o ConnectTimeout=12 -i ~/.ssh/v634 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            CMD=(sshpass -e ssh -o ConnectTimeout=12 -p "$SSH_PORT")
+          fi
+          "${CMD[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          SITE="$HOME/domains/assammotors.com/public_html/staging"
+          DIR="$SITE/staff-app"
+          ENDPOINT="$DIR/v634-upload-once.php"
+          test -f "$SITE/legacy/api/staff-app-update.php"
+          test -f "$DIR/latest.json"
+          test -d "$DIR/private"
+          if [ -e "$ENDPOINT" ]; then
+            echo "Existing one-time endpoint must be reviewed. Refusing overwrite."
+            exit 1
+          fi
+          umask 077
+          cat > "$ENDPOINT.tmp" <<'PHP'
+          <?php
+          declare(strict_types=1);
+          header('Content-Type: application/json; charset=utf-8');
+          header('Cache-Control: no-store, max-age=0');
+          header('X-Content-Type-Options: nosniff');
+          const EXPECTED_HASH = 'c37ee6535eda06bc0255e573153c1a7460f7e005706139075fc84d8e459d5479';
+          const TOKEN_DIGEST = '1f9d5c39c9a658d6b9357248b0dd36c2588eacd48aa218266f011a341978ca07';
+          const EXPECTED_LENGTH = 3332852;
+          const FILENAME = 'Assam-Motors-Staff-v6.3.4-STAFF-LOCATION-FIX-SIGNED.apk';
+          function fail(int $code, string $message): void {
+              http_response_code($code);
+              echo json_encode(['ok' => false, 'message' => $message]);
+              exit;
+          }
+          if (time() > (filemtime(__FILE__) + 2100)) fail(410, 'Upload window closed');
+          if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') fail(405, 'POST only');
+          if (strtolower((string)($_SERVER['HTTP_HOST'] ?? '')) !== 'staging.assammotors.com') fail(403, 'Host not allowed');
+          $token = (string)($_SERVER['HTTP_X_AM_UPLOAD_TOKEN'] ?? '');
+          if (strlen($token) > 128 || !hash_equals(TOKEN_DIGEST, hash('sha256', $token))) fail(403, 'Invalid upload authorization');
+          if ((int)($_SERVER['CONTENT_LENGTH'] ?? -1) !== EXPECTED_LENGTH) fail(413, 'Unexpected APK length');
+          $target = __DIR__.'/private/'.FILENAME;
+          if (is_file($target)) {
+              if (hash_equals(EXPECTED_HASH, (string)hash_file('sha256', $target))) {
+                  http_response_code(200);
+                  echo json_encode(['ok' => true, 'already_present' => true]);
+                  exit;
+              }
+              fail(409, 'Existing APK checksum differs, cannot overwrite');
+          }
+          if (!is_dir(__DIR__.'/private')) fail(500, 'Private target directory unavailable');
+          $tmp = tempnam(__DIR__.'/private', '.am-v634-');
+          if ($tmp === false) fail(500, 'Cannot create staging file');
+          $input = fopen('php://input','rb');
+          $output = fopen($tmp,'wb');
+          if ($input === false || $output === false) {
+              @unlink($tmp);
+              fail(500, 'Upload streams unavailable');
+          }
+          $count = 0;
+          while (!feof($input)) {
+              $chunk = fread($input, 65536);
+              if ($chunk === false) break;
+              $count += strlen($chunk);
+              if ($count > EXPECTED_LENGTH) break;
+              if (fwrite($output, $chunk) !== strlen($chunk)) break;
+          }
+          fclose($input);
+          fclose($output);
+          if ($count !== EXPECTED_LENGTH || !hash_equals(EXPECTED_HASH, (string)hash_file('sha256', $tmp))) {
+              @unlink($tmp);
+              fail(422, 'Signed APK checksum verification failed');
+          }
+          chmod($tmp, 0644);
+          if (file_exists($target) || !rename($tmp, $target)) {
+              @unlink($tmp);
+              fail(409, 'Refusing to overwrite target');
+          }
+          http_response_code(201);
+          echo json_encode(['ok' => true, 'version_code' => 60304, 'sha256' => EXPECTED_HASH]);
+          PHP
+          mv "$ENDPOINT.tmp" "$ENDPOINT"
+          chmod 0644 "$ENDPOINT"
+          php -l "$ENDPOINT"
+          echo "STAGING_ONE_TIME_CHECKSUM_RECEIVER=READY"
+          REMOTE
+      - name: Check receiver rejects unauthenticated download
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl --max-time 20 --silent --show-error -o /tmp/receiver-response -w '%{http_code}' 'https://staging.assammotors.com/staff-app/v634-upload-once.php')
+          echo "RECEIVER_UNAUTH_GET_HTTP=$code"
+          test "$code" = "405"
+      - name: Erase runner SSH material
+        if: always()
+        shell: bash
+        run: rm -f ~/.ssh/v634 /tmp/receiver-response
