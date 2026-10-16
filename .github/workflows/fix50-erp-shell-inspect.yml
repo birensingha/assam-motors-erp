@@ -62,6 +62,17 @@ jobs:
           if($a!==false){$b=strpos($fstr,"</nav>",$a);echo substr($fstr,$a,min(12500,$b-$a))."\n";}
           echo "FIX50_WORKSHOP_LINKS_END\n";
           '
+          echo 'FIX50_EXACT_LAYOUT_HEADER_AND_NAV_BEGIN'
+          sed -n '1,18p;64,122p' "$ROOT/resources/views/layouts/erp.blade.php" | sed -E 's/\{\{.*\}\}/[BLADE EXPR]/g'
+          echo 'FIX50_EXACT_LAYOUT_HEADER_AND_NAV_END'
+          echo 'FIX50_STYLESHEET_LOCATIONS'
+          find "$ROOT/public" -maxdepth 3 -type f \\( -name '*erp*.css' -o -name '*admin*.css' -o -name '*layout*.css' \\) | head -20
+          for f in "$ROOT/public/css/erp.css" "$ROOT/public/assets/erp.css" "$ROOT/public/css/erp-ui.css";do
+            if [ -f "$f" ];then
+              echo "CSS_AUDIT $f"
+              grep -nE 'erp-sidebar|erp-topbar|page-shell|erp-app|sidebar-open|sidebar-toggle|@media|topbar-live|sidebar-nav' "$f" | head -100 || true
+            fi
+          done
           REMOTE
       - if: always()
         run: rm -f ~/.ssh/id_ed25519
