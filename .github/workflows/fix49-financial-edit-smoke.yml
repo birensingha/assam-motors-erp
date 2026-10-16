@@ -1,0 +1,19 @@
+name: FIX49 Workshop Finance Edit Smoke
+on:
+  push:
+    branches:
+      - feature/fix49-financial-edit-controls-20261015
+    paths:
+      - ".github/workflows/fix49-financial-edit-smoke.yml"
+      - "deployment/live-fixes/FIX49_FINANCIAL_EDIT/**"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP and route safety smoke
+        run: bash deployment/live-fixes/FIX49_FINANCIAL_EDIT/SMOKE.sh

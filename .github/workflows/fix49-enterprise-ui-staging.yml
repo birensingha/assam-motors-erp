@@ -1,0 +1,144 @@
+name: FIX49 Premium ERP UI Staging Deployment and QA
+on:
+  push:
+    branches: [feature/fix49-financial-edit-controls-20261015]
+    paths: ['.github/workflows/fix49-enterprise-ui-staging.yml']
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  ui-staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+      STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL || 'https://staging.assammotors.com' }}
+      STAGING_ADMIN_LOGIN: ${{ secrets.STAGING_ADMIN_LOGIN }}
+      STAGING_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify presentation-only payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          DIR="deployment/live-fixes/FIX49_FINANCIAL_EDIT/payload/resources/views/workshop-controls"
+          for f in enterprise-theme enterprise-navigation job-amounts osl-edit osl-index vendor-database payment-voucher-edit payment-voucher-register;do
+            test -s "$DIR/$f.blade.php"
+          done
+          for f in job-amounts osl-edit osl-index vendor-database payment-voucher-edit payment-voucher-register;do
+            grep -Fq "@include('workshop-controls.enterprise-theme')" "$DIR/$f.blade.php"
+            grep -Fq "@include('workshop-controls.enterprise-navigation')" "$DIR/$f.blade.php"
+          done
+          test -f deployment/live-fixes/FIX49_FINANCIAL_EDIT/scripts/ENTERPRISE_UI_VERIFY.mjs
+          node --check deployment/live-fixes/FIX49_FINANCIAL_EDIT/scripts/ENTERPRISE_UI_VERIFY.mjs
+          echo "FIX49_ENTERPRISE_THEME_PAYLOAD_PASS"
+      - name: Prepare SSH access
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Back up existing FIX49 views and install enterprise UI only
+        id: deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            SSH=(ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          ROOT_DIR="deployment/live-fixes/FIX49_FINANCIAL_EDIT/payload/resources/views/workshop-controls"
+          tar -czf /tmp/am-fix49-ui.tar.gz -C "$ROOT_DIR"             enterprise-theme.blade.php enterprise-navigation.blade.php             job-amounts.blade.php osl-edit.blade.php osl-index.blade.php             vendor-database.blade.php payment-voucher-edit.blade.php payment-voucher-register.blade.php
+          REMOTE_DIR="/home/$SSH_USER/fix49-ui-stage-$GITHUB_RUN_ID"
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "mkdir -p '$REMOTE_DIR'"
+          "${SCP[@]}" /tmp/am-fix49-ui.tar.gz "$SSH_USER@$SSH_HOST:$REMOTE_DIR/theme.tar.gz"
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "APP_ROOT='$APP_ROOT' STAGE='$REMOTE_DIR' RUN_TAG='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
+          set -euo pipefail
+          VIEWS="$APP_ROOT/resources/views/workshop-controls"
+          BACKUP="$(dirname "$APP_ROOT")/ASSAM_FIX49_UI_BACKUP_$RUN_TAG"
+          test -f "$APP_ROOT/artisan"
+          test -f "$VIEWS/payment-voucher-edit.blade.php"
+          test -f "$VIEWS/vendor-database.blade.php"
+          test ! -e "$BACKUP"
+          mkdir -p "$BACKUP"
+          cp -a "$VIEWS/." "$BACKUP/"
+          rollback(){
+            echo 'UI-only rollback — restore all former Blade templates'
+            cp -a "$BACKUP/." "$VIEWS/"
+            rm -f "$VIEWS/enterprise-theme.blade.php" "$VIEWS/enterprise-navigation.blade.php"
+            (cd "$APP_ROOT" && php artisan view:clear >/dev/null 2>&1) || true
+          }
+          trap rollback ERR
+          tar -xzf "$STAGE/theme.tar.gz" -C "$VIEWS"
+          cd "$APP_ROOT"
+          php artisan view:clear
+          php artisan view:cache
+          test -s "$VIEWS/enterprise-theme.blade.php"
+          grep -Fq "enterprise-navigation" "$VIEWS/payment-voucher-edit.blade.php"
+          echo "FIX49_ENTERPRISE_UI_STAGING_INSTALLED_BACKUP=$BACKUP"
+          trap - ERR
+          rm -rf "$STAGE"
+          REMOTE
+      - uses: actions/setup-node@v4
+        if: steps.deploy.outcome == 'success'
+        with:
+          node-version: '22'
+      - name: Install Chromium browser test
+        if: steps.deploy.outcome == 'success'
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Test enterprise UI on desktop and Android viewport without writes
+        id: browser
+        if: steps.deploy.outcome == 'success'
+        run: node deployment/live-fixes/FIX49_FINANCIAL_EDIT/scripts/ENTERPRISE_UI_VERIFY.mjs
+      - name: Roll back UI if authenticated browser QA fails
+        if: failure() && steps.deploy.outcome == 'success'
+        shell: bash
+        run: |
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            SSH=(ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "APP_ROOT='$APP_ROOT' RUN_TAG='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
+          set -euo pipefail
+          VIEWS="$APP_ROOT/resources/views/workshop-controls"
+          BACKUP="$(dirname "$APP_ROOT")/ASSAM_FIX49_UI_BACKUP_$RUN_TAG"
+          test -d "$BACKUP"
+          cp -a "$BACKUP/." "$VIEWS/"
+          rm -f "$VIEWS/enterprise-theme.blade.php" "$VIEWS/enterprise-navigation.blade.php"
+          cd "$APP_ROOT"
+          php artisan view:clear
+          php artisan view:cache
+          echo "FIX49_ENTERPRISE_UI_ROLLBACK_COMPLETE"
+          REMOTE
+      - name: Final status
+        if: always()
+        run: |
+          echo "UI template deploy: ${{ steps.deploy.outcome }}"
+          echo "Desktop and Android view read-only QA: ${{ steps.browser.outcome }}"
+          echo "No billing amounts, accounting ledgers, database migrations or API code changed by this UI job."
+      - name: Remove temporary SSH secret
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519

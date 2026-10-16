@@ -1,0 +1,26 @@
+name: FIX50 Readonly Web ERP Shell Geometry QA
+on:
+  push:
+    branches: [feature/fix49-financial-edit-controls-20261015]
+    paths:
+      - '.github/workflows/fix50-shell-readonly-qa.yml'
+      - 'deployment/live-fixes/FIX50_MAIN_ERP_SHELL/QA_SHELL.mjs'
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL || 'https://staging.assammotors.com' }}
+      STAGING_ADMIN_LOGIN: ${{ secrets.STAGING_ADMIN_LOGIN }}
+      STAGING_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - run: node deployment/live-fixes/FIX50_MAIN_ERP_SHELL/QA_SHELL.mjs

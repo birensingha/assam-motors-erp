@@ -1,0 +1,105 @@
+name: FIX49 Guarded Hostinger Staging Install & UI QA
+on:
+  push:
+    branches: [feature/fix49-financial-edit-controls-20261015]
+    paths: ['.github/workflows/fix49-guarded-staging-install.yml']
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      STAGING_APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+      STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL || 'https://staging.assammotors.com' }}
+      STAGING_ADMIN_LOGIN: ${{ secrets.STAGING_ADMIN_LOGIN }}
+      STAGING_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Local lint and source patch self-test
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash deployment/live-fixes/FIX49_FINANCIAL_EDIT/SMOKE.sh
+      - name: SSH credential setup
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Staging preflight, backup, install and route verification
+        id: install
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          REMOTE_DIR="/home/$SSH_USER/fix49-install-$GITHUB_RUN_ID"
+          tar -czf /tmp/fix49-deploy.tar.gz -C deployment/live-fixes/FIX49_FINANCIAL_EDIT .
+          "${SSH[@]}" "$REMOTE" "mkdir -p '$REMOTE_DIR'"
+          "${SCP[@]}" /tmp/fix49-deploy.tar.gz "$REMOTE:$REMOTE_DIR/deploy.tar.gz"
+          "${SSH[@]}" "$REMOTE" "cd '$REMOTE_DIR' && tar -xzf deploy.tar.gz && rm deploy.tar.gz"
+          "${SSH[@]}" "$REMOTE" "STAGING_ROOT='$STAGING_APP_ROOT' PACKAGE='$REMOTE_DIR' DEPLOY_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          trap 'rm -rf "$PACKAGE"' EXIT
+          test -f "$STAGING_ROOT/artisan"
+          echo 'FIX49 preflight before source change'
+          bash "$PACKAGE/INSPECT.sh" "$STAGING_ROOT" | grep -E '(^-- |job_card_change_audits:|workshop_payment_vouchers:|workshop_purchases:|workshop_purchase_batches:)' || true
+          bash "$PACKAGE/CHECK.sh" "$STAGING_ROOT"
+          echo 'FIX49 apply — source backups first; audit migration only'
+          FIX49_DEPLOY_ID="$DEPLOY_ID" bash "$PACKAGE/APPLY.sh" "$STAGING_ROOT"
+          echo 'FIX49 post-install route/migration verification'
+          bash "$PACKAGE/VERIFY.sh" "$STAGING_ROOT"
+          echo 'FIX49_STAGE_INSTALL_AND_ROUTE_PASS'
+          REMOTE_SCRIPT
+      - name: Set up authenticated browser QA
+        if: steps.install.outcome == 'success'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install browser QA dependency
+        if: steps.install.outcome == 'success'
+        shell: bash
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Verify new and existing ERP screens (GET only)
+        id: browser
+        if: steps.install.outcome == 'success'
+        shell: bash
+        run: node deployment/live-fixes/FIX49_FINANCIAL_EDIT/scripts/BROWSER_VERIFY.mjs
+      - name: Record deployment result
+        if: always()
+        shell: bash
+        run: |
+          echo "FIX49 source-install outcome: ${{ steps.install.outcome }}"
+          echo "FIX49 browser smoke outcome: ${{ steps.browser.outcome }}"
+          if [ "${{ steps.install.outcome }}" = "success" ] && [ "${{ steps.browser.outcome }}" != "success" ];then
+            echo "WARNING: source installed but browser QA incomplete. Do not claim user acceptance until investigated."
+          fi
+      - name: Delete ephemeral runner credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519

@@ -1,0 +1,79 @@
+name: FIX49 Read-only Hostinger Staging Preflight
+on:
+  push:
+    branches:
+      - feature/fix49-financial-edit-controls-20261015
+    paths:
+      - .github/workflows/fix49-staging-preflight-20261015.yml
+      - 'deployment/live-fixes/FIX49_FINANCIAL_EDIT/INSPECT.sh'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-fix49-readonly
+  cancel-in-progress: false
+jobs:
+  staging-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare secure staging access
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Read-only staging CHECK and schema inspection
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          # Use an absolute path for SFTP-based scp. A literal remote $HOME
+          # is not expanded by every SFTP server and caused the initial failure.
+          REMOTE_DIR="/home/$SSH_USER/fix49-readonly-preflight-$GITHUB_RUN_ID"
+          "${SSH[@]}" "$REMOTE" "mkdir -p $REMOTE_DIR"
+          # Package full patch tree so CHECK.sh can inspect all payload PHP.
+          # Still preflight-only: no Laravel source/data files are changed.
+          tar -czf /tmp/fix49-readonly-preflight.tgz -C deployment/live-fixes/FIX49_FINANCIAL_EDIT .
+          "${SCP[@]}" /tmp/fix49-readonly-preflight.tgz "$REMOTE:$REMOTE_DIR/preflight.tgz"
+          "${SSH[@]}" "$REMOTE" "cd $REMOTE_DIR && tar -xzf preflight.tgz && rm preflight.tgz"
+          "${SSH[@]}" "$REMOTE" "APP_ROOT='$APP_ROOT' PREFLIGHT_DIR=$REMOTE_DIR bash -s" <<'REMOTE_SCRIPT'
+          set -uo pipefail
+          trap 'rm -rf "$PREFLIGHT_DIR"' EXIT
+          echo 'FIX49 CHECKPOINT - staging preflight only, no financial writes'
+          cd "$APP_ROOT" || exit 2
+          echo '=== Read-only source and schema inventory ==='
+          bash "$PREFLIGHT_DIR/INSPECT.sh" "$APP_ROOT"
+          echo '=== Safety checks ==='
+          bash "$PREFLIGHT_DIR/CHECK.sh" "$APP_ROOT"
+          rc=$?
+          echo "FIX49_PRECHECK_EXIT=$rc"
+          test "$rc" -eq 0
+          REMOTE_SCRIPT
+      - name: Cleanup runner key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"

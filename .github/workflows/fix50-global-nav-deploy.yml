@@ -1,0 +1,163 @@
+name: FIX50 Native ERP Finance Navigation and Aligned Shell Deploy
+on:
+  push:
+    branches: [feature/fix49-financial-edit-controls-20261015]
+    paths:
+      - '.github/workflows/fix50-global-nav-deploy.yml'
+      - 'deployment/live-fixes/FIX50_MAIN_ERP_SHELL/PATCH_FIX50.php'
+      - 'deployment/live-fixes/FIX50_MAIN_ERP_SHELL/erp-shell-fix50.blade.php'
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 28
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+      STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL || 'https://staging.assammotors.com' }}
+      STAGING_ADMIN_LOGIN: ${{ secrets.STAGING_ADMIN_LOGIN }}
+      STAGING_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate source & build presentation-only archive
+        run: |
+          set -euo pipefail
+          PATCH="deployment/live-fixes/FIX50_MAIN_ERP_SHELL"
+          FIX49="deployment/live-fixes/FIX49_FINANCIAL_EDIT/payload/resources/views/workshop-controls"
+          php -l "$PATCH/PATCH_FIX50.php"
+          node --check "$PATCH/VERIFY_FIX50.mjs"
+          test -s "$PATCH/erp-shell-fix50.blade.php"
+          for name in job-amounts osl-edit osl-index vendor-database payment-voucher-edit payment-voucher-register;do
+            test -s "$FIX49/$name.blade.php"
+          done
+          mkdir -p /tmp/fix50-package/views
+          cp "$PATCH/PATCH_FIX50.php" "$PATCH/erp-shell-fix50.blade.php" /tmp/fix50-package/
+          cp "$FIX49"/{job-amounts,osl-edit,osl-index,vendor-database,payment-voucher-edit,payment-voucher-register}.blade.php /tmp/fix50-package/views/
+          tar -czf /tmp/fix50-package.tar.gz -C /tmp/fix50-package .
+      - name: SSH credential setup
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+          fi
+      - name: Back up, apply native ERP layout & validate Blade
+        id: source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            SSH=(ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          STAGE="/home/$SSH_USER/fix50-package-$GITHUB_RUN_ID"
+          "${SSH[@]}" "$REMOTE" "mkdir -p '$STAGE'"
+          "${SCP[@]}" /tmp/fix50-package.tar.gz "$REMOTE:$STAGE/package.tar.gz"
+          "${SSH[@]}" "$REMOTE" "APP_ROOT='$APP_ROOT' STAGE='$STAGE' RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          ROOT="$APP_ROOT"
+          test -f "$ROOT/artisan"
+          BACKUP="$(dirname "$ROOT")/ASSAM_FIX50_SHELL_BACKUP_$RUN_ID"
+          test ! -e "$BACKUP"
+          mkdir -p "$BACKUP/workshop-controls"
+          tar -xzf "$STAGE/package.tar.gz" -C "$STAGE"
+          test -f "$STAGE/PATCH_FIX50.php"
+          test -f "$STAGE/erp-shell-fix50.blade.php"
+          LAYOUT="$ROOT/resources/views/layouts/erp.blade.php"
+          FIX49="$ROOT/resources/views/workshop-controls"
+          PARTIAL="$ROOT/resources/views/layouts/erp-shell-fix50.blade.php"
+          test -f "$LAYOUT" && test -d "$FIX49"
+          test ! -e "$PARTIAL"
+          cp -p "$LAYOUT" "$BACKUP/erp.blade.php"
+          for view in "$STAGE/views/"*.blade.php;do
+            name="$(basename "$view")"
+            test -f "$FIX49/$name"
+            cp -p "$FIX49/$name" "$BACKUP/workshop-controls/$name"
+          done
+          rollback(){
+            echo "FIX50_STAGE_ROLLBACK_START"
+            cp -p "$BACKUP/erp.blade.php" "$LAYOUT" || true
+            cp -p "$BACKUP/workshop-controls/"*.blade.php "$FIX49/" || true
+            rm -f "$PARTIAL"
+            (cd "$ROOT" && php artisan view:clear >/dev/null 2>&1) || true
+            echo "FIX50_STAGE_ROLLBACK_COMPLETED"
+          }
+          trap rollback ERR
+          cp -p "$STAGE/erp-shell-fix50.blade.php" "$PARTIAL"
+          php "$STAGE/PATCH_FIX50.php" check "$ROOT"
+          for view in "$STAGE/views/"*.blade.php;do cp -p "$view" "$FIX49/";done
+          php "$STAGE/PATCH_FIX50.php" apply "$ROOT"
+          cd "$ROOT"
+          php artisan view:clear
+          php artisan view:cache
+          grep -q 'FIX50_ERP_NAV_V1' resources/views/layouts/erp.blade.php
+          grep -q "layouts.erp-shell-fix50" resources/views/layouts/erp.blade.php
+          test -s resources/views/layouts/erp-shell-fix50.blade.php
+          echo "FIX50_ERP_NAV_INSTALL_AND_BLADE_COMPILE_PASS"
+          echo "FIX50_BACKUP=$BACKUP"
+          trap - ERR
+          rm -rf "$STAGE"
+          REMOTE_SCRIPT
+      - uses: actions/setup-node@v4
+        if: steps.source.outcome == 'success'
+        with:
+          node-version: '22'
+      - name: Install desktop/mobile browser QA
+        if: steps.source.outcome == 'success'
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Verify 18 authenticated shell/page layouts and clickable shortcuts
+        id: browser
+        if: steps.source.outcome == 'success'
+        run: node deployment/live-fixes/FIX50_MAIN_ERP_SHELL/VERIFY_FIX50.mjs
+      - name: Restore original ERP layout if browser QA fails
+        if: failure() && steps.source.outcome == 'success'
+        shell: bash
+        run: |
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            SSH=(ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "APP_ROOT='$APP_ROOT' RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          BACKUP="$(dirname "$APP_ROOT")/ASSAM_FIX50_SHELL_BACKUP_$RUN_ID"
+          test -f "$BACKUP/erp.blade.php"
+          cp -p "$BACKUP/erp.blade.php" "$APP_ROOT/resources/views/layouts/erp.blade.php"
+          cp -p "$BACKUP/workshop-controls/"*.blade.php "$APP_ROOT/resources/views/workshop-controls/"
+          rm -f "$APP_ROOT/resources/views/layouts/erp-shell-fix50.blade.php"
+          cd "$APP_ROOT"
+          php artisan view:clear
+          php artisan view:cache
+          echo 'FIX50_STAGING_UI_RESTORED_AFTER_QA_FAILURE'
+          REMOTE_SCRIPT
+      - name: Deployment proof
+        if: always()
+        run: |
+          echo "FIX50 Laravel install: ${{ steps.source.outcome }}"
+          echo "FIX50 authenticated browser acceptance: ${{ steps.browser.outcome }}"
+          echo "FINANCIAL RECORDS / DATABASE NOT MODIFIED"
+      - name: Cleanup ephemeral SSH secrets
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519

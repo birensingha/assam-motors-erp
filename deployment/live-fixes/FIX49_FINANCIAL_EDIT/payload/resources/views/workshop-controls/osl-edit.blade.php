@@ -1,0 +1,25 @@
+@extends('layouts.erp')
+@section('title','OSL Cost Editor — Assam Motors')
+@section('topbar_title','OSL Cost Editor')
+@push('head')
+<style>body{margin:0;font:14px system-ui;color:#16304b;background:#eff5fb}.wrap{max-width:1080px;margin:24px auto;padding:0 14px}.top{background:#0b315b;color:#fff;border-radius:13px;padding:20px}.top h1{margin:0}.top a{color:#fff}.panel{background:#fff;border:1px solid #d9e4ed;border-radius:12px;padding:22px;margin-top:15px}.grid{display:grid;grid-template-columns:repeat(3,1fr);gap:15px}.grid label{font-weight:700;color:#234766}.grid input{display:block;margin-top:6px;width:100%;padding:11px;box-sizing:border-box;border:1px solid #abc2d6;border-radius:8px;font:inherit}textarea{width:100%;min-height:90px;box-sizing:border-box;padding:12px;border:1px solid #abc2d6;border-radius:8px}button{background:#188440;color:white;border:0;border-radius:8px;padding:13px 22px;font-weight:800;cursor:pointer}.warning{background:#fff3da;border:1px solid #f4d7a0;padding:14px;border-radius:8px;margin-top:14px}.error{background:#ffe6e4;color:#9c2525;padding:13px;margin-top:12px;border-radius:9px}@media(max-width:650px){.grid{grid-template-columns:1fr}}</style>@include('workshop-controls.enterprise-theme')
+@endpush
+@section('content')
+<div class="am-modern am50-integrated-page">
+<main class="wrap"><div class="top"><span class="am-eyebrow">PURCHASE CONTROL / OUTSIDE SERVICE</span><h1>OSL Purchase Cost Editor</h1><p>{{ $row->description ?? 'Outside Labour' }} · {{ $row->purchase_batch_no ?? $row->purchase_no ?? '' }}</p><a href="{{ route('erp.fix48.osl-index') }}">← OSL Register</a></div>
+@if($errors->any())<div class="error">@foreach($errors->all() as $e)<p>{{ $e }}</p>@endforeach</div>@endif
+@if(session('success'))<div class="warning">{{ session('success') }}</div>@endif
+@if($blocked)<div class="error">Linked Job Card {{ $job->job_no ?? $job->id }} is closed or invoiced. Supplier and customer billing must be revised together with their ledger references. Editing is locked.</div>@endif
+<div class="panel am-surface"><div class="grid"><div><strong>Vendor:</strong> {{ $row->vendor_name ?? $row->vendor ?? $row->vendor_id ?? '—' }}</div><div><strong>Against JC:</strong> {{ $job->job_no ?? $row->job_card_id ?? '—' }}</div><div><strong>Existing Total:</strong> ₹{{ number_format((float)($row->total_amount ?? $row->total ?? $row->grand_total ?? 0),2) }}</div></div></div>
+<form method="post" action="{{ route('erp.fix48.osl-save',$row->id) }}" class="panel am-surface">@csrf<input type="hidden" name="expected_old_total" value="{{ $row->total_amount ?? $row->total ?? $row->grand_total ?? 0 }}"><div class="grid">
+<label>Quantity *<input type="number" name="quantity" step="0.01" min="0.01" value="{{ $row->qty ?? $row->quantity ?? 1 }}" required {{ $blocked?'disabled':'' }}></label>
+<label>Vendor Rate *<input type="number" name="vendor_rate" step="0.01" min="0" value="{{ $row->unit_cost ?? $row->vendor_rate ?? $row->rate ?? 0 }}" required {{ $blocked?'disabled':'' }}></label>
+<label>Vendor Discount % *<input type="number" name="discount_percent" step="0.01" min="0" max="100" value="{{ $row->discount_percent ?? 0 }}" required {{ $blocked?'disabled':'' }}></label>
+<label>Purchase GST % *<input type="number" name="gst_percent" step="0.01" min="0" max="100" value="{{ $row->gst_percent ?? 0 }}" required {{ $blocked?'disabled':'' }}></label>
+</div><div class="warning" role="status" aria-live="polite"><b>Purchase Cost Preview:</b> <span id="result">—</span><p>Supplier purchase correction only; the linked Job Card customer billing and OSL Labour pricing cannot be silently changed from this form.</p></div>
+<p><label><b>Modification Reason *</b></label><textarea name="reason" minlength="5" maxlength="1000" required placeholder="What was charged incorrectly and why?" {{ $blocked?'disabled':'' }}></textarea></p>
+<button class="am-primary am-success-action" type="submit" {{ $blocked?'disabled':'' }}>Save OSL Purchase Cost</button></form><p class="am-footnote">Protected supplier purchase editing. Posted/paid transactions require audited correction before changes.</p></main>
+<script>const form=document.querySelector('form.panel');if(form){const f=n=>Number(form.querySelector('[name="'+n+'"]').value)||0;const run=()=>{let base=Math.round(f('quantity')*f('vendor_rate')*(1-f('discount_percent')/100)*100)/100,tax=Math.round(base*f('gst_percent'))/100;document.getElementById('result').textContent='Taxable ₹'+base.toFixed(2)+' + GST ₹'+tax.toFixed(2)+' = ₹'+(base+tax).toFixed(2)};form.querySelectorAll('input').forEach(x=>x.addEventListener('input',run));run()}</script>
+
+</div>
+@endsection
