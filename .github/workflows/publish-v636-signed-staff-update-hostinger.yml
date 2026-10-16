@@ -58,6 +58,54 @@ jobs:
           echo "CURRENT_STAFF_UPDATE_FEED:"
           php -r '$m=json_decode(file_get_contents($argv[1]),true); if(!is_array($m)||($m["package_id"]??null)!=="com.assammotors.staff"||!in_array((int)($m["version_code"]??0),[60305,60306],true)){fwrite(STDERR,"STOP: Unexpected updater version or package\n");exit(2);}echo "version_code=".$m["version_code"].PHP_EOL;' "$MANIFEST"
 
+          echo 'BACKEND_INSPECTION_30_COMPATIBILITY: guarded Laravel validation patch'
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          python3 - <<'PY'
+          from pathlib import Path
+          from datetime import datetime,timezone
+          import re,os,subprocess
+          base=Path('app/Http/Controllers')
+          pattern=re.compile(r"((?:['\"]items['\"])[ ]*=>[ ]*\[[ ]*['\"]required['\"][ ]*,[ ]*['\"]array['\"][ ]*,[ ]*)['\"]size:10['\"]")
+          replacement=r"\g<1>static function ($attribute, $value, $fail) { if (!is_array($value) || !in_array(count($value), [10,14,20,30], true)) { $fail('Unsupported inspection checklist length.'); } }"
+          patches=[]
+          for f in sorted(base.rglob('*Inspection*Controller.php')):
+              src=f.read_text()
+              modified,n=pattern.subn(replacement,src)
+              if n>1: raise RuntimeError('STOP: unexpected duplicate inspection item rules in '+str(f))
+              if n==1 and modified!=src:
+                  # Existing database schema and record content are untouched.
+                  if 'inspection' not in src.lower():raise RuntimeError('STOP: not inspection source')
+                  lint=subprocess.run(['php','-l'],input=modified,text=True,capture_output=True)
+                  if lint.returncode:raise RuntimeError('STOP: PHP syntax check failed '+str(f)+': '+lint.stdout)
+                  patches.append((f,src,modified))
+          if not any('StaffAssignedInspectionController.php' in str(p[0]) for p in patches):
+              present=(base/'Web/StaffAssignedInspectionController.php')
+              if not present.is_file() or 'Unsupported inspection checklist length.' not in present.read_text():
+                  raise RuntimeError('STOP: missing required StaffAssignedInspectionController inspection length patch')
+          applied=[]
+          stamp=datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+          try:
+              for f,old,new in patches:
+                  backup=f.with_name(f.name+'.backup-v636-'+stamp)
+                  backup.write_text(old)
+                  backup.chmod(0o600)
+                  tmp=f.with_name('.'+f.name+'.v636-tmp')
+                  tmp.write_text(new)
+                  tmp.chmod(f.stat().st_mode & 0o777)
+                  os.replace(tmp,f)
+                  applied.append((f,old))
+                  print('BACKEND_INSPECTION_RULE_PATCHED='+str(f))
+                  print('BACKUP='+backup.name)
+              for f,_,_ in patches:
+                  lint=subprocess.run(['php','-l',str(f)],capture_output=True,text=True)
+                  if lint.returncode:raise RuntimeError('PHP syntax verification failed: '+str(f))
+              print('BACKEND_ALLOWED_INSPECTION_LENGTHS=10,14,20,30')
+              print('BACKEND_EXISTING_INSPECTION_RECORDS=UNCHANGED')
+          except BaseException:
+              for f,old in applied:f.write_text(old)
+              print('BACKEND_VALIDATION_PATCH_ROLLED_BACK=YES')
+              raise
+          PY
           echo 'BACKEND_INSPECTION_COUNT_GUARD: scanning Laravel source, no write'
           cd "$HOME/domains/assammotors.com/assam-erp-staging"
           python3 - <<'PY'
