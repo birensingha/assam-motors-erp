@@ -1,0 +1,58 @@
+name: Cleanup Expired v6.3.4 Temporary APK Receiver
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/v634-temporary-upload-cleanup.yml"]
+permissions:
+  contents: read
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Remove only the identified temporary upload receiver
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keyscan -T 8 -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/v634cleanup
+            chmod 600 ~/.ssh/v634cleanup
+            CMD=(ssh -o BatchMode=yes -o ConnectTimeout=12 -i ~/.ssh/v634cleanup -p "$SSH_PORT")
+          else
+            test -n "$SSH_PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+            export SSHPASS="$SSH_PASSWORD"
+            CMD=(sshpass -e ssh -o ConnectTimeout=12 -p "$SSH_PORT")
+          fi
+          "${CMD[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          SITE="$HOME/domains/assammotors.com/public_html/staging"
+          TARGET="$SITE/staff-app/v634-upload-once.php"
+          if [ -f "$TARGET" ]; then
+            grep -Fq "c37ee6535eda06bc0255e573153c1a7460f7e005706139075fc84d8e459d5479" "$TARGET"
+            grep -Fq "TOKEN_DIGEST" "$TARGET"
+            rm -f -- "$TARGET"
+            echo "V634_TEMPORARY_RECEIVER=REMOVED"
+          else
+            echo "V634_TEMPORARY_RECEIVER=ALREADY_ABSENT"
+          fi
+          python3 - "$SITE/staff-app/latest.json" <<'PY'
+          import json,sys
+          x=json.load(open(sys.argv[1]))
+          print('OFFICIAL_UPDATE_FEED_STILL_ADVERTISES='+str(x.get('version_code','unknown')))
+          PY
+          REMOTE
+      - name: Remove temporary SSH key
+        if: always()
+        shell: bash
+        run: rm -f ~/.ssh/v634cleanup
