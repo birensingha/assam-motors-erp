@@ -86,6 +86,31 @@ jobs:
           set +e
           code=$(curl --max-time 14 -sS -o /tmp/update-response -w '%{http_code}' 'https://staging.assammotors.com/legacy/api/staff-app-update.php?platform=android&version_code=60303')
           echo "LIVE_UPDATE_ENDPOINT_HTTP=$code"
+      - name: Check any configured cross-repo release token without exposing it
+        env:
+          CROSS_TOKEN: ${{ secrets.GH_PAT || secrets.GITHUB_PAT || secrets.PRIVATE_REPO_PAT || secrets.CROSS_REPO_TOKEN || secrets.GH_TOKEN }}
+        shell: bash
+        run: |
+          if [ -z "$CROSS_TOKEN" ]; then
+            echo "CROSS_REPO_RELEASE_TOKEN=NOT_CONFIGURED"
+          else
+            code=$(curl -L --max-time 35 -sS -H "Authorization: Bearer $CROSS_TOKEN" -H "Accept: application/vnd.github+json" -o /tmp/pat-v634.zip -w '%{http_code}' 'https://api.github.com/repos/birensingha/assam-motors-staff-app/actions/artifacts/12022694649/zip')
+            echo "CROSS_REPO_RELEASE_TOKEN_HTTP=$code"
+            if unzip -tq /tmp/pat-v634.zip >/dev/null 2>&1; then
+              echo "CROSS_REPO_RELEASE_APK=VERIFIED_ZIP"
+            else
+              echo "CROSS_REPO_RELEASE_APK=NOT_AVAILABLE"
+            fi
+          fi
+          rm -f /tmp/pat-v634.zip
+      - name: Check public update hosts for secure APK transport
+        shell: bash
+        run: |
+          set +e
+          for url in 'https://assammotors.com/' 'https://assammotors.com/workshop/' 'https://staging.assammotors.com/staff-app/latest.json'; do
+            code=$(curl -L --max-time 16 -sS -o /dev/null -w '%{http_code}' "$url")
+            echo "PUBLIC_URL_HTTP=$code"
+          done
       - name: Erase temporary credentials
         if: always()
         shell: bash
