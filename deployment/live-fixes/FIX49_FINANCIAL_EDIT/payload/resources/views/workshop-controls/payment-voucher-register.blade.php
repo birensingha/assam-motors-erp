@@ -2,7 +2,7 @@
 @section('title','Payment Voucher Corrections — ASSAM MOTORS')
 @section('content')
 @include('workshop-controls.enterprise-theme')
-<div class="am-modern">@include('workshop-controls.enterprise-navigation')<main class="am-content">
+<div class="am-modern am50-integrated-page"><main class="am-content">
 <div class="page-head">
   <div><span class="am-eyebrow">FINANCE / PAYABLES REGISTER</span><div class="breadcrumbs">Accounts / Payment Vouchers</div><h1>Payment Voucher Register</h1><p>Search historical vouchers and correct amount/date/mode with a reason.</p></div>
   <div class="actions"><a class="btn" href="{{ route('erp.payments.index') }}">← Payment Register</a><a class="btn primary" href="{{ route('erp.payments.create') }}">+ Create Voucher</a></div>
