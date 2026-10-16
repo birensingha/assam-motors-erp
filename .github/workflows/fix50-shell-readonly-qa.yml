@@ -2,7 +2,9 @@ name: FIX50 Readonly Web ERP Shell Geometry QA
 on:
   push:
     branches: [feature/fix49-financial-edit-controls-20261015]
-    paths: ['.github/workflows/fix50-shell-readonly-qa.yml']
+    paths:
+      - '.github/workflows/fix50-shell-readonly-qa.yml'
+      - 'deployment/live-fixes/FIX50_MAIN_ERP_SHELL/QA_SHELL.mjs'
 permissions:
   contents: read
 jobs:
