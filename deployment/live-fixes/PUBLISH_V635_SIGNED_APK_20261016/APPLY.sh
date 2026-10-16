@@ -23,7 +23,7 @@ name='Assam-Motors-Staff-v6.3.5-INSPECTION-WORK-FIX-SIGNED.apk'
 expected='70036733ac3e1490cc1ef032f122f3d70074ffa52f5f7508bad306526e72ce2d'
 file=root/'private'/name
 assert file.is_file() and file.stat().st_size==3336948
-assert hashlib.file_digest(file.open('rb'),'sha256').hexdigest()==expected
+assert hashlib.sha256(file.read_bytes()).hexdigest()==expected
 if old==60305:
     assert data['sha256']==expected and data['apk_file']==name, 'Release checksum mismatch'
     print('V635_RELEASE_MANIFEST=ALREADY_PUBLISHED')
