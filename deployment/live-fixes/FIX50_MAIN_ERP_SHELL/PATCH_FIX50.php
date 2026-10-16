@@ -61,7 +61,9 @@ if(substr_count($after,'FIX50_ERP_NAV_V1')!==1 ||
     fwrite(STDERR,"FIX50_NO_GO_INTEGRATION_MARKERS\n");exit(6);
 }
 $section=substr($after,strpos($after,'WORKSHOP FINANCE'),strpos($after,'</nav>')-strpos($after,'WORKSHOP FINANCE'));
-if(preg_match_all('/<a\b[^>]*href\s*=/',$section)!==4){fwrite(STDERR,"FIX50_NO_GO_FINANCE_LINK_COUNT\n");exit(6);}
+// Blade expressions include PHP's -> operator before the href attribute, so
+// a naive HTML regex that stops at > is unsafe here. Count only our fixed marker.
+if(substr_count($section,'class="am50-finance')!==4){fwrite(STDERR,"FIX50_NO_GO_FINANCE_LINK_COUNT\n");exit(6);}
 try {
     chdir($root);require 'vendor/autoload.php';
     $app=require 'bootstrap/app.php';
