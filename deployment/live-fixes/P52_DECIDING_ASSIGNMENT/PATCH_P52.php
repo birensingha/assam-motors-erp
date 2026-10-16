@@ -103,12 +103,7 @@ BLADE
          '<div class="deciding-tech-box" id="deciding-technician"><!-- P52_FORMAL_DECIDER_STATUS -->',
          'decider_focus_anchor');
  // Read latest explicit Admin assignment, never infer it from JC creation.
- $auditQuery=<<<'BLADE'
-\Illuminate\Support\Facades\DB::table('job_card_diagnosis_events')
- ->where('job_card_id',$job->id)
- ->where('event_type','DECIDING_TECHNICIAN_ASSIGNED')
- ->orderByDesc('id')->value('technician_id')
-BLADE;
+ $auditQuery='\Illuminate\Support\Facades\DB::table(\'job_card_diagnosis_events\')->where(\'job_card_id\',$job->id)->where(\'event_type\',\'DECIDING_TECHNICIAN_ASSIGNED\')->orderByDesc(\'id\')->value(\'technician_id\')';
  $confirmed="(int)($auditQuery)===(int)\$job->technician_id && (int)\$job->technician_id>0";
  p52once($s,"<strong>{{ \$job->technician ?: 'Not Assigned' }}</strong>",
    "<strong>{{ ($confirmed) ? \$job->technician : 'NOT ASSIGNED — Admin selection pending' }}</strong>",
