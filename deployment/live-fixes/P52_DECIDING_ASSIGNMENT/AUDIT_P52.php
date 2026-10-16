@@ -45,7 +45,9 @@ foreach([
  ['app/Http/Controllers/Web/AdminJobCardPageController.php',854,925],
  ['app/Http/Controllers/Web/AdminJobCardPageController.php',948,1010],
  ['resources/views/job-cards/show.blade.php',243,300],
- ['app/Http/Controllers/Web/ManagerInspectionWorkController.php',35,59],
+ ['app/Http/Controllers/Web/ManagerInspectionWorkController.php',35,72],
+ ['resources/views/inspections/manager-work.blade.php',1,110],
+ ['resources/views/job-cards/show.blade.php',300,318],
  ['app/Http/Controllers/Web/AdminDiagnosisStageController.php',20,65],
  ['app/Http/Controllers/Web/StaffTechnicianDecisionController.php',22,63],
 ] as [$name,$from,$to]){
