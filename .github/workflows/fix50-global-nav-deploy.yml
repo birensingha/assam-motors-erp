@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/fix50-global-nav-deploy.yml'
       - 'deployment/live-fixes/FIX50_MAIN_ERP_SHELL/PATCH_FIX50.php'
+      - 'deployment/live-fixes/FIX50_MAIN_ERP_SHELL/erp-shell-fix50.blade.php'
 permissions:
   contents: read
 concurrency:
