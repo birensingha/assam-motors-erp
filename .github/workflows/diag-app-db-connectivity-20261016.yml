@@ -40,7 +40,7 @@ jobs:
           <?php
           require 'vendor/autoload.php';
           $app=require 'bootstrap/app.php';
-          $app->make(\\Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
+          $app->make(\Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
           $c=config('database.connections.mysql');
           $host=(string)($c['host']??'');
           $db=(string)($c['database']??'');
