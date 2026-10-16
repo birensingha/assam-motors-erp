@@ -9,6 +9,7 @@ $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 function out($key,$data){echo 'P52_'.$key.'='.json_encode($data,JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE)."\n";}
+// Re-run audit after browser test: user may legitimately have updated JC meanwhile.
 $jno='JC-20261016-00036';
 $cols=Schema::getColumnListing('job_cards');
 $fields=array_values(array_intersect(['id','job_no','status','created_at','inspection_status','diagnosis_status','decision_status','inspection_submitted_at','technician','technician_id','assigned_mechanic_id','assigned_technician_id','deciding_technician_id','deciding_technician_assigned_at','deciding_technician_assigned_by','technician_assigned_at','technician_assigned_by'], $cols));
