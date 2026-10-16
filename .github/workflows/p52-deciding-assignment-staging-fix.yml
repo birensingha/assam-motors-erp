@@ -2,7 +2,9 @@ name: P52 Correct Inspection vs Deciding Technician — STAGING
 on:
   push:
     branches: [feature/p51-legacy-independence-audit-20261016]
-    paths: ['.github/workflows/p52-deciding-assignment-staging-fix.yml']
+    paths:
+      - '.github/workflows/p52-deciding-assignment-staging-fix.yml'
+      - 'deployment/live-fixes/P52_DECIDING_ASSIGNMENT/PATCH_P52.php'
 permissions:
   contents: read
 concurrency:
