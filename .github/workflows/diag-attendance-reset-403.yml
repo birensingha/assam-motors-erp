@@ -50,7 +50,7 @@ jobs:
           sed -n '1,135p' app/Http/Controllers/Web/WebAuthController.php | grep -vEi '(password|secret|token)'
           sed -n '1,118p' app/Http/Controllers/Web/StaffWebAuthController.php | grep -vEi '(password|secret|token)'
           echo "== RESET CONTROLLER FILE METHOD CONTEXT =="
-          grep -nE '(function resetAttendance|function admin\\(|function attendance|resetAttendance)' app/Http/Controllers/Web/AdminNativeModuleController.php
+          grep -nF -e 'function resetAttendance' -e 'function admin(' -e 'function attendance(' app/Http/Controllers/Web/AdminNativeModuleController.php
           python3 - <<'PY'
           from pathlib import Path
           p=Path('app/Http/Controllers/Web/AdminNativeModuleController.php')
@@ -63,6 +63,9 @@ jobs:
               v=rows[j]
               if 'password' not in v.lower() and 'secret' not in v.lower() and 'token' not in v.lower():print(str(j+1)+': '+v[:195])
           PY
+          echo "== RELEVANT WEB ROUTE GROUPS AND LOGIN ROUTES =="
+          sed -n '1,100p' routes/web.php | grep -vEi '(password|secret|token)'
+          sed -n '170,250p' routes/web.php | grep -vEi '(password|secret|token)'
           echo "== SESSION AUTH CONFIG SOURCE =="
           grep -nE '(providers|guards|driver|model)' config/auth.php | head -75
           REMOTE
