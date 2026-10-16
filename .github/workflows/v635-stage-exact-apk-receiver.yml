@@ -1,0 +1,124 @@
+name: Stage Short-lived Exact-Hash Staff v6.3.5 APK Receiver
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/v635-stage-exact-apk-receiver.yml"]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Configure existing Hostinger SSH access
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/v635
+            chmod 600 ~/.ssh/v635
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Stage expiring checksum-only transfer endpoint without changing update feed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            CMD=(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=24 -i ~/.ssh/v635 -p "$PORT")
+          else
+            export SSHPASS="$PASSWORD"
+            CMD=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=24 -p "$PORT")
+          fi
+          "${CMD[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          test -f "$SITE/latest.json"
+          test -d "$SITE/private"
+          DEST="$SITE/v635-upload-once.php"
+          if [ -f "$DEST" ]; then
+            grep -Fq "70036733ac3e1490cc1ef032f122f3d70074ffa52f5f7508bad306526e72ce2d" "$DEST" || exit 5
+            echo "V635_EXACT_RECEIVER=ALREADY_STAGED"
+            exit 0
+          fi
+          cat > "$DEST.tmp" <<'PHP'
+          <?php
+          declare(strict_types=1);
+          header('Content-Type: application/json; charset=utf-8');
+          header('X-Content-Type-Options: nosniff');
+          header('Cache-Control: no-store, max-age=0');
+          const EXPECTED_SHA = '70036733ac3e1490cc1ef032f122f3d70074ffa52f5f7508bad306526e72ce2d';
+          const EXPECTED_SIZE = 3336948;
+          const FILE = 'Assam-Motors-Staff-v6.3.5-INSPECTION-WORK-FIX-SIGNED.apk';
+          function fail(int $status,string $reason): void {
+            http_response_code($status);
+            echo json_encode(['ok'=>false,'reason'=>$reason]);
+            exit;
+          }
+          if (time() > filemtime(__FILE__)+1800) fail(410,'Upload window expired');
+          if (strtolower((string)($_SERVER['HTTP_HOST']??''))!=='staging.assammotors.com') fail(403,'Host forbidden');
+          if (($_SERVER['REQUEST_METHOD']??'')!=='POST') fail(405,'POST required');
+          if (strtolower((string)($_SERVER['CONTENT_TYPE']??''))!=='application/octet-stream') fail(415,'Wrong content type');
+          if ((int)($_SERVER['CONTENT_LENGTH']??-1)!==EXPECTED_SIZE) fail(413,'Invalid file size');
+          $folder=__DIR__.'/private';
+          if (!is_dir($folder)) fail(500,'Private folder unavailable');
+          $target=$folder.'/'.FILE;
+          if (is_file($target)) {
+            if (hash_equals(EXPECTED_SHA,(string)hash_file('sha256',$target))) {
+              echo json_encode(['ok'=>true,'already_present'=>true,'sha256'=>EXPECTED_SHA]);
+              exit;
+            }
+            fail(409,'Refusing existing mismatched file');
+          }
+          $tmp=tempnam($folder,'.v635-');
+          if ($tmp===false) fail(500,'Could not stage file');
+          $input=fopen('php://input','rb');
+          $output=fopen($tmp,'wb');
+          if ($input===false||$output===false){@unlink($tmp);fail(500,'Failed to open streams');}
+          $total=0;
+          while (!feof($input)) {
+            $data=fread($input,65536);
+            if ($data===false) break;
+            $total+=strlen($data);
+            if ($total>EXPECTED_SIZE || fwrite($output,$data)!==strlen($data)) break;
+          }
+          fclose($input);
+          fclose($output);
+          if ($total!==EXPECTED_SIZE || !hash_equals(EXPECTED_SHA,(string)hash_file('sha256',$tmp))) {
+            @unlink($tmp);
+            fail(422,'Hash mismatch');
+          }
+          chmod($tmp,0644);
+          if (file_exists($target) || !rename($tmp,$target)) {
+            @unlink($tmp);fail(409,'Already exists');
+          }
+          http_response_code(201);
+          echo json_encode(['ok'=>true,'version_code'=>60305,'sha256'=>EXPECTED_SHA]);
+          PHP
+          chmod 0644 "$DEST.tmp"
+          mv "$DEST.tmp" "$DEST"
+          php -l "$DEST"
+          echo "V635_EXACT_RECEIVER=STAGED"
+          REMOTE
+      - name: Verify no anonymous download/get is accepted
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(curl -sS --max-time 20 -o /tmp/response -w '%{http_code}' 'https://staging.assammotors.com/staff-app/v635-upload-once.php')"
+          echo "V635_RECEIVER_GET_HTTP=$status"
+          test "$status" = 405
+      - name: Clear runner authentication
+        if: always()
+        run: rm -f ~/.ssh/v635 /tmp/response
