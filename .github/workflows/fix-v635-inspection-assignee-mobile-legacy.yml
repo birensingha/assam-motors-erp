@@ -1,0 +1,137 @@
+name: Fix Assigned Inspection Not Visible in Staff Android v6.3.4
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/fix-v635-inspection-assignee-mobile-legacy.yml"]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Authenticate to Hostinger staging over SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/inspect_v635
+            chmod 600 ~/.ssh/inspect_v635
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Apply and verify narrow inspection assignee/response fix with backups
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -i ~/.ssh/inspect_v635 -p "$PORT")
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com"
+          export STAGING_DOMAIN_ROOT="$ROOT"
+          python3 - <<'PY'
+          import os,subprocess
+          from pathlib import Path
+          from datetime import datetime,timezone
+          root=Path(os.environ['STAGING_DOMAIN_ROOT'])
+          files=[
+              root/'public_html/staging/legacy/api/staff-inspections.php',
+              root/'assam-erp-staging/public/legacy/api/staff-inspections.php',
+          ]
+          # Don't change anything when source or expectations have drifted.
+          for f in files: assert f.is_file(), 'MISSING ' + str(f)
+          replacements=[
+            ("$action = $_GET['action'] ?? 'assigned';",
+             "$action = $_GET['action'] ?? (isset($_GET['job_id']) ? 'get' : 'assigned');"),
+            ("SELECT * FROM job_cards WHERE id=? AND technician_id=? LIMIT 1",
+             "SELECT * FROM job_cards WHERE id=? AND id IN (SELECT job_card_id FROM job_card_inspection_assignments WHERE assigned_staff_id=?) LIMIT 1"),
+            ("FROM job_cards WHERE technician_id=? AND COALESCE(inspection_status,'pending')='pending'",
+             "FROM job_cards WHERE id IN (SELECT job_card_id FROM job_card_inspection_assignments WHERE assigned_staff_id=?) AND COALESCE(inspection_status,'pending')='pending'"),
+            ("sendJson(['jobs'=>$stmt->fetchAll(), 'staff_id'=>$staffId]);",
+             "$rows=$stmt->fetchAll(); sendJson(['jobs'=>$rows, 'rows'=>$rows, 'staff_id'=>$staffId]);"),
+            ("if (($job['inspection_status'] ?? 'pending') !== 'pending') sendJson(['error'=>'Inspection already submitted'],409);",
+             "if (strtolower(trim((string)($job['status'] ?? ''))) !== 'open' || strtolower(trim((string)($job['inspection_status'] ?? 'pending'))) !== 'pending' || strtolower(trim((string)($job['diagnosis_status'] ?? 'pending'))) === 'completed') sendJson(['error'=>'Inspection cannot be submitted in current Job Card status'],409);\n"
+             "    $assignment=$db->prepare('SELECT completed_at FROM job_card_inspection_assignments WHERE job_card_id=? AND assigned_staff_id=? LIMIT 1');\n"
+             "    $assignment->execute([$jobId,$staffId]);\n"
+             "    $completedAt=$assignment->fetchColumn();\n"
+             "    if($completedAt !== null && $completedAt !== false) sendJson(['error'=>'Inspection assignment already completed'],409);\n"
+             "    $existing=$db->prepare('SELECT COUNT(*) FROM job_card_inspection WHERE job_card_id=?');\n"
+             "    $existing->execute([$jobId]);\n"
+             "    if((int)$existing->fetchColumn() > 0) sendJson(['error'=>'Existing inspection items must be reconciled before resubmission'],409);"),
+            ("if (!is_array($items)) sendJson(['error'=>'Invalid inspection items'],400);",
+             "if (!is_array($items) || !$items) sendJson(['error'=>'At least one inspection item required'],422);"),
+          ]
+          staged=[]
+          for f in files:
+              original=f.read_text()
+              patched=original
+              for src,dst in replacements:
+                  if dst in patched: continue
+                  count=patched.count(src)
+                  if count!=1: raise RuntimeError('STOP: original code unexpectedly changed for '+str(f.name)+' expected count=1 got='+str(count))
+                  patched=patched.replace(src,dst,1)
+              if patched==original: print('ALREADY_PATCHED',f.name);continue
+              result=subprocess.run(['php','-l'],input=patched,text=True,capture_output=True)
+              if result.returncode: raise RuntimeError('STOP PHP LINT FAILED '+str(f)+': '+result.stdout)
+              staged.append((f,original,patched))
+          stamp=datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+          applied=[]
+          try:
+              for f,original,patched in staged:
+                  backup=f.with_name(f.name+'.backup-assignee-v635-'+stamp)
+                  backup.write_text(original)
+                  backup.chmod(f.stat().st_mode&0o777)
+                  tmp=f.with_name('.'+f.name+'.v635-new')
+                  tmp.write_text(patched)
+                  tmp.chmod(f.stat().st_mode&0o777)
+                  os.replace(tmp,f)
+                  applied.append((f,original))
+                  print('INSPECTION_ASSIGNEE_API_PATCHED='+str(f))
+                  print('BACKUP_FILE='+backup.name)
+              for f in files:
+                  data=f.read_text()
+                  assert "job_card_inspection_assignments WHERE assigned_staff_id=?" in data
+                  assert "['jobs'=>$rows, 'rows'=>$rows" in data
+                  assert "isset($_GET['job_id'])" in data
+                  lint=subprocess.run(['php','-l',str(f)],capture_output=True,text=True)
+                  assert lint.returncode==0
+              print('INSPECTION_ASSIGNEE_API=VERIFIED_PHP_LINT')
+          except BaseException:
+              for f,old in applied: f.write_text(old)
+              print('ROLLBACK=PERFORMED')
+              raise
+          PY
+          echo "== READ ONLY EXACT JC ASSIGNMENT CHECK =="
+          cd "$ROOT/public_html/staging/legacy/api"
+          php -r 'require "config.php";$db=getDB();$q=$db->prepare("SELECT j.id,j.job_no,j.vehicle_reg_no,a.assigned_staff_id FROM job_cards j JOIN job_card_inspection_assignments a ON a.job_card_id=j.id WHERE j.job_no=? AND a.assigned_staff_id=? AND COALESCE(j.inspection_status,\047pending\047)=\047pending\047 LIMIT 1");$q->execute(["JC-20261016-00035",2]);$x=$q->fetch(PDO::FETCH_ASSOC);if(!$x){fwrite(STDERR,"ASSIGNMENT_CHECK_FAILED\n");exit(1);}echo "ASSIGNMENT_ID=".$x["assigned_staff_id"]." JOB=".$x["job_no"]." VEHICLE=".$x["vehicle_reg_no"]."\n";'
+          REMOTE
+      - name: Verify legacy inspection endpoint rejects unauthenticated callers
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl --max-time 20 --silent --show-error -o /tmp/inspect-response -w '%{http_code}' 'https://staging.assammotors.com/legacy/api/staff-inspections.php')
+          echo "INSPECTION_ENDPOINT_UNAUTH_HTTP=$code"
+          test "$code" = 401 || test "$code" = 403
+      - name: Erase runner SSH identity
+        if: always()
+        shell: bash
+        run: rm -f ~/.ssh/inspect_v635 /tmp/inspect-response
