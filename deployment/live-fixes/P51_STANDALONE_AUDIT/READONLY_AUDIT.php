@@ -61,6 +61,29 @@ state('ROUTE_COUNTERS',json_encode($routeStats));
 state('ADMIN_ROUTE_SAMPLE',implode(';',array_slice(array_unique($adminRoutes),0,30)));
 state('ERP_ROUTE_SAMPLE',implode(';',array_slice(array_unique($erpRoutes),0,16)));
 state('LEGACY_ROUTE_SAMPLE',implode(';',array_slice(array_unique($legacyRoutes),0,25)));
+foreach(['erp.login','erp.dashboard','erp.configuration','erp.customers','erp.job-cards.index','erp.payments.index','erp.fix49.payment-register'] as $routeName) {
+ if(!Route::has($routeName))continue;
+ $rt=Route::getRoutes()->getByName($routeName);
+ state('ROUTE_GUARD',json_encode(['name'=>$routeName,'uri'=>$rt->uri(),'methods'=>array_values($rt->methods()),
+     'middleware'=>array_values($rt->gatherMiddleware())]));
+}
+$rp=$root.'/routes/web.php';
+if(is_file($rp)){
+ $lines=file($rp);
+ foreach($lines as $i=>$line)if(preg_match('~Route::(?:prefix|middleware|group)|->name\\(\\x27erp\\.|/dashboard|/login|/configuration~i',$line)){
+   if($i>10 && $i<600)state('WEB_ROUTE_ANCHOR',($i+1).'|'.substr(trim($line),0,180));
+ }
+}
+try{
+ foreach(['erp_auth_users','users','staff'] as $accountTable) {
+   if(!Schema::hasTable($accountTable))continue;
+   state('AUTH_TABLE_COLUMNS',json_encode(['name'=>$accountTable,'columns'=>Schema::getColumnListing($accountTable)]));
+   if(Schema::hasColumn($accountTable,'role')) {
+     $roles=DB::table($accountTable)->select('role')->selectRaw('count(*) as records')->groupBy('role')->get();
+     state('AUTH_ROLES',json_encode(['table'=>$accountTable,'roles'=>$roles->map(fn($r)=>['role'=>$r->role,'count'=>$r->records])->toArray()]));
+   }
+ }
+} catch(Throwable $e) {state('ROLES_AUDIT_ERROR',get_class($e));}
 $matches=scanFiles($root,['app','routes','resources/views','resources/js','public/js']);
 foreach($matches as $path=>$markers)state('COUPLED_FILE',str_replace(['=',"\n"],['_','_'],$path).'|'.implode(',',$markers));
 state('COUPLED_FILES_COUNT',count($matches));
