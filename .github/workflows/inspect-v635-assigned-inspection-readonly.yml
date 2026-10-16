@@ -55,6 +55,10 @@ jobs:
           sed -n '1,37p' app/Http/Controllers/Api/V1/StaffExtraController.php || true
           echo "== ASSIGNMENT ADMIN CONTROLLER METHODS =="
           grep -nE 'function |job_card_inspection_assignments|assigned_staff_id|inspection_assigned' app/Http/Controllers/Web/AdminInspectionPageController.php | head -85 || true
+          echo "== VERIFIED ASSIGNMENT FOR JC-20261016-00035 =="
+          php -r 'chdir(getenv("HOME")."/domains/assammotors.com/public_html/staging/legacy/api"); require "config.php"; $db=getDB(); $p=$db->prepare("SELECT j.id,j.job_no,j.vehicle_reg_no,j.inspection_status,j.technician_id,a.assigned_staff_id,a.completed_at FROM job_cards j LEFT JOIN job_card_inspection_assignments a ON a.job_card_id=j.id WHERE j.job_no=? LIMIT 1");$p->execute(["JC-20261016-00035"]);echo json_encode($p->fetch(PDO::FETCH_ASSOC),JSON_UNESCAPED_SLASHES),PHP_EOL;'
+          echo "== STAFF-ID CROSSCHECK =="
+          php -r 'chdir(getenv("HOME")."/domains/assammotors.com/public_html/staging/legacy/api"); require "config.php"; $db=getDB();$q=$db->query("SHOW COLUMNS FROM staff");foreach($q as $r){if(in_array($r["Field"],["id","staff_code","code","name","status"]))echo $r["Field"]." ";}echo PHP_EOL; $p=$db->prepare("SELECT id,staff_code,name,status FROM staff WHERE staff_code=? LIMIT 1");$p->execute(["AM9472"]);echo json_encode($p->fetch(PDO::FETCH_ASSOC)),PHP_EOL;'
           echo "== TABLE STRUCTURE (COLUMNS ONLY) =="
           php artisan tinker --execute='foreach(["job_cards","inspections","job_card_inspections","staff","erp_auth_users"] as $t){if(\\Illuminate\\Support\\Facades\\Schema::hasTable($t)){echo $t." ".implode(",",\\Illuminate\\Support\\Facades\\Schema::getColumnListing($t))."\n";}}' 2>/dev/null | head -15 || true
           REMOTE
