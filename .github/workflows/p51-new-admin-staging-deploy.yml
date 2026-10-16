@@ -1,0 +1,158 @@
+name: P51 Separate NEW Admin from NEW ERP — Guarded STAGING Deploy
+on:
+  push:
+    branches: [feature/p51-legacy-independence-audit-20261016]
+    paths: ['.github/workflows/p51-new-admin-staging-deploy.yml']
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+      STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL || 'https://staging.assammotors.com' }}
+      STAGING_ADMIN_LOGIN: ${{ secrets.STAGING_ADMIN_LOGIN }}
+      STAGING_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preflight: PHP syntax, views and authenticated GET QA syntax
+        run: |
+          set -euo pipefail
+          P=deployment/live-fixes/P51_STANDALONE_AUDIT
+          php -l "$P/PATCH_P51_ADMIN.php"
+          php -l "$P/payload/app/Http/Controllers/Web/NewAdminConsoleController.php"
+          node --check "$P/QA_ADMIN.mjs"
+          test -s "$P/payload/resources/views/layouts/new-admin.blade.php"
+          test -s "$P/payload/resources/views/admin/new-console.blade.php"
+          echo 'P51_LOCAL_CODE_CHECKS_PASS'
+      - name: Pack only P51 source files
+        run: |
+          set -euo pipefail
+          P=deployment/live-fixes/P51_STANDALONE_AUDIT
+          tar -czf /tmp/am-p51-stage.tar.gz -C "$P" PATCH_P51_ADMIN.php payload
+      - name: Prepare authenticated SSH transport
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+             printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+             chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+             sudo apt-get update -qq
+             sudo apt-get install -y -qq sshpass
+          fi
+      - name: Snapshot NEW ERP source, install NEW Admin UI and compile protected route
+        id: deploy
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          STAGE="/home/$SSH_USER/p51-admin-stage-$GITHUB_RUN_ID"
+          "${SSH[@]}" "$REMOTE" "mkdir -p '$STAGE'"
+          "${SCP[@]}" /tmp/am-p51-stage.tar.gz "$REMOTE:$STAGE/archive.tgz"
+          "${SSH[@]}" "$REMOTE" "APP_ROOT='$APP_ROOT' STAGE='$STAGE' RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          ROOT="$APP_ROOT"
+          test -f "$ROOT/artisan"
+          BACKUP="$(dirname "$ROOT")/ASSAM_P51_ADMIN_BACKUP_$RUN_ID"
+          test ! -e "$BACKUP"
+          mkdir -p "$BACKUP"
+          tar -xzf "$STAGE/archive.tgz" -C "$STAGE"
+          ROUTES="$ROOT/routes/web.php"
+          ERP_LAYOUT="$ROOT/resources/views/layouts/erp.blade.php"
+          ADMIN_CTRL="$ROOT/app/Http/Controllers/Web/NewAdminConsoleController.php"
+          ADMIN_LAYOUT="$ROOT/resources/views/layouts/new-admin.blade.php"
+          ADMIN_VIEW="$ROOT/resources/views/admin/new-console.blade.php"
+          test -f "$ROUTES" && test -f "$ERP_LAYOUT"
+          test ! -e "$ADMIN_CTRL" && test ! -e "$ADMIN_LAYOUT" && test ! -e "$ADMIN_VIEW"
+          cp -p "$ROUTES" "$BACKUP/routes_web.php"
+          cp -p "$ERP_LAYOUT" "$BACKUP/erp_layout.blade.php"
+          rollback(){
+            echo "P51_ROLLBACK_START"
+            cp -p "$BACKUP/routes_web.php" "$ROUTES" || true
+            cp -p "$BACKUP/erp_layout.blade.php" "$ERP_LAYOUT" || true
+            rm -f "$ADMIN_CTRL" "$ADMIN_LAYOUT" "$ADMIN_VIEW"
+            (cd "$ROOT" && php artisan route:clear && php artisan view:clear) >/dev/null 2>&1 || true
+            echo "P51_ROLLBACK_COMPLETED"
+          }
+          trap rollback ERR
+          cp -p "$STAGE/payload/app/Http/Controllers/Web/NewAdminConsoleController.php" "$ADMIN_CTRL"
+          cp -p "$STAGE/payload/resources/views/layouts/new-admin.blade.php" "$ADMIN_LAYOUT"
+          cp -p "$STAGE/payload/resources/views/admin/new-console.blade.php" "$ADMIN_VIEW"
+          php "$STAGE/PATCH_P51_ADMIN.php" check "$ROOT"
+          php "$STAGE/PATCH_P51_ADMIN.php" apply "$ROOT"
+          cd "$ROOT"
+          php artisan route:clear
+          php artisan view:clear
+          php artisan view:cache
+          php artisan route:list --name=erp.admin.console | grep -q 'erp/admin'
+          echo 'P51_NEW_ADMIN_NATIVE_ROUTE_INSTALL_PASS'
+          echo "P51_BACKUP_CREATED=$BACKUP"
+          trap - ERR
+          rm -rf "$STAGE"
+          REMOTE_SCRIPT
+      - uses: actions/setup-node@v4
+        if: steps.deploy.outcome == 'success'
+        with:
+          node-version: '22'
+      - name: Install browser
+        if: steps.deploy.outcome == 'success'
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Authenticated Admin/ERP separation and anonymous permission browser test
+        id: qa
+        if: steps.deploy.outcome == 'success'
+        run: node deployment/live-fixes/P51_STANDALONE_AUDIT/QA_ADMIN.mjs
+      - name: Rollback P51 if authenticated browser QA fails
+        if: failure() && steps.deploy.outcome == 'success'
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "APP_ROOT='$APP_ROOT' RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          ROOT="$APP_ROOT"
+          BACKUP="$(dirname "$ROOT")/ASSAM_P51_ADMIN_BACKUP_$RUN_ID"
+          test -s "$BACKUP/routes_web.php" && test -s "$BACKUP/erp_layout.blade.php"
+          cp -p "$BACKUP/routes_web.php" "$ROOT/routes/web.php"
+          cp -p "$BACKUP/erp_layout.blade.php" "$ROOT/resources/views/layouts/erp.blade.php"
+          rm -f "$ROOT/app/Http/Controllers/Web/NewAdminConsoleController.php"
+          rm -f "$ROOT/resources/views/layouts/new-admin.blade.php"
+          rm -f "$ROOT/resources/views/admin/new-console.blade.php"
+          cd "$ROOT"
+          php artisan route:clear
+          php artisan view:clear
+          php artisan view:cache
+          echo 'P51_NEW_ADMIN_BROWSER_QA_ROLLBACK_COMPLETED'
+          REMOTE_SCRIPT
+      - name: Print accurate result
+        if: always()
+        run: |
+          echo "P51 NEW Admin source: ${{ steps.deploy.outcome }}"
+          echo "P51 Admin/ERP browser QA: ${{ steps.qa.outcome }}"
+          echo 'NO OLD ERP/ADMIN CODE, DATA, LEDGER, SCHEMA OR LOGIN WAS MODIFIED.'
+      - if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"
