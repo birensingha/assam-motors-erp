@@ -1,0 +1,55 @@
+name: Read-only Diagnose Admin Assigned ROT and Staging Native Routes
+on:
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/v637-diagnose-admin-rot-readonly.yml"]
+permissions: { contents: read }
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Read-only diagnostic of AM5077 and native ROT list/auth route
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/v637ro; chmod 600 ~/.ssh/v637ro
+            SSH=(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -i ~/.ssh/v637ro -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          cd "$ROOT"
+          echo '=== LIVE NATIVE STAFF/ROT ROUTES ==='
+          php artisan route:list --path=api/v1 --json 2>/dev/null | python3 -c 'import sys,json; x=json.load(sys.stdin); [print(z.get("method"),z.get("uri"),z.get("action")) for z in x if "rot" in z.get("uri","").lower() or "staff/me" in z.get("uri","").lower() or "mobile/me" in z.get("uri","").lower()]' | head -85
+          echo '=== AUTHENTICATED STAGING ROT CONTROLLER LOCATIONS ==='
+          grep -RIn --include='*.php' -E "function (rot|rots|staffRots|myRot|myRots|rotSessions|rotList)|staff-rot-v3.php|/staff/rot|rot_session" app/Http/Controllers/Api/V1 routes/api.php | head -100 || true
+          echo '=== STAFF LEGACY ROT AUTH SELECT AND FILTER (non-secret) ==='
+          LEGACY="$HOME/domains/assammotors.com/public_html/staging/legacy/api/staff-rot-v3.php"
+          test -f "$LEGACY"
+          php -r '$f=$argv[1];$a=file($f);foreach($a as $i=>$line){if(preg_match("/^.*(function .*rot|\\$staffId|technician_id|assigned_staff_id|staff_code|JWT|Bearer|session_id|function .*list|action.?=.?.?list)/i",$line)&&!preg_match("/secret|password|database|apikey|token.?=/i",$line)){echo ($i+1).": ".substr(trim($line),0,170).PHP_EOL;}}' "$LEGACY" | head -90 || true
+          echo '=== JC-20261016-00036 STAFF/ROT SOURCE KEYS (read-only) ==='
+          php -r 'chdir(getenv("HOME")."/domains/assammotors.com/public_html/staging/legacy/api");require "config.php"; $db=getDB(); foreach(["job_cards","staff","rot_sessions","job_card_rot","job_card_rots","rot_assignments"] as $t){try{$q=$db->query("SHOW COLUMNS FROM `".$t."`"); echo "TABLE ".$t." COLUMNS ".implode(",",array_column($q->fetchAll(PDO::FETCH_ASSOC),"Field")).PHP_EOL;}catch(Throwable $e){echo "TABLE ".$t." MISSING\n";}}' | head -14
+          php -r 'chdir(getenv("HOME")."/domains/assammotors.com/public_html/staging/legacy/api");require "config.php";$db=getDB();$p=$db->prepare("SELECT id,staff_code,name FROM staff WHERE staff_code=? LIMIT 1");$p->execute(["AM5077"]);echo "STAFF_ADMIN_AM5077=".json_encode($p->fetch(PDO::FETCH_ASSOC)).PHP_EOL;$q=$db->prepare("SELECT id,job_no,vehicle_reg_no,technician_id,technician FROM job_cards WHERE job_no=? LIMIT 1");$q->execute(["JC-20261016-00036"]);echo "JC_ROT_TARGET=".json_encode($q->fetch(PDO::FETCH_ASSOC)).PHP_EOL;'
+          echo '=== NATIVE STAFF ID RESOLUTION METHODS ==='
+          grep -RIn --include='*.php' -E 'function (linkedStaffId|resolveStaffId|staffProfileId|staffRot|rot|rotList|listRot)' app/Http/Controllers/Api/V1 app/Services | head -75 || true
+          echo 'V637_READ_ONLY_DIAGNOSTIC=COMPLETE'
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/v637ro
