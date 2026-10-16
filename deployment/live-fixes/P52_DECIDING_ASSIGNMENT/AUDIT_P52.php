@@ -40,4 +40,19 @@ foreach(['app/Http/Controllers/Web/AdminJobCardPageController.php','app/Services
  }
  out('SOURCE_REFERENCES',['file'=>$p,'match'=>$m]);
 }
+foreach([
+ ['app/Http/Controllers/Web/AdminJobCardPageController.php',170,245],
+ ['app/Http/Controllers/Web/AdminJobCardPageController.php',854,925],
+ ['app/Http/Controllers/Web/AdminJobCardPageController.php',948,1010],
+ ['resources/views/job-cards/show.blade.php',243,300],
+ ['app/Http/Controllers/Web/ManagerInspectionWorkController.php',35,59],
+ ['app/Http/Controllers/Web/AdminDiagnosisStageController.php',20,65],
+ ['app/Http/Controllers/Web/StaffTechnicianDecisionController.php',22,63],
+] as [$name,$from,$to]){
+ $file=$root.'/'.$name;if(!is_file($file))continue;
+ $lines=file($file);$part=[];
+ for($i=$from-1;$i<min(count($lines),$to);$i++)
+   $part[]=($i+1).':'.substr(trim($lines[$i]),0,215);
+ out('CODE_CONTEXT',['path'=>$name,'range'=>"$from-$to",'lines'=>$part]);
+}
 echo "P52_READONLY_NO_MUTATIONS=PASS\n";
