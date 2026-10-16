@@ -2,7 +2,9 @@ name: FIX49 Authenticated Editor Deep-Link QA (Read Only)
 on:
   push:
     branches: [feature/fix49-financial-edit-controls-20261015]
-    paths: ['.github/workflows/fix49-editor-detail-qa.yml']
+    paths:
+      - '.github/workflows/fix49-editor-detail-qa.yml'
+      - 'deployment/live-fixes/FIX49_FINANCIAL_EDIT/scripts/DETAIL_VERIFY.mjs'
 permissions:
   contents: read
 jobs:
