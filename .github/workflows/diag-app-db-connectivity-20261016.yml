@@ -36,34 +36,29 @@ jobs:
           set -euo pipefail
           cd "$HOME/domains/assammotors.com/assam-erp-staging"
           echo "== MYSQL HOST/SOCKET CONNECTIVITY PROBE (NO CREDENTIAL OUTPUT) =="
-          php <<'PHP'
-          <?php
-          require 'vendor/autoload.php';
-          $app=require 'bootstrap/app.php';
-          $app->make(\Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
-          $c=config('database.connections.mysql');
-          $host=(string)($c['host']??'');
-          $db=(string)($c['database']??'');
-          $user=(string)($c['username']??'');
-          $pass=(string)($c['password']??'');
-          $port=(string)($c['port']??'3306');
-          $options=[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_TIMEOUT=>3];
-          echo "DB_CONFIG_HOST=".($host==='127.0.0.1'?'LOOPBACK_TCP':($host==='localhost'?'LOCALHOST':'OTHER'))."\n";
-          echo "PHP_DEFAULT_MYSQL_SOCKET=".(ini_get('pdo_mysql.default_socket')?:'UNKNOWN')."\n";
-          foreach (['CURRENT_HOST'=>$host,'TCP_127'=>'127.0.0.1','SOCKET_LOCALHOST'=>'localhost'] as $test=>$h) {
-              for($i=1;$i<=2;$i++){
-                  $dsn='mysql:host='.$h.';port='.$port.';dbname='.$db.';charset=utf8mb4';
-                  try {
-                      $pdo=new PDO($dsn,$user,$pass,$options);
-                      $res=$pdo->query('SELECT 1')->fetchColumn();
-                      echo "DB_PROBE ".$test." ".$i." OK\n";
-                  }catch(Throwable $e){
-                      $code=($e instanceof PDOException)?(string)$e->getCode():'UNEXPECTED';
-                      echo "DB_PROBE ".$test." ".$i." FAIL_SQLSTATE=".$code." CATEGORY=".get_class($e)."\n";
-                  }
+          php -d display_errors=1 -r '
+          try {
+            require "vendor/autoload.php";
+            $app=require "bootstrap/app.php";
+            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $c=config("database.connections.mysql");
+            echo "DB_CONFIG_HOST_TYPE=".(($c["host"]??"")==="127.0.0.1"?"TCP_127":(($c["host"]??"")==="localhost"?"LOCALHOST":"OTHER"))."\n";
+            echo "MYSQL_SOCKET_DEFAULT=".((string)ini_get("pdo_mysql.default_socket"))."\n";
+            foreach(["CURRENT"=>$c["host"],"LOOPBACK"=>"127.0.0.1","LOCAL_SOCKET"=>"localhost"] as $label=>$hostname){
+              for($n=1;$n<=2;$n++){
+                try{
+                  $dsn="mysql:host=".$hostname.";port=".($c["port"]??3306).";dbname=".$c["database"].";charset=utf8mb4";
+                  $pdo=new PDO($dsn,$c["username"],$c["password"],[PDO::ATTR_TIMEOUT=>3,PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
+                  $value=$pdo->query("SELECT 1")->fetchColumn();
+                  echo "PROBE_".$label."_".$n."=OK\n";
+                }catch(Throwable $e){
+                  echo "PROBE_".$label."_".$n."=FAILED_".get_class($e)."_".$e->getCode()."\n";
+                }
               }
-          }
-          PHP
+            }
+          }catch(Throwable $e){echo "BOOTSTRAP_FAILED=".get_class($e)."\n";}
+          '
+
           echo "== DB SOCKET PATH CANDIDATES =="
           for file in /var/lib/mysql/mysql.sock /run/mysqld/mysqld.sock /tmp/mysql.sock; do test ! -S "$file" || echo SOCKET_FOUND="$(basename "$file")"; done
           echo "== MYSQL PDO EXTENSION =="
