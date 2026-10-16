@@ -1,0 +1,82 @@
+name: Verify v6.3.4 App Update Hosting Access
+on:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/v634-android-update-publish-preflight.yml"
+permissions:
+  contents: read
+jobs:
+  safe-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Verify configured staging SSH deployment route without exposing credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "$SSH_HOST" ] || [ -z "$SSH_PORT" ] || [ -z "$SSH_USER" ] || { [ -z "$SSH_PRIVATE_KEY" ] && [ -z "$SSH_PASSWORD" ]; }; then
+            echo "STAGING_SSH_CONFIGURED=NO"
+            exit 0
+          fi
+          echo "STAGING_SSH_CONFIGURED=YES"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keyscan -T 8 -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/preflight_key
+            chmod 600 ~/.ssh/preflight_key
+            CMD=(ssh -o BatchMode=yes -o ConnectTimeout=12 -i ~/.ssh/preflight_key -p "$SSH_PORT")
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+            export SSHPASS="$SSH_PASSWORD"
+            CMD=(sshpass -e ssh -o ConnectTimeout=12 -p "$SSH_PORT")
+          fi
+          "${CMD[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -eu
+          ROOT="$HOME/domains/assammotors.com"
+          echo "HOSTINGER_SSH=CONNECTED"
+          if [ -d "$ROOT" ]; then echo "DOMAIN_ROOT=EXISTS"; else echo "DOMAIN_ROOT=MISSING"; fi
+          for base in "$ROOT/public_html" "$ROOT/staging/public_html" "$ROOT/staging.assammotors.com/public_html"; do
+            if [ -d "$base" ]; then
+              echo "WEBROOT_CANDIDATE_FOUND=$(basename "$(dirname "$base")")"
+              if [ -e "$base/legacy/api/staff-app-update.php" ]; then
+                echo "UPDATE_FEED_FILE=PRESENT"
+              else
+                echo "UPDATE_FEED_FILE=NOT_FOUND_AT_CANDIDATE"
+              fi
+              if [ -e "$base/updates/staff/latest.json" ]; then
+                echo "LATEST_JSON=PRESENT"
+              else
+                echo "LATEST_JSON=NOT_FOUND_AT_CANDIDATE"
+              fi
+            fi
+          done
+          REMOTE
+      - name: Verify public updater HTTP code from runner network
+        shell: bash
+        run: |
+          set +e
+          code=$(curl --max-time 12 --silent --show-error --output /tmp/update-response --write-out '%{http_code}' 'https://staging.assammotors.com/legacy/api/staff-app-update.php?platform=android&version_code=60303')
+          echo "LIVE_UPDATE_ENDPOINT_HTTP=$code"
+          if [ "$code" = 200 ]; then
+            python3 - <<'PY'
+          import json
+          try:
+            x=json.load(open('/tmp/update-response'))
+            print("VERSION_ON_SITE="+str(x.get('latest',{}).get('version_code','UNKNOWN')))
+          except Exception:
+            print('INVALID_UPDATE_JSON=yes')
+          PY
+          fi
+      - name: Erase temporary authentication material
+        if: always()
+        shell: bash
+        run: rm -f ~/.ssh/preflight_key /tmp/update-response
