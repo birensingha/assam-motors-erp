@@ -71,16 +71,25 @@ jobs:
               if 'staff/inspections' in s or 'manager-inspections' in s or 'saveInspection' in s or 'completeInspection' in s:
                   candidates.append(p)
           print('INSPECTION_SOURCE_FILES_FOUND='+str(len(candidates)))
+          violations=[]
           for p in candidates[:25]:
               s=p.read_text(errors='ignore')
               lines=s.splitlines()
               flagged=[]
               for n,line in enumerate(lines):
-                  if re.search(r'(?:items|inspection)[^\n]{0,80}(?:size:10|array.*size:10|max:10|count\([^)]*\)\s*[!=><]+\s*10)|count\(\s*\$items\s*\)\s*[!=><]+\s*10',line,re.I):
+                  if re.search(r'(?:items|inspection)[^\\n]{0,80}(?:size:10|array.*size:10|max:10|count\\([^)]*\\)\\s*[!=><]+\\s*10)|count\\(\\s*\\$items\\s*\\)\\s*[!=><]+\\s*10',line,re.I):
                       flagged.append((n+1,line.strip()[:170]))
               if flagged:
-                  print('FIXED_10_COUNT_RESTRICTION_IN',str(p),flagged[:8])
-                  sys.exit(3)
+                  violations.append(str(p))
+                  print('FIXED_10_COUNT_RESTRICTION_IN',str(p),flagged[:10])
+                  for line_no,_ in flagged[:3]:
+                      for n in range(max(1,line_no-4),min(len(lines),line_no+5)+1):
+                          value=lines[n-1].strip()
+                          if re.search(r'password|secret|api[_-]?key|token',value,re.I): continue
+                          print('CONTEXT',str(p),n,value[:170])
+          if violations:
+              print('PUBLISH_BLOCKED_INCOMPATIBLE_10_ITEM_BACKEND=',len(violations))
+              sys.exit(3)
           print('INSPECTION_EXPLICIT_TEN_ONLY_RULE=NOT_FOUND')
           PY
           cd "$SITE"
