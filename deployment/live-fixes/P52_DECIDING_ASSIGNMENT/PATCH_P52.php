@@ -168,6 +168,15 @@ PHP;
          echo "P52_ORIGINAL_TEMPLATE_PARSE=PASS\n";
      }catch(ParseError $oldError){echo "P52_ORIGINAL_TEMPLATE_PARSE=FAIL_".$oldError->getMessage()."\n";}
      echo "P52_UPDATED_TEMPLATE_PARSE_ERROR=".$parseError->getMessage()."\n";
+     if(str_contains($file,'job-cards/show.blade.php')) {
+       foreach(['BEFORE'=>$original[$file],'AFTER'=>$updated[$file]] as $which=>$srcForTrace){
+         $cv=explode("\n",app('blade.compiler')->compileString($srcForTrace));
+         foreach($cv as $li=>$lineSource)if(preg_match('/<\\?php\\s+(?:if\\b|else\\s*:|endif\\s*;|elseif\\b)/',$lineSource)
+                 && $li>=220 && $li<=340){
+           echo "P52_BLADE_NEST_".$which."=".($li+1)." ".substr(trim($lineSource),0,190)."\n";
+         }
+       }
+     }
      $line=$parseError->getLine();
      $compiledLines=explode("\n",$compiled);
      for($i=max(0,$line-6);$i<min(count($compiledLines),$line+4);$i++)
