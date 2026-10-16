@@ -1,0 +1,118 @@
+name: Fix Staff v6.3 Notification Polling Gate for Check-In and ROT
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/fix-v635-notification-polling-63.yml"]
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Verify approved staging destination and configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/v635
+            chmod 600 ~/.ssh/v635
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Safely patch only validated 6.3 polling fallback for attendance and ROT
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            CMD=(ssh -i ~/.ssh/v635 -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "$PORT")
+          else
+            export SSHPASS="$PASSWORD"
+            CMD=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "$PORT")
+          fi
+          "${CMD[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          cd "$ROOT"
+          test -f artisan
+          python3 - <<'PY'
+          from pathlib import Path
+          from datetime import datetime,timezone
+          import subprocess,os
+          names=[
+            'app/Http/Controllers/Api/V1/AttendanceController.php',
+            'app/Http/Controllers/Api/V1/RotWorkflowController.php',
+          ]
+          old="->orWhere('app_version', 'like', '6.2%')"
+          new="->orWhere('app_version', 'like', '6.2%')\n                      ->orWhere('app_version', 'like', '6.3%')"
+          staged=[]
+          for name in names:
+              file=Path(name)
+              assert file.is_file(),f'MISSING {name}'
+              text=file.read_text()
+              if "->orWhere('app_version', 'like', '6.3%')" in text:
+                  print('ALREADY_PATCHED',name)
+                  continue
+              assert text.count(old)==1,f'UNEXPECTED_SAFETY_COUNT {name}: {text.count(old)}'
+              assert 'notification_permission' in text and '6.1%' in text, f'NOTIFICATION_GATE_NOT_FOUND {name}'
+              modified=text.replace(old,new,1)
+              # Never write an invalid PHP source file.
+              result=subprocess.run(['php','-l'],input=modified,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT)
+              assert result.returncode==0,f'PHP_LINT_FAILED {name}: {result.stdout}'
+              staged.append((file,text,modified))
+          stamp=datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+          completed=[]
+          try:
+              for file,text,modified in staged:
+                  backup=file.with_name(file.name+'.backup-v635-'+stamp)
+                  backup.write_text(text)
+                  backup.chmod(file.stat().st_mode & 0o777)
+                  temp=file.with_name('.'+file.name+'.v635-tmp')
+                  temp.write_text(modified)
+                  temp.chmod(file.stat().st_mode & 0o777)
+                  os.replace(temp,file)
+                  completed.append((file,text))
+                  print('PATCHED',file,'BACKUP',backup.name)
+              for name in names:
+                  file=Path(name)
+                  modified=file.read_text()
+                  assert modified.count("->orWhere('app_version', 'like', '6.3%')")==1, f'FIX_NOT_FOUND {name}'
+                  result=subprocess.run(['php','-l',str(file)],text=True,capture_output=True)
+                  assert result.returncode==0,f'LINT_FAILED {name}: {result.stdout} {result.stderr}'
+              print('STAGING_NOTIFICATION_V63_GATE=PATCHED_AND_LINT_PASSED')
+          except BaseException:
+              for file,original in completed:
+                  file.write_text(original)
+              print('PATCH_ROLLBACK=PERFORMED')
+              raise
+          PY
+          php artisan optimize:clear >/dev/null
+          echo "STAGING_OPTIMIZE_CLEAR=DONE"
+          # Route registrations and notification permission remain mandatory.
+          echo "V635_NOTIFICATION_PERMISSION_POLICY=UNCHANGED"
+          REMOTE
+      - name: Verify HTTPS security gates remain in place
+        shell: bash
+        run: |
+          set +e
+          code=$(curl --max-time 15 -sS -o /tmp/protected-attendance -w '%{http_code}' -X POST -H 'Content-Type: application/json' -d '{}' 'https://staging.assammotors.com/api/v1/attendance/check-in')
+          echo "UNAUTH_CHECKIN_HTTP=$code"
+          test "$code" = "401" || test "$code" = "403"
+      - name: Erase temporary SSH identity
+        if: always()
+        shell: bash
+        run: rm -f ~/.ssh/v635 /tmp/protected-attendance
