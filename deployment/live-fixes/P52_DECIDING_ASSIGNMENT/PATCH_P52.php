@@ -76,7 +76,9 @@ BLADE
  p52once($s,'<td><a class="p21-btn" href="{{ route(\'erp.inspection-manager.work\',$jc->id) }}">{{ strtolower((string)$jc->inspection_status)===\'completed\'?\'View\':\'Assign / Inspect\' }}</a></td>',
 <<<'BLADE'
 <td><a class="p21-btn" href="{{ route('erp.inspection-manager.work',$jc->id) }}">{{ strtolower((string)$jc->inspection_status)==='completed'?'View':'Assign / Inspect' }}</a>
-@if(strtolower((string)$jc->inspection_status)==='completed')
+@if(strtolower((string)$jc->inspection_status)==='completed'
+ && strtolower((string)$jc->diagnosis_status)!=='completed'
+ && strtolower((string)$jc->status)==='open')
  <div style="margin-top:8px"><a class="p21-link" href="{{ route('erp.job-cards.show',$jc->id) }}#deciding-technician">Admin: Select Deciding Technician →</a></div>
 @endif</td>
 BLADE
