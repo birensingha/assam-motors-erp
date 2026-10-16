@@ -83,18 +83,11 @@ BLADE
 ,'manager_decider_action');
  unset($s);
  $p=$names[2];$s=&$updated[$p];
- $search=<<<'PHP'
-        if ($changed) {
-            JobCardDiagnosisEvent::query()->create([
-PHP;
- $replacement=<<<'PHP'
-        // P52_ALWAYS_AUDIT_EXPLICIT_SAVE: selecting the same person who was
-        // prefilled as Job Card technician is STILL a NEW Admin assignment.
-        // Never infer a deciding officer merely from JC creation.
-        {
-            JobCardDiagnosisEvent::query()->create([
-PHP;
- p52once($s,$search,$replacement,'assignment_explicit_audit');
+ // P52_ALWAYS_AUDIT_EXPLICIT_SAVE: every explicit Admin click counts,
+ // including selecting the same staff as an initially prefilled JC technician.
+ p52once($s,'if ($changed) {',
+            "/* P52_ALWAYS_AUDIT_EXPLICIT_SAVE: Admin confirms even existing JC technician */\n        {",
+            'assignment_explicit_audit');
  $old=<<<'PHP'
         if ((int)$card->technician_id !== (int)$staff->id) {
             throw ValidationException::withMessages(['technician_id'=>'Assign the Deciding Technician first so the technician can review the Inspection Report before completing Diagnosis.']);
