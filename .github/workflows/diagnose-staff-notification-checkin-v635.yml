@@ -1,0 +1,68 @@
+name: Read-only Staff Notification Check-In Backend Diagnosis
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/diagnose-staff-notification-checkin-v635.yml"]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Read-only inspect production staging notification gate definitions
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 9 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/diag_key
+            chmod 600 ~/.ssh/diag_key
+            SSH=(ssh -i ~/.ssh/diag_key -o BatchMode=yes -p "$PORT")
+          else
+            export SSHPASS="$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            SSH=(sshpass -e ssh -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          echo "== SOURCE FILE MATCHES FOR NOTIFICATION POLICY (ONLY CODE PATHS AND LINE NUMBERS) =="
+          grep -RIl --include='*.php' -E 'Mandatory notifications must be enabled|notification_permission' app routes 2>/dev/null | head -25 || true
+          echo "== NOTIFICATION REGISTRATION AND GATE CODE (SECRET-FREE SNIPPETS) =="
+          python3 - <<'PY'
+          import os,re
+          keys=('Mandatory notifications must be enabled','notification_permission')
+          for root in ('app','routes'):
+            for dirpath,dirs,files in os.walk(root):
+              for filename in files:
+                if not filename.endswith('.php'): continue
+                p=os.path.join(dirpath,filename)
+                lines=open(p,encoding='utf8',errors='ignore').read().splitlines()
+                matches=[i for i,x in enumerate(lines) if any(k in x for k in keys)]
+                if not matches: continue
+                if ('Controller' not in p and 'routes/' not in p): continue
+                print('FILE',p)
+                for i in matches[:12]:
+                  print('CODE_RANGE',i+1)
+                  for j in range(max(0,i-4),min(len(lines),i+6)):
+                    line=lines[j]
+                    if any(s in line.lower() for s in ('secret','password','token','key=')): continue
+                    print(str(j+1)+': '+line[:190])
+          PY
+          echo "== COMPILED ROUTES FOR STAFF DEVICE AND ATTENDANCE =="
+          php artisan route:list --path=api/v1 --compact 2>/dev/null | grep -Ei '/staff/device|/attendance/check-in' | head -12 || true
+          REMOTE
+      - name: Erase temporary secrets
+        if: always()
+        shell: bash
+        run: rm -f ~/.ssh/diag_key
