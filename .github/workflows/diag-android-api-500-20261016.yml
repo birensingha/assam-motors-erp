@@ -40,31 +40,30 @@ jobs:
           echo "== MOST RECENT LARAVEL ERROR SUMMARY (REDACTED) =="
           python3 - <<'PY'
           from pathlib import Path
-          import re,collections
-          files=sorted(Path('storage/logs').glob('*.log'),key=lambda f:f.stat().st_mtime,reverse=True)[:3]
+          from collections import deque
+          import re
+          files=sorted(Path('storage/logs').glob('*.log'),key=lambda x:x.stat().st_mtime,reverse=True)[:3]
           events=[]
           for f in files:
-              with f.open(errors='replace') as h: lines=collections.deque(h,maxlen=25000)
+              with f.open(errors='replace') as h: lines=deque(h,maxlen=35000)
               for line in lines:
-                  if not re.search(r'\\.(?:ERROR|CRITICAL|ALERT|EMERGENCY):',line):continue
-                  m=re.search(r'\\.(?:ERROR|CRITICAL|ALERT|EMERGENCY):\\s*([^\\n{]{1,280})',line)
-                  if not m:continue
-                  title=m.group(1)
-                  title=re.sub(r'\\b[\\w.+-]+@[\\w.-]+\\.[A-Z-a-z]{2,}\\b','[EMAIL]',title)
-                  title=re.sub(r'(?i)(token|password|secret|api[_-]?key)\\s*[:=]\\s*\\S+','[REDACTED]',title)
-                  title=re.sub(r'\\b\\d{9,}\\b','[NUMBER]',title)
-                  events.append((line[:28],title[:210]))
+                  if '.ERROR:' not in line and '.CRITICAL:' not in line and '.EMERGENCY:' not in line: continue
+                  marker=line.find('.ERROR:')
+                  if marker<0:marker=line.find('.CRITICAL:')
+                  if marker<0:marker=line.find('.EMERGENCY:')
+                  desc=line[marker+7:].split(' {')[0].strip()[:250]
+                  desc=re.sub(r'([A-Za-z0-9_.+-]+)@([A-Za-z0-9.-]+)','[email]',desc)
+                  desc=re.sub(r'[0-9]{9,}','[num]',desc)
+                  desc=re.sub(r'(?i)(password|secret|token|key)[ ]*[:=][ ]*[^ ,]+','[redacted]',desc)
+                  events.append((line[:26],desc))
           print('ERROR_COUNT_RECENT_WINDOW',len(events))
-          for ts,title in events[-22:]: print('LARAVEL_ERROR',ts,title)
+          for ts,desc in events[-35:]:print('LARAVEL_ERROR',ts,repr(desc))
           PY
           echo "== CURRENT NATIVE API ROUTES =="
           php artisan route:list --json 2>/dev/null | python3 -c 'import json,sys; rows=json.load(sys.stdin); [print(x.get("method"),x.get("uri"),x.get("action")) for x in rows if any(z in x.get("uri","") for z in ("admin/mobile/","staff/inspections","staff/notifications","staff/device","attendance"))][:80]' | head -90
           echo "== PHP AND LARAVEL BASICS =="
           php -v | head -2
           test -f bootstrap/cache/config.php && echo CONFIG_CACHED=YES || echo CONFIG_CACHED=NO
-          echo "== USER/SESSION GUARD CONFIG =="
-          php -r 'require "vendor/autoload.php"; $app=require "bootstrap/app.php"; $app->make(\\Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap(); foreach(["web","staff_web"] as $g)echo $g."=".get_class($app->make("auth")->guard($g))."\\n";' | head -5
-
           REMOTE
       - if: always()
         run: rm -f ~/.ssh/diagnose
