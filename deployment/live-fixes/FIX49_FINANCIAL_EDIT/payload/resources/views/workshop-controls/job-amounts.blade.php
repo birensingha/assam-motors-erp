@@ -1,11 +1,17 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Job Card Amount Editor | Assam Motors</title>
+@extends('layouts.erp')
+@section('title','Job Card Amount Editor — Assam Motors')
+@section('topbar_title','Job Card Amount Editor')
+@push('head')
 <style>
 :root{font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif;color:#172d46;background:#f0f5fa}*{box-sizing:border-box}
 body{margin:0}.wrap{max-width:1420px;margin:auto;padding:24px}.head{background:#0b315b;color:white;padding:22px 28px;border-radius:16px;display:flex;justify-content:space-between;gap:15px;align-items:center}.head h1{font-size:24px;margin:0}.head p{color:#c9dbee;margin:5px 0 0}.head a{background:white;color:#0b315b;padding:10px 15px;border-radius:8px;font-weight:700;text-decoration:none}
 .nav{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}.nav a{padding:9px 15px;border:1px solid #cbd9e6;background:white;text-decoration:none;color:#12385d;border-radius:8px;font-weight:700}.note{padding:15px 18px;border-radius:10px;margin:12px 0;background:#fff7e3;border:1px solid #f2dca2;color:#715115}.danger{background:#fff0ed;border-color:#f8bfb6;color:#933527}.success{background:#e8f6ed;border-color:#b8ddc8;color:#136a36}
 .panel{background:#fff;margin:16px 0;border:1px solid #dbe5ef;border-radius:12px;padding:18px;box-shadow:0 3px 12px #1739600c}.panel h2{font-size:19px;margin:0 0 10px;color:#0a325b}.subtitle{color:#6a7d92;font-size:13px;margin-bottom:16px}.tablewrap{overflow:auto}table{border-collapse:collapse;width:100%;min-width:1080px;font-size:13px}th{background:#0d345e;color:white;text-align:left;position:sticky;top:0}th,td{padding:10px;border-bottom:1px solid #e4edf4;vertical-align:top}tr:nth-child(even){background:#f8fbfe}td b{color:#173d64}input,textarea{font:inherit;border:1px solid #b9ccda;border-radius:7px;padding:9px;background:#fff;color:#1c354c}input[type=number]{width:108px}input[type=text]{width:195px}textarea{width:220px;min-height:52px;resize:vertical}label{display:block;font-size:11px;color:#627891;font-weight:700;margin-bottom:4px}.green{background:#128342;color:white;border:0;border-radius:8px;padding:11px 15px;font-size:13px;font-weight:800;cursor:pointer}.green:disabled{background:#bbc8d2;cursor:not-allowed}.mini{font-size:12px;color:#536e88}.pill{display:inline-block;background:#e3effd;border-radius:20px;padding:4px 9px;color:#185396;font-size:12px;font-weight:700}.summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.stat{padding:15px;background:#f3f8fc;border:1px solid #dbe7f1;border-radius:10px}.stat small{display:block;color:#678}.stat strong{font-size:19px}.foot{color:#6d8296;font-size:12px;margin:25px 0}@media(max-width:800px){.wrap{padding:9px}.head{border-radius:0;flex-wrap:wrap}.summary{grid-template-columns:1fr 1fr}}@media print{form,.nav,.no-print{display:none!important}}
-</style>@include('workshop-controls.enterprise-theme')</head><body class="am-modern">@include('workshop-controls.enterprise-navigation')<main class="wrap">
+</style>@include('workshop-controls.enterprise-theme')
+@endpush
+@section('content')
+<div class="am-modern am50-integrated-page">
+<main class="wrap">
 <div class="head"><div><span class="am-eyebrow">WORKSHOP CONTROL / BILLING</span><h1>Job Card Amount Editor</h1><p>Job Card {{ $card->job_no ?? $card->id }} · {{ strtoupper($card->status ?? 'OPEN') }} · Parts + Labour/ROT</p></div><a href="{{ url('/erp/job-cards/'.$card->id) }}">← Back to Job Card</a></div>
 <div class="nav am-subnav"><a href="{{ url('/erp/job-cards') }}">Job Cards</a><a href="{{ route('erp.fix48.osl-index') }}">OSL Purchases</a><a href="{{ route('erp.fix48.vendor-database') }}">Vendor Database</a></div>
 @if(session('success'))<div class="note success">{{ session('success') }}</div>@endif
@@ -47,4 +53,6 @@ body{margin:0}.wrap{max-width:1420px;margin:auto;padding:24px}.head{background:#
 <div class="foot">Assam Motors ERP · Audited financial adjustment · Server totals are authoritative · Do not edit issued tax documents or reverse stock through this screen.</div>
 </main>
 <script>document.querySelectorAll('.editline').forEach(f=>{const n=s=>Number(f.querySelector('[name="'+s+'"]').value)||0;const upd=()=>{const taxable=Math.round(((n('quantity')*n('rate'))*(1-n('discount_percent')/100))*100)/100;const tax=Math.round(taxable*n('gst_percent'))/100;f.querySelector('[data-gst]').textContent='₹'+tax.toFixed(2);f.querySelector('[data-final]').textContent='₹'+(taxable+tax).toFixed(2)};f.querySelectorAll('input').forEach(x=>x.addEventListener('input',upd));upd()})</script>
-</body></html>
+
+</div>
+@endsection
