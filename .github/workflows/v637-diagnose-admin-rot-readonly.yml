@@ -100,6 +100,10 @@ jobs:
           PY
           echo '=== NATIVE ROUTE API MIDDLEWARE AND AUTH GROUP ==='
           sed -n '1,100p' "$ROOT/routes/api.php" | sed -E '/password|secret|token/d' | head -95 || true
+          echo '=== EXACT OFFICIAL SIGNED APK DOWNLOAD LINK BUILD (safe lines only) ==='
+          sed -n '72,102p' "$HOME/domains/assammotors.com/public_html/staging/legacy/api/staff-app-update.php" | sed -E '/secret|token|password|hmac|key/i d'
+          echo '=== DOWNLOAD SERVING GET REQUIREMENTS / AUTH (no secrets) ==='
+          php -r '$f=$argv[1];if(!is_file($f)){echo "DOWNLOAD_FILE_MISSING\n";exit;}foreach(file($f) as $i=>$s){if(preg_match("/(GET|file|sha256|readfile|private|latest.json|Bearer|Authorization|login|HTTP_)/i",$s) && !preg_match("/password|secret|hash_hmac|key|token.*=|session/i",$s))echo ($i+1).": ".substr(trim($s),0,170).PHP_EOL;}' "$HOME/domains/assammotors.com/public_html/staging/legacy/api/staff-app-download.php" | head -80
           echo 'V637_READ_ONLY_DIAGNOSTIC=COMPLETE'
           REMOTE
       - if: always()
