@@ -67,7 +67,15 @@ jobs:
           sed -n '1,100p' routes/web.php | grep -vEi '(password|secret|token)'
           sed -n '170,250p' routes/web.php | grep -vEi '(password|secret|token)'
           echo "== SESSION AUTH CONFIG SOURCE =="
-          grep -nE '(providers|guards|driver|model)' config/auth.php | head -75
+          sed -n '1,65p' config/auth.php
+          echo "== STAFF WEB AND HR ROUTES AUTH CONFIG =="
+          sed -n '238,350p' routes/web.php | grep -vEi '(password|secret|token)'
+          echo "== HR DIRECT LOGIN CONTROLLER SAFE SOURCE =="
+          sed -n '1,145p' app/Http/Controllers/Web/HrDirectLoginController.php | grep -vEi '(password|secret|token)'
+          echo "== STAFF WEB LOGIN CONTROLLER SAFE SOURCE =="
+          sed -n '1,100p' app/Http/Controllers/Web/StaffWebAuthController.php | grep -vEi '(password|secret|token)'
+          echo "== DEFAULT LOGIN GUARD CALLS IN STAFF RELATED CONTROLLERS =="
+          grep -RIn --include='*.php' -E 'Auth::(login|logout|guard|attempt)|Auth::shouldUse' app/Http/Controllers/Web/{StaffWebAuthController,HrDirectLoginController,WebAuthController}.php | head -50 || true
           REMOTE
       - if: always()
         run: rm -f ~/.ssh/diagnose
