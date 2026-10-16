@@ -72,6 +72,20 @@ jobs:
           PY
           echo '=== ACTUAL ROT ASSIGNMENT ON JOB CARD 36 ==='
           php -r 'chdir(getenv("HOME")."/domains/assammotors.com/public_html/staging/legacy/api");require "config.php";$db=getDB();$p=$db->prepare("SELECT id,job_card_no,rot_code,staff_id,staff_code,status FROM rot_sessions WHERE job_card_id=? AND rot_code=? LIMIT 4");$p->execute([36,"ROT-DIA-007"]);echo json_encode($p->fetchAll(PDO::FETCH_ASSOC)).PHP_EOL;'
+          echo '=== LINKED ADMIN ERP AUTH MODEL SHAPE ==='
+          python3 - <<'PY'
+          from pathlib import Path
+          for path in [Path('app/Models/ErpAuthUser.php'),Path('app/Http/Controllers/Api/V1/AuthController.php')]:
+            if not path.exists():continue
+            s=path.read_text(errors='ignore').splitlines()
+            print('MODEL_FILE',path)
+            for i,line in enumerate(s):
+              if any(v in line for v in ['function isAdmin','function isStaff','staff_id','function admin','role','function login','function authenticate']):
+                if 'password' in line.lower() or 'secret' in line.lower():continue
+                print(i+1, line.strip()[:170])
+          PY
+          echo '=== ACCOUNT ROW LINK STATUS AM5077 (NO SECRETS) ==='
+          php -r 'chdir(getenv("HOME")."/domains/assammotors.com/public_html/staging/legacy/api");require "config.php";$db=getDB();foreach(["erp_auth_users","users","staff"] as $t){try{$q=$db->query("SHOW COLUMNS FROM `".$t."`");$cols=array_column($q->fetchAll(PDO::FETCH_ASSOC),"Field");echo "TABLE ".$t." HAS_STAFF_ID=".(in_array("staff_id",$cols)?"yes":"no")." HAS_ROLE=".(in_array("role",$cols)?"yes":"no")."\n";if(in_array("staff_id",$cols)&&in_array("role",$cols)){$st=$db->prepare("SELECT id,staff_id,role FROM `".$t."` WHERE staff_id=?");$st->execute([4]);echo "LINKED_ADMIN_IDENTITIES=".json_encode($st->fetchAll(PDO::FETCH_ASSOC))."\n";}}catch(Throwable $e){echo "TABLE ".$t." not readable\n";}}'
           echo 'V637_READ_ONLY_DIAGNOSTIC=COMPLETE'
           REMOTE
       - if: always()
