@@ -5,7 +5,7 @@ on:
     paths: [".github/workflows/v637-publish-signed-app-update.yml"]
 permissions: { contents: read }
 concurrency:
-  group: assam-motors-staging-control
+  group: assam-motors-v637-publish
   cancel-in-progress: false
 jobs:
   publish:
