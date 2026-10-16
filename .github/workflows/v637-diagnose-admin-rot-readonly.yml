@@ -86,6 +86,20 @@ jobs:
           PY
           echo '=== ACCOUNT ROW LINK STATUS AM5077 (NO SECRETS) ==='
           php -r 'chdir(getenv("HOME")."/domains/assammotors.com/public_html/staging/legacy/api");require "config.php";$db=getDB();foreach(["erp_auth_users","users","staff"] as $t){try{$q=$db->query("SHOW COLUMNS FROM `".$t."`");$cols=array_column($q->fetchAll(PDO::FETCH_ASSOC),"Field");echo "TABLE ".$t." HAS_STAFF_ID=".(in_array("staff_id",$cols)?"yes":"no")." HAS_ROLE=".(in_array("role",$cols)?"yes":"no")."\n";if(in_array("staff_id",$cols)&&in_array("role",$cols)){$st=$db->prepare("SELECT id,staff_id,role FROM `".$t."` WHERE staff_id=?");$st->execute([4]);echo "LINKED_ADMIN_IDENTITIES=".json_encode($st->fetchAll(PDO::FETCH_ASSOC))."\n";}}catch(Throwable $e){echo "TABLE ".$t." not readable\n";}}'
+          echo '=== UPDATE API PHP SOURCE (remove secret/token-bearing lines) ==='
+          php -r '$f=$argv[1];$ls=file($f);foreach($ls as $i=>$ln){$text=trim($ln);if(preg_match("/password|secret|hash_hmac|base64|JWT_SECRET|token|header.?authorization|private_key/i",$text))continue;if(preg_match("/download|\.json|sha256|version|apk_file|latest|file|url|public|action|GET|readfile|header|sendJson|manifest|private|staff|preg_match/i",$text))echo ($i+1).": ".substr($text,0,180).PHP_EOL;}' "$HOME/domains/assammotors.com/public_html/staging/legacy/api/staff-app-update.php" | head -125 || true
+          echo '=== UPDATER CURRENT MANIFEST KEYS ONLY ==='
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          f=Path.home()/'domains/assammotors.com/public_html/staging/staff-app/latest.json'
+          d=json.loads(f.read_text())
+          print('UPDATE_MANIFEST_KEYS',sorted(d.keys()))
+          print('CURRENT_VERSION',d.get('version_code'),d.get('version_name'))
+          print('FILE_EXISTS_IN_PRIVATE',(f.parent/'private'/str(d.get('apk_file',''))).is_file())
+          PY
+          echo '=== NATIVE ROUTE API MIDDLEWARE AND AUTH GROUP ==='
+          sed -n '1,100p' "$ROOT/routes/api.php" | sed -E '/password|secret|token/d' | head -95 || true
           echo 'V637_READ_ONLY_DIAGNOSTIC=COMPLETE'
           REMOTE
       - if: always()
