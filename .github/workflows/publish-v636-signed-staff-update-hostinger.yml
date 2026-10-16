@@ -3,12 +3,16 @@ on:
   push:
     branches: [main]
     paths: [".github/workflows/publish-v636-signed-staff-update-hostinger.yml"]
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/publish-v636-signed-staff-update-hostinger.yml"]
 permissions: { contents: read }
 concurrency:
   group: assam-motors-staging-control
   cancel-in-progress: false
 jobs:
   publish:
+    if: github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'release/v636-finalize-update-publish-20261016')
     runs-on: ubuntu-latest
     timeout-minutes: 23
     env:
