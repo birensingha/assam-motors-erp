@@ -92,6 +92,19 @@ body.erp-app .page-shell{
   background:var(--am50-bg)!important
 }
 body.erp-app .page-shell>*{min-width:0}
+body.erp-app .page-shell .am50-integrated-page{
+  background:transparent!important;min-height:0!important;
+  color:#173453!important;max-width:100%!important;
+}
+body.erp-app .page-shell .am50-integrated-page .wrap{
+  width:100%!important;max-width:none!important;margin:0!important;
+  padding:0!important
+}
+body.erp-app .page-shell .am50-integrated-page .top,
+body.erp-app .page-shell .am50-integrated-page .head{margin-top:0}
+body.erp-app .page-shell .am50-integrated-page :is(.cards,.panel,.card){max-width:100%}
+body.erp-app .page-shell .am50-integrated-page :is(.tablewrap,.line-scroll){max-width:100%;overflow-x:auto}
+
 body.erp-app .page-shell>.page-head{
   display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;
   gap:12px;padding:0 0 14px;margin:0 0 20px;
