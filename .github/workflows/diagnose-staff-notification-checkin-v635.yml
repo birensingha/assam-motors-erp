@@ -22,16 +22,16 @@ jobs:
           set -euo pipefail
           test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
           install -d -m 700 ~/.ssh
-          ssh-keyscan -T 9 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          ssh-keyscan -T 16 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
           if [ -n "$KEY" ]; then
             printf '%s\n' "$KEY" > ~/.ssh/diag_key
             chmod 600 ~/.ssh/diag_key
-            SSH=(ssh -i ~/.ssh/diag_key -o BatchMode=yes -p "$PORT")
+            SSH=(ssh -i ~/.ssh/diag_key -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "$PORT")
           else
             export SSHPASS="$PASSWORD"
             sudo apt-get update -qq
             sudo apt-get install -y -qq sshpass
-            SSH=(sshpass -e ssh -p "$PORT")
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "$PORT")
           fi
           "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
