@@ -59,6 +59,12 @@ jobs:
                     if any(s in line.lower() for s in ('secret','password','token','key=')): continue
                     print(str(j+1)+': '+line[:190])
           PY
+          echo "== DEVICE REGISTRATION CONTROLLER (REDACTED SENSITIVE VALUES) =="
+          sed -n '1,115p' app/Http/Controllers/Api/V1/DeviceController.php | grep -vEi '(secret|password|authorization|bearer)' || true
+          echo "== ATTENDANCE GATE =="
+          sed -n '32,80p' app/Http/Controllers/Api/V1/AttendanceController.php | grep -vEi '(secret|password|authorization|bearer)' || true
+          echo "== NOTIFICATION GATE IMPLEMENTATION =="
+          sed -n '1,115p' app/Services/MandatoryNotificationService.php | grep -vEi '(secret|password|authorization|bearer)' || true
           echo "== COMPILED ROUTES FOR STAFF DEVICE AND ATTENDANCE =="
           php artisan route:list --path=api/v1 --compact 2>/dev/null | grep -Ei '/staff/device|/attendance/check-in' | head -12 || true
           REMOTE
