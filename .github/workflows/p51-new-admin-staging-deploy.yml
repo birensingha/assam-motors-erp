@@ -24,7 +24,7 @@ jobs:
       STAGING_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
-      - name: Preflight: PHP syntax, views and authenticated GET QA syntax
+      - name: "Preflight — PHP syntax, views and authenticated GET QA syntax"
         run: |
           set -euo pipefail
           P=deployment/live-fixes/P51_STANDALONE_AUDIT
