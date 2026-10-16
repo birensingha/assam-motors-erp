@@ -1,0 +1,12 @@
+name: Diagnose Attendance Reset Permission
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/diag-attendance-reset-403.yml']
+permissions:
+  contents: read
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo 'Inspection setup'
