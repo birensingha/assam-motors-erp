@@ -1,0 +1,68 @@
+name: Diagnose v6.3.6 Inspection Item Limits (Read Only)
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/diagnose-v636-inspection-item-limit-readonly.yml"]
+permissions: { contents: read }
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Read exact Laravel inspection route validation only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/v636_inspect
+            chmod 600 ~/.ssh/v636_inspect
+            SSH=(ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ConnectTimeout=25 -i ~/.ssh/v636_inspect -p "$PORT")
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          cd "$ROOT"
+          echo '=== Inspection routes and controllers (names only) ==='
+          php artisan route:list --path=api/v1 --json 2>/dev/null | python3 -c 'import json,sys; routes=json.load(sys.stdin); [print(r.get("method",""),r.get("uri",""),r.get("action","")) for r in routes if "inspection" in r.get("uri","").lower()]' | head -70 || true
+          echo '=== Matching PHP source filenames (not environment or DB) ==='
+          grep -RIl --include='*.php' -E 'manager-inspections|staff/inspections|function (inspection|completeInspection|saveInspection)|inspectionChecklist' routes app/Http/Controllers | head -55 || true
+          echo '=== Server-side validation of inspection arrays, item counts and fields ==='
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          dirs=[Path('routes'),Path('app/Http/Controllers')]
+          paths=[]
+          for base in dirs:
+            if base.exists(): paths+=list(base.rglob('*.php'))
+          for f in paths:
+            text=f.read_text(errors='ignore')
+            if not any(k in text for k in ['manager-inspections','staff/inspections','completeInspection','saveInspection','inspectionSubmit']):
+              continue
+            print('FILE',str(f))
+            lines=text.splitlines()
+            candidates=[i for i,line in enumerate(lines) if re.search(r'(inspection|items|count\\(|size:|max:|min:)',line,re.I)]
+            candidates=[i for i in candidates if ('item' in lines[i].lower() and any(token in lines[i] for token in ['max:','min:','size:','count(','array'])) or re.search(r'function (inspection|completeInspection|saveInspection|inspectionSubmit)',lines[i],re.I)]
+            for i in candidates[:65]:
+              line=lines[i].strip()
+              if re.search('password|secret|token|credential',line,re.I):continue
+              print(str(i+1)+':',line[:220])
+          PY
+          echo '=== READ_ONLY=COMPLETE ==='
+          REMOTE
+      - name: Clean up temporary SSH identity
+        if: always()
+        run: rm -f ~/.ssh/v636_inspect
