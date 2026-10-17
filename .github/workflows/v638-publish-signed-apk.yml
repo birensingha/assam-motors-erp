@@ -1,0 +1,159 @@
+name: Publish verified Staff App v6.3.8 to in-app updater
+on:
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/v638-publish-signed-apk.yml"]
+permissions: { contents: read }
+concurrency:
+  group: assam-motors-v638-publisher
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'release/v638-rot-ist-auto-update-20261017'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Connect to existing protected Hostinger channel
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/v638_release
+            chmod 600 ~/.ssh/v638_release
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Check role-auth update API, verify APK, back up then atomically publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -i ~/.ssh/v638_release -p "$PORT")
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          FILE="$SITE/private/Assam-Motors-Staff-v6.3.8-ROT-LIVE-IST-TIMER-SIGNED.apk"
+          MANIFEST="$SITE/latest.json"
+          test -f "$MANIFEST" && test -f "$FILE"
+          test -f "$ROOT/app/Http/Controllers/Api/V1/NativeAppUpdateController.php"
+          test -f "$HOME/domains/assammotors.com/public_html/staging/legacy/api/staff-app-download.php"
+          php -l "$ROOT/app/Http/Controllers/Api/V1/NativeAppUpdateController.php"
+          test "$(wc -c < "$FILE")" = 3341044
+          echo "af30c55338df506e78434543cbc88273715f5c390d7fa39fd75c21c63636a0f7  $FILE" | sha256sum -c -
+          echo 'V638_ORIGINAL_SIGNED_APK_SHA256=VERIFIED'
+          cd "$ROOT"
+          # Read-only Laravel bootstrap; test the SAME Admin native auth
+          # that serves Staff, Owner and HR. Do not touch ROT or DB data.
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $user=\App\Models\ErpAuthUser::query()->where('role','admin')->where('staff_id',4)->firstOrFail();
+          if (!$user->active || !$user->isStaff())throw new \RuntimeException('Admin linked account unavailable');
+          $request=\Illuminate\Http\Request::create('/api/v1/app-update','GET',['platform'=>'android','version_code'=>60307]);
+          $request->setUserResolver(fn()=>$user);
+          $response=$app->make(\App\Http\Controllers\Api\V1\NativeAppUpdateController::class)->index($request);
+          $data=json_decode($response->getContent(),true);
+          if (($data['ok']??false)!==true || !in_array((int)($data['latest']['version_code']??0),[60307,60308],true))
+            throw new \RuntimeException('Native updater authorization/metadata unavailable');
+          $url=(string)($data['latest']['download_url']??'');
+          if (!str_starts_with($url,'https://staging.assammotors.com/legacy/api/staff-app-download.php?file=') || !str_contains($url,'&expires=') || !str_contains($url,'&sig='))
+            throw new \RuntimeException('Signed download URL missing');
+          echo 'V638_ADMIN_NATIVE_UPDATE_AUTH=VERIFIED'.PHP_EOL;
+          PHP
+          cd "$SITE"
+          python3 - <<'PY'
+          import os,json,hashlib,tempfile
+          from pathlib import Path
+          from datetime import datetime,timezone
+          root=Path.cwd()
+          manifest=root/'latest.json'
+          original=manifest.read_bytes()
+          data=json.loads(original)
+          name='Assam-Motors-Staff-v6.3.8-ROT-LIVE-IST-TIMER-SIGNED.apk'
+          sha='af30c55338df506e78434543cbc88273715f5c390d7fa39fd75c21c63636a0f7'
+          apk=root/'private'/name
+          assert apk.is_file() and apk.stat().st_size==3341044, 'Signed APK absent or size mismatch'
+          assert hashlib.sha256(apk.read_bytes()).hexdigest()==sha, 'Signed APK SHA mismatch'
+          assert data.get('package_id')=='com.assammotors.staff', 'Wrong app package'
+          assert data.get('licence_file'), 'Do not discard licence metadata'
+          old=int(data.get('version_code',0))
+          assert old in (60307,60308), 'Unexpected current release; block downgrade/overwrite'
+          if old==60308:
+              assert data.get('sha256')==sha and data.get('apk_file')==name, 'Conflicting 60308 APK already published'
+              print('V638_UPDATE_ALREADY_PUBLISHED=YES')
+          else:
+              stamp=datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+              backup=root/('latest.json.backup-before-v638-'+stamp)
+              backup.write_bytes(original)
+              backup.chmod(0o600)
+              note='ASSAM-MOTORS-STAFF-v6.3.8-ROT-IST-TIMER.txt'
+              (root/note).write_text(
+                  'Assam Motors Staff App 6.3.8 (60308)\n'
+                  'Fix Admin My ROT: Started and Expected End displayed in IST.\n'
+                  'Reconstruct running ROT elapsed and overtime across app refresh from start_time, without resetting or changing any ROT.\n'
+                  'All-role secure in-app update, Admin My ROT, 30-point inspection and prior features retained.\n'
+              )
+              data.update({
+                  'version_code':60308,
+                  'version_name':'6.3.8',
+                  'apk_file':name,
+                  'sha256':sha,
+                  'release_notes_file':note,
+                  'published_at':datetime.now(timezone.utc).isoformat(timespec='seconds').replace('+00:00','Z')
+              })
+              fd,tmp=tempfile.mkstemp(prefix='.v638-release-',dir=root)
+              try:
+                  with os.fdopen(fd,'w') as stream:
+                      json.dump(data,stream,indent=2)
+                      stream.write('\n')
+                  os.chmod(tmp,0o644)
+                  os.replace(tmp,manifest)
+              finally:
+                  if os.path.exists(tmp):os.unlink(tmp)
+              print('V638_BACKUP='+backup.name)
+              print('V638_UPDATE_MANIFEST=PUBLISHED')
+          check=json.loads(manifest.read_text())
+          assert check['version_code']==60308 and check['sha256']==sha and check['apk_file']==name
+          assert (root/str(check['release_notes_file'])).is_file()
+          assert check.get('licence_file')
+          print('V638_OFFICIAL_UPDATE_CODE=60308')
+          print('V638_OFFICIAL_UPDATE_FILE_SHA=VERIFIED')
+          PY
+          if [ -f "$SITE/v638-upload-once.php" ]; then
+            grep -Fq 'af30c55338df506e78434543cbc88273715f5c390d7fa39fd75c21c63636a0f7' "$SITE/v638-upload-once.php"
+            rm -f "$SITE/v638-upload-once.php"
+            echo 'V638_TEMP_UPLOAD_RECEIVER=REMOVED'
+          fi
+          echo 'V638_IN_APP_RELEASE=SUCCESS'
+          REMOTE
+      - name: Verify both official update endpoints remain login-protected
+        shell: bash
+        run: |
+          set -euo pipefail
+          for endpoint in 'https://staging.assammotors.com/api/v1/app-update?platform=android&version_code=60307' 'https://staging.assammotors.com/legacy/api/staff-app-update.php?platform=android&version_code=60307'; do
+            code=$(curl -sS --max-time 20 -o /tmp/v638-auth-check -w '%{http_code}' "$endpoint")
+            echo "V638_ANONYMOUS_UPDATE_HTTP=$code"
+            test "$code" = 401 || test "$code" = 403
+          done
+          echo 'V638_AUTHORIZATION_GATE=VERIFIED'
+      - name: Cleanup temporary runner access
+        if: always()
+        run: rm -f ~/.ssh/v638_release /tmp/v638-auth-check
