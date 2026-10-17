@@ -58,4 +58,39 @@ foreach($tables as $t) {
 }
 echo 'SERVER_CLOCK='.$app['config']->get('app.timezone').'|'.date('c').PHP_EOL;
 PHP
+echo '=== AUTHENTICATED READONLY LATENCY BENCHMARK ==='
+php <<'PHP'
+<?php
+require 'vendor/autoload.php';
+$app=require 'bootstrap/app.php';
+$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+use Illuminate\Support\Facades\DB;
+$actor=\App\Models\ErpAuthUser::query()->where('role','admin')->where('staff_id',4)->where('active',true)->first();
+if(!$actor){echo "AUTH_ACTOR_LINK=UNAVAILABLE\n";exit(0);}
+$queries=0;$dbMs=0;
+DB::listen(function($event)use(&$queries,&$dbMs){$queries++;$dbMs+=$event->time;});
+$routes=[
+ ['/admin/mobile/my-attendance',\App\Http\Controllers\Api\V1\OwnerSelfAttendanceInspectionController::class,'myAttendance'],
+ ['/admin/mobile/dashboard',\App\Http\Controllers\Api\V1\AdminMobileController::class,'dashboard'],
+];
+foreach($routes as [$path,$class,$method]){
+ for($i=0;$i<3;$i++){
+  $request=\Illuminate\Http\Request::create('/api/v1'.$path,'GET');
+  $request->setUserResolver(fn()=>$actor);
+  $qBefore=$queries;$dbBefore=$dbMs;$start=microtime(true);
+  try{
+   $response=$app->make($class)->$method($request);
+   $data=json_decode($response->getContent(),true);
+   $ok=($data['ok']??false)===true;
+   echo 'ENDPOINT='.$path.' PASS='.($ok?'YES':'NO').' REQUEST_MS='.round((microtime(true)-$start)*1000,1).' DB_MS='.round($dbMs-$dbBefore,1).' SQL_COUNT='.($queries-$qBefore).PHP_EOL;
+  }catch(\Throwable $e){
+   echo 'ENDPOINT='.$path.' EXCEPTION_CLASS='.get_class($e).' REQUEST_MS='.round((microtime(true)-$start)*1000,1).PHP_EOL;
+  }
+ }
+}
+PHP
+echo '=== INTERNET HTTP ANONYMOUS RESPONSE TIMINGS ==='
+for p in /api/v1/admin/mobile/my-attendance /api/v1/admin/mobile/dashboard; do
+ curl --connect-timeout 8 --max-time 14 -sS -o /dev/null -w "HTTP_ROUTE=$p STATUS=%{http_code} TOTAL_SECONDS=%{time_total} CONNECT_SECONDS=%{time_connect}\n" "https://staging.assammotors.com$p" || true
+done
 echo '=== SOURCE DIAGNOSIS READONLY COMPLETE ==='
