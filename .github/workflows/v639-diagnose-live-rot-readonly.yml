@@ -85,6 +85,44 @@ jobs:
             catch(Throwable $e){echo 'TABLE_MISSING='.$table.PHP_EOL;}
           }
           PHP
+          echo '===== LIVE SERVER CLOCK REGRESSION: NO WRITES ====='
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $now=\Carbon\CarbonImmutable::now('Asia/Kolkata');
+          $t=(object)['id'=>'ROT-QA-NOW','status'=>'Running','std_hours'=>0.5,
+            'total_seconds'=>90,'start_time'=>$now->subSeconds(240)->format('Y-m-d H:i:s'),
+            'first_start_at'=>$now->subSeconds(600)->format('Y-m-d H:i:s')];
+          $s=\App\Support\RotLiveClock::snapshot($t);
+          if($s['elapsed_seconds']<330 || $s['elapsed_seconds']>335 ||
+             $s['remaining_seconds']>1470 || $s['remaining_seconds']<1465 ||
+             !$s['running'])throw new \RuntimeException('Running ROT 90+240s live timer regression');
+          echo "ROT_330S_ELAPSED_AND_1470S_REMAINING=PASS\n";
+          $t->status='Paused';$t->start_time=null;
+          $p=\App\Support\RotLiveClock::snapshot($t);
+          if($p['elapsed_seconds']!==90||$p['running'])throw new \RuntimeException('Paused counted running seconds');
+          echo "ROT_PAUSED_FREEZE=PASS\n";
+          $t->status='Completed';
+          $p=\App\Support\RotLiveClock::snapshot($t);
+          if($p['elapsed_seconds']!==90||$p['running'])throw new \RuntimeException('Completed moved');
+          echo "ROT_COMPLETED_FREEZE=PASS\n";
+          $service=$app->make(\App\Services\StaffDashboardService::class);
+          $actual=$service->rot(4,'ROT261016193126LSFNZ');
+          if(!array_key_exists('live_seconds',$actual)||!array_key_exists('remaining_seconds',$actual))
+            throw new \RuntimeException('Native API missing authoritative clock fields');
+          if(($actual['status']??'')==='Completed' && $actual['live_seconds']!==(int)$actual['productive_seconds'])
+            throw new \RuntimeException('Native Completed API altered saved work seconds');
+          echo "NATIVE_STAFF_OWNER_ROT_CLOCK_API=PASS\n";
+          PHP
+          echo '===== WIP/INVOICE GUARDS (READ-ONLY CODE AUDIT) ====='
+          grep -Fq 'ROT edit/reassignment requires Job Card WIP status' app/Services/RotWorkflowService.php
+          grep -Fq 'ROT reopen is allowed only while Job Card is WIP' app/Services/RotWorkflowService.php
+          grep -Fq 'ROT/Labour editing requires WIP Job Card' app/Http/Controllers/Web/AdminWorkshopControlPageController.php
+          grep -Fq 'ROT billable / no-charge editing requires Job Card WIP status' app/Http/Controllers/Web/AdminRotBillingController.php
+          echo 'ROT_WIP_ACCOUNTING_GUARD_PATHS=VERIFIED'
           echo '===== READ ONLY DONE ====='
           REMOTE
       - name: Remove temporary runner key
