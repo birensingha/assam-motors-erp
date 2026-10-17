@@ -42,8 +42,15 @@ jobs:
           set -euo pipefail
           ROOT="$HOME/domains/assammotors.com/public_html/staging/staff-app"
           test -f "$ROOT/latest.json" && test -d "$ROOT/private"
-          php -r '$m=json_decode(file_get_contents($argv[1]),true); if(($m["package_id"]??"")!=="com.assammotors.staff"||!in_array((int)($m["version_code"]??0),[60308,60309],true)) exit(3);' "$ROOT/latest.json"
           OUT="$ROOT/v639-upload-once.php"
+          # A published 60309 manifest must never be followed by another public
+          # temporary receiver. This is a no-data-change cleanup only.
+          if php -r '$m=json_decode(file_get_contents($argv[1]),true); exit(($m["package_id"]??"")==="com.assammotors.staff" && (int)($m["version_code"]??0)===60309 && ($m["sha256"]??"")==="b67f4d24bcadf29748904d7a3dc13bbaaeb9c99689112d5ea26fe9fc41296e19") ? 0:1);' "$ROOT/latest.json"; then
+            rm -f "$OUT"
+            echo 'V639_ALREADY_PUBLISHED_RECEIVER=REMOVED'
+            exit 0
+          fi
+          php -r '$m=json_decode(file_get_contents($argv[1]),true); if(($m["package_id"]??"")!=="com.assammotors.staff"||(int)($m["version_code"]??0)!==60308) exit(3);' "$ROOT/latest.json"
           if [ -f "$OUT" ]; then
             grep -Fq 'b67f4d24bcadf29748904d7a3dc13bbaaeb9c99689112d5ea26fe9fc41296e19' "$OUT"
             echo 'V639_RECEIVER=ALREADY_STAGED';exit 0
@@ -98,6 +105,6 @@ jobs:
           set -euo pipefail
           code=$(curl -sS --max-time 20 -o /tmp/v639-response -w '%{http_code}' 'https://staging.assammotors.com/staff-app/v639-upload-once.php')
           echo "RECEIVER_GET_HTTP=$code"
-          test "$code" = 405
+          test "$code" = 405 || test "$code" = 404 || test "$code" = 410
       - if: always()
         run: rm -f ~/.ssh/v639 /tmp/v639-response
