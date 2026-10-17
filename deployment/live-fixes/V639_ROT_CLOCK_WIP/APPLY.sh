@@ -21,6 +21,7 @@ names={
  "native":"app/Services/StaffDashboardService.php",
  "bill":"app/Http/Controllers/Web/AdminWorkshopControlPageController.php",
  "rot":"app/Services/RotWorkflowService.php",
+ "rotbill":"app/Http/Controllers/Web/AdminRotBillingController.php",
 }
 old={}
 for key,name in names.items():
@@ -98,6 +99,42 @@ if "ROT edit/reassignment requires Job Card WIP status" not in part:
  part=once(part,"            $rot = RotSession::query()->lockForUpdate()->findOrFail($sessionId);\n",
            "            $rot = RotSession::query()->lockForUpdate()->findOrFail($sessionId);\n"+guard,"changeMechanic guard")
 new["rot"]=s[:i]+part+s[j:]
+
+# Apply the same WIP/Invoice lock to the separate "Reopen Completed ROT" action.
+s=new["rot"]
+i=s.index("public function reopenResetEndTime(")
+j=s.find("public function ",i+20)
+if j<0:j=len(s)
+part=s[i:j]
+guard=r"""            $editCard=DB::table('job_cards')->where('id',$rot->job_card_id)->lockForUpdate()->first();
+            if(!$editCard || !in_array(strtolower(trim((string)$editCard->status)),
+                ['wip','in progress','in-progress','work in progress'],true)){
+                throw ValidationException::withMessages(['rot'=>
+                    'ROT reopen is allowed only while Job Card is WIP. Authorized lifecycle reopening required.']);
+            }
+            if(!empty($editCard->invoice_id) || DB::table('invoices')
+                ->where('job_card_id',$rot->job_card_id)
+                ->whereRaw("LOWER(COALESCE(status,'')) <> 'reversed'")->exists()){
+                throw ValidationException::withMessages(['rot'=>
+                    'Invoice-linked ROT cannot reopen. First reverse invoice in Finance, then reopen Job Card to WIP.']);
+            }
+"""
+if "ROT reopen is allowed only while Job Card is WIP" not in part:
+ part=once(part,"            $rot = RotSession::query()->lockForUpdate()->findOrFail($sessionId);\n",
+           "            $rot = RotSession::query()->lockForUpdate()->findOrFail($sessionId);\n"+guard,"ROT reopen WIP")
+new["rot"]=s[:i]+part+s[j:]
+# Billing toggle can change final customer total: WIP and no unreversed invoice.
+s=old["rotbill"]
+guard=r"""            if(!in_array(strtolower(trim((string)$card->status)),
+                ['wip','in progress','in-progress','work in progress'],true)){
+                throw ValidationException::withMessages(['billing_included'=>
+                    'ROT billable / no-charge editing requires Job Card WIP status. Closed/invoiced work must use accounting reversal first.']);
+            }
+"""
+if "ROT billable / no-charge editing requires Job Card WIP status" not in s:
+ s=once(s,"            $card=JobCard::query()->whereKey($job)->lockForUpdate()->firstOrFail();\n",
+       "            $card=JobCard::query()->whereKey($job)->lockForUpdate()->firstOrFail();\n"+guard,"ROT billing WIP")
+new["rotbill"]=s
 for key,s in new.items():
  if names[key].endswith(".php"):
   result=subprocess.run(["php","-l"],input=s.encode('utf-8','surrogateescape'),capture_output=True)
@@ -117,7 +154,7 @@ try:
   tmp.chmod(dest.stat().st_mode & 0o777 if dest.exists() else 0o644)
   os.replace(tmp,dest)
   done.append(key)
- for key in ("clock","native","bill","rot"):
+ for key in ("clock","native","bill","rot","rotbill"):
   p=subprocess.run(["php","-l",str(root/names[key])],capture_output=True,text=True)
   if p.returncode:raise RuntimeError("PHP lint failed "+key+" "+p.stderr)
  p=subprocess.run(["php","artisan","view:cache"],cwd=root,capture_output=True,text=True,timeout=90)
