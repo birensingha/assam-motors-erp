@@ -1,0 +1,103 @@
+name: Stage v6.3.8 exact signed APK receiver (private staging only)
+on:
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/v638-stage-exact-signed-apk.yml"]
+permissions: { contents: read }
+concurrency:
+  group: assam-motors-v638-stage
+  cancel-in-progress: false
+jobs:
+  stage:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'fix/v638-role-update-admin-assigned-rot-20261016'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Prepare approved Hostinger SSH connection
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then printf '%s\n' "$KEY" > ~/.ssh/v638; chmod 600 ~/.ssh/v638
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Stage short-lived exact SHA / size receiver without publishing
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then SSH=(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -i ~/.ssh/v638 -p "$PORT")
+          else export SSHPASS="$PASSWORD"; SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "$PORT"); fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          test -f "$ROOT/latest.json" && test -d "$ROOT/private"
+          php -r '$m=json_decode(file_get_contents($argv[1]),true); if(($m["package_id"]??"")!=="com.assammotors.staff"||!in_array((int)($m["version_code"]??0),[60307,60308],true)) exit(3);' "$ROOT/latest.json"
+          OUT="$ROOT/v638-upload-once.php"
+          if [ -f "$OUT" ]; then
+            grep -Fq 'af30c55338df506e78434543cbc88273715f5c390d7fa39fd75c21c63636a0f7' "$OUT"
+            echo 'V638_RECEIVER=ALREADY_STAGED';exit 0
+          fi
+          cat > "$OUT.tmp" <<'PHP'
+          <?php
+          declare(strict_types=1);
+          header('Content-Type: application/json; charset=utf-8');
+          header('Cache-Control: no-store, max-age=0');
+          header('X-Content-Type-Options: nosniff');
+          const SHA='af30c55338df506e78434543cbc88273715f5c390d7fa39fd75c21c63636a0f7';
+          const LEN=3341044;
+          const NAME='Assam-Motors-Staff-v6.3.8-ROT-LIVE-IST-TIMER-SIGNED.apk';
+          function deny(int $status,string $reason):void{http_response_code($status);echo json_encode(['ok'=>false,'reason'=>$reason]);exit;}
+          if(time()>filemtime(__FILE__)+3600)deny(410,'Expired receiver');
+          if(strtolower((string)($_SERVER['HTTP_HOST']??''))!=='staging.assammotors.com')deny(403,'Wrong host');
+          if(($_SERVER['REQUEST_METHOD']??'')!=='POST')deny(405,'POST only');
+          if(strtolower(trim((string)($_SERVER['CONTENT_TYPE']??'')))!=='application/octet-stream')deny(415,'Wrong content type');
+          if((int)($_SERVER['CONTENT_LENGTH']??-1)!==LEN)deny(413,'Wrong APK size');
+          $folder=__DIR__.'/private';
+          $dest=$folder.'/'.NAME;
+          if(!is_dir($folder))deny(500,'Protected APK folder missing');
+          if(file_exists($dest)){
+            if(hash_equals(SHA,(string)hash_file('sha256',$dest))){echo json_encode(['ok'=>true,'already_present'=>true,'sha256'=>SHA]);exit;}
+            deny(409,'Existing different file');
+          }
+          $tmp=tempnam($folder,'.v638-');
+          if(!$tmp)deny(500,'Temp create failed');
+          $in=fopen('php://input','rb');$out=fopen($tmp,'wb');
+          if(!$in||!$out){@unlink($tmp);deny(500,'Stream open failed');}
+          $count=0;
+          while(!feof($in)){
+            $chunk=fread($in,65536);
+            if($chunk===false)break;
+            $count+=strlen($chunk);
+            if($count>LEN||fwrite($out,$chunk)!==strlen($chunk))break;
+          }
+          fclose($in);fclose($out);
+          if($count!==LEN||!hash_equals(SHA,(string)hash_file('sha256',$tmp))){@unlink($tmp);deny(422,'SHA mismatch');}
+          chmod($tmp,0640);
+          if(file_exists($dest)||!rename($tmp,$dest)){@unlink($tmp);deny(409,'Concurrent upload');}
+          http_response_code(201);
+          echo json_encode(['ok'=>true,'version_code'=>60308,'sha256'=>SHA]);
+          PHP
+          chmod 0644 "$OUT.tmp"; mv "$OUT.tmp" "$OUT"; php -l "$OUT"
+          echo 'V638_EXACT_RECEIVER=STAGED'
+          echo 'EXISTING_STAFF_UPDATE_FEED=UNCHANGED'
+          REMOTE
+      - name: Validate receiver rejects browser GET
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -sS --max-time 20 -o /tmp/v638-response -w '%{http_code}' 'https://staging.assammotors.com/staff-app/v638-upload-once.php')
+          echo "RECEIVER_GET_HTTP=$code"
+          test "$code" = 405
+      - if: always()
+        run: rm -f ~/.ssh/v638 /tmp/v638-response
