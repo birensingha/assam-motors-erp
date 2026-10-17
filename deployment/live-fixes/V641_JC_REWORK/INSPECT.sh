@@ -94,4 +94,27 @@ for p,start,end in [
    if re.search('password|secret|private.key|bearer',t,re.I):continue
    print(f'{i+1}: {t[:235]}')
 PY
+echo '=== BILLING VIEW / REVERSAL VIEW REVIEW ==='
+python3 - <<'PY'
+from pathlib import Path
+import re
+files=[f for f in Path('resources/views').rglob('*.blade.php') if ('amount' in f.name.lower() or 'revers' in f.name.lower())]
+for f in files[:15]:
+ print('FILEPATH',str(f))
+ if 'job-amount' not in f.name.lower() and 'reversal' not in f.name.lower():continue
+ lines=f.read_text(errors='replace').splitlines()
+ print('===VIEW',f,'TOTAL',len(lines),'===')
+ for i,x in enumerate(lines[:320]):
+  if re.search('password|bearer|api.secret',x,re.I):continue
+  print(str(i+1)+': '+x[:260])
+PY
+echo '=== JOB CARD SHOW DIRECT LABOUR / HEADER ==='
+python3 - <<'PY'
+from pathlib import Path
+f=Path('resources/views/job-cards/show.blade.php')
+a=f.read_text(errors='replace').splitlines()
+for s,e in [(380,419),(554,616)]:
+ print('===VIEW SOURCE RANGE',s,e)
+ for i in range(s-1,min(e,len(a))):print(str(i+1)+': '+a[i][:270])
+PY
 echo 'V641_READONLY_SOURCE_DIAGNOSIS=COMPLETE'
