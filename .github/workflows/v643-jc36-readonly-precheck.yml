@@ -1,0 +1,64 @@
+name: Check JC36 GST-Exclusive Amount and Accounting Links (Read Only)
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/v643-jc36-readonly-precheck.yml"
+      - "deployment/live-fixes/V643_JC36_TAX/**"
+permissions: { contents: read }
+concurrency:
+  group: assam-motors-v643-jc-rework-readonly
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'fix/v643-jc36-gst-exclusive-reconcile-20261017'
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Check targeted updater controller and guarded deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n deployment/live-fixes/V643_JC36_TAX/READONLY_PRECHECK.sh
+          test -s deployment/live-fixes/V643_JC36_TAX/READONLY_PRECHECK.sh
+          grep -Fq 'V643_GST_READONLY_PRECHECK=COMPLETE' deployment/live-fixes/V643_JC36_TAX/READONLY_PRECHECK.sh
+      - name: Deploy to Hostinger staging via existing secure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/v643
+            chmod 600 ~/.ssh/v643
+            SSH=(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -i ~/.ssh/v643 -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "$PORT")
+          fi
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          TEMP_DIR="/tmp/v643-attendance-diagnose-${GITHUB_RUN_ID}"
+          # Stage authenticated PHP only in the Laravel project folder.
+          tar -czf /tmp/v643-attendance-diagnose.tgz -C deployment/live-fixes/V643_JC36_TAX READONLY_PRECHECK.sh
+          if [ -n "$KEY" ]; then
+            SCP=(scp -o StrictHostKeyChecking=accept-new -i ~/.ssh/v643 -P "$PORT")
+          else
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$PORT")
+          fi
+          "${SCP[@]}" /tmp/v643-attendance-diagnose.tgz "$USERNAME@$HOST:$TEMP_DIR.tgz"
+          "${SSH[@]}" "$USERNAME@$HOST" "mkdir -p '$TEMP_DIR' && tar -xzf '$TEMP_DIR.tgz' -C '$TEMP_DIR' && bash '$TEMP_DIR/READONLY_PRECHECK.sh' '/home/u956497103/domains/assammotors.com/assam-erp-staging'; result=\$?; rm -rf '$TEMP_DIR' '$TEMP_DIR.tgz'; exit \$result"
+      - if: always()
+        run: rm -f ~/.ssh/v643 /tmp/v643-attendance-diagnose.tgz
