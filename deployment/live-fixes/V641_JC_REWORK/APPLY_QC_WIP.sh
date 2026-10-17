@@ -55,8 +55,14 @@ new="""            $this->assertNotLocked($card);
             }"""
 code=edit_one(code,old,new,'WIP status and financial lock')
 code=edit_one(code,
- "$data=$request->validate(['reason'=>['required','string','max:1000']]);",
- "$data=$request->validate(['reason'=>['required','string','max:1000'],'acknowledge_qc_repeat'=>['nullable','accepted']]);",
+ """    public function markWip(Request $request, int $job): RedirectResponse
+    {
+        $user=$this->admin($request);
+        $data=$request->validate(['reason'=>['required','string','max:1000']]);""",
+ """    public function markWip(Request $request, int $job): RedirectResponse
+    {
+        $user=$this->admin($request);
+        $data=$request->validate(['reason'=>['required','string','max:1000'],'acknowledge_qc_repeat'=>['nullable','accepted']]);""",
  'WIP acknowledgement validation')
 code=edit_one(code,
  """            $card->customer_public_status='Repair In Progress';
