@@ -45,7 +45,7 @@ jobs:
           OUT="$ROOT/v639-upload-once.php"
           # A published 60309 manifest must never be followed by another public
           # temporary receiver. This is a no-data-change cleanup only.
-          if php -r '$m=json_decode(file_get_contents($argv[1]),true); exit(($m["package_id"]??"")==="com.assammotors.staff" && (int)($m["version_code"]??0)===60309 && ($m["sha256"]??"")==="b67f4d24bcadf29748904d7a3dc13bbaaeb9c99689112d5ea26fe9fc41296e19") ? 0:1);' "$ROOT/latest.json"; then
+          if php -r '$m=json_decode(file_get_contents($argv[1]),true); if(($m["package_id"]??"")==="com.assammotors.staff" && (int)($m["version_code"]??0)===60309 && ($m["sha256"]??"")==="b67f4d24bcadf29748904d7a3dc13bbaaeb9c99689112d5ea26fe9fc41296e19") exit(0); exit(1);' "$ROOT/latest.json"; then
             rm -f "$OUT"
             echo 'V639_ALREADY_PUBLISHED_RECEIVER=REMOVED'
             exit 0
