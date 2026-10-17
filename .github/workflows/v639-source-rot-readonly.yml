@@ -1,0 +1,72 @@
+name: Read-only source study for ROT live web clock and WIP/invoice edit guards
+on:
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/v639-source-rot-readonly.yml"]
+permissions: { contents: read }
+jobs:
+  inspect:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'fix/v639-live-rot-web-wip-audit-20261017'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Inspect live read-only Laravel workshop implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/v639ro;chmod 600 ~/.ssh/v639ro
+            SSH=(ssh -o StrictHostKeyChecking=accept-new -o BatchMode=yes -o ConnectTimeout=25 -i ~/.ssh/v639ro -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq && sudo apt-get install -qq -y sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          python3 - <<'PY'
+          from pathlib import Path
+          specs=[
+          ('resources/views/dashboard/workshop.blade.php',1,100),
+          ('resources/views/dashboard/rot-performance.blade.php',1,85),
+          ('app/Http/Controllers/Web/AdminDashboardPageController.php',1,180),
+          ('app/Services/StaffDashboardService.php',115,188),
+          ('app/Services/RotWorkflowService.php',18,70),
+          ('app/Services/RotWorkflowService.php',180,340),
+          ('app/Http/Controllers/Web/AdminWorkshopControlPageController.php',127,210),
+          ('app/Http/Controllers/Api/V1/OwnerWorkshopController.php',115,220),
+          ('app/Http/Controllers/Api/V1/OwnerWorkshopController.php',240,345),
+          ('app/Http/Controllers/Web/AdminJobCardPageController.php',295,389),
+          ('app/Http/Controllers/Web/AdminJobCardPageController.php',530,585),
+          ('resources/views/job-cards/show.blade.php',505,590),
+          ('app/Services/RotWorkflowService.php',125,188),
+          ('app/Http/Controllers/Web/AdminRotBillingController.php',1,100),
+          ('app/Http/Controllers/Api/V1/OwnerWorkshopController.php',660,850),
+          ('app/Http/Controllers/Web/AdminJobCardPageController.php',725,805),
+          ('app/Http/Controllers/Web/AdminJobCardPageController.php',805,905),
+          ]
+          for path,start,end in specs:
+            file=Path(path)
+            if not file.is_file():continue
+            lines=file.read_text(errors='replace').splitlines()
+            print('===FILE',path,'RANGE',start,end,'TOTAL',len(lines),'===')
+            for n in range(start,min(end,len(lines))+1):
+              s=lines[n-1]
+              if any(x in s.lower() for x in ['password','api_key','bearer','secret','authorization:']):continue
+              print(str(n)+':'+s[:270])
+          PY
+          echo 'ROT_SOURCE_READONLY=COMPLETE'
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/v639ro

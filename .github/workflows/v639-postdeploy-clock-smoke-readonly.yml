@@ -1,0 +1,82 @@
+name: V639 Read Only Rot Clock Smoke Test
+on:
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/v639-postdeploy-clock-smoke-readonly.yml"]
+permissions: { contents: read }
+jobs:
+  check:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'fix/v639-live-rot-web-wip-audit-20261017'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Verify clocks and edit guards over staging SSH (no writes)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/v639qa;chmod 600 ~/.ssh/v639qa
+            SSH=(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=18 -i ~/.ssh/v639qa -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq && sudo apt-get install -qq -y sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=18 -p "$PORT")
+          fi
+          for attempt in 1 2 3; do
+            if "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $clock=\App\Support\RotLiveClock::class;
+          $now=\Carbon\CarbonImmutable::now('Asia/Kolkata');
+          $r=(object)['id'=>'TEST-V639','status'=>'Running','std_hours'=>0.5,'total_seconds'=>90,
+                     'start_time'=>$now->subSeconds(240)->toDateTimeString(),
+                     'first_start_at'=>$now->subSeconds(300)->toDateTimeString()];
+          $v=$clock::snapshot($r);
+          if(!$v['running']||$v['elapsed_seconds']<330||$v['elapsed_seconds']>338||
+            $v['remaining_seconds']>1470||$v['remaining_seconds']<1462)
+              throw new \RuntimeException('Active ROT clock calculation regression');
+          echo 'ROT_SERVER_RUNNING_ELAPSED=PASS'.PHP_EOL;
+          $r->status='Paused';$r->start_time=null;
+          $v=$clock::snapshot($r);
+          if($v['running']||$v['elapsed_seconds']!==90)throw new \RuntimeException('Pause time did not freeze');
+          echo 'ROT_SERVER_PAUSED_FREEZE=PASS'.PHP_EOL;
+          $r->status='Completed';
+          $v=$clock::snapshot($r);
+          if($v['running']||$v['elapsed_seconds']!==90)throw new \RuntimeException('Complete did not freeze');
+          echo 'ROT_SERVER_COMPLETED_FREEZE=PASS'.PHP_EOL;
+          $actual=app(\App\Services\StaffDashboardService::class)->rot(4,'ROT261016193126LSFNZ');
+          if(!array_key_exists('live_seconds',$actual) || !array_key_exists('remaining_seconds',$actual))
+            throw new \RuntimeException('Native ROT clock field missing');
+          if(($actual['status']??'')==='Completed' && $actual['live_seconds']!==(int)$actual['productive_seconds'])
+            throw new \RuntimeException('Completed saved seconds changed');
+          echo 'ROT_NATIVE_ADMIN_CLOCK_API=PASS'.PHP_EOL;
+          PHP
+          grep -Fq 'ROT edit/reassignment requires Job Card WIP status' app/Services/RotWorkflowService.php
+          grep -Fq 'ROT reopen is allowed only while Job Card is WIP' app/Services/RotWorkflowService.php
+          grep -Fq 'ROT/Labour editing requires WIP Job Card' app/Http/Controllers/Web/AdminWorkshopControlPageController.php
+          grep -Fq 'ROT billable / no-charge editing requires Job Card WIP status' app/Http/Controllers/Web/AdminRotBillingController.php
+          echo 'ROT_WIP_INVOICE_EDIT_GUARDS=PASS'
+          REMOTE
+            then exit 0; fi
+            echo "SSH_VERIFY_ATTEMPT=$attempt retrying in 12 seconds"
+            sleep 12
+          done
+          echo 'SSH_READONLY_VERIFICATION=UNAVAILABLE'
+          exit 1
+      - if: always()
+        run: rm -f ~/.ssh/v639qa
