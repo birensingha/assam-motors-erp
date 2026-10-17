@@ -71,4 +71,29 @@ foreach(['invoices','invoice_items','money_receipts','receipts','payment_voucher
  }
 }
 PHP
+echo '== ACCOUNTING REFERENCE + AUDIT SCHEMA PRECHECK (NO WRITES) =='
+php <<'PHP'
+<?php
+require 'vendor/autoload.php';
+$app=require 'bootstrap/app.php';
+$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+$j=DB::table('job_cards')->where('id',36)->first();
+foreach(['pre_round_total','round_off','gst_total','updated_at','status'] as $key)echo 'HEADER_'.$key.'='.($j->$key??'NULL').PHP_EOL;
+$a=DB::select('SHOW COLUMNS FROM job_card_change_audits');
+echo 'AUDIT_SCHEMA='.json_encode(array_map(fn($row)=>['field'=>$row->Field,'type'=>$row->Type,'null'=>$row->Null,'default'=>$row->Default],$a)).PHP_EOL;
+$last=DB::table('job_card_change_audits')->where('job_card_id',36)->orderByDesc('id')->limit(7)->get(['id','entity_type','entity_id','action','reason','created_at']);
+echo 'AUDIT_TRAIL='.json_encode($last,JSON_UNESCAPED_SLASHES).PHP_EOL;
+foreach(['customer_payments','customer_ledger','workshop_payment_vouchers','am_payments','invoices','direct_invoice_requests'] as $t){
+ if(!Schema::hasTable($t))continue;
+ $cols=Schema::getColumnListing($t);$refs=array_values(array_intersect(['reference_no','against_reference','voucher_no','reference','job_no','narration','description','notes','invoice_no'], $cols));
+ $rows=[];
+ foreach($refs as $col){
+   try{$n=DB::table($t)->where($col,'like','%JC-20261016-00036%')->count();if($n)$rows[$col]=$n;}
+   catch(Throwable $e){$rows[$col]='ERROR';}
+ }
+ echo 'ACCOUNT_REFERENCE='.json_encode(['table'=>$t,'matches'=>$rows]).PHP_EOL;
+}
+PHP
 echo 'V643_GST_READONLY_PRECHECK=COMPLETE'
