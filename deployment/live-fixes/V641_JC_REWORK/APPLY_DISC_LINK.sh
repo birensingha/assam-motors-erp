@@ -40,14 +40,14 @@ link="""  {{-- V641_FINANCIAL_NAV: show billing editor at the operational stage 
 jc=once(jc,'  <div class="rot-list">',link+'  <div class="rot-list">','labour billing edit link')
 editor=old['edit'].decode('utf-8','surrogateescape')
 editor=once(editor,
- "@section('content')\n <div class=\"am-modern am50-integrated-page\">",
- "@section('content')\n @php($amAmountsWip=in_array(strtolower(trim((string)$card->status)),['wip','in progress','in-progress','work in progress'],true))\n <div class=\"am-modern am50-integrated-page\">",
+ "@section('content')\n<div class=\"am-modern am50-integrated-page\">",
+ "@section('content')\n @php($amAmountsWip=in_array(strtolower(trim((string)$card->status)),['wip','in progress','in-progress','work in progress'],true))\n<div class=\"am-modern am50-integrated-page\">",
  'billing editor status helper')
 editor=once(editor,
  """@elseif(strtolower((string)$card->status)==='closed')
- <div class="note">Closed but not invoiced: Admin financial correction is allowed only with modification reason. Previous amount is preserved in the change audit.</div>""",
+<div class="note">Closed but not invoiced: Admin financial correction is allowed only with modification reason. Previous amount is preserved in the change audit.</div>""",
  """@elseif(!$amAmountsWip)
- <div class="note danger"><b>Job Card is not WIP: amount editing is locked.</b> Open <a href="{{ route('erp.job-cards.show',$card->id) }}">Job Card {{ $card->job_no }}</a> and select the authorized <b>Return to WIP</b> action (or Start WIP for OPEN). Invoice-linked jobs require accounting reversal first. ROT actual productive time is never overwritten.</div>""",
+<div class="note danger"><b>Job Card is not WIP: amount editing is locked.</b> Open <a href="{{ route('erp.job-cards.show',$card->id) }}">Job Card {{ $card->job_no }}</a> and select the authorized <b>Return to WIP</b> action (or Start WIP for OPEN). Invoice-linked jobs require accounting reversal first. ROT actual productive time is never overwritten.</div>""",
  'billing editor closed stale advice')
 editor=editor.replace('($invoiced||$taxBasisUnverified)','($invoiced||$taxBasisUnverified||!$amAmountsWip)')
 planned={'jc':jc.encode('utf-8','surrogateescape'),'edit':editor.encode('utf-8','surrogateescape')}
