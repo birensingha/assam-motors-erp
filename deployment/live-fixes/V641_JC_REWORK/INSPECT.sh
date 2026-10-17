@@ -54,4 +54,44 @@ foreach(['job_cards','rot_sessions','job_card_labour','job_card_labor','job_card
  echo 'TABLE='.$table.' COLUMNS='.implode(',',array_map(fn($x)=>$x->Field,$cols)).' COUNT='.DB::table($table)->count().PHP_EOL;
 }
 PHP
+echo '=== FULL TARGETED METHODS: REVERSAL, FINANCE, LIFECYCLE ==='
+python3 - <<'PY'
+from pathlib import Path
+import re
+specs={
+'app/Http/Controllers/Web/AdminJobCardUnwindController.php':['show','approvalDesk','removeLabour','cancel','requestReview','decideReversalReview'],
+'app/Http/Controllers/Web/AdminRotVoidController.php':['voidCompleted'],
+'app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php':['markWip','markWorkComplete','qcResult','reopenClosed','assertNotLocked'],
+'app/Http/Controllers/Web/AdminWorkshopControlPageController.php':['jobAmounts','updateJobLine'],
+'app/Http/Controllers/Web/AdminJobCardPageController.php':['updatePart','deletePart','deleteLabour','addLabourDirect'],
+'app/Http/Controllers/Web/AdminJobCardPartIssueController.php':['issue','fitted'],
+}
+for path,methods in specs.items():
+ f=Path(path)
+ if not f.is_file():continue
+ lines=f.read_text(errors='replace').splitlines()
+ print('===SRC',path,'LINES',len(lines),'===')
+ for method in methods:
+  hits=[i for i,x in enumerate(lines) if re.search(r'\bfunction\s+'+re.escape(method)+r'\s*\(',x)]
+  if len(hits)!=1:continue
+  i=hits[0]
+  end=next((j for j in range(i+1,len(lines)) if re.search(r'\b(?:public|private|protected)\s+function\s+\w+\s*\(',lines[j])),len(lines))
+  print('---METHOD',method,'RANGE',i+1,end,'---')
+  for j in range(max(0,i-1),min(end,i+110)):
+   x=lines[j]
+   if re.search('password|secret|private.key|bearer',x,re.I):continue
+   print(f'{j+1}: {x[:270]}')
+for p,start,end in [
+('resources/views/job-cards/lifecycle-panel.blade.php',1,250),
+('resources/views/workshop-tools/job-amounts.blade.php',1,180),
+('resources/views/job-cards/reversal.blade.php',1,155)]:
+ f=Path(p)
+ if f.exists():
+  ls=f.read_text(errors='replace').splitlines()
+  print('===VIEW',p,'===')
+  for i in range(start-1,min(end,len(ls))):
+   t=ls[i]
+   if re.search('password|secret|private.key|bearer',t,re.I):continue
+   print(f'{i+1}: {t[:235]}')
+PY
 echo 'V641_READONLY_SOURCE_DIAGNOSIS=COMPLETE'
