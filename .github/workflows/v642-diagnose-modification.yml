@@ -11,7 +11,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   deploy:
-    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'fix/v642-jc-wip-rot-parts-reversal-qc-20261017'
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'diagnose/v642-modification-blocker-20261017'
     runs-on: ubuntu-latest
     timeout-minutes: 14
     env:
