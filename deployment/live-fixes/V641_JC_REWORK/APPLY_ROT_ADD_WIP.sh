@@ -43,20 +43,23 @@ code=(pre+body+post).encode('utf-8','surrogateescape')
 lint=subprocess.run(['php','-l'],input=code,capture_output=True)
 if lint.returncode:raise RuntimeError('V641 PHP syntax fail '+lint.stderr.decode('utf-8','replace'))
 view=old['view'].decode('utf-8','surrogateescape')
-openText='        <form method="post" action="{{ route(\'erp.job-cards.labour.direct\',$job->id) }}" class="jc-entry-form">@csrf'
-openRepl="""        @if(in_array(strtolower(trim((string)$job->status)),['wip','in progress','in-progress','work in progress'],true) && empty($job->invoice_id))
-"""+openText
-view=once(view,openText,openRepl,'hide direct ROT form outside WIP')
-closeText="""        <div class="actions"><button class="btn primary">＋ Add Labour / ROT</button></div>
-      </form>
-    </div>"""
-closeRepl="""        <div class="actions"><button class="btn primary">＋ Add Labour / ROT</button></div>
-      </form>
+# Scope WIP visibility to one unique Labour/ROT direct-add form, ignoring indentation.
+marker='<!-- V641_LABOUR_DIRECT_WIP_UI -->'
+if marker not in view:
+    needle='<form method="post" action="{{ route(\'erp.job-cards.labour.direct\',$job->id) }}"'
+    start=view.find(needle)
+    if start<0 or view.find(needle,start+len(needle))>=0:raise RuntimeError('V641 Labour Direct Form missing/duplicate')
+    finish=view.find('</form>',start)
+    if finish<0:raise RuntimeError('V641 Labour Direct Form is unclosed')
+    finish+=len('</form>')
+    opening="""<!-- V641_LABOUR_DIRECT_WIP_UI -->
+        @if(in_array(strtolower(trim((string)$job->status)),['wip','in progress','in-progress','work in progress'],true) && empty($job->invoice_id))
+        """
+    closing="""
         @else
-          <p class="muted">Labour/ROT add or edit is locked until the Job Card is WIP. For Work Complete/QC/Ready, use <b>Return to WIP</b> in Workshop Lifecycle. Invoice-linked jobs require Finance reversal.</p>
-        @endif
-    </div>"""
-view=once(view,closeText,closeRepl,'close WIP-only form')
+        <p class="muted">Labour/ROT is editable only at WIP. For Work Complete/QC/Ready, choose <b>Return to WIP</b> in Workshop Lifecycle. Invoices need Finance reversal.</p>
+        @endif"""
+    view=view[:start]+opening+view[start:finish]+closing+view[finish:]
 new={'ctrl':code,'view':view.encode('utf-8','surrogateescape')}
 backup=root.parent/('BACKUP_V641_ROT_ADD_GUARD_'+datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ'))
 backup.mkdir(mode=0o700)
