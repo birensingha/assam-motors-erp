@@ -9,7 +9,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   stage:
-    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'fix/v638-role-update-admin-assigned-rot-20261016'
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'release/v638-rot-ist-auto-update-20261017'
     runs-on: ubuntu-latest
     timeout-minutes: 12
     env:
