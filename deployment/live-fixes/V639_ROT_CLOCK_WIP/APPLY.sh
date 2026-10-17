@@ -26,7 +26,7 @@ old={}
 for key,name in names.items():
  f=root/name
  if not f.exists() and key not in ("clock","part"):raise RuntimeError("Missing "+name)
- old[key]=f.read_text() if f.exists() else None
+ old[key]=f.read_bytes().decode('utf-8','surrogateescape') if f.exists() else None
 def once(s,a,b,label):
  count=s.count(a)
  if count!=1:raise RuntimeError(label+" anchor count "+str(count))
@@ -100,8 +100,8 @@ if "ROT edit/reassignment requires Job Card WIP status" not in part:
 new["rot"]=s[:i]+part+s[j:]
 for key,s in new.items():
  if names[key].endswith(".php"):
-  result=subprocess.run(["php","-l"],input=s,text=True,capture_output=True)
-  if result.returncode:raise RuntimeError("Syntax error in "+key+": "+result.stderr+result.stdout)
+  result=subprocess.run(["php","-l"],input=s.encode('utf-8','surrogateescape'),capture_output=True)
+  if result.returncode:raise RuntimeError("Syntax error in "+key+": "+(result.stderr+result.stdout).decode('utf-8','replace'))
 backup=root.parent/("BACKUP_V639_"+datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
 backup.mkdir(mode=0o700)
 done=[]
@@ -110,10 +110,10 @@ try:
   dest=root/name
   if old[key]==new[key]:continue
   if old[key] is not None:
-   b=backup/name;b.parent.mkdir(parents=True,exist_ok=True);b.write_text(old[key]);b.chmod(0o600)
+   b=backup/name;b.parent.mkdir(parents=True,exist_ok=True);b.write_bytes(old[key].encode('utf-8','surrogateescape'));b.chmod(0o600)
   dest.parent.mkdir(parents=True,exist_ok=True)
   tmp=dest.with_name("."+dest.name+".v639tmp")
-  tmp.write_text(new[key])
+  tmp.write_bytes(new[key].encode('utf-8','surrogateescape'))
   tmp.chmod(dest.stat().st_mode & 0o777 if dest.exists() else 0o644)
   os.replace(tmp,dest)
   done.append(key)
@@ -126,7 +126,7 @@ except BaseException:
  for key in reversed(done):
   dest=root/names[key]
   if old[key] is None:dest.unlink(missing_ok=True)
-  else:dest.write_text(old[key])
+  else:dest.write_bytes(old[key].encode('utf-8','surrogateescape'))
  subprocess.run(["php","artisan","view:clear"],cwd=root,capture_output=True)
  print("V639_ROLLBACK=COMPLETE")
  raise
