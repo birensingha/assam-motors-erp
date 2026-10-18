@@ -1,0 +1,47 @@
+name: Dry-run compact mobile individual Staff Live tracking on BLUE V2
+on:
+  push:
+    branches: [feature/mobile-staff-live-solo-v3-safe]
+    paths: [".github/workflows/dry-run-staff-live-mobile-solo-v3.yml", "deployment/live-fixes/FIX_STAFF_LIVE_MOBILE_SOLO_V3_20261018/**"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify V3 solo mode can overlay current live BLUE V2 without changing files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/am-gps-diag
+            chmod 600 ~/.ssh/am-gps-diag
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -i ~/.ssh/am-gps-diag -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          SRC=deployment/live-fixes/FIX_STAFF_LIVE_MOBILE_SOLO_V3_20261018
+          BUNDLE='$HOME/.assam-staff-mobile-solo-v3'
+          "${SSH[@]}" "$USERNAME@$HOST" 'mkdir -p "$HOME/.assam-staff-mobile-solo-v3"'
+          tar -czf - -C "$SRC" payload | "${SSH[@]}" "$USERNAME@$HOST" 'tar -xzf - -C "$HOME/.assam-staff-mobile-solo-v3"'
+          "${SSH[@]}" "$USERNAME@$HOST" 'python3 - --root "$HOME/domains/assammotors.com/assam-erp-staging" --bundle "$HOME/.assam-staff-mobile-solo-v3/payload"' < "$SRC/apply.py"
+          echo 'MOBILE_SOLO_V3_STAGING_DRY_RUN_COMPLETE=PASS'
+      - if: always()
+        run: rm -f ~/.ssh/am-gps-diag
