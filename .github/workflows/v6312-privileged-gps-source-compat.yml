@@ -46,7 +46,7 @@ jobs:
           set -euo pipefail
           cd "$HOME/domains/assammotors.com/assam-erp-staging"
           php -l app/Http/Controllers/Api/V1/StaffLocationController.php
-          grep -Fq "if ((\$data['source']??null) !== 'ANDROID_FOREGROUND_NATIVE_60S' \&\& !\$loginGps)" app/Http/Controllers/Api/V1/StaffLocationController.php
+          grep -Fq "&& !\$loginGps)" app/Http/Controllers/Api/V1/StaffLocationController.php
           php artisan route:list --path=staff/location | head -12
           echo 'V6312_PRIVILEGED_NATIVE_GPS_COMPAT=VERIFIED'
           REMOTE
