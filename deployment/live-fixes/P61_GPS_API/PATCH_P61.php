@@ -68,8 +68,6 @@ CODE;
  swap61($new,"'attendance_id' => \$attendance->id,","'attendance_id' => \$attendance?->id,",'NULLABLE_LINK');
  swap61($new,"'source' => substr((string)(\$data['source'] ?? 'ANDROID_FOREGROUND'), 0, 40),",
       "'source' => \$privileged ? 'ADMIN_HR_OPT_IN_GPS' : substr((string)(\$data['source'] ?? 'ANDROID_FOREGROUND'), 0, 40),",'SOURCE');
- swap61($new,"'inside_geofence' => \$inside,\n            'quality' => \$quality,",
-      "'inside_geofence' => \$inside,\n            'geofence_exempt' => \$privileged,\n            'quality' => \$quality,",'RESPONSE');
  chdir($root);require "$root/vendor/autoload.php";$app=require "$root/bootstrap/app.php";
  $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
  $db=\Illuminate\Support\Facades\DB::selectOne("SELECT IS_NULLABLE FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='staff_location_logs' AND COLUMN_NAME='attendance_id'");
