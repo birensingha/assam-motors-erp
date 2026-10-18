@@ -1,0 +1,71 @@
+name: Deploy Admin WIP Edit ROT Time with Permanent Audit to Staging
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/v645-deploy-admin-rot-time.yml"
+      - "deployment/live-fixes/V645_EDIT_ROT_TIME/**"
+permissions: { contents: read }
+concurrency:
+  group: assam-motors-v645-admin-rot-time-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'fix/v645-admin-wip-rot-time-correction-20261018'
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Verify targeted Admin-only controller and reversible patch scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n deployment/live-fixes/V645_EDIT_ROT_TIME/APPLY.sh
+          php -l deployment/live-fixes/V645_EDIT_ROT_TIME/AdminRotTimeEditController.php
+          test -s deployment/live-fixes/V645_EDIT_ROT_TIME/rot-time-editor.blade.php
+      - name: Deploy backed-up Admin time-correction controller, audited edit UI and WIP/invoice guards to Staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/v645
+            chmod 600 ~/.ssh/v645
+            SSH=(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -i ~/.ssh/v645 -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "$PORT")
+          fi
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          TEMP_DIR="/tmp/v645-rot-clock-${GITHUB_RUN_ID}"
+          # Stage authenticated PHP only in the Laravel project folder.
+          tar -czf /tmp/v645-clock-bundle.tgz -C deployment/live-fixes/V645_EDIT_ROT_TIME APPLY.sh AdminRotTimeEditController.php rot-time-editor.blade.php
+          if [ -n "$KEY" ]; then
+            SCP=(scp -o StrictHostKeyChecking=accept-new -i ~/.ssh/v645 -P "$PORT")
+          else
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$PORT")
+          fi
+          "${SCP[@]}" /tmp/v645-clock-bundle.tgz "$USERNAME@$HOST:$TEMP_DIR.tgz"
+          "${SSH[@]}" "$USERNAME@$HOST" "mkdir -p '$TEMP_DIR' && tar -xzf '$TEMP_DIR.tgz' -C '$TEMP_DIR' && bash '$TEMP_DIR/APPLY.sh' '/home/u956497103/domains/assammotors.com/assam-erp-staging'; result=\$?; rm -rf '$TEMP_DIR' '$TEMP_DIR.tgz'; exit \$result"
+      - name: Verify Staging ERP login still loads
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=$(curl -sS -L --max-time 25 -o /tmp/v645-login-page -w '%{http_code}' 'https://staging.assammotors.com/erp/login')
+          echo "V645_ERP_LOGIN_HTTP=$status"
+          test "$status" = 200
+      - if: always()
+        run: rm -f ~/.ssh/v645 /tmp/v645-clock-bundle.tgz /tmp/v645-login-page
