@@ -106,22 +106,22 @@ jobs:
             php -r '
               require "vendor/autoload.php";
               $app=require "bootstrap/app.php";
-              $app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
+              $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
               $no="INV-2026-00010";
-              $inv=Illuminate\\Support\\Facades\\DB::table("invoices")->where("invoice_no",$no)->first();
-              if (!$inv) { echo "SAMPLE_INVOICE_NOT_FOUND\\n"; }
+              $inv=Illuminate\Support\Facades\DB::table("invoices")->where("invoice_no",$no)->first();
+              if (!$inv) { echo "SAMPLE_INVOICE_NOT_FOUND\n"; }
               else {
                 $iid=$inv->job_card_id;
-                echo "SAMPLE_SAVED_TOTALS parts=".($inv->parts_total??0)." labour=".($inv->labour_total??0)." gst=".($inv->gst_total??$inv->tax_total??0)." grand=".($inv->grand_total??0)."\\n";
+                echo "SAMPLE_SAVED_TOTALS parts=".($inv->parts_total??0)." labour=".($inv->labour_total??0)." gst=".($inv->gst_total??$inv->tax_total??0)." grand=".($inv->grand_total??0)."\n";
                 foreach (["job_card_parts","job_card_labour"] as $t) {
-                  $rows=Illuminate\\Support\\Facades\\DB::table($t)->where("job_card_id",$iid)->get();
+                  $rows=Illuminate\Support\Facades\DB::table($t)->where("job_card_id",$iid)->get();
                   $net=0.0; $derivedGST=0.0; $n=0;
                   foreach ($rows as $row) {
                     $n++;
                     $net+=(float)($row->total??0);
                     $derivedGST+=round((float)($row->total??0)*(float)($row->gst_percent??0)/100,2);
                   }
-                  echo "SAMPLE_ROW_AGG ".$t." count=".$n." sum_total=".round($net,2)." percent_based_gst=".round($derivedGST,2)."\\n";
+                  echo "SAMPLE_ROW_AGG ".$t." count=".$n." sum_total=".round($net,2)." percent_based_gst=".round($derivedGST,2)."\n";
                 }
               }'
           fi
