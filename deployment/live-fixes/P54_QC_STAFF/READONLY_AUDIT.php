@@ -63,4 +63,12 @@ foreach([
   $selected[]=($i+1).':'.trim($lines[$i]);
  showAudit('excerpt',[$p,$from,$to,$selected]);
 }
+$src=file("$root/resources/views/staff/portal.blade.php");
+foreach($src as $i=>$line){
+ if(preg_match('~(<main\b|</header>|assignedInspections|<body\b|<h2|<section|</main>|</body>|staff-shell)~i',$line)
+    && $i>125){
+   $lines=[];for($j=max(0,$i-2);$j<=min(count($src)-1,$i+5);$j++)$lines[]=($j+1).':'.trim($src[$j]);
+   showAudit('staff_portal_anchor',$lines);
+ }
+}
 echo "P54_AUDIT_FINISHED\n";
