@@ -13,7 +13,8 @@ $paid=(float)($inv->paid_amount??$inv->paid_total??0);
   </div>
   <div class="actions wrap">
     <a class="btn" href="{{ route('erp.job-cards.show',$job->id) }}">← Job Card</a>
-    <a class="btn primary" target="_blank" href="{{ route('erp.invoices.print',$inv->id) }}">🖨 Print / Save PDF</a>
+    <a class="btn primary" target="_blank" href="{{ route('erp.invoices.print',$inv->id) }}?mode=tax">🖨 GST / Tax Invoice</a>
+    <a class="btn" target="_blank" href="{{ route('erp.invoices.print',$inv->id) }}?mode=cost_summary">🖨 Customer Cost Summary</a>
     @if($job->customer_id)
       <a class="btn" href="{{ route('erp.customers.show',$job->customer_id) }}">Customer Ledger</a>
     @endif

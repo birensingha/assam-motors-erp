@@ -8,8 +8,59 @@ body{font:13px Arial;color:#111;margin:22px}.head{display:flex;justify-content:s
 </style>
 </head>
 <body>
-<button class="no-print" onclick="window.print()">Print / Save PDF</button>
-<div class="head"><div><h1>ASSAM MOTORS</h1><div>Workshop Tax Invoice</div></div><div><strong>{{ $inv->invoice_no }}</strong><br>Job: {{ $job->job_no }}</div></div>
+@php
+$isCostSummary = request()->query('mode') === 'cost_summary';
+$showDiscount = request()->query('show_discount') === '1';
+
+$amComputeSavedTax = static function ($item): ?float {
+    $row = (array)$item;
+    if (isset($row['gst_amount']) && is_numeric($row['gst_amount'])) return round((float)$row['gst_amount'],2);
+    if (isset($row['tax_amount']) && is_numeric($row['tax_amount'])) return round((float)$row['tax_amount'],2);
+    if (isset($row['total'], $row['gst_percent']) && is_numeric($row['total']) && is_numeric($row['gst_percent'])) {
+        return round((float)$row['total']*(float)$row['gst_percent']/100,2);
+    }
+    return null;
+};
+$amPartsTaxSum=0.0; $amLabourTaxSum=0.0; $amTaxDataComplete=true;
+$amPartsTaxableSum=0.0; $amLabourTaxableSum=0.0;
+foreach ($parts as $entry) {
+    $amPartsTaxableSum+=round((float)($entry->taxable_amount??$entry->taxable_value??$entry->total??0),2);
+    $tax=$amComputeSavedTax($entry);
+    if ($tax===null) $amTaxDataComplete=false;
+    else $amPartsTaxSum += $tax;
+}
+foreach ($labour as $entry) {
+    $amLabourTaxableSum+=round((float)($entry->taxable_amount??$entry->taxable_value??$entry->total??0),2);
+    $tax=$amComputeSavedTax($entry);
+    if ($tax===null) $amTaxDataComplete=false;
+    else $amLabourTaxSum += $tax;
+}
+$amInvoiceTax=(float)($inv->gst_total??$inv->tax_total??0);
+$amRoundOff=(float)($inv->round_off??0);
+$amPartsInclusive=(float)($inv->parts_total??0)+$amPartsTaxSum;
+$amLabourInclusive=(float)($inv->labour_total??0)+$amLabourTaxSum;
+$amDetailTax=$amPartsTaxSum+$amLabourTaxSum;
+$amCalculatedGrand=$amPartsInclusive+$amLabourInclusive+$amRoundOff;
+$amTotalsVerified=$amTaxDataComplete
+  && abs($amPartsTaxableSum-(float)($inv->parts_total??0))<=0.05
+  && abs($amLabourTaxableSum-(float)($inv->labour_total??0))<=0.05
+  && abs($amDetailTax-$amInvoiceTax)<=0.05
+  && abs($amCalculatedGrand-(float)$inv->grand_total)<=0.05;
+
+@endphp
+<div class="no-print" style="display:flex;gap:8px;margin-bottom:14px">
+<a href="{{ request()->fullUrlWithQuery(['mode'=>'tax']) }}">GST / Tax Invoice</a>
+<a href="{{ request()->fullUrlWithQuery(['mode'=>'cost_summary']) }}">Customer Cost Summary (no GST breakup)</a>
+<a href="{{ request()->fullUrlWithQuery(['show_discount'=>$showDiscount?0:1]) }}">{{ $showDiscount ? 'Hide Discount Details' : 'Show Discount Details' }}</a>
+@if($amTotalsVerified)<button onclick="window.print()">Print / Save PDF</button>@else<strong>Printing locked: invoice totals need verification</strong>@endif
+</div>
+{{-- Existing company logo lives in the primary site's public_html/images/logo.png. --}}
+<div class="head"><div style="display:flex;align-items:center;gap:12px">
+<div class="invoice-logo-box" style="width:74px;height:74px;display:flex;align-items:center;justify-content:center;flex-shrink:0;padding:3px;box-sizing:border-box"><img src="https://assammotors.com/images/logo.png" alt="Assam Motors logo" style="display:block;width:100%;height:100%;object-fit:contain;object-position:center center" /></div>
+<div><h1>ASSAM MOTORS</h1><div>{{ $isCostSummary ? "Customer Cost Summary — Tax Included — Not a Tax Invoice" : "Tax / Service Invoice" }}</div></div></div><div><strong>{{ $inv->invoice_no }}</strong><br>Job: {{ $job->job_no }}</div></div>
+@if($isCostSummary)
+<p style="background:#edf4fb;padding:8px">Customer cost summary. Amounts include applicable taxes. This document is not a tax invoice.</p>
+@endif
 <div class="meta">
   <div><span>Customer</span>{{ $inv->customer_name }}<br>{{ $inv->customer_phone }}</div>
   <div><span>Vehicle</span>{{ $inv->vehicle_reg_no }}<br>{{ trim(($job->vehicle_make??'').' '.($job->vehicle_model??'')) }}</div>
@@ -17,24 +68,113 @@ body{font:13px Arial;color:#111;margin:22px}.head{display:flex;justify-content:s
   <div><span>Status</span>{{ strtoupper((string)$inv->status) }}</div>
 </div>
 
-<h2>Parts</h2>
-<table><thead><tr><th>#</th><th>Part</th><th>Part No.</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">GST</th><th class="num">Total</th></tr></thead><tbody>
-@forelse($parts as $p)<tr><td>{{ $loop->iteration }}</td><td>{{ $p->part_name }}</td><td>{{ $p->part_number ?: $p->part_code }}</td><td class="num">{{ $p->qty }}</td><td class="num">₹{{ number_format((float)$p->rate,2) }}</td><td class="num">{{ number_format((float)($p->gst_percent??0),2) }}%</td><td class="num">₹{{ number_format((float)$p->total,2) }}</td></tr>@empty<tr><td colspan="7">No Parts.</td></tr>@endforelse
+<h2>Parts / Materials</h2>
+<table><thead><tr><th>SL No.</th><th>Part</th><th>Code</th><th>HSN</th><th class="num">Qty</th><th class="num">Rate</th>@if($showDiscount)<th class="num">Dis%</th><th class="num">Discount Amount</th>@endif @unless($isCostSummary)<th class="num">Taxable Amount</th><th class="num">GST%</th><th class="num">GST Amount</th>@endunless<th class="num">Final Amount</th></tr></thead><tbody>
+@forelse($parts as $p)
+@php
+  $pr=(array)$p;
+  $pQty=(float)($p->qty??0);
+  $pNet=(float)($pr['taxable_amount']??$pr['taxable_value']??$p->total??0);
+  $pTax=isset($pr['gst_amount'])&&is_numeric($pr['gst_amount'])
+    ? (float)$pr['gst_amount']
+    : (isset($pr['tax_amount'])&&is_numeric($pr['tax_amount'])
+      ? (float)$pr['tax_amount']
+      : (isset($pr['gst_percent'])&&is_numeric($pr['gst_percent'])
+        ? round($pNet*(float)$pr['gst_percent']/100,2) : null));
+  // Cost summary line amount is inclusive only when saved tax values are available.
+  $pGross=$pTax===null ? null : round($pNet+$pTax,2);
+  $pDisplayTotal=$pGross;
+  $pDisplayRate=$isCostSummary&&$pQty>0&&$pGross!==null?$pGross/$pQty:(float)($p->rate??0);
+@endphp
+<tr><td>{{ $loop->iteration }}</td><td>{{ $p->part_name }}</td><td>{{ $p->part_number ?? $p->part_code ?? '—' }}</td><td>{{ $pr['hsn_code']??$pr['hsn']??'—' }}</td><td class="num">{{ $p->qty }}</td><td class="num">₹{{ number_format($pDisplayRate,2) }}</td>@if($showDiscount)<td class="num">{{ isset($pr['discount_percent']) ? number_format((float)$pr['discount_percent'],2).'%' : '—' }}</td><td class="num">₹{{ number_format((float)($pr['discount_amount']??$pr['discount']??0),2) }}</td>@endif @unless($isCostSummary)<td class="num">₹{{ number_format($pNet,2) }}</td><td class="num">{{ number_format((float)($p->gst_percent??0),2) }}%</td><td class="num">{{ $pTax===null ? '—' : '₹'.number_format($pTax,2) }}</td>@endunless<td class="num">{{ $pDisplayTotal===null ? '—' : '₹'.number_format($pDisplayTotal,2) }}</td></tr>
+@empty<tr><td colspan="{{ 7 + ($showDiscount ? 2 : 0) + ($isCostSummary ? 0 : 3) }}">No Parts lines.</td></tr>@endforelse
 </tbody></table>
 
-<h2>Labour / ROT</h2>
-<table><thead><tr><th>#</th><th>ROT</th><th>Description</th><th class="num">Std Hrs</th><th class="num">Rate</th><th class="num">GST</th><th class="num">Total</th></tr></thead><tbody>
-@forelse($labour as $l)<tr><td>{{ $loop->iteration }}</td><td>{{ $l->rot_code }}</td><td>{{ $l->description }}</td><td class="num">{{ number_format((float)$l->standard_hours,2) }}</td><td class="num">₹{{ number_format((float)$l->labour_rate,2) }}</td><td class="num">{{ number_format((float)($l->gst_percent??0),2) }}%</td><td class="num">₹{{ number_format((float)$l->total,2) }}</td></tr>@empty<tr><td colspan="7">No Labour.</td></tr>@endforelse
+<h2>Labour / ROT Charges</h2>
+<table><thead><tr><th>SL No.</th><th>Labour</th><th>ROT</th><th>SAC</th><th class="num">Std Hrs</th><th class="num">Rate</th>@if($showDiscount)<th class="num">Dis%</th><th class="num">Discount Amount</th>@endif @unless($isCostSummary)<th class="num">Taxable Amount</th><th class="num">GST%</th><th class="num">GST Amount</th>@endunless<th class="num">Final Amount</th></tr></thead><tbody>
+@forelse($labour as $l)
+@php
+  $lr=(array)$l;
+  $lNet=(float)($lr['taxable_amount']??$lr['taxable_value']??$l->total??0);
+  $lTax=isset($lr['gst_amount'])&&is_numeric($lr['gst_amount'])
+    ? (float)$lr['gst_amount']
+    : (isset($lr['tax_amount'])&&is_numeric($lr['tax_amount'])
+      ? (float)$lr['tax_amount']
+      : (isset($lr['gst_percent'])&&is_numeric($lr['gst_percent'])
+        ? round($lNet*(float)$lr['gst_percent']/100,2) : null));
+  $lDisplayTotal=$lTax===null ? null : round($lNet+$lTax,2);
+@endphp
+<tr><td>{{ $loop->iteration }}</td><td>{{ $l->description }}</td><td>{{ $l->rot_code }}</td><td>{{ $lr['sac_code']??$lr['sac']??'—' }}</td><td class="num">{{ number_format((float)$l->standard_hours,2) }}</td><td class="num">₹{{ number_format($isCostSummary?$lDisplayTotal:(float)$l->labour_rate,2) }}</td>@if($showDiscount)<td class="num">{{ isset($lr['discount_percent']) ? number_format((float)$lr['discount_percent'],2).'%' : '—' }}</td><td class="num">₹{{ number_format((float)($lr['discount_amount']??$lr['discount']??0),2) }}</td>@endif @unless($isCostSummary)<td class="num">₹{{ number_format($lNet,2) }}</td><td class="num">{{ number_format((float)($l->gst_percent??0),2) }}%</td><td class="num">{{ $lTax===null ? '—' : '₹'.number_format($lTax,2) }}</td>@endunless<td class="num">{{ $lDisplayTotal===null ? '—' : '₹'.number_format($lDisplayTotal,2) }}</td></tr>
+@empty<tr><td colspan="{{ 7 + ($showDiscount ? 2 : 0) + ($isCostSummary ? 0 : 3) }}">No Labour lines.</td></tr>@endforelse
 </tbody></table>
 
+@unless($amTotalsVerified)
+<p style="border:2px solid #a00;padding:10px;font-weight:bold">Printing requires review: item-wise taxable and GST amounts do not reconcile with the saved invoice total. No accounting values have been changed.</p>
+@endunless
 <div class="tot">
-<div><span>Parts</span><b>₹{{ number_format((float)$inv->parts_total,2) }}</b></div>
-<div><span>Labour</span><b>₹{{ number_format((float)$inv->labour_total,2) }}</b></div>
-<div><span>GST</span><b>₹{{ number_format((float)($inv->gst_total??$inv->tax_total??0),2) }}</b></div>
+<div><span>Parts</span><b>₹{{ number_format($isCostSummary ? $amPartsInclusive : (float)$inv->parts_total,2) }}</b></div>
+<div><span>Labour</span><b>₹{{ number_format($isCostSummary ? $amLabourInclusive : (float)$inv->labour_total,2) }}</b></div>
+@unless($isCostSummary)<div><span>GST</span><b>₹{{ number_format((float)($inv->gst_total??$inv->tax_total??0),2) }}</b></div>@endunless
 <div><span>Round Off</span><b>₹{{ number_format((float)($inv->round_off??0),2) }}</b></div>
 <div class="grand"><span>Grand Total</span><b>₹{{ number_format((float)$inv->grand_total,2) }}</b></div>
 <div><span>Paid</span><b>₹{{ number_format((float)($inv->paid_amount??$inv->paid_total??0),2) }}</b></div>
 <div><span>Balance Due</span><b>₹{{ number_format((float)($inv->balance_due??$inv->balance_total??0),2) }}</b></div>
 </div>
+@unless($isCostSummary)
+@php
+// Display-only HSN/SAC classification. Tax values come from explicit persisted columns;
+// never infer statutory tax figures by treating a line total as taxable or gross.
+$amTaxGroups = [];
+$amTaxMissing = false;
+foreach ([['lines'=>$parts,'type'=>'parts'],['lines'=>$labour,'type'=>'labour']] as $set) {
+    foreach ($set['lines'] as $line) {
+        $raw = (array) $line;
+        $code = trim((string)($raw['hsn_code'] ?? $raw['hsn'] ?? $raw['sac_code'] ?? $raw['sac'] ?? ''));
+        $rate = (float)($raw['gst_percent'] ?? 0);
+        $taxable = $raw['taxable_amount'] ?? $raw['taxable_value'] ?? null;
+        $tax = $raw['gst_amount'] ?? $raw['tax_amount'] ?? null;
+        $cgst = $raw['cgst_amount'] ?? null;
+        $sgst = $raw['sgst_amount'] ?? null;
+        $igst = $raw['igst_amount'] ?? null;
+        if ($code === '' || !is_numeric($taxable) || (!is_numeric($tax) && !(is_numeric($cgst) && is_numeric($sgst) && is_numeric($igst)))) {
+            $amTaxMissing = true;
+            continue;
+        }
+        $key = $set['type'].'|'.$code.'|'.number_format($rate,2,'.','');
+        if (!isset($amTaxGroups[$key])) {
+            $amTaxGroups[$key] = ['code'=>$code,'rate'=>$rate,'taxable'=>0,'cgst'=>0,'sgst'=>0,'igst'=>0,'totalTax'=>0,'hasSplit'=>true];
+        }
+        $amTaxGroups[$key]['taxable'] += (float)$taxable;
+        $amTaxGroups[$key]['totalTax'] += is_numeric($tax) ? (float)$tax : ((float)$cgst+(float)$sgst+(float)$igst);
+        if (is_numeric($cgst) && is_numeric($sgst) && is_numeric($igst)) {
+            $amTaxGroups[$key]['cgst'] += (float)$cgst;
+            $amTaxGroups[$key]['sgst'] += (float)$sgst;
+            $amTaxGroups[$key]['igst'] += (float)$igst;
+        } else {
+            $amTaxGroups[$key]['hasSplit'] = false;
+        }
+    }
+}
+$amGroupTax = array_sum(array_column($amTaxGroups,'totalTax'));
+$amInvoiceTax = (float)($inv->gst_total ?? $inv->tax_total ?? 0);
+$amTaxReconciled = !$amTaxMissing && abs($amGroupTax - $amInvoiceTax) <= 0.02;
+@endphp
+<h2>HSN / SAC-wise Tax Summary</h2>
+@if(!$amTaxReconciled)
+<p style="border:1px solid #b91c1c;padding:10px;color:#991b1b;font-weight:bold">
+Detailed HSN/SAC tax breakup is unavailable or does not reconcile with the saved invoice. Verify item tax fields before issuing this GST invoice print.
+</p>
+@else
+<table><thead><tr><th>HSN / SAC</th><th class="num">GST %</th><th class="num">Taxable Value</th><th class="num">CGST</th><th class="num">SGST</th><th class="num">IGST</th><th class="num">Total GST</th></tr></thead><tbody>
+@foreach($amTaxGroups as $g)
+<tr><td>{{ $g['code'] }}</td><td class="num">{{ number_format($g['rate'],2) }}%</td><td class="num">₹{{ number_format($g['taxable'],2) }}</td>
+<td class="num">{{ $g['hasSplit'] ? '₹'.number_format($g['cgst'],2) : '—' }}</td>
+<td class="num">{{ $g['hasSplit'] ? '₹'.number_format($g['sgst'],2) : '—' }}</td>
+<td class="num">{{ $g['hasSplit'] ? '₹'.number_format($g['igst'],2) : '—' }}</td>
+<td class="num">₹{{ number_format($g['totalTax'],2) }}</td></tr>
+@endforeach
+</tbody></table>
+@endif
+@endunless
 </body>
 </html>
