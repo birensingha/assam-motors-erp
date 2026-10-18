@@ -56,35 +56,56 @@ jobs:
           grep -nE -C 3 'NO_DUTY_ATTENDANCE|OUTSIDE_DUTY_WINDOW|WEAK_ACCURACY|TRACKING_DISABLED|isStaff|isAdmin|gps.*consent|accuracy_m|quality|recordedAt|received_at|activeRot|mocked|reject|sample' "$f" |
             head -210 | cut -c 1-240
           echo '=== Safe tracking settings only (never actual geofence coordinates) ==='
-          php -r '
-            require "vendor/autoload.php";
-            $app=require "bootstrap/app.php";
-            $app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
-            $db=Illuminate\\Support\\Facades\\DB::class;
-            $schema=Illuminate\\Support\\Facades\\Schema::class;
-            if($schema::hasTable("staff_location_settings")){
-              $x=$db::table("staff_location_settings")->where("id",1)->first();
-              if($x)foreach(["tracking_enabled","max_accuracy_m","radius_m","sample_minutes"] as $k)echo "GPS_CONFIG_$k=".($x->$k??"NULL").PHP_EOL;
+          php <<'PHP'
+          <?php
+          try {
+            require 'vendor/autoload.php';
+            $app=require 'bootstrap/app.php';
+            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $db=\Illuminate\Support\Facades\DB::class;
+            $schema=\Illuminate\Support\Facades\Schema::class;
+            $cut = fn(int $h)=>\Carbon\CarbonImmutable::now('Asia/Kolkata')->subHours($h)->toDateTimeString();
+            $maxAccuracy=0;
+            if($schema::hasTable('staff_location_settings')) {
+              $x=$db::table('staff_location_settings')->where('id',1)->first();
+              foreach(['tracking_enabled','max_accuracy_m','radius_m','sample_minutes'] as $k)
+                echo 'SERVER_'.$k.'='.(isset($x->$k)?(string)$x->$k:'NULL').PHP_EOL;
+              $maxAccuracy=max(10,(int)($x->max_accuracy_m??0));
             }
-            if(!$schema::hasTable("staff_location_logs")){echo "NO_LOCATION_LOG_TABLE=YES".PHP_EOL;exit;}
-            $base=$db::table("staff_location_logs");
-            foreach([1,4,24,72] as $hours){
-              $q=$db::table("staff_location_logs")->where("received_at",">=",date("Y-m-d H:i:s",time()-$hours*3600));
-              echo "RECEIVED_LAST_".$hours."H=".$q->count().PHP_EOL;
+            if(!$schema::hasTable('staff_location_logs')) {echo "GPS_LOCATION_TABLE=NOT_PRESENT\n";exit(0);}
+            foreach([1,4,24,72] as $h) {
+              $n=$db::table('staff_location_logs')->where('received_at','>=',$cut($h))->count();
+              echo 'RECEIVED_LAST_'.$h.'H='.$n.PHP_EOL;
             }
-            $q=$db::table("staff_location_logs")->where("received_at",">=",date("Y-m-d H:i:s",time()-24*3600));
-            foreach($q->selectRaw("COALESCE(quality, 'NULL') as k, count(*) as n")->groupBy("quality")->get() as $x)
-              echo "QUALITY_24H=".preg_replace("/[^A-Za-z0-9_]/","",strtoupper($x->k)).":".$x->n.PHP_EOL;
-            foreach($db::table("staff_location_logs")->where("received_at",">=",date("Y-m-d H:i:s",time()-24*3600))
-                     ->selectRaw("COALESCE(app_version, 'NULL') as v, count(*) as n")->groupBy("app_version")->get() as $x)
-              echo "APP_VERSION_24H=".preg_replace("/[^A-Za-z0-9._-]/","",$x->v).":".$x->n.PHP_EOL;
-            $x=$db::table("staff_location_logs")->where("received_at",">=",date("Y-m-d H:i:s",time()-24*3600))
-              ->selectRaw("min(accuracy_m) as lo, avg(accuracy_m) as avg, max(accuracy_m) as hi, count(*) as n")->first();
-            echo "ACCURACY_METRES_24H=min:".($x->lo??"-").",avg:".(isset($x->avg)?round($x->avg,1):"-").",max:".($x->hi??"-").PHP_EOL;
-            $x=$db::table("staff_location_logs")->selectRaw("MAX(received_at) as latest")->first();
-            echo "LATEST_RECEIPT_MINUTES_AGO=".($x->latest?round((time()-strtotime($x->latest))/60):"NONE").PHP_EOL;
-            echo "ANONYMIZED_GPS_DATABASE_CHECK=COMPLETE".PHP_EOL;
-          ' || echo 'ANONYMIZED_GPS_DATABASE_CHECK=FAILED'
+            foreach($db::table('staff_location_logs')->where('received_at','>=',$cut(24))
+              ->selectRaw("COALESCE(quality,'NULL') as label, COUNT(*) as n")->groupBy('quality')->get() as $r)
+              echo 'QUALITY_24H='.preg_replace('/[^A-Z0-9_]/','',strtoupper((string)$r->label)).':'.$r->n.PHP_EOL;
+            foreach($db::table('staff_location_logs')->where('received_at','>=',$cut(24))
+              ->selectRaw("COALESCE(app_version,'NULL') as label, COUNT(*) as n")->groupBy('app_version')->get() as $r)
+              echo 'APP_VERSION_24H='.preg_replace('/[^A-Z0-9._-]/','',strtoupper((string)$r->label)).':'.$r->n.PHP_EOL;
+            foreach($db::table('staff_location_logs')->where('received_at','>=',$cut(24))
+              ->selectRaw("COALESCE(provider,'NULL') as label, COUNT(*) as n")->groupBy('provider')->get() as $r)
+              echo 'GPS_PROVIDER_24H='.preg_replace('/[^A-Z0-9_]/','',strtoupper((string)$r->label)).':'.$r->n.PHP_EOL;
+            $x=$db::table('staff_location_logs')->where('received_at','>=',$cut(24))
+              ->selectRaw('MIN(accuracy_m) as min_a, AVG(accuracy_m) as avg_a, MAX(accuracy_m) as max_a')->first();
+            echo 'ACCURACY_24H_MIN_METRES='.(isset($x->min_a)?round($x->min_a,1):'none').PHP_EOL;
+            echo 'ACCURACY_24H_AVG_METRES='.(isset($x->avg_a)?round($x->avg_a,1):'none').PHP_EOL;
+            echo 'ACCURACY_24H_MAX_METRES='.(isset($x->max_a)?round($x->max_a,1):'none').PHP_EOL;
+            if($maxAccuracy>0) {
+              echo 'GPS_ACCURACY_THRESHOLD_METRES='.$maxAccuracy.PHP_EOL;
+              echo 'ACCURACY_UNDER_THRESHOLD_24H='.$db::table('staff_location_logs')->where('received_at','>=',$cut(24))->where('accuracy_m','<=',$maxAccuracy)->count().PHP_EOL;
+              echo 'ACCURACY_OVER_THRESHOLD_24H='.$db::table('staff_location_logs')->where('received_at','>=',$cut(24))->where('accuracy_m','>',$maxAccuracy)->count().PHP_EOL;
+            }
+            $latest=$db::table('staff_location_logs')->max('received_at');
+            echo 'LATEST_STORED_COORDINATE_AGE_MIN='.($latest?round((time()-strtotime($latest))/60,1):'none').PHP_EOL;
+            echo "GPS_DATABASE_AGGREGATES=PASS\n";
+          } catch(\Throwable $e) {
+            echo 'GPS_DATABASE_AGGREGATES=FAILED_'.get_class($e).PHP_EOL;
+            exit(1);
+          }
+          PHP
+          echo '=== Exact Staff Location admin badge UI logic ==='
+          sed -n '273,291p' public/legacy/admin/admin.js | cut -c 1-260
           echo 'GPS_SOURCE_AND_METRICS_READ_ONLY=COMPLETE'
           REMOTE
       - if: always()
