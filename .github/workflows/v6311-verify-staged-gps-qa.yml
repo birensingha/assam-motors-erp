@@ -1,0 +1,64 @@
+name: Verify and Lock Down Uploaded v6.3.11 Staff GPS QA APK
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/v6311-verify-staged-gps-qa.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Verify exact signed APK on protected Hostinger staging; disable temporary transfer receiver
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/v6311-verifier
+            chmod 600 ~/.ssh/v6311-verifier
+            SSH=(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -i ~/.ssh/v6311-verifier -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          FILE="$SITE/private/Assam-Motors-Staff-v6.3.11-GPS-RECOVERY-SIGNED-QA.apk"
+          META="$SITE/latest.json"
+          test -f "$FILE" && test -f "$META"
+          test "$(wc -c < "$FILE")" = 3341044
+          echo "f741ce4a15b416e298b955a6a48260c0e5a76e4abc9ac6b517f02b820185ddae  $FILE" | sha256sum -c -
+          php -r '$x=json_decode(file_get_contents($argv[1]),true)?:[];if(($x["package_id"]??"")!=="com.assammotors.staff"||(int)($x["version_code"]??0)!==60309){fwrite(STDERR,"Unexpected updater state; hold rollout\n");exit(3);}echo "STAFF_UPDATE_FEED_VERSION=60309\n";' "$META"
+          RECEIVER="$SITE/v6311-upload-once.php"
+          if [ -f "$RECEIVER" ]; then
+            grep -Fq "f741ce4a15b416e298b955a6a48260c0e5a76e4abc9ac6b517f02b820185ddae" "$RECEIVER"
+            rm -f "$RECEIVER"
+            echo "TEMPORARY_UPLOAD_RECEIVER=REMOVED"
+          fi
+          echo "SIGNED_V6311_STAGING_SERVER_FILE_SHA256=VERIFIED"
+          echo "OTA_UPDATE_FEED=UNCHANGED"
+          REMOTE
+      - name: Verify temporary endpoint not publicly active
+        run: |
+          set -euo pipefail
+          status=$(curl -sS --max-time 20 -o /dev/null -w '%{http_code}' https://staging.assammotors.com/staff-app/v6311-upload-once.php)
+          echo "TEMP_RECEIVER_HTTP=$status"
+          test "$status" = 404 || test "$status" = 410
+      - if: always()
+        run: rm -f ~/.ssh/v6311-verifier
