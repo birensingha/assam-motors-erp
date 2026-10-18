@@ -46,6 +46,13 @@ jobs:
             echo "FILE=$name"
             grep -nE -C 3 'function (start|pause|resume|complete|reopen|changeMechanic|assign|assertStaffCheckedIn|assertNoOtherRunningRot)|assertStaffCheckedIn|Attendance|whereIn.*Paused|where.*Running|lockForUpdate' "$name" | head -230 | cut -c1-210 || true
           done
+          echo '=== EXACT_ROT_PAUSE_AND_ADMIN_CONTROLLER ==='
+          sed -n '73,149p' app/Services/RotWorkflowService.php | cut -c 1-240
+          sed -n '15,92p' app/Http/Controllers/Api/V1/RotWorkflowController.php | cut -c 1-235
+          echo '=== EXACT_JOBCARD_UNWIND_PUBLIC_METHODS ==='
+          grep -nE -C 2 'public function|private function|status|invoice|reason|revers|credit' app/Http/Controllers/Web/AdminJobCardUnwindController.php | head -155 | cut -c 1-225 || true
+          echo '=== EXACT_ROT_ASSIGNMENT_BUSY ==='
+          sed -n '17,63p' app/Services/RotAssignmentService.php | cut -c 1-240
           echo 'CREDIT_NOTE_MATCHES'
           grep -RnlEi 'credit[ _-]?note|refund[ _-]?voucher|reverse[ _-]?job.?card|reverseJobCard|invoice.?reversal' app/Http/Controllers app/Services routes resources/views 2>/dev/null | head -42
           echo 'JC_EDIT_MATCHES'
