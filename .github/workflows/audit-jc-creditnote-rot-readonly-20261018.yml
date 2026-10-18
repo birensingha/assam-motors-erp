@@ -39,6 +39,7 @@ jobs:
           "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' -- "$ROOT" <<'REMOTE'
           set -euo pipefail
           ROOT="$1"; test -f "$ROOT/artisan"; cd "$ROOT"
+          set +o pipefail # read-only grep/head pipelines may naturally SIGPIPE
           echo 'JC_ROT_AUDIT_BEGIN'
           find app/Services app/Http/Controllers -maxdepth 3 -type f | grep -Ei '/(.*(Credit|Invoice|Rot|JobCard|Part|Return|Accounting).*)\.php$' | head -105
           for name in app/Services/RotWorkflowService.php app/Services/RotAssignmentService.php app/Http/Controllers/Api/V1/RotWorkflowController.php; do
@@ -64,6 +65,10 @@ jobs:
           grep -nE -C 5 'function (jobAmounts|updateJobLine|edit|update)' app/Http/Controllers/Web/AdminWorkshopControlPageController.php | head -160 | cut -c1-230
           echo '=== JOB CARD SHOW PARTS LINE ACTION LINKS ==='
           grep -nE -C 3 'Parts|Labour|ROT|edit|delete|billing|taxable|discount' resources/views/job-cards/show.blade.php | head -115 | cut -c1-235
+          echo '=== EXACT JC SHOW ROW MARKUP ==='
+          sed -n '418,535p' resources/views/job-cards/show.blade.php | cut -c 1-330
+          echo '=== LABOUR JC ROW VIEW START ==='
+          sed -n '535,650p' resources/views/job-cards/show.blade.php | cut -c 1-330
           echo '=== LIVE JC EDIT VIEW STRUCTURE ==='
           find resources/views/job-cards resources/views/invoices -maxdepth 2 -type f -name '*.blade.php' 2>/dev/null | sort | head -65
           echo '=== JC ROUTES FOR EDIT AND UNWIND ==='
