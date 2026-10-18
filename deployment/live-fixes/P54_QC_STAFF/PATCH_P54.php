@@ -60,9 +60,15 @@ BLADE;
  if($st===false||$en===false||$en<=$st)throw new RuntimeException('P54_NEXT_STEP_ANCHOR');
  $life=substr_replace($life,"{{-- P54_REMOVE_DUPLICATE_NEXT_STEP: actual actions remain in Current Stage below. --}}\n",$st,$en-$st);
  // New QC assignment must be chosen once and linked to active staff login.
- p54Replace($life,'<label>QC Staff<select name="assigned_staff_id"><option value="">Not assigned</option>',
+ $wcStart=strpos($life,"@if(\$amLifeStage==='WORK_COMPLETE')");
+ $qcBlockStart=strpos($life,"@if(\$amLifeStage==='QC_PENDING')",$wcStart);
+ if($wcStart===false||$qcBlockStart===false||$qcBlockStart<=$wcStart)
+    throw new RuntimeException('P54_WORK_COMPLETE_QC_START_BOUNDARY');
+ $wcBlock=substr($life,$wcStart,$qcBlockStart-$wcStart);
+ p54Replace($wcBlock,'<label>QC Staff<select name="assigned_staff_id"><option value="">Not assigned</option>',
                '<label>Assign QC Staff *<select name="assigned_staff_id" required><option value="">Select active QC Staff</option>',
                'start_qc_staff_required');
+ $life=substr_replace($life,$wcBlock,$wcStart,$qcBlockStart-$wcStart);
  // Once QC is pending, no Admin PASS/FAIL staff selector; staff must inspect
  // read-only Job Card and submit via its protected staff portal.
  $qStart=strpos($life,"@if(\$amLifeStage==='QC_PENDING')");
