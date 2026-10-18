@@ -1,0 +1,90 @@
+name: Read-only v6.3.12 ROT Assignment and GPS Gate Inspection
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/diag-v6312-rot-gps-rules-readonly.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Check staging SSH and protected GPS route
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/am-gps-diag
+            chmod 600 ~/.ssh/am-gps-diag
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -i ~/.ssh/am-gps-diag -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          test -f "$ROOT/artisan" && test -f "$SITE/latest.json"
+          cd "$ROOT"
+          echo "V6312_INSPECTION_UTC=$(date -u -Iseconds)"
+          echo '=== ROT service entrypoints and assignment guards ==='
+          if [ -f app/Services/RotWorkflowService.php ]; then
+            grep -nE -C 6 'function |lockForUpdate|Assigned|Running|Paused|staff_id|Attendance|checked.?in|check_out|assign|reason|reopen' app/Services/RotWorkflowService.php | head -450 | cut -c 1-220
+          fi
+          echo '=== Web and API ROT mutation controller paths ==='
+          find app/Http/Controllers -iname '*Rot*' -o -iname '*JobCard*' | head -35
+          grep -RlnE 'changeMechanic\(|rot_sessions.*insert|RotSession::create|rot_sessions.*update|function assign.*Rot|rot-assignment|assign.*mechanic' app/Http/Controllers app/Services 2>/dev/null | head -40
+          echo '=== API RotWorkflowController relevant authorization ==='
+          test -f app/Http/Controllers/Api/V1/RotWorkflowController.php && grep -nE -C 7 'function (start|pause|resume|complete|reopen|changeMechanic|actor|admin)|assertStaffGeoFence|Attendance|check.?in' app/Http/Controllers/Api/V1/RotWorkflowController.php | head -260 | cut -c 1-230
+          echo '=== ROT table fields and current duplicate counts (aggregate only) ==='
+          php <<'PHP'
+          <?php
+          try {
+            require 'vendor/autoload.php';
+            $app=require 'bootstrap/app.php';
+            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $db=\Illuminate\Support\Facades\DB::class;
+            $sc=\Illuminate\Support\Facades\Schema::class;
+            foreach(['rot_sessions','attendance','staff','staff_location_logs'] as $t) {
+              if(!$sc::hasTable($t))continue;
+              echo "COLUMNS_".$t.'='.implode(',',$sc::getColumnListing($t)).PHP_EOL;
+            }
+            if($sc::hasTable('rot_sessions')) {
+              foreach(['Assigned','Running','Paused','Completed'] as $s)
+                echo 'ROT_STATUS_'.$s.'='.$db::table('rot_sessions')->where('status',$s)->count().PHP_EOL;
+              $duplicates=$db::table('rot_sessions')->whereIn('status',['Assigned','Running','Paused'])
+                ->whereNotNull('staff_id')->groupBy('staff_id')->havingRaw('COUNT(*)>1')->count();
+              echo 'STAFF_WITH_MULTIPLE_ACTIVE_ROT='.$duplicates.PHP_EOL;
+            }
+            echo 'ROT_DIAGNOSTICS_COMPLETE=YES'.PHP_EOL;
+          } catch(\Throwable $e) {echo 'ROT_DIAGNOSTICS_ERROR='.get_class($e).PHP_EOL;exit(1);}
+          PHP
+          echo '=== Live location upload rejects and accuracy threshold (no coords) ==='
+          grep -nE -C 2 'NO_DUTY_ATTENDANCE|OUTSIDE_DUTY_WINDOW|STALE_GPS_FIX|WEAK_ACCURACY|privileged|sampleMinutes' app/Http/Controllers/Api/V1/StaffLocationController.php | head -125
+          echo 'V6312_READ_ONLY_INSPECTION=COMPLETE'
+          REMOTE
+      - name: Check unauthenticated GPS API protections
+        run: |
+          set -euo pipefail
+          for path in /api/v1/staff/location /api/v1/admin/mobile/staff-locations; do
+            status="$(curl --silent --show-error --max-time 20 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path" || true)"
+            echo "PATH=$path HTTP=$status (unauthenticated; GET-only)"
+          done
+      - if: always()
+        run: rm -f ~/.ssh/am-gps-diag
