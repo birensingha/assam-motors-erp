@@ -1,0 +1,47 @@
+name: Dry-run Native Staff Live Location Install on Staging
+on:
+  push:
+    branches: [feature/staging-native-live-duty-map-20261018]
+    paths: [".github/workflows/dry-run-native-staff-live-location-20261018.yml", "deployment/live-fixes/FIX_NATIVE_STAFF_LIVE_LOCATION/**"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check native Staff Live Location installer against live staging code (no modifications)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/am-gps-diag
+            chmod 600 ~/.ssh/am-gps-diag
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -i ~/.ssh/am-gps-diag -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          SRC=deployment/live-fixes/FIX_NATIVE_STAFF_LIVE_LOCATION
+          BUNDLE='$HOME/.assam-native-staff-live-dryrun'
+          "${SSH[@]}" "$USERNAME@$HOST" 'mkdir -p "$HOME/.assam-native-staff-live-dryrun"'
+          tar -czf - -C "$SRC" payload | "${SSH[@]}" "$USERNAME@$HOST" 'tar -xzf - -C "$HOME/.assam-native-staff-live-dryrun"'
+          "${SSH[@]}" "$USERNAME@$HOST" 'python3 - --root "$HOME/domains/assammotors.com/assam-erp-staging" --bundle "$HOME/.assam-native-staff-live-dryrun/payload"' < "$SRC/apply.py"
+          echo 'NATIVE_STAFF_LIVE_STAGING_DRY_RUN_COMPLETE=PASS'
+      - if: always()
+        run: rm -f ~/.ssh/am-gps-diag
