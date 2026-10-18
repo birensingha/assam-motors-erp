@@ -1,0 +1,87 @@
+name: Verify v6.3.14 protected Hostinger APK and remove temporary receiver
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/v6314-verify-upload-clean-receiver.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Verify exact APK SHA on Hostinger without changing update feed
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/v6314-verify
+            chmod 600 ~/.ssh/v6314-verify
+            SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/v6314-verify)
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          APK_NAME="Assam-Motors-Staff-v6.3.14-ADMIN-STAFF-LOCATION-HISTORY-SIGNED-QA.apk"
+          APK="$SITE/private/$APK_NAME"
+          MANIFEST="$SITE/latest.json"
+          RECEIVER="$SITE/v6314-upload-once.php"
+          test -s "$APK" && test -f "$MANIFEST"
+          test "$(wc -c < "$APK")" = 3345140
+          echo '5d722630658781e29283ad65ea4fcdb9bbf1f4250cd644a1510b29da643519bf  '"$APK" | sha256sum -c -
+          python3 - "$MANIFEST" "$APK" <<'PY'
+          from pathlib import Path
+          import json,sys,hashlib
+          manifest=Path(sys.argv[1]); apk=Path(sys.argv[2]); data=json.loads(manifest.read_text())
+          assert data.get('package_id')=='com.assammotors.staff'
+          assert data.get('licence_file')
+          assert int(data.get('version_code',0))==60313, 'Update feed changed unexpectedly'
+          assert data.get('version_name')=='6.3.13'
+          assert data.get('apk_file')!=apk.name,'Upload-only APK unexpectedly published'
+          assert apk.stat().st_size==3345140
+          assert hashlib.sha256(apk.read_bytes()).hexdigest()=='5d722630658781e29283ad65ea4fcdb9bbf1f4250cd644a1510b29da643519bf'
+          print('V6314_PROTECTED_APK_FILE_VERIFIED')
+          print('EXISTING_OTA_MANIFEST_UNCHANGED_60313')
+          PY
+          if [ -f "$RECEIVER" ]; then
+            grep -Fq '5d722630658781e29283ad65ea4fcdb9bbf1f4250cd644a1510b29da643519bf' "$RECEIVER"
+            rm -f "$RECEIVER"
+            echo 'TEMPORARY_APK_UPLOAD_RECEIVER_REMOVED'
+          else
+            echo 'TEMPORARY_APK_UPLOAD_RECEIVER_ALREADY_ABSENT'
+          fi
+          echo 'V6314_HOSTINGER_PRIVATE_UPLOAD_FINAL=VERIFIED'
+          REMOTE
+      - name: Verify public receiver is closed and ERP stays online
+        shell: bash
+        run: |
+          set -euo pipefail
+          status="$(curl -sS --max-time 25 -o /dev/null -w '%{http_code}' https://staging.assammotors.com/staff-app/v6314-upload-once.php)"
+          echo "CLOSED_RECEIVER_HTTP=$status"
+          test "$status" = 404 || test "$status" = 410
+          for path in /erp/login /staff/login; do
+            code="$(curl -sS --max-time 25 --location -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")"
+            echo "HEALTH_CHECK=$path HTTP=$code"
+            test "$code" = 200
+          done
+          echo 'HOSTINGER_V6314_STAGING_PROTECTED_UPLOAD_OK'
+      - name: Remove temporary SSH key
+        if: always()
+        run: rm -f ~/.ssh/v6314-verify
