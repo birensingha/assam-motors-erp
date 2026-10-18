@@ -22,12 +22,15 @@ $amComputeSavedTax = static function ($item): ?float {
     return null;
 };
 $amPartsTaxSum=0.0; $amLabourTaxSum=0.0; $amTaxDataComplete=true;
+$amPartsTaxableSum=0.0; $amLabourTaxableSum=0.0;
 foreach ($parts as $entry) {
+    $amPartsTaxableSum+=round((float)($entry->taxable_amount??$entry->taxable_value??$entry->total??0),2);
     $tax=$amComputeSavedTax($entry);
     if ($tax===null) $amTaxDataComplete=false;
     else $amPartsTaxSum += $tax;
 }
 foreach ($labour as $entry) {
+    $amLabourTaxableSum+=round((float)($entry->taxable_amount??$entry->taxable_value??$entry->total??0),2);
     $tax=$amComputeSavedTax($entry);
     if ($tax===null) $amTaxDataComplete=false;
     else $amLabourTaxSum += $tax;
@@ -39,6 +42,8 @@ $amLabourInclusive=(float)($inv->labour_total??0)+$amLabourTaxSum;
 $amDetailTax=$amPartsTaxSum+$amLabourTaxSum;
 $amCalculatedGrand=$amPartsInclusive+$amLabourInclusive+$amRoundOff;
 $amTotalsVerified=$amTaxDataComplete
+  && abs($amPartsTaxableSum-(float)($inv->parts_total??0))<=0.05
+  && abs($amLabourTaxableSum-(float)($inv->labour_total??0))<=0.05
   && abs($amDetailTax-$amInvoiceTax)<=0.05
   && abs($amCalculatedGrand-(float)$inv->grand_total)<=0.05;
 
@@ -69,7 +74,7 @@ $amTotalsVerified=$amTaxDataComplete
 @php
   $pr=(array)$p;
   $pQty=(float)($p->qty??0);
-  $pNet=(float)($p->total??0);
+  $pNet=(float)($pr['taxable_amount']??$pr['taxable_value']??$p->total??0);
   $pTax=isset($pr['gst_amount'])&&is_numeric($pr['gst_amount'])
     ? (float)$pr['gst_amount']
     : (isset($pr['tax_amount'])&&is_numeric($pr['tax_amount'])
@@ -90,7 +95,7 @@ $amTotalsVerified=$amTaxDataComplete
 @forelse($labour as $l)
 @php
   $lr=(array)$l;
-  $lNet=(float)($l->total??0);
+  $lNet=(float)($lr['taxable_amount']??$lr['taxable_value']??$l->total??0);
   $lTax=isset($lr['gst_amount'])&&is_numeric($lr['gst_amount'])
     ? (float)$lr['gst_amount']
     : (isset($lr['tax_amount'])&&is_numeric($lr['tax_amount'])
