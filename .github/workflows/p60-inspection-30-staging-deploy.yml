@@ -1,0 +1,113 @@
+name: P60 30-Point Inspection API + Staff Portal Sync — STAGING
+on:
+  push:
+    branches: [feature/p60-inspection-30-point-sync-20261018]
+    paths:
+      - '.github/workflows/p60-inspection-30-staging-deploy.yml'
+      - 'deployment/live-fixes/P60_INSPECTION_SYNC/PATCH_P60.php'
+      - 'deployment/live-fixes/P60_INSPECTION_SYNC/payload/**'
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP syntax preflight
+        run: |
+          set -euo pipefail
+          php -l deployment/live-fixes/P60_INSPECTION_SYNC/PATCH_P60.php
+          php -l deployment/live-fixes/P60_INSPECTION_SYNC/payload/VehicleInspectionChecklist.php
+          echo 'P60_LOCAL_CHECK_PASS'
+      - name: Configure staging SSH
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+          fi
+      - name: Guarded deploy, verified 30-point forms and preserve Mizanur JC
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            SSH=(ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          TEMP="/home/$SSH_USER/p60-30-point-$GITHUB_RUN_ID"
+          tar -czf /tmp/p60-inspection.tgz -C deployment/live-fixes/P60_INSPECTION_SYNC PATCH_P60.php payload
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "mkdir -p '$TEMP'"
+          "${SCP[@]}" /tmp/p60-inspection.tgz "$SSH_USER@$SSH_HOST:$TEMP/p60.tgz"
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "APP_ROOT='$APP_ROOT' TEMP='$TEMP' RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$APP_ROOT";test -f "$ROOT/artisan"
+          tar -xzf "$TEMP/p60.tgz" -C "$TEMP"
+          BACKUP="$(dirname "$ROOT")/ASSAM_P60_INSPECTION_30_BACKUP_$RUN_ID"
+          test ! -e "$BACKUP";mkdir -p "$BACKUP"
+          files=(
+            app/Http/Controllers/Api/V1/StaffExtraController.php
+            app/Http/Controllers/Web/StaffAssignedInspectionController.php
+            app/Http/Controllers/Web/ManagerInspectionWorkController.php
+            resources/views/staff/assigned-inspection.blade.php
+            resources/views/inspections/manager-work.blade.php
+          )
+          newfile=app/Support/VehicleInspectionChecklist.php
+          test ! -e "$ROOT/$newfile"
+          for file in "${files[@]}";do cp -p "$ROOT/$file" "$BACKUP/$(printf '%s' "$file"|tr / _)";done
+          rollback(){
+            for file in "${files[@]}";do cp -p "$BACKUP/$(printf '%s' "$file"|tr / _)" "$ROOT/$file"||true;done
+            rm -f "$ROOT/$newfile"
+            (cd "$ROOT" && php artisan view:clear && php artisan view:cache) >/dev/null 2>&1 || true
+            echo 'P60_SOURCE_ROLLBACK_PASS'
+          }
+          trap rollback ERR
+          php "$TEMP/PATCH_P60.php" check "$ROOT"
+          php "$TEMP/PATCH_P60.php" apply "$ROOT"
+          cd "$ROOT"
+          php artisan view:clear
+          php artisan view:cache
+          php -l app/Http/Controllers/Api/V1/StaffExtraController.php
+          php -l app/Http/Controllers/Web/StaffAssignedInspectionController.php
+          php -l app/Http/Controllers/Web/ManagerInspectionWorkController.php
+          php -l app/Support/VehicleInspectionChecklist.php
+          php -r '
+            chdir(getcwd());require "vendor/autoload.php";
+            $app=require "bootstrap/app.php";
+            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $items=\App\Support\VehicleInspectionChecklist::items();
+            if(count($items)!==30)exit(11);
+            if(count(array_unique($items))!==30)exit(12);
+            $card=["id"=>0,"job_no"=>"STAGING-QA","vehicle_reg_no"=>"QA","customer_name"=>"QA","status"=>"open","inspection_status"=>"pending","diagnosis_status"=>"pending"];
+            $html=view("staff.assigned-inspection",["card"=>$card,"assignment"=>null,"items"=>[],"checks"=>$items,"pending"=>true])->render();
+            $n=substr_count($html,"][status]");
+            if($n!==30) {echo "P60_STAFF_FORM_COUNT_BAD=$n\n";exit(13);}
+            if(!str_contains($html,"Complete Vehicle Inspection"))exit(14);
+            echo "P60_STAFF_PORTAL_30_POINTS_RENDER_PASS\n";
+            $historical=\Illuminate\Support\Facades\DB::table("job_card_inspection")->where("job_card_id",37)->count();
+            echo "P60_MIZANUR_HISTORICAL_ROW_COUNT=$historical (NO WRITES)\n";
+          '
+          echo 'P60_STAGING_DEPLOY_AND_BLADE_QA_PASS'
+          trap - ERR
+          rm -rf "$TEMP"
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
