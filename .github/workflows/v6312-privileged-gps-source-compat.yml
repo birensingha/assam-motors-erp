@@ -1,0 +1,54 @@
+name: Fix v6.3.12 Admin HR Native GPS Source Compatibility (Staging)
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/v6312-privileged-gps-source-compat.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fix privileged login GPS v6.3.12 with backup and PHP syntax preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/am-gps-diag
+            chmod 600 ~/.ssh/am-gps-diag
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -i ~/.ssh/am-gps-diag -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          echo 'V6312_DRY_RUN'
+          test -f deployment/live-fixes/FIX_V6312_STRICT_ROT_GPS/fix_privileged_source.py
+          "${SSH[@]}" "$USERNAME@$HOST" 'python3 - --root "$HOME/domains/assammotors.com/assam-erp-staging"' < deployment/live-fixes/FIX_V6312_STRICT_ROT_GPS/fix_privileged_source.py
+          echo 'V6312_APPLY_STAGING_WITH_BACKUP'
+          "${SSH[@]}" "$USERNAME@$HOST" 'python3 - --root "$HOME/domains/assammotors.com/assam-erp-staging" --apply' < deployment/live-fixes/FIX_V6312_STRICT_ROT_GPS/fix_privileged_source.py
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          php -l app/Http/Controllers/Api/V1/StaffLocationController.php
+          grep -Fq "if ((\$data['source']??null) !== 'ANDROID_FOREGROUND_NATIVE_60S' \&\& !\$loginGps)" app/Http/Controllers/Api/V1/StaffLocationController.php
+          php artisan route:list --path=staff/location | head -12
+          echo 'V6312_PRIVILEGED_NATIVE_GPS_COMPAT=VERIFIED'
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/am-gps-diag
