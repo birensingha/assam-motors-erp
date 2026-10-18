@@ -16,18 +16,9 @@ $isCostSummary = request()->query('mode') === 'cost_summary';
 <a href="{{ request()->fullUrlWithQuery(['mode'=>'cost_summary']) }}">Customer Cost Summary (no GST breakup)</a>
 <button onclick="window.print()">Print / Save PDF</button>
 </div>
-@php
-// Shared document identity: only load a logo located inside the public site tree.
-// A missing logo leaves a readable text fallback; never access private uploads.
-$amLogoFile = public_path('images/assam-motors-logo.png');
-$amLogoUrl = is_file($amLogoFile) ? asset('images/assam-motors-logo.png') : null;
-@endphp
+{{-- Existing company logo lives in the primary site's public_html/images/logo.png. --}}
 <div class="head"><div style="display:flex;align-items:center;gap:12px">
-@if($amLogoUrl)
-<img src="{{ $amLogoUrl }}" alt="Assam Motors logo" style="width:58px;height:58px;object-fit:contain" />
-@else
-<div style="width:58px;height:58px;display:flex;align-items:center;justify-content:center;background:#174678;color:#fff;font-weight:bold;border-radius:6px">AM</div>
-@endif
+<img src="https://assammotors.com/images/logo.png" alt="Assam Motors logo" style="width:58px;height:58px;object-fit:contain" />
 <div><h1>ASSAM MOTORS</h1><div>{{ $isCostSummary ? "Customer Cost Summary — Tax Included — Not a Tax Invoice" : "Tax / Service Invoice" }}</div></div></div><div><strong>{{ $inv->invoice_no }}</strong><br>Job: {{ $job->job_no }}</div></div>
 @if($isCostSummary)
 <p style="background:#edf4fb;padding:8px">Customer cost summary. Amounts include applicable taxes. This document is not a tax invoice.</p>
