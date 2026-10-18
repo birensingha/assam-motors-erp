@@ -1,0 +1,45 @@
+name: QA Mobile Staff Live Solo Tracking V3
+on:
+  push:
+    branches: [feature/mobile-staff-live-solo-v3-safe]
+    paths: [".github/workflows/qa-staff-live-mobile-solo-v3.yml", "deployment/live-fixes/FIX_STAFF_LIVE_MOBILE_SOLO_V3_20261018/**"]
+permissions: {contents: read}
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate non-destructive solo overlay source and JS
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC=deployment/live-fixes/FIX_STAFF_LIVE_MOBILE_SOLO_V3_20261018
+          python3 -m py_compile "$SRC/apply.py"
+          python3 <<'PY'
+          from pathlib import Path
+          import re
+          b=Path('deployment/live-fixes/FIX_STAFF_LIVE_MOBILE_SOLO_V3_20261018/payload')
+          base=(b/'staff-live-location-original-base.blade.php').read_text()
+          new=(b/'staff-live-location.blade.php').read_text()
+          rx=re.compile(r'<script>\s*\(function\(\)\{\s*[\'"]use strict[\'"];.*?\}\)\(\);\s*</script>',re.S)
+          bs=rx.findall(base);ns=rx.findall(new)
+          assert len(bs)==len(ns)==1
+          assert 'AM_COMPACT_MOBILE_SOLO_TRACK' not in base
+          assert 'AM_COMPACT_MOBILE_SOLO_TRACK' in new
+          for marker in ['id="slFocus"','id="slAllStaff"','id="slFollow"',
+                        'id="slFocusAge"','id="slFocusSync"','id="slFocusAccuracy"',
+                        'if(soloMode && selected!==s.id)continue;',
+                        'function showAllStaff(){',
+                        'setInterval(()=>poll(),1000)',
+                        "classList.remove('solo','sl-focus-map')"]:
+              assert marker in new,marker
+          js=ns[0].replace("@json(route('erp.staff-live-location.feed'))", '"/erp/staff-live-location/feed"')
+          js=js.replace("@json(route('erp.staff-live-location.history'))", '"/erp/staff-live-location/history"')
+          js=js.replace('@json($mapSettings)','{}')
+          assert '@json(' not in js
+          Path('/tmp/staff-solo-v3.js').write_text(js[js.index('(function(){'):js.index('</script>')])
+          print('SOLO_V3_SOURCE_SECURITY_AND_V2_COMPAT=PASS')
+          PY
+          node --check /tmp/staff-solo-v3.js
+          echo 'SOLO_V3_NODE_JS_CHECK=PASS'
