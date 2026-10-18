@@ -75,6 +75,10 @@ jobs:
           for i,line in selected[:100]:
               print('VIEW_LINE',i,line[:340])
           print('VIEW_LINES_TOTAL',len(ls),'SELECTED',len(selected))
+          print('INVOICE_PRINT_TARGET_STRUCTURE_BEGIN')
+          for n in list(range(88,114))+list(range(168,257)):
+              if n<=len(ls): print('TARGET_LINE',n,ls[n-1][:650])
+          print('INVOICE_PRINT_TARGET_STRUCTURE_END')
           print('LIVE_HEADER_EXACT_LINES')
           for n in list(range(12,45))+list(range(113,140)):
               if n<=len(ls): print('HEADER_LINE',n,ls[n-1][:400])
