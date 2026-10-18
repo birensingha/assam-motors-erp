@@ -11,12 +11,43 @@ body{font:13px Arial;color:#111;margin:22px}.head{display:flex;justify-content:s
 @php
 $isCostSummary = request()->query('mode') === 'cost_summary';
 $showDiscount = request()->query('show_discount') === '1';
+
+$amComputeSavedTax = static function ($item): ?float {
+    $row = (array)$item;
+    if (isset($row['gst_amount']) && is_numeric($row['gst_amount'])) return round((float)$row['gst_amount'],2);
+    if (isset($row['tax_amount']) && is_numeric($row['tax_amount'])) return round((float)$row['tax_amount'],2);
+    if (isset($row['total'], $row['gst_percent']) && is_numeric($row['total']) && is_numeric($row['gst_percent'])) {
+        return round((float)$row['total']*(float)$row['gst_percent']/100,2);
+    }
+    return null;
+};
+$amPartsTaxSum=0.0; $amLabourTaxSum=0.0; $amTaxDataComplete=true;
+foreach ($parts as $entry) {
+    $tax=$amComputeSavedTax($entry);
+    if ($tax===null) $amTaxDataComplete=false;
+    else $amPartsTaxSum += $tax;
+}
+foreach ($labour as $entry) {
+    $tax=$amComputeSavedTax($entry);
+    if ($tax===null) $amTaxDataComplete=false;
+    else $amLabourTaxSum += $tax;
+}
+$amInvoiceTax=(float)($inv->gst_total??$inv->tax_total??0);
+$amRoundOff=(float)($inv->round_off??0);
+$amPartsInclusive=(float)($inv->parts_total??0)+$amPartsTaxSum;
+$amLabourInclusive=(float)($inv->labour_total??0)+$amLabourTaxSum;
+$amDetailTax=$amPartsTaxSum+$amLabourTaxSum;
+$amCalculatedGrand=$amPartsInclusive+$amLabourInclusive+$amRoundOff;
+$amTotalsVerified=$amTaxDataComplete
+  && abs($amDetailTax-$amInvoiceTax)<=0.05
+  && abs($amCalculatedGrand-(float)$inv->grand_total)<=0.05;
+
 @endphp
 <div class="no-print" style="display:flex;gap:8px;margin-bottom:14px">
 <a href="{{ request()->fullUrlWithQuery(['mode'=>'tax']) }}">GST / Tax Invoice</a>
 <a href="{{ request()->fullUrlWithQuery(['mode'=>'cost_summary']) }}">Customer Cost Summary (no GST breakup)</a>
 <a href="{{ request()->fullUrlWithQuery(['show_discount'=>$showDiscount?0:1]) }}">{{ $showDiscount ? 'Hide Discount Details' : 'Show Discount Details' }}</a>
-<button onclick="window.print()">Print / Save PDF</button>
+@if($amTotalsVerified)<button onclick="window.print()">Print / Save PDF</button>@else<strong>Printing locked: invoice totals need verification</strong>@endif
 </div>
 {{-- Existing company logo lives in the primary site's public_html/images/logo.png. --}}
 <div class="head"><div style="display:flex;align-items:center;gap:12px">
@@ -72,9 +103,12 @@ $showDiscount = request()->query('show_discount') === '1';
 @empty<tr><td colspan="{{ 7 + ($showDiscount ? 2 : 0) + ($isCostSummary ? 0 : 3) }}">No Labour lines.</td></tr>@endforelse
 </tbody></table>
 
+@unless($amTotalsVerified)
+<p style="border:2px solid #a00;padding:10px;font-weight:bold">Printing requires review: item-wise taxable and GST amounts do not reconcile with the saved invoice total. No accounting values have been changed.</p>
+@endunless
 <div class="tot">
-<div><span>Parts</span><b>₹{{ number_format((float)$inv->parts_total,2) }}</b></div>
-<div><span>Labour</span><b>₹{{ number_format((float)$inv->labour_total,2) }}</b></div>
+<div><span>Parts</span><b>₹{{ number_format($isCostSummary ? $amPartsInclusive : (float)$inv->parts_total,2) }}</b></div>
+<div><span>Labour</span><b>₹{{ number_format($isCostSummary ? $amLabourInclusive : (float)$inv->labour_total,2) }}</b></div>
 @unless($isCostSummary)<div><span>GST</span><b>₹{{ number_format((float)($inv->gst_total??$inv->tax_total??0),2) }}</b></div>@endunless
 <div><span>Round Off</span><b>₹{{ number_format((float)($inv->round_off??0),2) }}</b></div>
 <div class="grand"><span>Grand Total</span><b>₹{{ number_format((float)$inv->grand_total,2) }}</b></div>
