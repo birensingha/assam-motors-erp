@@ -27,7 +27,7 @@ final class StaffDailyRotPerformanceService
     {
         return DB::table('rot_sessions as rs')
             ->leftJoin('job_cards as jc','jc.id','=','rs.job_card_id')
-            ->select('rs.id','rs.rot_code','rs.rot_desc','rs.job_card_no','rs.staff_id',
+            ->select('rs.id','rs.rot_code','rs.rot_desc','rs.job_card_no','rs.job_card_id','rs.staff_id',
                 'rs.staff_name','rs.staff_code','rs.status','rs.std_hours','rs.total_seconds',
                 'rs.updated_at','jc.vehicle_reg_no','jc.status as jc_status','jc.invoice_id')
             ->whereIn('rs.status',['Assigned','Paused'])
@@ -67,7 +67,7 @@ final class StaffDailyRotPerformanceService
             ->where('event_at','<',$tomorrow->format('Y-m-d H:i:s'))
             ->orderByDesc('event_at')->orderByDesc('id')->limit(6000)->get()
             ->reverse()->values();
-        $active=[];$paused=[];$durations=[];$pauses=[];$resumes=[];$autoPause=[];
+        $active=[];$paused=[];$durations=[];$pauses=[];$pausesCount=[];$resumes=[];$autoPause=[];
         $timeline=[];$rotIds=[];
         $warnings=[];
         if($all->count()>=6000)$warnings[]='Event history exceeds 6000 entries; older segments may require an archived report.';
