@@ -242,7 +242,7 @@ final class AdminMoneyReceiptController extends Controller
                 'notes'=>trim((string)($data['notes']??''))?:null,
                 'allocated_amount'=>$invoiceId?$total/100:0,
                 'payment_status'=>'posted',
-                'received_by'=mb_substr((string)($user->email?:$user->name),0,180),
+                'received_by'=>mb_substr((string)($user->email?:$user->name),0,180),
                 'receipt_date'=>$receiptDate,
                 'created_at'=>now('Asia/Kolkata'),
             ];
