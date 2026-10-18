@@ -1,0 +1,65 @@
+name: Read exact staging GPS settings forms and handlers
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/v6314-geofence-form-exact-snippets.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Check staging SSH and protected GPS route
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/am-gps-diag
+            chmod 600 ~/.ssh/am-gps-diag
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -i ~/.ssh/am-gps-diag -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          test -f "$ROOT/artisan" && test -f "$SITE/latest.json"
+          cd "$ROOT"
+          echo '== LEGACY LOCATION SETTINGS HTML ==' 
+          grep -Rnl 'id="locMaxAccuracy"' "$HOME/domains/assammotors.com/public_html/staging/legacy/admin" | head -8 | while read -r f; do echo "FILE=$f"; grep -n -B 8 -A 7 'id="locMaxAccuracy"' "$f" | cut -c 1-600; done
+          echo '== LEGACY PHP SETTINGS HANDLER =='
+          sed -n '10,55p' "$HOME/domains/assammotors.com/public_html/staging/legacy/admin/staff-location.php" | cut -c 1-550
+          echo '== LEGACY JS EXACT =='
+          sed -n '232,272p' "$HOME/domains/assammotors.com/public_html/staging/legacy/admin/admin.js" | cut -c 1-490
+          echo '== LARAVEL SETTINGS BLADE EXACT =='
+          sed -n '1,26p' resources/views/admin/native/staff-location.blade.php | cut -c 1-1000
+          echo '== LARAVEL CONTROLLER EXACT =='
+          sed -n '410,422p' app/Http/Controllers/Web/AdminNativeModuleController.php | cut -c 1-1100
+          echo 'EXACT_SETTINGS_FORMS=PASS'
+          REMOTE
+      - name: Check unauthenticated GPS API protections
+        run: |
+          set -euo pipefail
+          for path in /api/v1/staff/location /api/v1/admin/mobile/staff-locations; do
+            status="$(curl --silent --show-error --max-time 20 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path" || true)"
+            echo "PATH=$path HTTP=$status (unauthenticated; GET-only)"
+          done
+      - if: always()
+        run: rm -f ~/.ssh/am-gps-diag
