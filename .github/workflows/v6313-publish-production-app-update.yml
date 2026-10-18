@@ -112,7 +112,7 @@ jobs:
           verify=json.loads(manifest.read_text())
           assert verify.get('package_id')=='com.assammotors.staff'
           assert int(verify.get('version_code',0))==60313
-          assert verify.get('version_name')=='6.3.12'
+          assert verify.get('version_name')=='6.3.13'
           assert verify.get('apk_file')==filename
           assert verify.get('sha256')==expected
           assert verify.get('licence_file')
