@@ -1,0 +1,159 @@
+name: P55 Old ERP Style ROT Editing on NEW STAGING
+on:
+  push:
+    branches: [feature/p55-jc-rot-alteration-20261018]
+    paths: ['.github/workflows/p55-jc-rot-alteration-staging.yml']
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  guarded-deployment:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+      STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL || 'https://staging.assammotors.com' }}
+      STAGING_ADMIN_LOGIN: ${{ secrets.STAGING_ADMIN_LOGIN }}
+      STAGING_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint source & browser test
+        run: |
+          set -euo pipefail
+          P=deployment/live-fixes/P55_JC_ROT_ALTERATION
+          php -l "$P/PATCH_P55.php"
+          php -l "$P/payload/JobCardRotAlterationController.php"
+          node --check "$P/QA_P55.mjs"
+          test -s "$P/payload/rot-alteration.blade.php"
+          echo 'P55_LOCAL_PHP_JS_LINT_PASS'
+      - name: Configure secure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+          fi
+      - name: Preflight, snapshot, install Laravel view and route
+        id: install
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            SSH=(ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          TEMP="/home/$SSH_USER/p55-rot-$GITHUB_RUN_ID"
+          tar -czf /tmp/p55-rot.tgz -C deployment/live-fixes/P55_JC_ROT_ALTERATION PATCH_P55.php payload
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "mkdir -p '$TEMP'"
+          "${SCP[@]}" /tmp/p55-rot.tgz "$SSH_USER@$SSH_HOST:$TEMP/p55.tgz"
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "APP_ROOT='$APP_ROOT' TEMP='$TEMP' RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$APP_ROOT"
+          test -f "$ROOT/artisan"
+          tar -xzf "$TEMP/p55.tgz" -C "$TEMP"
+          BACKUP="$(dirname "$ROOT")/ASSAM_P55_ROT_BACKUP_$RUN_ID"
+          test ! -e "$BACKUP";mkdir -p "$BACKUP"
+          files=(
+            app/Http/Controllers/Web/AdminJobCardPageController.php
+            resources/views/job-cards/edit.blade.php
+            routes/web.php
+          )
+          ROTCTRL="$ROOT/app/Http/Controllers/Web/JobCardRotAlterationController.php"
+          ROTVIEW="$ROOT/resources/views/job-cards/rot-alteration.blade.php"
+          test ! -e "$ROTCTRL" && test ! -e "$ROTVIEW"
+          for file in "${files[@]}";do
+             test -f "$ROOT/$file"
+             cp -p "$ROOT/$file" "$BACKUP/$(printf '%s' "$file" | tr / _)"
+          done
+          rollback(){
+             echo 'P55_ROLLBACK_BEGIN'
+             for file in "${files[@]}";do
+               cp -p "$BACKUP/$(printf '%s' "$file" | tr / _)" "$ROOT/$file" || true
+             done
+             rm -f "$ROTCTRL" "$ROTVIEW"
+             (cd "$ROOT" && php artisan route:clear && php artisan view:clear && php artisan view:cache) >/dev/null 2>&1 || true
+             echo 'P55_ROLLBACK_DONE'
+          }
+          trap rollback ERR
+          php "$TEMP/PATCH_P55.php" check "$ROOT"
+          php "$TEMP/PATCH_P55.php" apply "$ROOT"
+          cd "$ROOT"
+          php artisan route:clear
+          php artisan view:clear
+          php artisan view:cache
+          php artisan route:list --name=erp.job-cards.labour.alter | grep -q 'labour'
+          php -l "$ROTCTRL"
+          grep -q 'P55_ROT_ALTERATION_INCLUDE' resources/views/job-cards/edit.blade.php
+          echo 'P55_STAGING_ROT_EDITOR_SOURCE_ROUTE_BLADE_PASS'
+          echo "P55_CODE_BACKUP=$BACKUP"
+          trap - ERR
+          rm -rf "$TEMP"
+          REMOTE
+      - uses: actions/setup-node@v4
+        if: steps.install.outcome == 'success'
+        with:
+          node-version: '22'
+      - name: Install Chromium browser
+        if: steps.install.outcome == 'success'
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Authenticated desktop and mobile ROT editor acceptance GET only
+        id: browser
+        if: steps.install.outcome == 'success'
+        run: node deployment/live-fixes/P55_JC_ROT_ALTERATION/QA_P55.mjs
+      - name: Restore original code if browser QA fails
+        if: failure() && steps.install.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            SSH=(ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "APP_ROOT='$APP_ROOT' RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$APP_ROOT"
+          BACKUP="$(dirname "$ROOT")/ASSAM_P55_ROT_BACKUP_$RUN_ID"
+          files=(
+            app/Http/Controllers/Web/AdminJobCardPageController.php
+            resources/views/job-cards/edit.blade.php
+            routes/web.php
+          )
+          for file in "${files[@]}";do
+             cp -p "$BACKUP/$(printf '%s' "$file" | tr / _)" "$ROOT/$file"
+          done
+          rm -f "$ROOT/app/Http/Controllers/Web/JobCardRotAlterationController.php"
+          rm -f "$ROOT/resources/views/job-cards/rot-alteration.blade.php"
+          cd "$ROOT"
+          php artisan route:clear
+          php artisan view:clear
+          php artisan view:cache
+          echo 'P55_POST_QA_ROLLBACK_COMPLETE'
+          REMOTE
+      - name: Outcome report
+        if: always()
+        run: |
+          echo "P55 install outcome: ${{ steps.install.outcome }}"
+          echo "P55 browser QA outcome: ${{ steps.browser.outcome }}"
+          echo 'Source/view only: no live ROT record correction or invoice/ledger update performed by installer.'
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
