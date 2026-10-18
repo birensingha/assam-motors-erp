@@ -57,4 +57,40 @@ foreach($files as $file=>$keywords){
  }
  p('SOURCE',[$file,count($lines),$hits]);
 }
+foreach([
+ ['resources/views/staff/portal.blade.php',184,253],
+ ['app/Http/Controllers/Web/StaffPortalController.php',1,113],
+ ['app/Http/Controllers/Web/StaffWebAuthController.php',1,100],
+ ['app/Services/GeoFenceService.php',1,190],
+ ['app/Services/AttendanceService.php',16,115],
+ ['app/Http/Controllers/Api/V1/StaffDashboardController.php',43,57],
+ ['app/Http/Controllers/Api/V1/AuthController.php',16,96]
+] as [$name,$lo,$hi]){
+ $fn="$root/$name";if(!is_file($fn))continue;
+ $lines=file($fn);$selected=[];
+ for($i=$lo-1;$i<min($hi,count($lines));$i++)$selected[]=($i+1).':'.rtrim($lines[$i]);
+ p('EXCERPT',[$name,$lo,$hi,$selected]);
+}
+if(Schema::hasTable('staff_devices')){
+ $dev=DB::table('staff_devices as d')->join('staff as s','s.id','=','d.staff_id')
+    ->select('s.role','d.active','d.location_permission','d.notification_permission','d.app_version')
+    ->selectRaw('count(*) as devices,MAX(d.last_seen_at) as last_seen')
+    ->groupBy('s.role','d.active','d.location_permission','d.notification_permission','d.app_version')->get();
+ p('DEVICE_COVERAGE',$dev);
+ $rdev=DB::table('staff_devices')->where('staff_id',6)
+    ->get(['app_version','active','location_permission','notification_permission','last_seen_at']);
+ p('RATNA_DEVICE_PERMISSIONS',$rdev);
+}
+if(Schema::hasTable('attendance')){
+ $today=now('Asia/Kolkata')->toDateString();
+ $rows=DB::table('staff as s')->leftJoin('attendance as a',function($join)use($today){
+  $join->on('a.staff_id','=','s.id')->where('a.date','=',$today);
+ })->select('s.id','s.role','s.attendance_enabled','a.check_in','a.check_out','a.status')
+   ->orderBy('s.id')->get();
+ p('TODAY_ATTENDANCE_WITHOUT_NAMES_OR_GPS',[$today,$rows]);
+}
+if(Schema::hasTable('staff_location_settings')){
+ p('GEOFENCE_POLICY_NO_LOCATION_VALUES',DB::table('staff_location_settings')
+  ->get(['tracking_enabled','geofence_checkin_enabled','radius_m','max_accuracy_m','sample_minutes']));
+}
 echo "P59_READONLY_AUDIT_DONE\n";
