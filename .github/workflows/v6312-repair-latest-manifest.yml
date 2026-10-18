@@ -1,0 +1,109 @@
+name: Verify and Repair v6.3.12 Staff APK OTA Manifest (Staging)
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/v6312-repair-latest-manifest.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Repair verified v6.3.12 update manifest atomically after JSON newline formatting error
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/am-gps-diag
+            chmod 600 ~/.ssh/am-gps-diag
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -i ~/.ssh/am-gps-diag -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f "$SITE/latest.json" && test -s "$SITE/private/Assam-Motors-Staff-v6.3.12-FRESH-PRODUCTION.apk"
+          test -f "$ROOT/artisan"
+          echo '3c2bb0c62c3a7b06e9b625b7cb04eb21dd9aba6049beba025a94057c0bb833f9  '+"$SITE"+'/private/Assam-Motors-Staff-v6.3.12-FRESH-PRODUCTION.apk' | sha256sum -c -
+          SITE="$SITE" ROOT="$ROOT" python3 - <<'PY'
+          import os,json,pathlib,hashlib,tempfile,datetime
+          site=pathlib.Path(os.environ["SITE"])
+          root=pathlib.Path(os.environ["ROOT"])
+          manifest=site/"latest.json"
+          apk=site/"private/Assam-Motors-Staff-v6.3.12-FRESH-PRODUCTION.apk"
+          expected="3c2bb0c62c3a7b06e9b625b7cb04eb21dd9aba6049beba025a94057c0bb833f9"
+          assert apk.stat().st_size==3341044
+          assert hashlib.sha256(apk.read_bytes()).hexdigest()==expected
+          raw=manifest.read_bytes()
+          try:
+            data=json.loads(raw)
+            recovered=False
+          except json.JSONDecodeError:
+            # A previous post-publish version-name correction mistakenly wrote
+            # a *literal* backslash-n after valid JSON, rather than LF.
+            assert raw.endswith(b'\\n'),"Unexpected broken manifest format - stop"
+            data=json.loads(raw[:-2])
+            recovered=True
+          assert data.get("package_id")=="com.assammotors.staff"
+          assert int(data.get("version_code",0))==60312
+          assert data.get("apk_file")==apk.name
+          assert data.get("sha256")==expected
+          assert data.get("licence_file")
+          should_write=recovered or data.get("version_name")!="6.3.12"
+          if should_write:
+            backup=root/"storage/app/patch-backups"/("v6312-ota-manifest-"+datetime.datetime.now(datetime.timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
+            backup.mkdir(parents=True,mode=0o700)
+            backupfile=backup/"latest.json.before-repair"
+            backupfile.write_bytes(raw)
+            backupfile.chmod(0o600)
+            data["version_name"]="6.3.12"
+            fd,tmp=tempfile.mkstemp(prefix=".latest-v6312-correct-",dir=site)
+            try:
+              with os.fdopen(fd,"w") as f:
+                json.dump(data,f,indent=2)
+                f.write("\n")
+                f.flush();os.fsync(f.fileno())
+              os.chmod(tmp,0o644)
+              os.replace(tmp,manifest)
+            finally:
+              if os.path.exists(tmp):os.unlink(tmp)
+            print("V6312_MANIFEST_RECOVERED_AND_CORRECTED=YES")
+          verified=json.loads(manifest.read_text())
+          assert verified.get("version_name")=="6.3.12"
+          assert verified.get("version_code")==60312
+          assert verified.get("sha256")==expected
+          assert verified.get("apk_file")==apk.name
+          print("V6312_OTA_APK_SHA256=VERIFIED")
+          print("V6312_OTA_MANIFEST_JSON=VALID")
+          print("V6312_OTA_VERSION=6.3.12")
+          PY
+          php -r '$m=json_decode(file_get_contents($argv[1]),true,512,JSON_THROW_ON_ERROR);if(($m["version_name"]??"")!=="6.3.12"||($m["version_code"]??0)!==60312)exit(1);echo "PHP_UPDATE_FEED_METADATA=VERIFIED\n";' "$SITE/latest.json"
+          REMOTE
+      - name: Confirm protected update endpoints respond
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=$(curl --silent --show-error --max-time 30 -o /dev/null -w '%{http_code}' 'https://staging.assammotors.com/legacy/api/staff-app-update.php?platform=android&version_code=60311')
+          echo "V6312_UPDATE_ENDPOINT_UNAUTH_HTTP=$status"
+          test "$status" = 401 || test "$status" = 403
+      - if: always()
+        run: rm -f ~/.ssh/am-gps-diag
