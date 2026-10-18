@@ -1,0 +1,86 @@
+name: Staging JC item-wise taxable and GST display only
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/staging-jc-itemwise-pricing-display.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify patch script
+        run: python3 -m py_compile deployment/live-fixes/FIX_JC_ITEMWISE_DISPLAY_20261018/APPLY.py
+      - name: Apply Job Card display-only financial columns with backup and rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/jc-itemwise
+            chmod 600 ~/.ssh/jc-itemwise
+            SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/jc-itemwise)
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" "python3 - '$ROOT'" < deployment/live-fixes/FIX_JC_ITEMWISE_DISPLAY_20261018/APPLY.py
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"; cd "$ROOT"
+          if ! (php artisan view:clear && php artisan view:cache); then
+            echo 'JC_BLADE_COMPILE_FAILED_ROLLBACK'
+            python3 - "$ROOT" <<'PY'
+          import shutil,sys
+          from pathlib import Path
+          p=Path(sys.argv[1])/'resources/views/job-cards/show.blade.php'
+          versions=sorted(p.parent.glob(p.name+'.before-itemwise-pricing-*.bak'))
+          if not versions: raise SystemExit('BACKUP_NOT_FOUND')
+          shutil.copy2(versions[-1],p)
+          print('JC_DISPLAY_ROLLBACK_RESTORED='+versions[-1].name)
+          PY
+            php artisan view:clear
+            exit 1
+          fi
+          python3 - "$ROOT" <<'PY'
+          from pathlib import Path
+          import sys
+          s=(Path(sys.argv[1])/'resources/views/job-cards/show.blade.php').read_text()
+          assert 'AM_JC_ITEMWISE_BILLING_READONLY_V1' in s
+          assert s.count('<th>Taxable ₹</th>')>=1
+          assert s.count('<th>GST ₹</th>')>=1
+          assert s.count('<th>Final Amt ₹</th>')>=1
+          assert s.count('route(\'erp.job-cards.parts.update\'')==1
+          assert s.count('route(\'erp.job-cards.parts.delete\'')==1
+          print('STAGING_JC_ITEMWISE_DISPLAY_STRUCTURE=PASS')
+          PY
+          echo 'JC_ITEMWISE_JOBCARD_BLADE_COMPILE=PASS'
+          REMOTE
+      - name: Login health checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in /erp/login /staff/login; do
+            code=$(curl -sS --location --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")
+            echo "HEALTH_CHECK=$path HTTP=$code"
+            test "$code" = 200
+          done
+      - name: Remove temporary key
+        if: always()
+        run: rm -f ~/.ssh/jc-itemwise
