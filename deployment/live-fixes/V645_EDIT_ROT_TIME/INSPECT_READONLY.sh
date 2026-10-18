@@ -100,4 +100,31 @@ for file in ['routes/web.php','routes/erp.php']:
   if "AdminRotPageController" in t or "erp.rot" in t or "rot/{session}" in t or "RotAlteration" in t:
    for j in range(max(0,i-2),min(i+4,len(a))):print('ROUTE',file,j+1,a[j][:280])
 PY
+echo "=== ROT CORRECTION AUDIT + EXISTING ALTERATION ==="
+python3 - <<'PY'
+from pathlib import Path
+files=[('app/Models/RotAdminCorrection.php',1,100),
+       ('app/Models/ErpAuthUser.php',1,210),
+       ('app/Http/Controllers/Web/JobCardRotAlterationController.php',1,170),
+       ('resources/views/rot/history.blade.php',1,140)]
+for path,start,end in files:
+ f=Path(path)
+ if not f.exists():continue
+ a=f.read_text(errors='replace').splitlines()
+ print("TARGET",path,len(a))
+ for i in range(start-1,min(len(a),end)):
+  line=a[i]
+  if 'password' in line.lower() or 'secret' in line.lower():continue
+  print(str(i+1)+': '+line[:245])
+PY
+php <<'PHP'
+<?php
+require 'vendor/autoload.php';
+$app=require 'bootstrap/app.php';
+$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+foreach(['rot_admin_corrections','rot_mechanic_segments','rot_session_events'] as $t){
+ if(!\Illuminate\Support\Facades\Schema::hasTable($t))continue;
+ echo 'AUDIT_TABLE='.$t.' COLUMNS='.json_encode(\Illuminate\Support\Facades\DB::select('SHOW COLUMNS FROM '.$t)).PHP_EOL;
+}
+PHP
 echo 'V645_READONLY_SOURCE_AUDIT=COMPLETE'
