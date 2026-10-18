@@ -1,0 +1,74 @@
+name: Audit JC Invoice Credit Note and ROT Controls (Read Only)
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/audit-jc-creditnote-rot-readonly-20261018.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 9
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - name: Audit live services and table columns without PII or writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/am-jc-audit
+            chmod 600 ~/.ssh/am-jc-audit
+            SSH=(ssh -i ~/.ssh/am-jc-audit -p "$PORT" -o BatchMode=yes)
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' -- "$ROOT" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"; test -f "$ROOT/artisan"; cd "$ROOT"
+          echo 'JC_ROT_AUDIT_BEGIN'
+          find app/Services app/Http/Controllers -maxdepth 3 -type f | grep -Ei '/(.*(Credit|Invoice|Rot|JobCard|Part|Return|Accounting).*)\.php$' | head -105
+          for name in app/Services/RotWorkflowService.php app/Services/RotAssignmentService.php app/Http/Controllers/Api/V1/RotWorkflowController.php; do
+            test -f "$name" || continue
+            echo "FILE=$name"
+            grep -nE -C 3 'function (start|pause|resume|complete|reopen|changeMechanic|assign|assertStaffCheckedIn|assertNoOtherRunningRot)|assertStaffCheckedIn|Attendance|whereIn.*Paused|where.*Running|lockForUpdate' "$name" | head -230 | cut -c1-210 || true
+          done
+          echo 'CREDIT_NOTE_MATCHES'
+          grep -RnlEi 'credit[ _-]?note|refund[ _-]?voucher|reverse[ _-]?job.?card|reverseJobCard|invoice.?reversal' app/Http/Controllers app/Services routes resources/views 2>/dev/null | head -42
+          echo 'JC_EDIT_MATCHES'
+          grep -RnlEi 'delete.*part|reverse.*part|update.*part|update.*rot|reopen.*rot' app/Http/Controllers/Web app/Services 2>/dev/null | head -38
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=Illuminate\Support\Facades\DB::class;
+          $sc=Illuminate\Support\Facades\Schema::class;
+          foreach (['invoices','credit_notes','credit_note_items','job_cards','job_card_parts','job_card_labour','rot_sessions','attendance','stock_movements','payments','money_receipts'] as $t) {
+            if (!$sc::hasTable($t)) {echo "MISSING_TABLE=$t\n";continue;}
+            $col=$sc::getColumnListing($t);
+            echo "SCHEMA=$t ".implode(',',array_filter($col,function($f){
+              return preg_match('/id|status|invoice|credit|amount|qty|rate|tax|gst|disc|part|rot|staff|check_in|check_out|started|ended|reason|date|deleted|total/i',$f);
+            }))."\n";
+          }
+          $count=$sc::hasTable('rot_sessions')?$db::table('rot_sessions')->whereIn('status',['Assigned','Running','Paused'])->selectRaw('staff_id,COUNT(*) as c')->groupBy('staff_id')->havingRaw('COUNT(*)>1')->get()->count():-1;
+          echo 'STAFF_WITH_MULTIPLE_ACTIVE_ROT='.$count."\n";
+          PHP
+          echo 'JC_ROT_AUDIT_COMPLETE'
+          REMOTE
+      - name: Cleanup keys
+        if: always()
+        run: rm -f ~/.ssh/am-jc-audit
