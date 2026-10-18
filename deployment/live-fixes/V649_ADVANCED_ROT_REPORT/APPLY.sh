@@ -43,7 +43,8 @@ if 'V649_ADVANCED_ROT_PERFORMANCE_FILTERS' not in controller:
 compact="""            'pendingRots','pendingCounts'));"""
 revised="""            'pendingRots','pendingCounts','advancedRotReport','advancedRotCodes'));"""
 if 'advancedRotReport' not in controller.split("return view('dashboard.rot-performance'")[1]:
- controller=one(controller,compact,revised,'compact report variables')
+ pos=controller.index("return view('dashboard.rot-performance'")
+ controller=controller[:pos]+one(controller[pos:],compact,revised,'ROT performance compact report variables')
 new['controller']=controller.encode('utf-8','surrogateescape')
 index=before['index'].decode('utf-8','surrogateescape')
 if "advanced-rot-report" not in index:
