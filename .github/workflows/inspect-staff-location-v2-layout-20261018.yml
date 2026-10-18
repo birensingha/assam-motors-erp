@@ -47,6 +47,7 @@ jobs:
               else:
                   patterns=['@yield(\'topbar_title\'','topbar','top-bar','tool-shortcut','JC Amounts','OBL Purchases','Vendor Database','Voucher Editing','header','<main','@yield(\'content\'']
               for i,line in enumerate(s.splitlines(),1):
+                  if label=='layout_erp' and 110<=i<=136: print('LAYOUT_STRUCTURE',i,line.strip()[:380])
                   if any(k.lower() in line.lower() for k in patterns):
                       normalized=re.sub(r'(?i)(value|token|secret|password|csrf)[^=]*=[^ >]+',r'\1=REDACTED',line)
                       print('INSPECT_LINE',label,i,normalized.strip()[:340])
