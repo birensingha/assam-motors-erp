@@ -59,15 +59,60 @@ $amLogoUrl = is_file($amLogoFile) ? asset('images/assam-motors-logo.png') : null
 <div><span>Balance Due</span><b>₹{{ number_format((float)($inv->balance_due??$inv->balance_total??0),2) }}</b></div>
 </div>
 @unless($isCostSummary)
-<h2>HSN / SAC Tax Classification</h2>
-<table><thead><tr><th>HSN / SAC</th><th>Item / Service</th><th class="num">Tax Rate</th><th class="num">Line Amount</th></tr></thead><tbody>
-@foreach($parts as $p)
-<tr><td>{{ $p->hsn_code ?? $p->hsn ?? '—' }}</td><td>{{ $p->part_name }}</td><td class="num">{{ number_format((float)($p->gst_percent??0),2) }}%</td><td class="num">₹{{ number_format((float)$p->total,2) }}</td></tr>
-@endforeach
-@foreach($labour as $l)
-<tr><td>{{ $l->sac_code ?? $l->sac ?? '—' }}</td><td>{{ $l->description }}</td><td class="num">{{ number_format((float)($l->gst_percent??0),2) }}%</td><td class="num">₹{{ number_format((float)$l->total,2) }}</td></tr>
+@php
+// Display-only HSN/SAC classification. Tax values come from explicit persisted columns;
+// never infer statutory tax figures by treating a line total as taxable or gross.
+$amTaxGroups = [];
+$amTaxMissing = false;
+foreach ([['lines'=>$parts,'type'=>'parts'],['lines'=>$labour,'type'=>'labour']] as $set) {
+    foreach ($set['lines'] as $line) {
+        $raw = (array) $line;
+        $code = trim((string)($raw['hsn_code'] ?? $raw['hsn'] ?? $raw['sac_code'] ?? $raw['sac'] ?? ''));
+        $rate = (float)($raw['gst_percent'] ?? 0);
+        $taxable = $raw['taxable_amount'] ?? $raw['taxable_value'] ?? null;
+        $tax = $raw['gst_amount'] ?? $raw['tax_amount'] ?? null;
+        $cgst = $raw['cgst_amount'] ?? null;
+        $sgst = $raw['sgst_amount'] ?? null;
+        $igst = $raw['igst_amount'] ?? null;
+        if ($code === '' || !is_numeric($taxable) || (!is_numeric($tax) && !(is_numeric($cgst) && is_numeric($sgst) && is_numeric($igst)))) {
+            $amTaxMissing = true;
+            continue;
+        }
+        $key = $set['type'].'|'.$code.'|'.number_format($rate,2,'.','');
+        if (!isset($amTaxGroups[$key])) {
+            $amTaxGroups[$key] = ['code'=>$code,'rate'=>$rate,'taxable'=>0,'cgst'=>0,'sgst'=>0,'igst'=>0,'totalTax'=>0,'hasSplit'=>true];
+        }
+        $amTaxGroups[$key]['taxable'] += (float)$taxable;
+        $amTaxGroups[$key]['totalTax'] += is_numeric($tax) ? (float)$tax : ((float)$cgst+(float)$sgst+(float)$igst);
+        if (is_numeric($cgst) && is_numeric($sgst) && is_numeric($igst)) {
+            $amTaxGroups[$key]['cgst'] += (float)$cgst;
+            $amTaxGroups[$key]['sgst'] += (float)$sgst;
+            $amTaxGroups[$key]['igst'] += (float)$igst;
+        } else {
+            $amTaxGroups[$key]['hasSplit'] = false;
+        }
+    }
+}
+$amGroupTax = array_sum(array_column($amTaxGroups,'totalTax'));
+$amInvoiceTax = (float)($inv->gst_total ?? $inv->tax_total ?? 0);
+$amTaxReconciled = !$amTaxMissing && abs($amGroupTax - $amInvoiceTax) <= 0.02;
+@endphp
+<h2>HSN / SAC-wise Tax Summary</h2>
+@if(!$amTaxReconciled)
+<p style="border:1px solid #b91c1c;padding:10px;color:#991b1b;font-weight:bold">
+Detailed HSN/SAC tax breakup is unavailable or does not reconcile with the saved invoice. Verify item tax fields before issuing this GST invoice print.
+</p>
+@else
+<table><thead><tr><th>HSN / SAC</th><th class="num">GST %</th><th class="num">Taxable Value</th><th class="num">CGST</th><th class="num">SGST</th><th class="num">IGST</th><th class="num">Total GST</th></tr></thead><tbody>
+@foreach($amTaxGroups as $g)
+<tr><td>{{ $g['code'] }}</td><td class="num">{{ number_format($g['rate'],2) }}%</td><td class="num">₹{{ number_format($g['taxable'],2) }}</td>
+<td class="num">{{ $g['hasSplit'] ? '₹'.number_format($g['cgst'],2) : '—' }}</td>
+<td class="num">{{ $g['hasSplit'] ? '₹'.number_format($g['sgst'],2) : '—' }}</td>
+<td class="num">{{ $g['hasSplit'] ? '₹'.number_format($g['igst'],2) : '—' }}</td>
+<td class="num">₹{{ number_format($g['totalTax'],2) }}</td></tr>
 @endforeach
 </tbody></table>
+@endif
 @endunless
 </body>
 </html>
