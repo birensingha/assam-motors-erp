@@ -1,0 +1,81 @@
+name: Preflight staging independent GPS reporting and Check-In geofence quality (read only)
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/v6314-geofence-reporting-separation-preflight.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Check staging SSH and protected GPS route
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/am-gps-diag
+            chmod 600 ~/.ssh/am-gps-diag
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -i ~/.ssh/am-gps-diag -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          test -f "$ROOT/artisan" && test -f "$SITE/latest.json"
+          cd "$ROOT"
+          echo '=== Staging GPS geofence and attendance service source without records ==='
+          for f in app/Services/GeoFenceService.php app/Services/AttendanceService.php app/Http/Controllers/Api/V1/AttendanceController.php app/Http/Controllers/Api/V1/RotWorkflowController.php app/Models/StaffLocationSetting.php app/Http/Controllers/Web/AdminNativeModuleController.php; do
+            test -f "$f" || continue
+            echo "SOURCE_FILE=$f"
+            if [[ "$f" = *AdminNativeModuleController.php ]]; then
+              grep -n -B 10 -A 70 -E 'function (saveStaffLocation|updateStaffLocation|staffLocationSettings|locationSettings)' "$f" | head -180 | cut -c 1-300 || true
+            elif [[ "$f" = *RotWorkflowController.php ]]; then
+              grep -n -B 4 -A 42 'function assertStaffGeoFence' "$f" | head -100 | cut -c 1-300 || true
+            else
+              sed -n '1,250p' "$f" | cut -c 1-300
+            fi
+          done
+          echo '=== Staging geofence and GPS setting references ==='
+          grep -RniE 'max_accuracy_m|geofence_checkin_enabled|GeoFenceService.*verify|geoFence->verify|function checkIn\(' app/Services app/Http/Controllers 2>/dev/null | head -120 | cut -c 1-320 || true
+          echo '=== DB structure and GPS allowed values, no staff data ==='
+          php <<'PHP'
+          <?php
+          try {require 'vendor/autoload.php';$app=require 'bootstrap/app.php';$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $db=\Illuminate\Support\Facades\DB::class;$schema=\Illuminate\Support\Facades\Schema::class;
+            foreach(['staff_location_settings','attendances','attendance'] as $t)if($schema::hasTable($t)){echo "DB_COLUMNS_{$t}=".implode(',',$schema::getColumnListing($t)).PHP_EOL;
+             if($t==='staff_location_settings'){
+                $v=$db::table($t)->where('id',1)->first();foreach(['max_accuracy_m','radius_m','geofence_checkin_enabled','sample_minutes','tracking_enabled'] as $k)echo 'GPS_'.strtoupper($k).'='.($v->$k??'NULL').PHP_EOL;}
+            }
+            echo 'PREFLIGHT_DB=PASS'.PHP_EOL;
+          } catch(\Throwable $e){echo 'PREFLIGHT_DB_ERROR='.get_class($e).PHP_EOL;exit(1);}
+          PHP
+          echo 'GEOFENCE_SEPARATION_PREFLIGHT=PASS'
+          REMOTE
+      - name: Check unauthenticated GPS API protections
+        run: |
+          set -euo pipefail
+          for path in /api/v1/staff/location /api/v1/admin/mobile/staff-locations; do
+            status="$(curl --silent --show-error --max-time 20 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path" || true)"
+            echo "PATH=$path HTTP=$status (unauthenticated; GET-only)"
+          done
+      - if: always()
+        run: rm -f ~/.ssh/am-gps-diag
