@@ -42,6 +42,7 @@ jobs:
           SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
           test -f "$ROOT/artisan" && test -f "$SITE/latest.json"
           cd "$ROOT"
+          set +o pipefail # inspecting with head must not fail on SIGPIPE
           echo "V6312_INSPECTION_UTC=$(date -u -Iseconds)"
           echo '=== ROT service entrypoints and assignment guards ==='
           if [ -f app/Services/RotWorkflowService.php ]; then
