@@ -45,7 +45,9 @@ jobs:
           echo 'NATIVE_STAFF_LIVE_APPLY_WITH_PRIVATE_BACKUPS'
           "${SSH[@]}" "$USERNAME@$HOST" 'python3 - --root "$HOME/domains/assammotors.com/assam-erp-staging" --bundle "$HOME/.assam-native-staff-live-deploy/payload" --apply' < "$SRC/apply.py"
           echo 'NATIVE_STAFF_LIVE_ROUTES_AND_AUTHENTICATED_SMOKE'
-          "${SSH[@]}" "$USERNAME@$HOST" 'cd "$HOME/domains/assammotors.com/assam-erp-staging" && php' < "$SRC/smoke-readonly.php"
+          smoke_output=$("${SSH[@]}" "$USERNAME@$HOST" 'cd "$HOME/domains/assammotors.com/assam-erp-staging" && php' < "$SRC/smoke-readonly.php")
+          printf '%s\n' "$smoke_output"
+          printf '%s\n' "$smoke_output" | grep -Fqx 'STAFF_LIVE_FULL_READONLY_SMOKE=PASS'
           "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
           cd "$HOME/domains/assammotors.com/assam-erp-staging"
