@@ -36,6 +36,7 @@ $auth=new ErpAuthUser;
 $auth->role='admin';$auth->active=true;
 Auth::shouldUse('web');
 Auth::guard('web')->setUser($auth);
+app('view')->share('errors',new \Illuminate\Support\ViewErrorBag());
 $pages=app(Pages::class);
 foreach([
  ['daily',Request::create('/erp/rot-performance','GET',['date'=>'2026-10-18','staff_id'=>(int)$staffId]),'rotPerformance'],
