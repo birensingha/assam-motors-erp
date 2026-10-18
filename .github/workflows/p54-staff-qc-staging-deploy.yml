@@ -2,7 +2,10 @@ name: P54 Clean Job Card + Assigned Staff Quality Check — STAGING
 on:
   push:
     branches: [feature/p54-staff-qc-flow-and-clean-jc-20261018]
-    paths: ['.github/workflows/p54-staff-qc-staging-deploy.yml']
+    paths:
+      - '.github/workflows/p54-staff-qc-staging-deploy.yml'
+      - 'deployment/live-fixes/P54_QC_STAFF/PATCH_P54.php'
+      - 'deployment/live-fixes/P54_QC_STAFF/QA_P54.mjs'
 permissions:
   contents: read
 concurrency:
