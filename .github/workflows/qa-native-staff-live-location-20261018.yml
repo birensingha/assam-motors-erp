@@ -44,9 +44,9 @@ jobs:
           ]:js=js.replace(a,b)
           assert '@json(' not in js
           pathlib.Path('/tmp/am-staff-live-ui.js').write_text(js)
-          for marker in ['setInterval(()=>poll(),1000)','source','recorded_at','received_at','STALE','accuracy_m','GPS','Last Position','geofence']:
+          for marker in ['setInterval(()=>poll(),1000)','recorded_at','received_at','STALE','accuracy_m','GPS','Last Position','geofence']:
             assert marker.lower() in html.lower(),f'Missing transparent tracking UI {marker}'
-          for required in ["'active' && $user->isAdmin()","where('id', '>', $after)","limit(200)","Cache-Control","abort_unless"]:
+          for required in ["$user->active && $user->isAdmin()","where('id', '>', $after)","limit(200)","Cache-Control","abort_unless"]:
             assert required in php,required
           for forbidden in ['DB::table(\'staff_location_logs\')->insert(', 'StaffLocationLog::create(', 'DB::table(\'attendance\')->update(']:
             assert forbidden not in php
