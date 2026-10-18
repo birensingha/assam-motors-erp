@@ -67,4 +67,45 @@ foreach(['rot_admin_corrections','rot_session_events','rot_mechanic_segments','j
  echo 'TABLE='.$t.' COLUMNS='.json_encode(array_map(fn($x)=>['column'=>$x->Field,'type'=>$x->Type],DB::select('SHOW COLUMNS FROM '.$t))).PHP_EOL;
 }
 PHP
+echo '=== START/RESUME transaction guard / model sync ==='
+python3 - <<'PY'
+from pathlib import Path
+spec=[
+ ('app/Services/RotWorkflowService.php',25,75),
+ ('app/Services/RotWorkflowService.php',325,502),
+ ('app/Http/Controllers/Web/AdminRotPageController.php',1,165),
+ ('app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php',255,345),
+ ('resources/views/job-cards/show.blade.php',570,650),
+ ('resources/views/job-cards/rot-time-editor.blade.php',1,160),
+]
+for name,start,end in spec:
+ p=Path(name)
+ if not p.exists():continue
+ a=p.read_text(errors='replace').splitlines()
+ print('==== SOURCE',name,start,end,'====')
+ for i in range(start-1,min(end,len(a))):
+  s=a[i]
+  if any(w in s.lower() for w in ['password','api_key','bearer','private_key']):continue
+  print(f'{i+1}: {s[:250]}')
+PY
+echo '=== READONLY DB RETRY ==='
+for attempt in 1 2 3; do
+  if php <<'PHP'
+<?php
+require 'vendor/autoload.php';
+$app=require 'bootstrap/app.php';
+$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+foreach(['JC-20261018-00037','JC-20261016-00036'] as $no){
+ $c=\Illuminate\Support\Facades\DB::table('job_cards')->where('job_no',$no)->first();
+ if(!$c)continue;
+ $inv=\Illuminate\Support\Facades\DB::table('invoices')->where('job_card_id',$c->id)->get(['id','status','invoice_no']);
+ echo 'CURRENT_JC='.json_encode(['job_no'=>$c->job_no,'id'=>$c->id,'status'=>$c->status,'invoice_id'=>$c->invoice_id??null,'invoices'=>$inv]).PHP_EOL;
+ foreach(\Illuminate\Support\Facades\DB::table('rot_sessions')->where('job_card_id',$c->id)->get() as $r)
+   echo 'CURRENT_ROT='.json_encode(['id'=>$r->id,'rot_code'=>$r->rot_code,'status'=>$r->status,'std_hours'=>$r->std_hours,'total_seconds'=>$r->total_seconds,'start_time'=>$r->start_time,'first_start_at'=>$r->first_start_at,'end_time'=>$r->end_time]).PHP_EOL;
+}
+PHP
+  then echo 'CURRENT_DB_READ=PASS';break;fi
+  echo 'CURRENT_DB_READ=RETRY_'$attempt
+  sleep 4
+done
 echo 'V646_READONLY_ROT_INVOICE_AUDIT=COMPLETE'
