@@ -161,6 +161,35 @@ jobs:
               }
           }
           PHP
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=Illuminate\Support\Facades\DB::class;
+          $schema=Illuminate\Support\Facades\Schema::class;
+          $tables=$db::select('SHOW TABLES');
+          $matches=[];
+          foreach($tables as $row){
+              $table=(string)array_values((array)$row)[0];
+              if(preg_match('/vehic|car_|_car|make|model|variant|engine|fuel|garage/i',$table)) $matches[]=$table;
+          }
+          foreach($matches as $table) echo "VEHICLE_CANDIDATE ".$table." ".implode(',',$schema::getColumnListing($table))."\n";
+          $inv=$db::table('invoices')->where('invoice_no','INV-2026-00018')->first();
+          $job=$inv ? $db::table('job_cards')->where('id',$inv->job_card_id)->first():null;
+          if($job) {
+            foreach($matches as $table) {
+              $cols=$schema::getColumnListing($table);
+              if(!in_array('id',$cols))continue;
+              $row=$db::table($table)->where('id',$job->vehicle_id)->first();
+              if($row && preg_match('/vehic|garage/i',$table)){
+                echo "VEHICLE_ID_MATCH ".$table."\n";
+                foreach((array)$row as $k=>$v)if(preg_match('/make|model|variant|year|fuel|engine|chassis|cc|capacity|transmi|vin|registration|reg_no|color/i',$k))
+                  echo "MATCHED_FIELD ".$k."=".($v===null||$v===''?'EMPTY':'SET')."\n";
+              }
+            }
+          }
+          PHP
           echo 'VEHICLE_SCHEMA_AUDIT_END'
           echo 'STAGING_INVOICE_READ_ONLY_AUDIT_DONE'
           REMOTE
