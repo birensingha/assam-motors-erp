@@ -1,0 +1,100 @@
+name: P61 Fix Consented Admin HR GPS Upload API — STAGING
+on:
+  push:
+    branches: [feature/p61-admin-hr-gps-remote-20261018]
+    paths:
+      - '.github/workflows/p61-gps-role-fix-staging.yml'
+      - 'deployment/live-fixes/P61_GPS_API/PATCH_P61.php'
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Local syntax gate
+        run: |
+          set -euo pipefail
+          php -l deployment/live-fixes/P61_GPS_API/PATCH_P61.php
+          echo 'P61_LOCAL_PARSE_PASS'
+      - name: Setup SSH
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+          fi
+      - name: Safe Staging GPS API preflight and deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            SSH=(ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          TEMP="/home/$SSH_USER/p61-gps-$GITHUB_RUN_ID"
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "mkdir -p '$TEMP'"
+          "${SCP[@]}" deployment/live-fixes/P61_GPS_API/PATCH_P61.php "$SSH_USER@$SSH_HOST:$TEMP/PATCH_P61.php"
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "APP_ROOT='$APP_ROOT' TEMP='$TEMP' RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$APP_ROOT";test -f "$ROOT/artisan"
+          FILE="app/Http/Controllers/Api/V1/StaffLocationController.php"
+          BACKUP="$(dirname "$ROOT")/ASSAM_P61_GPS_API_BACKUP_$RUN_ID"
+          test ! -e "$BACKUP";mkdir -p "$BACKUP"
+          cp -p "$ROOT/$FILE" "$BACKUP/StaffLocationController.php"
+          rollback(){
+            cp -p "$BACKUP/StaffLocationController.php" "$ROOT/$FILE" || true
+            (cd "$ROOT" && php artisan route:clear) >/dev/null 2>&1 || true
+            echo 'P61_CODE_ROLLBACK_PASS'
+          }
+          trap rollback ERR
+          php "$TEMP/PATCH_P61.php" check "$ROOT"
+          php "$TEMP/PATCH_P61.php" apply "$ROOT"
+          cd "$ROOT"
+          php -l "$FILE"
+          grep -q 'P61_ROLE_GPS_REMOTE' "$FILE"
+          grep -q 'NO_DUTY_ATTENDANCE' "$FILE"
+          grep -q 'ANDROID_FOREGROUND_NATIVE_60S' "$FILE"
+          php artisan route:list --path=api/v1/staff/location | grep -q 'StaffLocationController'
+          php -r '
+            require "vendor/autoload.php";
+            $app=require "bootstrap/app.php";
+            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            if(!\Illuminate\Support\Facades\Schema::hasTable("staff_location_logs"))exit(2);
+            $gps= \Illuminate\Support\Facades\DB::table("staff_location_logs")->count();
+            echo "P61_HISTORICAL_SAMPLES_UNTOUCHED_READONLY=$gps\n";
+            $code=file_get_contents("app/Http/Controllers/Api/V1/StaffLocationController.php");
+            foreach(["P61_ROLE_GPS_REMOTE","HrAccess::permitted","attendance?->id","is_mocked","NO_DUTY_ATTENDANCE","STALE_GPS_FIX"] as $k){
+              if(!str_contains($code,$k)){echo "P61_MISSING_GUARD=$k\n";exit(3);}
+            }
+            echo "P61_ADMIN_HR_NATIVE_CONSENT_PATH_GUARDS_PASS\n";
+          '
+          echo "P61_GPS_API_DEPLOY_PASS"
+          echo "P61_SAFE_BACKUP=$BACKUP"
+          trap - ERR
+          rm -rf "$TEMP"
+          REMOTE
+      - name: Final
+        if: always()
+        run: |
+          echo 'Only staging GPS API source changed. No tracked device was activated or real GPS sample uploaded by CI.'
+          rm -f ~/.ssh/id_ed25519
