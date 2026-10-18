@@ -98,6 +98,29 @@ jobs:
             }
             $latest=$db::table('staff_location_logs')->max('received_at');
             echo 'LATEST_STORED_COORDINATE_AGE_MIN='.($latest?round((time()-strtotime($latest))/60,1):'none').PHP_EOL;
+            $settings=$schema::hasTable('staff_location_settings')
+              ? $db::table('staff_location_settings')->where('id',1)->first() : null;
+            echo 'GEOFENCE_COORDINATES_CONFIGURED='.
+              ($settings && $settings->latitude!==null && $settings->longitude!==null?'YES':'NO').PHP_EOL;
+            $v6311=$db::table('staff_location_logs')->where('app_version','6.3.11')
+              ->where('received_at','>=',$cut(24))
+              ->get(['accuracy_m','quality','provider','inside_geofence','recorded_at','received_at']);
+            echo 'V6311_24H_RECEIVED='.$v6311->count().PHP_EOL;
+            if($v6311->count()>0) {
+              $acc=$v6311->pluck('accuracy_m')->map(fn($v)=>(float)$v);
+              echo 'V6311_24H_MIN_ACCURACY_METRES='.round($acc->min(),1).PHP_EOL;
+              echo 'V6311_24H_AVG_ACCURACY_METRES='.round($acc->avg(),1).PHP_EOL;
+              echo 'V6311_24H_MAX_ACCURACY_METRES='.round($acc->max(),1).PHP_EOL;
+              echo 'V6311_24H_QUALITY_OK='.$v6311->filter(fn($x)=>$x->quality==='OK')->count().PHP_EOL;
+              echo 'V6311_24H_QUALITY_WEAK='.$v6311->filter(fn($x)=>$x->quality!=='OK')->count().PHP_EOL;
+              echo 'V6311_24H_GEOFENCE_UNVERIFIED='.$v6311->filter(fn($x)=>$x->inside_geofence===null)->count().PHP_EOL;
+              echo 'V6311_24H_PROVIDER_GPS='.$v6311->filter(fn($x)=>strcasecmp((string)$x->provider,'gps')===0)->count().PHP_EOL;
+              echo 'V6311_24H_PROVIDER_NETWORK='.$v6311->filter(fn($x)=>strcasecmp((string)$x->provider,'network')===0)->count().PHP_EOL;
+              echo 'V6311_24H_ACCURACY_OVER_CURRENT_LIMIT='.$v6311->filter(fn($x)=>(float)$x->accuracy_m>$maxAccuracy)->count().PHP_EOL;
+              $receivedLast=$v6311->max('received_at');
+              echo 'V6311_LATEST_RECEIVED_AT_SERVER='.(string)$receivedLast.PHP_EOL;
+            }
+            echo 'VERSION_6311_ANON_DIAGNOSTIC=PASS'.PHP_EOL;
             echo "GPS_DATABASE_AGGREGATES=PASS\n";
           } catch(\Throwable $e) {
             echo 'GPS_DATABASE_AGGREGATES=FAILED_'.get_class($e).PHP_EOL;
