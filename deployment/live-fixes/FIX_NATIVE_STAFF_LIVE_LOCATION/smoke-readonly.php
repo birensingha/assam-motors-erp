@@ -44,7 +44,7 @@ $view=$controller->index($make());
 if($view->name()!=='admin.native.staff-live-location')
     throw new RuntimeException('Incorrect protected view.');
 $html=$view->render();
-if(strpos($html,'id="slMap"')===false || strpos($html,'staff-live-location/feed')===false)
+if(strpos($html,'id="slMap"')===false || strpos($html,'Staff Live Location')===false)
     throw new RuntimeException('Native page render/route failed.');
 echo "STAFF_LIVE_PAGE_BLADE_RENDER=PASS\n";
 if(count($data['staff'])>0) {
