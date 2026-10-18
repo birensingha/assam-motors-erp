@@ -51,6 +51,16 @@ jobs:
           echo '=== Web and API ROT mutation controller paths ==='
           find app/Http/Controllers -iname '*Rot*' -o -iname '*JobCard*' | head -35
           grep -RlnE 'changeMechanic\(|rot_sessions.*insert|RotSession::create|rot_sessions.*update|function assign.*Rot|rot-assignment|assign.*mechanic' app/Http/Controllers app/Services 2>/dev/null | head -40
+          echo '=== ROT assignment service (exact live source) ==='
+          if [ -f app/Services/RotAssignmentService.php ]; then
+            sed -n '1,300p' app/Services/RotAssignmentService.php | cut -c 1-260
+          fi
+          echo '=== Rotation controllers assignment methods ==='
+          for f in app/Http/Controllers/Web/AdminRotPageController.php app/Http/Controllers/Web/AdminJobCardPageController.php app/Http/Controllers/Web/JobCardRotAlterationController.php; do
+            test -f "$f" || continue
+            echo "FILE=$f"
+            grep -nE -C 4 'function |RotAssignmentService|->assign\(|->create\(|rot_sessions|staff_id|assign' "$f" | head -200 | cut -c 1-230 || true
+          done
           echo '=== API RotWorkflowController relevant authorization ==='
           test -f app/Http/Controllers/Api/V1/RotWorkflowController.php && grep -nE -C 7 'function (start|pause|resume|complete|reopen|changeMechanic|actor|admin)|assertStaffGeoFence|Attendance|check.?in' app/Http/Controllers/Api/V1/RotWorkflowController.php | head -260 | cut -c 1-230
           echo '=== ROT table fields and current duplicate counts (aggregate only) ==='
@@ -70,7 +80,8 @@ jobs:
               foreach(['Assigned','Running','Paused','Completed'] as $s)
                 echo 'ROT_STATUS_'.$s.'='.$db::table('rot_sessions')->where('status',$s)->count().PHP_EOL;
               $duplicates=$db::table('rot_sessions')->whereIn('status',['Assigned','Running','Paused'])
-                ->whereNotNull('staff_id')->groupBy('staff_id')->havingRaw('COUNT(*)>1')->count();
+                ->whereNotNull('staff_id')->selectRaw('staff_id, COUNT(*) as total')
+                ->groupBy('staff_id')->havingRaw('COUNT(*)>1')->get()->count();
               echo 'STAFF_WITH_MULTIPLE_ACTIVE_ROT='.$duplicates.PHP_EOL;
             }
             echo 'ROT_DIAGNOSTICS_COMPLETE=YES'.PHP_EOL;
