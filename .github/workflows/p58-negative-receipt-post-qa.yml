@@ -1,0 +1,33 @@
+name: P58 Money Receipt Invalid Posting Security Test
+on:
+  push:
+    branches: [feature/p58-customer-money-receipts-20261018]
+    paths:
+      - '.github/workflows/p58-negative-receipt-post-qa.yml'
+      - 'deployment/live-fixes/P58_MONEY_RECEIPT/QA_P58_POST_VALIDATION.mjs'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL || 'https://staging.assammotors.com' }}
+      STAGING_ADMIN_LOGIN: ${{ secrets.STAGING_ADMIN_LOGIN }}
+      STAGING_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test syntax
+        run: node --check deployment/live-fixes/P58_MONEY_RECEIPT/QA_P58_POST_VALIDATION.mjs
+      - name: Install Chromium
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Authenticated invalid Money Receipt must be rejected server-side
+        run: node deployment/live-fixes/P58_MONEY_RECEIPT/QA_P58_POST_VALIDATION.mjs
+      - name: Result
+        if: always()
+        run: echo 'Only an invalid request was sent; no valid customer receipt or allocation submitted.'
