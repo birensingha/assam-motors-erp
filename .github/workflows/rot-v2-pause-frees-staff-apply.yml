@@ -1,0 +1,67 @@
+name: Strict ROT Checked-In Pause and Paused Staff Reuse (Staging)
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/rot-v2-pause-frees-staff-apply.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify then apply read-only-data ROT workflow policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/am-gps-diag
+            chmod 600 ~/.ssh/am-gps-diag
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -i ~/.ssh/am-gps-diag -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          echo 'ROT_V2_DRY_RUN'
+          test -f deployment/live-fixes/FIX_ROTV2_CHECKIN_PAUSE_FREES_STAFF_20261018/APPLY.py
+          "${SSH[@]}" "$USERNAME@$HOST" 'python3 - --root "$HOME/domains/assammotors.com/assam-erp-staging"' < deployment/live-fixes/FIX_ROTV2_CHECKIN_PAUSE_FREES_STAFF_20261018/APPLY.py
+          echo 'ROT_V2_APPLY_STAGING_WITH_BACKUP'
+          "${SSH[@]}" "$USERNAME@$HOST" 'python3 - --root "$HOME/domains/assammotors.com/assam-erp-staging" --apply' < deployment/live-fixes/FIX_ROTV2_CHECKIN_PAUSE_FREES_STAFF_20261018/APPLY.py
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          php -l app/Services/RotAssignmentService.php
+          php -l app/Services/RotWorkflowService.php
+          grep -Fq 'AM_ROT_PAUSE_FREES_STAFF_V2' app/Services/RotAssignmentService.php
+          grep -Fq 'AM_ROT_PAUSE_FREES_STAFF_V2' app/Services/RotWorkflowService.php
+          grep -Fq -- "->whereIn('status', ['Assigned','Running'])" app/Services/RotAssignmentService.php
+          php artisan route:list --path=api/v1/rot | head -8 || true
+          echo 'ROT_V2_STAGING_SERVICES=VERIFIED'
+          REMOTE
+      - name: Smoke check ERP and Staff login
+        shell: bash
+        run: |
+          set -euo pipefail
+          for page in /erp/login /staff/login; do
+            code=$(curl --silent --show-error --max-time 25 --location -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$page")
+            echo "HEALTH_PAGE=$page HTTP=$code"
+            test "$code" = 200
+          done
+          echo 'ROT_V2_LOGIN_SMOKE=PASS'
+      - if: always()
+        run: rm -f ~/.ssh/am-gps-diag
