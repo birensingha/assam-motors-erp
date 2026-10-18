@@ -32,4 +32,12 @@ foreach($sections as [$name,$from,$to]){
  for($i=$from-1;$i<min(count($ls),$to);$i++)$rows[]=($i+1).':'.rtrim($ls[$i]);
  out('SOURCE',[$name,"$from-$to",$rows]);
 }
+$candidates=\Illuminate\Support\Facades\DB::table('job_cards as j')
+  ->join('job_card_labour as l','l.job_card_id','=','j.id')
+  ->selectRaw('j.id,j.job_no,j.status,j.invoice_id,COUNT(l.id) as rot_lines')
+  ->whereRaw("LOWER(COALESCE(j.status,'')) NOT IN ('closed','invoiced','cancelled')")
+  ->whereNull('j.invoice_id')
+  ->groupBy('j.id','j.job_no','j.status','j.invoice_id')
+  ->orderByDesc('j.id')->limit(8)->get();
+out('EDITABLE_CANDIDATES',$candidates);
 echo "P55_END_READONLY\n";
