@@ -201,12 +201,24 @@ final class StaffDailyRotPerformanceService
         if(!$attendance)$warnings[]='No Check-In / Attendance record on this date.';
         $productive=(int)$rotRows->sum('daily_productive_seconds');
         $pausedSeconds=(int)$rotRows->sum('daily_paused_seconds');
+        // Work completed/started in this selected day, NOT backlog Assigned from
+        // previous days. Pending is reported separately.
+        $workedIds=[];
+        foreach($timeline as $activity){
+            if(($activity['source']??'')==='ROT' &&
+                in_array($activity['action']??'',['START','RESUME','PAUSE','COMPLETE'],true)){
+                $workedIds[(string)$activity['session_id']]=true;
+            }
+        }
+        foreach($rotRows as $row){
+            if($row->daily_productive_seconds>0)$workedIds[(string)$row->id]=true;
+        }
         return [
             'date'=>$date,'staff'=>$staff,'attendance'=>$attendance,
             'summary'=>[
                 'duty_seconds'=>$duty,'productive_seconds'=>$productive,'paused_seconds'=>$pausedSeconds,
                 'unaccounted_seconds'=>max(0,$duty-$productive),
-                'rot_count'=>$rotRows->count(),'pause_count'=>$rotRows->sum('daily_pause_count'),
+                'rot_count'=>count($workedIds),'pause_count'=>$rotRows->sum('daily_pause_count'),
                 'resume_count'=>$rotRows->sum('daily_resume_count'),
                 'auto_pause_count'=>$rotRows->sum('daily_auto_pause_count'),
                 'pending_count'=>$rotRows->filter(fn($r)=>in_array($r->status,['Assigned','Paused'],true))->count(),
