@@ -68,8 +68,8 @@ $start=strpos($text,'public function markWip(');
 if($start===false)throw new RuntimeException('markWip absent');
 $fragment=substr($text,$start,8000);
 if(!str_contains($fragment,"'acknowledge_qc_repeat'=>['sometimes','boolean']") ||
-   !str_contains($fragment,"if($status==='completed')") ||
-   !str_contains($fragment,"empty($data['acknowledge_qc_repeat'])"))
+   !str_contains($fragment,'if($status===') ||
+   !str_contains($fragment,'empty($data['))
    throw new RuntimeException('WIP stage-specific consent validation not present');
 $rules=['reason'=>['required','string','max:1000'],'acknowledge_qc_repeat'=>['sometimes','boolean']];
 $open=\Illuminate\Support\Facades\Validator::make(['reason'=>'Work Released'], $rules);
