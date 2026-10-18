@@ -93,4 +93,44 @@ if(Schema::hasTable('staff_location_settings')){
  p('GEOFENCE_POLICY_NO_LOCATION_VALUES',DB::table('staff_location_settings')
   ->get(['tracking_enabled','geofence_checkin_enabled','radius_m','max_accuracy_m','sample_minutes']));
 }
+$summary=DB::table('staff as s')
+ ->leftJoin('erp_auth_users as u','u.staff_id','=','s.id')
+ ->select('s.id','s.staff_code','s.role','s.attendance_enabled','u.role as login_role')
+ ->orderBy('s.id')->get();
+foreach($summary as $row){
+ $sid=(int)$row->id;
+ $sample=DB::table('staff_location_logs')->where('staff_id',$sid)->orderByDesc('id')->first(['received_at','source','quality','app_version']);
+ $count=DB::table('staff_location_logs')->where('staff_id',$sid)->count();
+ $todayCount=DB::table('staff_location_logs')->where('staff_id',$sid)
+   ->whereDate('received_at',now('Asia/Kolkata')->toDateString())->count();
+ $device=DB::table('staff_devices')->where('staff_id',$sid)->orderByDesc('last_seen_at')
+   ->first(['app_version','location_permission','notification_permission','last_seen_at']);
+ p('STAFF_GPS_COVERAGE',[
+    'staff_code'=>$row->staff_code,'staff_role'=>$row->role,'login_role'=>$row->login_role,
+    'attendance_enabled'=>$row->attendance_enabled,'samples'=>$count,
+    'today_samples'=>$todayCount,'latest_gps_at'=>$sample->received_at??null,
+    'latest_gps_source'=>$sample->source??null,'latest_gps_quality'=>$sample->quality??null,
+    'device_app_version'=>$device->app_version??null,
+    'latest_registered_location_permission'=>$device->location_permission??null,
+    'last_device_seen'=>$device->last_seen_at??null
+ ]);
+}
+foreach(['app/Http/Controllers/Web/HrManagerController.php','app/Http/Controllers/Api/V1/HrApiController.php','app/Http/Controllers/Api/V1/HrOperationsApiController.php'] as $fn){
+ $file="$root/$fn";if(!is_file($file))continue;
+ $ls=file($file);$hits=[];
+ foreach($ls as $i=>$line)if(preg_match('~check.?in|check.?out|geolocation|location|attendance~i',$line))
+  $hits[]=[$i+1,trim(substr($line,0,190))];
+ p('HR_APP_ATTENDANCE_REFERENCES',[basename($fn),array_slice($hits,0,35)]);
+}
+$dirs=[dirname($root).'/public_html',dirname($root).'/staff-app',dirname($root).'/android'];
+foreach($dirs as $dir){
+ if(!is_dir($dir))continue;
+ $found=[];
+ foreach(new DirectoryIterator($dir) as $item){
+  if($item->isDot()||$item->isLink())continue;
+  if(preg_match('~android|staff.?app|gradle|apk|mobile~i',$item->getFilename()))
+    $found[]=[$item->getFilename(),$item->isDir()?'dir':'file'];
+ }
+ p('ANDROID_BUILD_SOURCE_DISCOVERY',[$dir,$found]);
+}
 echo "P59_READONLY_AUDIT_DONE\n";
