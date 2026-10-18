@@ -1,0 +1,82 @@
+name: Inspect Native ERP Live Location Foundation Read Only
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/inspect-native-live-location-foundation-20261018.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Check staging SSH and protected GPS route
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/am-gps-diag
+            chmod 600 ~/.ssh/am-gps-diag
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -i ~/.ssh/am-gps-diag -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          test -f "$ROOT/artisan" && test -f "$SITE/latest.json"
+          cd "$ROOT"
+          echo '=== Live Laravel ERP routes structure ==='
+          ls -l routes
+          for f in routes/web.php routes/erp.php routes/api.php; do test -f "$f" || continue; echo "FILE=$f"; grep -n -E 'staff-location|staffLocation|middleware\(|->group|AdminNativeModuleController|StaffLocation' "$f" | head -95 | cut -c 1-400 || true; done
+          echo '=== Native ERP layout navigation/links ==='
+          find resources/views/layouts -maxdepth 2 -type f -name '*.php' | head -15
+          grep -RniE -C 3 'staff-location|Staff Location|Attendance|Location' resources/views/layouts resources/views/admin/native 2>/dev/null | head -110 | cut -c 1-450 || true
+          echo '=== ERP AUTH and HR access examples ==='
+          sed -n '1,75p' app/Http/Controllers/Web/AdminNativeModuleController.php | cut -c 1-450
+          sed -n '1,130p' app/Support/HrAccess.php 2>/dev/null | cut -c 1-450 || true
+          echo '=== Latest GPS endpoint data query shape (no coordinates) ==='
+          sed -n '104,210p' app/Http/Controllers/Api/V1/AdminMobileController.php | cut -c 1-460
+          echo '=== GPS schema columns and index names only (no user records) ==='
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $schema=\Illuminate\Support\Facades\Schema::class;
+          $db=\Illuminate\Support\Facades\DB::class;
+          foreach(['staff','staff_location_logs','attendance','rot_sessions','staff_location_settings'] as $name) {
+            if(!$schema::hasTable($name))continue;
+            echo 'SCHEMA_'.$name.'='.implode(',',$schema::getColumnListing($name)).PHP_EOL;
+            foreach($db::select('SHOW INDEX FROM `'.$name.'`') as $row)
+              echo 'INDEX_'.$name.'='.($row->Key_name??'?').':'.($row->Column_name??'?').PHP_EOL;
+          }
+          echo 'SOURCE_INSPECTION=PASS'.PHP_EOL;
+          PHP
+          echo 'NATIVE_LIVE_LOCATION_PREFLIGHT=PASS'
+          REMOTE
+      - name: Check unauthenticated GPS API protections
+        run: |
+          set -euo pipefail
+          for path in /api/v1/staff/location /api/v1/admin/mobile/staff-locations; do
+            status="$(curl --silent --show-error --max-time 20 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path" || true)"
+            echo "PATH=$path HTTP=$status (unauthenticated; GET-only)"
+          done
+      - if: always()
+        run: rm -f ~/.ssh/am-gps-diag
