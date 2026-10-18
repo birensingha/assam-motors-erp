@@ -78,4 +78,20 @@ foreach(DB::select('SHOW TABLES') as $v){
  }
 }
 PHP
+echo '=== DASHBOARD MAIN VIEW / WORKFLOW PAUSE HELPERS ==='
+python3 - <<'PY'
+from pathlib import Path
+spec=[('resources/views/dashboard/main.blade.php',1,165),
+('app/Services/RotWorkflowService.php',1,42),
+('app/Services/RotWorkflowService.php',350,510),
+('resources/views/dashboard/rot-performance.blade.php',1,50),
+('app/Models/RotSession.php',1,60),
+('routes/web.php',22,95)]
+for path,st,en in spec:
+ p=Path(path)
+ if not p.exists():continue
+ a=p.read_text(errors='replace').splitlines()
+ print('SECTION',path,st,en,len(a))
+ for i in range(st-1,min(en,len(a))):print(f'{i+1}: {a[i][:260]}')
+PY
 echo 'V648_READONLY=COMPLETE'
