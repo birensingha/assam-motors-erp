@@ -87,11 +87,11 @@ final class AdvancedRotPerformanceReportService
                 $q->where('rs.staff_id',$staffId)
                   ->orWhereExists(function($sub)use($staffId){
                       $sub->selectRaw('1')->from('rot_mechanic_segments as seg')
-                          ->whereColumn('seg.rot_session_id','rs.id')->where('seg.staff_id',$staffId);
+                          ->whereRaw('BINARY seg.rot_session_id = BINARY rs.id')->where('seg.staff_id',$staffId);
                   })
                   ->orWhereExists(function($sub)use($staffId){
                       $sub->selectRaw('1')->from('rot_session_events as evt')
-                          ->whereColumn('evt.session_id','rs.id')->where('evt.staff_id',$staffId);
+                          ->whereRaw('BINARY evt.session_id = BINARY rs.id')->where('evt.staff_id',$staffId);
                   });
             });
         }
@@ -117,7 +117,7 @@ final class AdvancedRotPerformanceReportService
                     })
                     ->orWhereExists(function($ev)use($startSql,$endSql){
                         $ev->selectRaw('1')->from('rot_session_events as de')
-                            ->whereColumn('de.session_id','rs.id')
+                            ->whereRaw('BINARY de.session_id = BINARY rs.id')
                             ->whereBetween('de.event_at',[$startSql,$endSql]);
                     });
             });
