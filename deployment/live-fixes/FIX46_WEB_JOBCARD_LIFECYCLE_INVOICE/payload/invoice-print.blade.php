@@ -10,10 +10,12 @@ body{font:13px Arial;color:#111;margin:22px}.head{display:flex;justify-content:s
 <body>
 @php
 $isCostSummary = request()->query('mode') === 'cost_summary';
+$showDiscount = request()->query('show_discount') === '1';
 @endphp
 <div class="no-print" style="display:flex;gap:8px;margin-bottom:14px">
 <a href="{{ request()->fullUrlWithQuery(['mode'=>'tax']) }}">GST / Tax Invoice</a>
 <a href="{{ request()->fullUrlWithQuery(['mode'=>'cost_summary']) }}">Customer Cost Summary (no GST breakup)</a>
+<a href="{{ request()->fullUrlWithQuery(['show_discount'=>$showDiscount?0:1]) }}">{{ $showDiscount ? 'Hide Discount Details' : 'Show Discount Details' }}</a>
 <button onclick="window.print()">Print / Save PDF</button>
 </div>
 {{-- Existing company logo lives in the primary site's public_html/images/logo.png. --}}
@@ -31,7 +33,7 @@ $isCostSummary = request()->query('mode') === 'cost_summary';
 </div>
 
 <h2>Parts / Materials</h2>
-<table><thead><tr><th>SL No.</th><th>Part</th><th>Code</th><th>HSN</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Dis.</th>@unless($isCostSummary)<th class="num">GST</th>@endunless<th class="num">Amt</th></tr></thead><tbody>
+<table><thead><tr><th>SL No.</th><th>Part</th><th>Code</th><th>HSN</th><th class="num">Qty</th><th class="num">Rate</th>@if($showDiscount)<th class="num">Dis%</th><th class="num">Discount Amount</th>@endif @unless($isCostSummary)<th class="num">GST%</th><th class="num">GST Amount</th>@endunless<th class="num">Amt</th></tr></thead><tbody>
 @forelse($parts as $p)
 @php
   $pr=(array)$p;
@@ -48,7 +50,7 @@ $isCostSummary = request()->query('mode') === 'cost_summary';
 </tbody></table>
 
 <h2>Labour / ROT Charges</h2>
-<table><thead><tr><th>SL No.</th><th>Labour</th><th>ROT</th><th>SAC</th><th class="num">Std Hrs</th><th class="num">Rate</th><th class="num">Dis.</th>@unless($isCostSummary)<th class="num">GST</th>@endunless<th class="num">Amt</th></tr></thead><tbody>
+<table><thead><tr><th>SL No.</th><th>Labour</th><th>ROT</th><th>SAC</th><th class="num">Std Hrs</th><th class="num">Rate</th>@if($showDiscount)<th class="num">Dis%</th><th class="num">Discount Amount</th>@endif @unless($isCostSummary)<th class="num">GST%</th><th class="num">GST Amount</th>@endunless<th class="num">Amt</th></tr></thead><tbody>
 @forelse($labour as $l)
 @php
   $lr=(array)$l;
