@@ -2,7 +2,11 @@ name: P55 Old ERP Style ROT Editing on NEW STAGING
 on:
   push:
     branches: [feature/p55-jc-rot-alteration-20261018]
-    paths: ['.github/workflows/p55-jc-rot-alteration-staging.yml']
+    paths:
+      - '.github/workflows/p55-jc-rot-alteration-staging.yml'
+      - 'deployment/live-fixes/P55_JC_ROT_ALTERATION/QA_P55.mjs'
+      - 'deployment/live-fixes/P55_JC_ROT_ALTERATION/PATCH_P55.php'
+      - 'deployment/live-fixes/P55_JC_ROT_ALTERATION/payload/**'
 permissions:
   contents: read
 concurrency:
