@@ -30,10 +30,10 @@ new={'service':(src/'StaffDailyRotPerformanceService.php').read_bytes(),
 'daily_view':(src/'staff-daily-report.blade.php').read_bytes(),
 'pending_view':(src/'pending-rot-panel.blade.php').read_bytes()}
 for k in ('service','daily_view','pending_view'):
- if prior[k] is not None and prior[k]!=new[k]:
+ if prior[k] is not None and prior[k]!=new[k] and b'V648' not in prior[k]:
   raise RuntimeError('V648 existing target conflict: '+paths[k])
 def replace(raw,anchor,repl,label):
- if anchor not in raw and repl in raw:return raw
+ if repl in raw:return raw
  if raw.count(anchor)!=1:raise RuntimeError('V648 precheck '+label+' count='+str(raw.count(anchor)))
  return raw.replace(anchor,repl,1)
 
