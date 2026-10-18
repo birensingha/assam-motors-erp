@@ -1,0 +1,166 @@
+name: Audit Admin Mobile Staff Location History Endpoint (read-only)
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/inspect-admin-mobile-location-history-20261018.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Inspect exact ERP label and anonymized GPS quality history
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/v6311-quality
+            chmod 600 ~/.ssh/v6311-quality
+            SSH=(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -i ~/.ssh/v6311-quality -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f "$ROOT/artisan"
+          cd "$ROOT"
+          echo "STAGING_DIAG_UTC=$(date -u +%FT%TZ)"
+          echo '=== Label definition in presentation/controller source (line numbers; no user data) ==='
+          grep -RnilE 'GPS WEAK|WEAK/UNVERIFIED|WEAK_ACCURACY|UNVERIFIED|GPS.*STALE|STALE.*GPS' \
+            app/Http resources/views public 2>/dev/null |
+            grep -vE '/vendor/|/storage/|/node_modules/|\.min\.' | head -25 | while IFS= read -r f; do
+              echo "SOURCE_FILE=$f"
+              grep -nE -i -C 3 'GPS WEAK|WEAK/UNVERIFIED|WEAK_ACCURACY|UNVERIFIED|GPS.*STALE|STALE.*GPS' "$f" |
+                head -110 | cut -c 1-240
+            done
+          echo '=== LIVE StaffLocationController code without any actual coordinates ==='
+          f=app/Http/Controllers/Api/V1/StaffLocationController.php
+          test -f "$f"
+          grep -nE -C 3 'NO_DUTY_ATTENDANCE|OUTSIDE_DUTY_WINDOW|WEAK_ACCURACY|TRACKING_DISABLED|isStaff|isAdmin|gps.*consent|accuracy_m|quality|recordedAt|received_at|activeRot|mocked|reject|sample' "$f" |
+            head -210 | cut -c 1-240
+          echo '=== Safe tracking settings only (never actual geofence coordinates) ==='
+          php <<'PHP'
+          <?php
+          try {
+            require 'vendor/autoload.php';
+            $app=require 'bootstrap/app.php';
+            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $db=\Illuminate\Support\Facades\DB::class;
+            $schema=\Illuminate\Support\Facades\Schema::class;
+            $cut = fn(int $h)=>\Carbon\CarbonImmutable::now('Asia/Kolkata')->subHours($h)->toDateTimeString();
+            $maxAccuracy=0;
+            if($schema::hasTable('staff_location_settings')) {
+              $x=$db::table('staff_location_settings')->where('id',1)->first();
+              foreach(['tracking_enabled','max_accuracy_m','radius_m','sample_minutes'] as $k)
+                echo 'SERVER_'.$k.'='.(isset($x->$k)?(string)$x->$k:'NULL').PHP_EOL;
+              $maxAccuracy=max(10,(int)($x->max_accuracy_m??0));
+            }
+            if(!$schema::hasTable('staff_location_logs')) {echo "GPS_LOCATION_TABLE=NOT_PRESENT\n";exit(0);}
+            foreach([1,4,24,72] as $h) {
+              $n=$db::table('staff_location_logs')->where('received_at','>=',$cut($h))->count();
+              echo 'RECEIVED_LAST_'.$h.'H='.$n.PHP_EOL;
+            }
+            foreach($db::table('staff_location_logs')->where('received_at','>=',$cut(24))
+              ->selectRaw("COALESCE(quality,'NULL') as label, COUNT(*) as n")->groupBy('quality')->get() as $r)
+              echo 'QUALITY_24H='.preg_replace('/[^A-Z0-9_]/','',strtoupper((string)$r->label)).':'.$r->n.PHP_EOL;
+            foreach($db::table('staff_location_logs')->where('received_at','>=',$cut(24))
+              ->selectRaw("COALESCE(app_version,'NULL') as label, COUNT(*) as n")->groupBy('app_version')->get() as $r)
+              echo 'APP_VERSION_24H='.preg_replace('/[^A-Z0-9._-]/','',strtoupper((string)$r->label)).':'.$r->n.PHP_EOL;
+            foreach($db::table('staff_location_logs')->where('received_at','>=',$cut(24))
+              ->selectRaw("COALESCE(provider,'NULL') as label, COUNT(*) as n")->groupBy('provider')->get() as $r)
+              echo 'GPS_PROVIDER_24H='.preg_replace('/[^A-Z0-9_]/','',strtoupper((string)$r->label)).':'.$r->n.PHP_EOL;
+            $x=$db::table('staff_location_logs')->where('received_at','>=',$cut(24))
+              ->selectRaw('MIN(accuracy_m) as min_a, AVG(accuracy_m) as avg_a, MAX(accuracy_m) as max_a')->first();
+            echo 'ACCURACY_24H_MIN_METRES='.(isset($x->min_a)?round($x->min_a,1):'none').PHP_EOL;
+            echo 'ACCURACY_24H_AVG_METRES='.(isset($x->avg_a)?round($x->avg_a,1):'none').PHP_EOL;
+            echo 'ACCURACY_24H_MAX_METRES='.(isset($x->max_a)?round($x->max_a,1):'none').PHP_EOL;
+            if($maxAccuracy>0) {
+              echo 'GPS_ACCURACY_THRESHOLD_METRES='.$maxAccuracy.PHP_EOL;
+              echo 'ACCURACY_UNDER_THRESHOLD_24H='.$db::table('staff_location_logs')->where('received_at','>=',$cut(24))->where('accuracy_m','<=',$maxAccuracy)->count().PHP_EOL;
+              echo 'ACCURACY_OVER_THRESHOLD_24H='.$db::table('staff_location_logs')->where('received_at','>=',$cut(24))->where('accuracy_m','>',$maxAccuracy)->count().PHP_EOL;
+            }
+            $latest=$db::table('staff_location_logs')->max('received_at');
+            echo 'LATEST_STORED_COORDINATE_AGE_MIN='.($latest?round((time()-strtotime($latest))/60,1):'none').PHP_EOL;
+            $settings=$schema::hasTable('staff_location_settings')
+              ? $db::table('staff_location_settings')->where('id',1)->first() : null;
+            echo 'GEOFENCE_COORDINATES_CONFIGURED='.
+              ($settings && $settings->latitude!==null && $settings->longitude!==null?'YES':'NO').PHP_EOL;
+            $v6311=$db::table('staff_location_logs')->where('app_version','6.3.11')
+              ->where('received_at','>=',$cut(24))
+              ->get(['accuracy_m','quality','provider','inside_geofence','recorded_at','received_at']);
+            echo 'V6311_24H_RECEIVED='.$v6311->count().PHP_EOL;
+            if($v6311->count()>0) {
+              $acc=$v6311->pluck('accuracy_m')->map(fn($v)=>(float)$v);
+              echo 'V6311_24H_MIN_ACCURACY_METRES='.round($acc->min(),1).PHP_EOL;
+              echo 'V6311_24H_AVG_ACCURACY_METRES='.round($acc->avg(),1).PHP_EOL;
+              echo 'V6311_24H_MAX_ACCURACY_METRES='.round($acc->max(),1).PHP_EOL;
+              echo 'V6311_24H_QUALITY_OK='.$v6311->filter(fn($x)=>$x->quality==='OK')->count().PHP_EOL;
+              echo 'V6311_24H_QUALITY_WEAK='.$v6311->filter(fn($x)=>$x->quality!=='OK')->count().PHP_EOL;
+              echo 'V6311_24H_GEOFENCE_UNVERIFIED='.$v6311->filter(fn($x)=>$x->inside_geofence===null)->count().PHP_EOL;
+              echo 'V6311_24H_PROVIDER_GPS='.$v6311->filter(fn($x)=>strcasecmp((string)$x->provider,'gps')===0)->count().PHP_EOL;
+              echo 'V6311_24H_PROVIDER_NETWORK='.$v6311->filter(fn($x)=>strcasecmp((string)$x->provider,'network')===0)->count().PHP_EOL;
+              echo 'V6311_24H_ACCURACY_OVER_CURRENT_LIMIT='.$v6311->filter(fn($x)=>(float)$x->accuracy_m>$maxAccuracy)->count().PHP_EOL;
+              $receivedLast=$v6311->max('received_at');
+              echo 'V6311_LATEST_RECEIVED_AT_SERVER='.(string)$receivedLast.PHP_EOL;
+            }
+            echo 'VERSION_6311_ANON_DIAGNOSTIC=PASS'.PHP_EOL;
+            echo "GPS_DATABASE_AGGREGATES=PASS\n";
+          } catch(\Throwable $e) {
+            echo 'GPS_DATABASE_AGGREGATES=FAILED_'.get_class($e).PHP_EOL;
+            exit(1);
+          }
+          PHP
+          echo '=== Read-only real geofence distance-vs-accuracy decision locations ==='
+          for f in app/Http/Controllers/Api/V1/StaffLocationController.php app/Http/Controllers/Web/AdminStaffLocationPageController.php app/Http/Controllers/Web/AdminNativeModuleController.php resources/views/admin/native/staff-location.blade.php; do
+            test -f "$f" || continue
+            echo "GPS_AUDIT_FILE=$f"
+            grep -nE -C 2 'inside_geofence|accuracy_m|distance_m|outside_duration|outsideMinutes|outsideSeconds|weak_accuracy|WEAK_ACCURACY|radius_m|confidence|source|recorded_at' "$f" | head -125 | cut -c 1-220 || true
+          done
+          echo '=== Where outside duration is calculated in staging ==='
+          grep -RnlE 'Outside Duration|Outside duration|outsideDuration|outside_duration|10-minute duty coordinate trail' app/Http/Controllers resources/views public/legacy/admin 2>/dev/null | head -14 | while IFS= read -r f; do
+            echo "GPS_DURATION_SOURCE=$f"
+            grep -nE -C 2 'Outside Duration|Outside duration|outsideDuration|outside_duration|10-minute duty coordinate trail' "$f" | head -45 | cut -c 1-220 || true
+          done
+          echo '=== Exact Staff Location admin badge UI logic ==='
+          sed -n '273,291p' public/legacy/admin/admin.js | cut -c 1-260
+          echo '=== Admin staff coordinate history and outside-seconds source ==='
+          sed -n '294,312p' public/legacy/admin/admin.js | cut -c 1-340
+          grep -RniE 'outside_seconds|outsideSeconds|outside_seconds|history.*location|staff-location-history|location/history' routes app/Http app/Services 2>/dev/null | head -85 | cut -c 1-220 || true
+          echo '=== ADMIN MOBILE LOCATION API LIVE IMPLEMENTATION ==='
+          f=app/Http/Controllers/Api/V1/AdminMobileController.php
+          if [ -f "$f" ]; then
+            echo "ADMIN_LOCATION_CONTROLLER=$f"
+            grep -nE -C 8 'function locations\(|function staffLocations\(|function.*History\(' "$f" | head -110 | cut -c 1-270 || true
+            grep -nE 'function locations\(|function staffLocations\(|function.*History\(' "$f" | while IFS=: read -r n _; do
+              end=$((n+82))
+              sed -n "${n},${end}p" "$f" | head -85 | cut -c 1-270
+            done
+          fi
+          echo '=== GPS HISTORY EXISTING BACKEND ROUTES (NO DATA) ==='
+          grep -nE 'admin/mobile/staff-locations|staff-locations|staff-location.php|location.*history' routes/api.php routes/web.php | head -80 | cut -c 1-250 || true
+          echo '=== LEGACY BACKEND LOCATION HISTORY LOGIC SOURCE ==='
+          find public -name 'staff-location.php' -print | head -10
+          find public -name 'staff-location.php' -print | head -2 | while IFS= read -r f; do
+            grep -nE -C 6 'outside_seconds|action.*history|accuracy|inside_geofence|quality' "$f" | head -150 | cut -c 1-240 || true
+          done
+          echo 'GPS_SOURCE_AND_METRICS_READ_ONLY=COMPLETE'
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/v6311-quality
