@@ -2,7 +2,9 @@ name: P53 Approved Dual Invoice Printing on STAGING
 on:
   push:
     branches: [feature/p53-dual-invoice-print-20261018]
-    paths: ['.github/workflows/p53-dual-invoice-print-staging.yml']
+    paths:
+      - '.github/workflows/p53-dual-invoice-print-staging.yml'
+      - 'deployment/live-fixes/P53_APPROVED_DUAL_INVOICE/QA_P53.mjs'
 permissions:
   contents: read
 concurrency:
