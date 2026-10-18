@@ -2,7 +2,7 @@ name: Staging JC item-wise taxable and GST display only
 on:
   push:
     branches: [main]
-    paths: [".github/workflows/staging-jc-itemwise-pricing-display.yml"]
+    paths: [".github/workflows/staging-jc-itemwise-pricing-display.yml", "deployment/live-fixes/FIX_JC_ITEMWISE_DISPLAY_20261018/APPLY.py"]
 permissions: {contents: read}
 concurrency:
   group: assam-motors-staging-control
@@ -61,7 +61,7 @@ jobs:
           python3 - "$ROOT" <<'PY'
           from pathlib import Path
           import sys
-          s=(Path(sys.argv[1])/'resources/views/job-cards/show.blade.php').read_text()
+          s=(Path(sys.argv[1])/'resources/views/job-cards/show.blade.php').read_text(encoding='utf-8',errors='surrogateescape')
           assert 'AM_JC_ITEMWISE_BILLING_READONLY_V1' in s
           assert s.count('<th>Taxable ₹</th>')>=1
           assert s.count('<th>GST ₹</th>')>=1
