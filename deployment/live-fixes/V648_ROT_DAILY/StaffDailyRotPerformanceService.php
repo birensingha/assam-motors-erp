@@ -174,7 +174,7 @@ final class StaffDailyRotPerformanceService
             $rotRows=DB::table('rot_sessions as rs')
                 ->leftJoin('job_cards as jc','jc.id','=','rs.job_card_id')
                 ->whereIn('rs.id',array_keys($rotIds))
-                ->select('rs.id','rs.rot_code','rs.rot_desc','rs.job_card_no','rs.staff_id','rs.status',
+                ->select('rs.id','rs.rot_code','rs.rot_desc','rs.job_card_no','rs.job_card_id','rs.staff_id','rs.status',
                     'rs.std_hours','rs.total_seconds','rs.first_start_at','rs.completed_at',
                     'jc.vehicle_reg_no','jc.status as jc_status')
                 ->orderBy('rs.job_card_no')->get()
