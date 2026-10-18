@@ -1,0 +1,63 @@
+name: v6.3.13 Investigate 503 Laravel App Update Route and Feed
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/v6313-app-update503-read-only-diagnostic.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Check staging SSH and protected GPS route
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/am-gps-diag
+            chmod 600 ~/.ssh/am-gps-diag
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -i ~/.ssh/am-gps-diag -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          test -f "$ROOT/artisan" && test -f "$SITE/latest.json"
+          cd "$ROOT"
+          echo '=== current staff app-update route ==='
+          php artisan route:list --path=app-update | head -20 || true
+          grep -RniE "function (.*appUpdate|appUpdate|app-update|Invalid update metadata|staff-app/latest.json)" app/Http/Controllers routes/api.php 2>/dev/null | head -65 | cut -c 1-260 || true
+          echo '=== update manifest without secrets ==='
+          SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          php -r '$f=$argv[1];$d=json_decode(file_get_contents($f),true,512,JSON_THROW_ON_ERROR);foreach(["package_id","version_name","version_code","apk_file","channel"] as $k){echo "FEED_".$k."=".($d[$k]??"missing").PHP_EOL;}echo "FEED_SHA256_FORMAT=".(preg_match("/^[a-f0-9]{64}$/i",$d["sha256"]??"")?"VALID":"INVALID").PHP_EOL;' "$SITE/latest.json"
+          echo '=== updater controller file and code lines (no credentials) ==='
+          for f in $(grep -RilE 'staff-app/latest.json|app-update' app/Http/Controllers 2>/dev/null | head -9); do echo "UPDATE_SOURCE=$f"; grep -nE -C 4 'latest.json|version_code|503|app-update|updateAvailable|download_url|sha256' "$f" | head -120 | cut -c 1-260; done
+          echo 'UPDATER_503_READ_ONLY_DIAGNOSTIC=PASS'
+          REMOTE
+      - name: Confirm app-update unauthenticated route is protected
+        run: |
+          set -euo pipefail
+          for path in /api/v1/app-update /legacy/api/staff-app-update.php; do
+            status="$(curl --silent --show-error --max-time 20 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path" || true)"
+            echo "PATH=$path HTTP=$status (unauthenticated; GET-only)"
+          done
+      - if: always()
+        run: rm -f ~/.ssh/am-gps-diag
