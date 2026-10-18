@@ -169,7 +169,7 @@ final class AdvancedRotPerformanceReportService
                     'note'=>trim((string)($pause['note']??'')),
                 ];
             }
-            $history=[];$pauseCount=0;$resumeCount=0;
+            $history=[];$pauseCount=0;$resumeCount=0;$staffActions=[];
             $periodSeconds=0;$lastStart=null;$runningOwner=null;
             $periodFrom=$fromStamp??0;
             $periodTo=($toStamp??$now->getTimestamp());
@@ -198,6 +198,20 @@ final class AdvancedRotPerformanceReportService
                     if(!$reason)$reason='Not recorded';
                 }
                 $actor=$staffMap->get((int)$e->staff_id);
+                $who=(int)($e->staff_id??0);
+                if(!isset($staffActions[$who])){
+                    $staffActions[$who]=[
+                        'name'=>$actor->name??('Staff ID '.$who),
+                        'code'=>$actor->staff_code??'—','start'=>0,'pause'=>0,
+                        'resume'=>0,'complete'=>0,'reasons'=>[],
+                    ];
+                }
+                if(isset($staffActions[$who][$action])){
+                    $staffActions[$who][$action]++;
+                }
+                if($action==='pause' && $reason!==''){
+                    $staffActions[$who]['reasons'][]=$reason;
+                }
                 $history[]=['time'=>$this->pretty($e->event_at),'date'=>$e->event_at,
                     'timestamp'=>$stamp,'action'=>strtoupper($action),
                     'staff_name'=>$actor->name??('Staff ID '.(int)$e->staff_id),
@@ -239,7 +253,12 @@ final class AdvancedRotPerformanceReportService
             $selectedWork=$staffId ? (int)array_sum(array_map(
                 fn($x)=>in_array($x['code'],[$staffMap->get($staffId)->staff_code??''],true)?$x['seconds']:0,
                 $staffWork)) : $fullActual;
-            $spanDays=$begin?intdiv(max(0,$end-$begin),86400)+1:0;
+            // Civil calendar days (IST), not blocks of 24h. Unstarted Assigned
+            // ROTs must show how many days they have remained pending.
+            $dayOrigin=$begin??$this->ts($rot->created_at);
+            $spanDays=$dayOrigin?((int)CarbonImmutable::createFromTimestamp($dayOrigin,self::TZ)
+                ->startOfDay()->diffInDays(CarbonImmutable::createFromTimestamp($end,self::TZ)
+                    ->startOfDay())+1):0;
             $line=[
                 'id'=>$id,'job_card_id'=>(int)$rot->job_card_id,
                 'job_no'=>$rot->job_card_no,'rot_code'=>$rot->rot_code,
@@ -261,6 +280,7 @@ final class AdvancedRotPerformanceReportService
                 'end'=>$this->pretty($rot->completed_at?:$rot->end_time),
                 'days_since_start'=>$spanDays,
                 'history'=>$history,'pause_records'=>$pauseRecords,'staff_segments'=>$staffWork,
+                'staff_activity'=>array_values($staffActions),
                 'jc_opened'=>$this->pretty($rot->jc_opened_at),
                 'vehicle_in'=>$this->pretty($rot->vehicle_inward_at),
                 'jc_closed'=>$this->pretty($rot->jc_closed_at),
