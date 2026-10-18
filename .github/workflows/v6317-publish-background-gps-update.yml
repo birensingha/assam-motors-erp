@@ -1,0 +1,154 @@
+name: Publish Staff v6.3.17 consented background GPS reliability to in-app updater
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/v6317-publish-background-gps-update.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Verify staging SSH and publish checksum-locked original-signed APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/v6317-publish
+            chmod 600 ~/.ssh/v6317-publish
+            SSH=(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=15 -o ConnectionAttempts=4 -i ~/.ssh/v6317-publish -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=15 -o ConnectionAttempts=4 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          APK_NAME="Assam-Motors-Staff-v6.3.17-BACKGROUND-GPS-RELIABILITY-SIGNED-QA.apk"
+          APK="$SITE/private/$APK_NAME"
+          MANIFEST="$SITE/latest.json"
+          API="$SITE/../legacy/api/staff-app-update.php"
+          DOWNLOAD_API="$SITE/../legacy/api/staff-app-download.php"
+          test -f "$MANIFEST" && test -s "$APK" && test -f "$API" && test -f "$DOWNLOAD_API"
+          php -l "$API"
+          php -l "$DOWNLOAD_API"
+          test "$(wc -c < "$APK")" = 3349236
+          echo "2040313e673927a4f93b54f8690f7f61bbbf1bc7c090025991b30769a3b1194f  $APK" | sha256sum -c -
+          grep -Fq "staff-app-download.php" "$API"
+          grep -Fq "latest.json" "$API"
+          grep -Fq "private" "$DOWNLOAD_API"
+          cd "$SITE"
+          python3 - <<'PY'
+          from pathlib import Path
+          from datetime import datetime, timezone
+          import os, json, tempfile, hashlib
+          root=Path.cwd()
+          manifest=root/'latest.json'
+          expected='2040313e673927a4f93b54f8690f7f61bbbf1bc7c090025991b30769a3b1194f'
+          filename='Assam-Motors-Staff-v6.3.17-BACKGROUND-GPS-RELIABILITY-SIGNED-QA.apk'
+          apk=root/'private'/filename
+          original=manifest.read_bytes()
+          data=json.loads(original)
+          assert data.get('package_id')=='com.assammotors.staff','Refusing wrong application package'
+          assert data.get('licence_file'),'Refusing missing old-client licensing metadata'
+          version=int(data.get('version_code',0))
+          assert version in (60316,60317),f'Unexpected published version {version}; release refused'
+          assert apk.stat().st_size==3349236,'APK size mismatch'
+          assert hashlib.sha256(apk.read_bytes()).hexdigest()==expected,'APK SHA-256 mismatch'
+          if version==60317:
+              assert data.get('version_name')=='6.3.16', 'Published name conflict'
+              assert data.get('apk_file')==filename and data.get('sha256')==expected,'Published release conflict'
+              print('STAFF_V6317_OTA=ALREADY_PUBLISHED_IDENTICAL')
+          else:
+              stamp=datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+              backup=root/('latest.json.backup-before-v6317-'+stamp)
+              backup.write_bytes(original)
+              backup.chmod(0o600)
+              notes='ASSAM-MOTORS-STAFF-v6.3.17-BACKGROUND-GPS-RELIABILITY.txt'
+              (root/notes).write_text(
+                'ASSAM MOTORS STAFF APP v6.3.17 (build 60317)\n'
+                'Fresh GPS request every 15 seconds, Network every 30 seconds; actual upload target remains 60 seconds.\n'
+                'Fix old precise GPS location blocking newer Network fixes for two minutes.\n'
+                'After APK upgrade/reboot, restart visible consented GPS service when Android allows.\n'
+                'Only logged-in and explicitly consenting accounts; Logout and revoked permissions stop tracking.\n'
+                'Original Assam Motors signing certificate permits update without uninstalling.\n'
+              )
+              data.update({
+                'version_code':60317,
+                'version_name':'6.3.16',
+                'apk_file':filename,
+                'sha256':expected,
+                'release_notes_file':notes,
+                'published_at':datetime.now(timezone.utc).isoformat(timespec='seconds').replace('+00:00','Z')
+              })
+              fd,tmp=tempfile.mkstemp(prefix='.latest-v6317-',dir=root)
+              try:
+                with os.fdopen(fd,'w') as fh:
+                  json.dump(data,fh,indent=2)
+                  fh.write('\n')
+                  fh.flush()
+                  os.fsync(fh.fileno())
+                os.chmod(tmp,0o644)
+                os.replace(tmp,manifest)
+              finally:
+                if os.path.exists(tmp):os.unlink(tmp)
+              print('STAFF_UPDATE_MANIFEST_BACKUP='+backup.name)
+              print('STAFF_V6317_OTA=PUBLISHED')
+          verify=json.loads(manifest.read_text())
+          assert verify.get('package_id')=='com.assammotors.staff'
+          assert int(verify.get('version_code',0))==60317
+          assert verify.get('version_name')=='6.3.16'
+          assert verify.get('apk_file')==filename
+          assert verify.get('sha256')==expected
+          assert verify.get('licence_file')
+          print('STAFF_AUTO_UPDATE_VERSION=60317')
+          print('STAFF_AUTO_UPDATE_SHA256=VERIFIED')
+          print('OLD_APP_IN_APP_UPDATE_MANIFEST=READY')
+          PY
+          # Close the exact-hash upload endpoint after the protected file
+          # and manifest have been verified. Never remove an unknown receiver.
+          RECEIVER="$SITE/v6317-upload-once.php"
+          if [ -f "$RECEIVER" ]; then
+            grep -Fq '2040313e673927a4f93b54f8690f7f61bbbf1bc7c090025991b30769a3b1194f' "$RECEIVER"
+            rm -f "$RECEIVER"
+            echo "V6317_TEMP_UPLOAD_RECEIVER=REMOVED"
+          fi
+          REMOTE
+      - name: Verify existing HTTPS update endpoints remain protected and online
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in /erp/login /staff/login; do
+            status=$(curl --silent --show-error --location --max-time 30 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")
+            echo "PUBLIC_LOGIN_PATH=$path HTTP=$status"
+            test "$status" = 200
+          done
+          for endpoint in 'staff-app-update.php?platform=android&version_code=60316' 'staff-app-download.php?file=Assam-Motors-Staff-v6.3.17-BACKGROUND-GPS-RELIABILITY-SIGNED-QA.apk'; do
+            status=$(curl --silent --show-error --max-time 30 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com/legacy/api/$endpoint")
+            echo "PROTECTED_OTA_ENDPOINT_HTTP=$status"
+            test "$status" = 401 || test "$status" = 403
+          done
+          upload_status=$(curl --silent --show-error --max-time 30 -o /dev/null -w '%{http_code}' 'https://staging.assammotors.com/staff-app/v6317-upload-once.php')
+          echo "V6317_RECEIVER_POST_PUBLISH_HTTP=$upload_status"
+          test "$upload_status" = 404 || test "$upload_status" = 410
+          native_status=$(curl --silent --show-error --max-time 30 -o /dev/null -w '%{http_code}' 'https://staging.assammotors.com/api/v1/app-update?platform=android&version_code=60316')
+          echo "PROTECTED_NATIVE_APP_UPDATE_ENDPOINT_HTTP=$native_status"
+          test "$native_status" = 401 || test "$native_status" = 403
+          echo 'SIGNED_OLD_APP_UPDATE_PUBLICATION_SERVER_CHECK=PASS'
+      - if: always()
+        run: rm -f ~/.ssh/v6317-publish
