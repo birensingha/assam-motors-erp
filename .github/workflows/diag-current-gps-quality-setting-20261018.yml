@@ -1,0 +1,95 @@
+name: Diagnose live Max GPS Accuracy and Weak badge mismatch (read-only)
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/diag-current-gps-quality-setting-20261018.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Check staging SSH and protected GPS route
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/am-gps-diag
+            chmod 600 ~/.ssh/am-gps-diag
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -i ~/.ssh/am-gps-diag -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          test -f "$ROOT/artisan" && test -f "$SITE/latest.json"
+          cd "$ROOT"
+          echo '=== Date and exact Laravel GPS database settings ==='
+          TZ=Asia/Kolkata date '+SERVER_NOW_IST=%Y-%m-%d %H:%M:%S %z'
+          php <<'PHP'
+          <?php
+          try {
+              require 'vendor/autoload.php';
+              $app=require 'bootstrap/app.php';
+              $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+              $db=\Illuminate\Support\Facades\DB::class;
+              $st=$db::table('staff_location_settings')->where('id',1)->first();
+              if(!$st) {echo "ERROR_MISSING_GPS_SETTINGS\n";exit(2);}
+              foreach(['tracking_enabled','sample_minutes','max_accuracy_m','radius_m'] as $k)
+                  echo 'GPS_SETTING_'.strtoupper($k).'='.($st->$k??'NONE').PHP_EOL;
+              foreach(['AM5077','AM7887'] as $staffCode){
+                  $staff=$db::table('staff')->where('staff_code',$staffCode)->first();
+                  echo "STAFF_CODE=$staffCode".PHP_EOL;
+                  if(!$staff){echo "STAFF_NOT_FOUND=YES\n";continue;}
+                  $last=$db::table('staff_location_logs')->where('staff_id',$staff->id)->orderByDesc('received_at')->limit(4)->get([
+                      'received_at','recorded_at','accuracy_m','provider','quality','distance_m','inside_geofence','app_version'
+                  ]);
+                  foreach($last as $l){
+                      echo 'RECORD received='.(string)$l->received_at.
+                      ' recorded='.(string)$l->recorded_at.
+                      ' accuracy='.($l->accuracy_m??'NULL').
+                      ' accuracy_over_current_threshold='.(isset($l->accuracy_m) && (float)$l->accuracy_m>(float)$st->max_accuracy_m?'YES':'NO').
+                      ' quality_stored='.(string)$l->quality.
+                      ' provider='.(string)$l->provider.
+                      ' distance_m='.(string)$l->distance_m.
+                      ' inside_flag='.(is_null($l->inside_geofence)?'UNVERIFIED':(int)$l->inside_geofence).
+                      ' app_version='.(string)$l->app_version.PHP_EOL;
+                  }
+              }
+              echo "GPS_LIVE_DB_DIAG=PASS\n";
+          } catch(\Throwable $e){echo 'GPS_DB_DIAG_ERROR='.get_class($e).PHP_EOL;exit(1);}
+          PHP
+          echo '=== Laravel GPS quality classification ==='
+          grep -nE -C 3 "max_accuracy_m|WEAK_ACCURACY|inside_geofence|radius_m" app/Http/Controllers/Api/V1/StaffLocationController.php | head -100 | cut -c 1-220 || true
+          echo '=== Staging JavaScript location dashboard badge ==='
+          JS="$HOME/domains/assammotors.com/public_html/staging/legacy/admin/admin.js"
+          grep -nE -C 2 "const stale=|const weak=|const cls=|const badge=" "$JS" | head -30 | cut -c 1-360 || true
+          echo 'GPS_READ_ONLY_DIAG_COMPLETE=PASS'
+          REMOTE
+      - name: Check unauthenticated GPS API protections
+        run: |
+          set -euo pipefail
+          for path in /api/v1/staff/location /api/v1/admin/mobile/staff-locations; do
+            status="$(curl --silent --show-error --max-time 20 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path" || true)"
+            echo "PATH=$path HTTP=$status (unauthenticated; GET-only)"
+          done
+      - if: always()
+        run: rm -f ~/.ssh/am-gps-diag
