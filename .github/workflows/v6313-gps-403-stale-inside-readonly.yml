@@ -1,0 +1,86 @@
+name: Diagnose Staff v6.3.13 GPS 403 Sticky Stop and Stale Inside Label
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/v6313-gps-403-stale-inside-readonly.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Check staging SSH and protected GPS route
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/am-gps-diag
+            chmod 600 ~/.ssh/am-gps-diag
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -i ~/.ssh/am-gps-diag -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          test -f "$ROOT/artisan" && test -f "$SITE/latest.json"
+          cd "$ROOT"
+          echo '=== STAGING CLOCK UTC AND IST ==='
+          date -u +%FT%TZ
+          TZ=Asia/Kolkata date +%FT%T%z
+          echo '=== LIVE GPS CONTROLLER exact branches and permission guard ==='
+          sed -n '1,240p' app/Http/Controllers/Api/V1/StaffLocationController.php | cut -c 1-350
+          echo '=== Admin staff location status decision logic ==='
+          grep -Rnl -E 'GPS WEAK / UNVERIFIED|GPS WEAK/UNVERIFIED|GPS WEAK|STALE' public/legacy/admin resources/views 2>/dev/null | head -18 | while read -r f; do
+            echo "SOURCE_NAME=$f"
+            grep -nE -C 7 'GPS WEAK|GPS_WEAK|UNVERIFIED|STALE' "$f" | head -130 | cut -c 1-360
+          done
+          echo '=== Recent per-version GPS acceptance aggregate (no staff, coordinates or device IDs) ==='
+          php <<'PHP'
+          <?php
+          try {
+            require 'vendor/autoload.php'; $app=require 'bootstrap/app.php';
+            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $db=\Illuminate\Support\Facades\DB::class; $sc=\Illuminate\Support\Facades\Schema::class;
+            $now=\Carbon\CarbonImmutable::now('Asia/Kolkata');
+            foreach ([30,90,240] as $minutes) {
+              $since=$now->subMinutes($minutes)->toDateTimeString();
+              $q=$db::table('staff_location_logs')->where('received_at','>=',$since);
+              echo "GPS_LAST_{$minutes}M_TOTAL=".$q->count().PHP_EOL;
+              foreach ($db::table('staff_location_logs')->where('received_at','>=',$since)->selectRaw("COALESCE(app_version,'none') as version, COUNT(*) as count")->groupBy('app_version')->get() as $r)
+                echo 'VERSION_'.preg_replace('/[^0-9._-]/','',(string)$r->version).'_LAST_'.$minutes.'M='.$r->count.PHP_EOL;
+              foreach ($db::table('staff_location_logs')->where('received_at','>=',$since)->selectRaw("COALESCE(quality,'none') as quality, COUNT(*) as count")->groupBy('quality')->get() as $r)
+                echo 'QUALITY_'.preg_replace('/[^A-Za-z0-9_]/','',(string)$r->quality).'_LAST_'.$minutes.'M='.$r->count.PHP_EOL;
+            }
+            echo 'GPS_AGGREGATE_DIAG_COMPLETE=YES'.PHP_EOL;
+          }catch(\Throwable $e){echo 'GPS_AGGREGATE_DIAG_ERROR='.get_class($e).PHP_EOL;}
+          PHP
+          echo '=== Source checks done; no records altered ==='
+          echo 'V6313_403_DIAG_READ_ONLY=COMPLETE'
+          REMOTE
+      - name: Check unauthenticated GPS API protections
+        run: |
+          set -euo pipefail
+          for path in /api/v1/staff/location /api/v1/admin/mobile/staff-locations; do
+            status="$(curl --silent --show-error --max-time 20 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path" || true)"
+            echo "PATH=$path HTTP=$status (unauthenticated; GET-only)"
+          done
+      - if: always()
+        run: rm -f ~/.ssh/am-gps-diag
