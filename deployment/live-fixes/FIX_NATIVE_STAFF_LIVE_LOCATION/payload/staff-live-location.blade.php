@@ -408,6 +408,8 @@ function selectStaff(id,focus){
  if(!people.has(id))return;
  if(selected!==id)clearHistory();
  selected=id;soloMode=true;followSelected=true;lastFollowedFixId=null;hasFit=false;
+ $('amStaffLive').classList.remove('sl-focus-map');
+ const v2Focus=$('slV2Focus');if(v2Focus){v2Focus.textContent='⛶ Focus Map';v2Focus.setAttribute('aria-pressed','false');}
  $('amStaffLive').classList.add('solo');
  $('slFollow').hidden=false;$('slFollow').setAttribute('aria-pressed','true');
  $('slFollow').textContent='◎ Follow ON';
@@ -422,7 +424,8 @@ function selectStaff(id,focus){
 }
 function showAllStaff(){
  soloMode=false;selected=null;followSelected=false;lastFollowedFixId=null;hasFit=false;
- clearHistory();$('amStaffLive').classList.remove('solo');$('slFollow').hidden=true;
+ clearHistory();$('amStaffLive').classList.remove('solo','sl-focus-map');$('slFollow').hidden=true;
+ const v2Focus=$('slV2Focus');if(v2Focus){v2Focus.textContent='⛶ Focus Map';v2Focus.setAttribute('aria-pressed','false');}
  setText('slMapTitle','Real Location Map');
  setText('slMapSubtitle','GPS positions, not simulated movements');
  drawStaff();renderMap();
