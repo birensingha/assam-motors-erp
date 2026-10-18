@@ -86,10 +86,11 @@ final class AdminMoneyReceiptController extends Controller
         $this->tables();
         $customers=$this->customerList();
         $invoices=$this->invoiceList();
+        $jobCards=DB::table('job_cards')->select('id','job_no','customer_id','vehicle_reg_no')->orderByDesc('id')->limit(500)->get();
         $selectedCustomer=(int)$request->query('customer',0);
         $selectedInvoice=(int)$request->query('invoice',0);
         $requestKey=(string)Str::uuid();
-        return view('money-receipts.create',compact('customers','invoices','selectedCustomer','selectedInvoice','requestKey'));
+        return view('money-receipts.create',compact('customers','invoices','jobCards','selectedCustomer','selectedInvoice','requestKey'));
     }
 
     private function amount(string|int|float $value): int
