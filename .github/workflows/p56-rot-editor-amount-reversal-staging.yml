@@ -1,0 +1,160 @@
+name: P56 ROT Editor inside Amount/GST and JC Reversal Controls — STAGING
+on:
+  push:
+    branches: [feature/p56-rot-in-amount-editor-finance-reversal-20261018]
+    paths:
+      - '.github/workflows/p56-rot-editor-amount-reversal-staging.yml'
+      - 'deployment/live-fixes/P56_ROT_AMOUNT_REVERSAL/PATCH_P56.php'
+      - 'deployment/live-fixes/P56_ROT_AMOUNT_REVERSAL/QA_P56.mjs'
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+      STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL || 'https://staging.assammotors.com' }}
+      STAGING_ADMIN_LOGIN: ${{ secrets.STAGING_ADMIN_LOGIN }}
+      STAGING_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint P56 source and browser QA
+        run: |
+          set -euo pipefail
+          php -l deployment/live-fixes/P56_ROT_AMOUNT_REVERSAL/PATCH_P56.php
+          node --check deployment/live-fixes/P56_ROT_AMOUNT_REVERSAL/QA_P56.mjs
+          echo 'P56_LOCAL_QA_PASS'
+      - name: Setup SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Guarded source installation
+        id: install
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            SSH=(ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          TEMP="/home/$SSH_USER/p56-amount-$GITHUB_RUN_ID"
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "mkdir -p '$TEMP'"
+          "${SCP[@]}" deployment/live-fixes/P56_ROT_AMOUNT_REVERSAL/PATCH_P56.php "$SSH_USER@$SSH_HOST:$TEMP/patch.php"
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "APP_ROOT='$APP_ROOT' TEMP='$TEMP' RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$APP_ROOT"
+          test -f "$ROOT/artisan"
+          BACKUP="$(dirname "$ROOT")/ASSAM_P56_AMOUNT_REVERSAL_BACKUP_$RUN_ID"
+          test ! -e "$BACKUP"; mkdir -p "$BACKUP"
+          files=(
+            resources/views/job-cards/edit.blade.php
+            resources/views/workshop-controls/job-amounts.blade.php
+            app/Http/Controllers/Web/AdminWorkshopControlPageController.php
+            app/Http/Controllers/Web/JobCardRotAlterationController.php
+            resources/views/job-cards/rot-alteration.blade.php
+            resources/views/job-cards/unwind.blade.php
+          )
+          for file in "${files[@]}";do
+            test -f "$ROOT/$file"
+            cp -p "$ROOT/$file" "$BACKUP/$(printf '%s' "$file" | tr / _)"
+          done
+          rollback(){
+            echo 'P56_SOURCE_ROLLBACK_BEGIN'
+            for file in "${files[@]}";do
+              cp -p "$BACKUP/$(printf '%s' "$file" | tr / _)" "$ROOT/$file" || true
+            done
+            (cd "$ROOT" && php artisan view:clear && php artisan view:cache) >/dev/null 2>&1 || true
+            echo 'P56_SOURCE_ROLLBACK_FINISHED'
+          }
+          trap rollback ERR
+          php "$TEMP/patch.php" check "$ROOT"
+          php "$TEMP/patch.php" apply "$ROOT"
+          cd "$ROOT"
+          php artisan view:clear
+          php artisan view:cache
+          php -l app/Http/Controllers/Web/JobCardRotAlterationController.php
+          grep -q 'P56_ROT_EDITOR_IN_AMOUNT' resources/views/workshop-controls/job-amounts.blade.php
+          grep -q 'P56_FINANCE_REVERSAL_CONTROL_CENTRE' resources/views/job-cards/unwind.blade.php
+          if grep -q 'P55_ROT_ALTERATION_INCLUDE' resources/views/job-cards/edit.blade.php;then
+            echo 'P56_NO_GO_DUPLICATE_OLD_EDITOR'
+            exit 1
+          fi
+          echo 'P56_STAGING_SOURCE_BLADE_PRECHECK_PASS'
+          echo "P56_SAFE_BACKUP=$BACKUP"
+          trap - ERR
+          rm -rf "$TEMP"
+          REMOTE
+      - uses: actions/setup-node@v4
+        if: steps.install.outcome == 'success'
+        with:
+          node-version: '22'
+      - name: Install Chromium
+        if: steps.install.outcome == 'success'
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Test WIP and Invoiced pages (GET only)
+        id: qa
+        if: steps.install.outcome == 'success'
+        run: node deployment/live-fixes/P56_ROT_AMOUNT_REVERSAL/QA_P56.mjs
+      - name: Revert source if browser QA does not pass
+        if: failure() && steps.install.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            SSH=(ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "APP_ROOT='$APP_ROOT' RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$APP_ROOT"
+          BACKUP="$(dirname "$ROOT")/ASSAM_P56_AMOUNT_REVERSAL_BACKUP_$RUN_ID"
+          files=(
+            resources/views/job-cards/edit.blade.php
+            resources/views/workshop-controls/job-amounts.blade.php
+            app/Http/Controllers/Web/AdminWorkshopControlPageController.php
+            app/Http/Controllers/Web/JobCardRotAlterationController.php
+            resources/views/job-cards/rot-alteration.blade.php
+            resources/views/job-cards/unwind.blade.php
+          )
+          for file in "${files[@]}";do
+            cp -p "$BACKUP/$(printf '%s' "$file" | tr / _)" "$ROOT/$file"
+          done
+          cd "$ROOT"
+          php artisan view:clear
+          php artisan view:cache
+          echo 'P56_BROWSER_QA_FAILURE_RESTORE_PASS'
+          REMOTE
+      - name: Report accurately
+        if: always()
+        run: |
+          echo "P56 source install: ${{ steps.install.outcome }}"
+          echo "P56 browser QA: ${{ steps.qa.outcome }}"
+          echo 'No invoice/credit note/customer ledger/receipt or Job Card record was altered by P56 deployment.'
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
