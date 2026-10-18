@@ -1,0 +1,73 @@
+name: Deploy independent GPS reporting and strict Check-In geofence accuracy (Staging)
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/v6315-apply-separate-reporting-checkin-gps.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy two independent GPS limits with dry-run, private backups, and read-only acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/am-gps-diag
+            chmod 600 ~/.ssh/am-gps-diag
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -i ~/.ssh/am-gps-diag -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          echo 'SEPARATE_GPS_POLICY_DRY_RUN'
+          test -s deployment/live-fixes/FIX_V6315_SEPARATE_GPS_QUALITY/apply.py
+          test -s deployment/live-fixes/FIX_V6315_SEPARATE_GPS_QUALITY/verify.php
+          "${SSH[@]}" "$USERNAME@$HOST" 'python3 - --root "$HOME/domains/assammotors.com/assam-erp-staging"' < deployment/live-fixes/FIX_V6315_SEPARATE_GPS_QUALITY/apply.py
+          echo 'SEPARATE_GPS_POLICY_APPLY_WITH_BACKUP'
+          "${SSH[@]}" "$USERNAME@$HOST" 'python3 - --root "$HOME/domains/assammotors.com/assam-erp-staging" --apply' < deployment/live-fixes/FIX_V6315_SEPARATE_GPS_QUALITY/apply.py
+          echo 'SEPARATE_GPS_POLICY_LIVE_READ_ONLY_ACCEPTANCE_TESTS'
+          "${SSH[@]}" "$USERNAME@$HOST" 'cd "$HOME/domains/assammotors.com/assam-erp-staging" && php' < deployment/live-fixes/FIX_V6315_SEPARATE_GPS_QUALITY/verify.php
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          for f in app/Services/GeoFenceService.php app/Services/AttendanceService.php app/Http/Controllers/Api/V1/RotWorkflowController.php app/Http/Controllers/Web/AdminNativeModuleController.php "$HOME/domains/assammotors.com/public_html/staging/legacy/admin/staff-location.php"; do php -l "$f"; done
+          grep -Fq 'true // Strict Check-In: independent accuracy setting' app/Services/AttendanceService.php
+          grep -Fq 'true // Strict workshop work authorization' app/Http/Controllers/Api/V1/RotWorkflowController.php
+          grep -Fq 'GPS Reporting Accuracy (metres)' "$HOME/domains/assammotors.com/public_html/staging/legacy/admin/admin.html"
+          grep -Fq 'Check-In / ROT GPS Accuracy (metres)' "$HOME/domains/assammotors.com/public_html/staging/legacy/admin/admin.html"
+          php artisan route:list --path=staff/location | head -12
+          echo 'STAGING_SEPARATE_GPS_POLICY_VERIFY=PASS'
+          REMOTE
+      - name: Confirm ERP logins online and GPS remains protected
+        shell: bash
+        run: |
+          set -euo pipefail
+          for path in /erp/login /staff/login; do
+            code=$(curl -sS -L --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")
+            echo "STAGING_LOGIN_HTTP=$code"
+            test "$code" = 200
+          done
+          code=$(curl -sS --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com/api/v1/staff/location")
+          echo "STAFF_GPS_GET_PROTECTED_HTTP=$code"
+          test "$code" = 405 || test "$code" = 401 || test "$code" = 403
+          echo 'GPS_POLICY_STAGING_ENDPOINT_HEALTH=PASS'
+      - if: always()
+        run: rm -f ~/.ssh/am-gps-diag
