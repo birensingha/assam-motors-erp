@@ -2,7 +2,7 @@ name: Stage v6.3.11 Exact-Hash GPS QA Transfer Receiver
 on:
   push:
     branches: [main]
-    paths: [".github/workflows/v6311-stage-exact-apk-receiver.yml"]
+    paths: [".github/workflows/v6311-stage-signed-gps-receiver.yml"]
 permissions: { contents: read }
 concurrency:
   group: assam-motors-staging-control
@@ -64,7 +64,7 @@ jobs:
           header('X-Content-Type-Options: nosniff');
           const EXPECTED_SHA='f741ce4a15b416e298b955a6a48260c0e5a76e4abc9ac6b517f02b820185ddae';
           const EXPECTED_SIZE=3341044;
-          const FILE='Assam-Motors-Staff-v6.3.11-INSPECTION-30-POINT-SIGNED.apk';
+          const FILE='Assam-Motors-Staff-v6.3.11-GPS-RECOVERY-SIGNED-QA.apk';
           function stop(int $code,string $msg):void {
               http_response_code($code);
               echo json_encode(['ok'=>false,'reason'=>$msg]); exit;
