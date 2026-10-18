@@ -2,7 +2,7 @@ name: Publish Staff v6.3.15 modern Admin GPS UI to in-app update feed
 on:
   push:
     branches: [main]
-    paths: [".github/workflows/v6315-publish-admin-location-app-update.yml"]
+    paths: [".github/workflows/v6315-publish-modern-admin-gps-app-update.yml"]
 permissions: {contents: read}
 concurrency:
   group: assam-motors-staging-control
@@ -71,7 +71,7 @@ jobs:
           assert apk.stat().st_size==3349236,'APK size mismatch'
           assert hashlib.sha256(apk.read_bytes()).hexdigest()==expected,'APK SHA-256 mismatch'
           if version==60315:
-              assert data.get('version_name')=='6.3.13', 'Published name conflict'
+              assert data.get('version_name')=='6.3.15', 'Published name conflict'
               assert data.get('apk_file')==filename and data.get('sha256')==expected,'Published release conflict'
               print('STAFF_V6315_OTA=ALREADY_PUBLISHED_IDENTICAL')
           else:
@@ -91,7 +91,7 @@ jobs:
               )
               data.update({
                 'version_code':60315,
-                'version_name':'6.3.13',
+                'version_name':'6.3.15',
                 'apk_file':filename,
                 'sha256':expected,
                 'release_notes_file':notes,
@@ -113,7 +113,7 @@ jobs:
           verify=json.loads(manifest.read_text())
           assert verify.get('package_id')=='com.assammotors.staff'
           assert int(verify.get('version_code',0))==60315
-          assert verify.get('version_name')=='6.3.13'
+          assert verify.get('version_name')=='6.3.15'
           assert verify.get('apk_file')==filename
           assert verify.get('sha256')==expected
           assert verify.get('licence_file')
