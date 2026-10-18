@@ -63,6 +63,19 @@ jobs:
               matches+=1
               print('TEMPLATE',name,'SHA256',hashlib.sha256(txt.encode()).hexdigest()[:16],'MARKERS',','.join(present),'AM_LOGO_ASSET',('images/logo.png' in txt))
           print('CANDIDATE_COUNT',matches)
+
+          print('LIVE_INVOICE_PRINT_STRUCTURE')
+          p=views/'invoices'/'print.blade.php'
+          ls=p.read_text(encoding='utf-8',errors='replace').splitlines()
+          selected=[]
+          for i,line in enumerate(ls,1):
+              low=line.lower()
+              if any(k in low for k in ['logo','parts','labour','discount','gst','taxable','<thead','<tbody','<th','<td','@forelse','@foreach','@php','@endif','amount','total','printing']):
+                  selected.append((i,line.strip()))
+          for i,line in selected[:100]:
+              print('VIEW_LINE',i,line[:340])
+          print('VIEW_LINES_TOTAL',len(ls),'SELECTED',len(selected))
+
           PY
           if [ -f "$ROOT/vendor/autoload.php" ]; then
             cd "$ROOT"
