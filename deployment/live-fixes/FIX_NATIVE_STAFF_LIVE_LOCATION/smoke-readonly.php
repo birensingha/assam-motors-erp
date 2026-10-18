@@ -7,6 +7,9 @@
 require 'vendor/autoload.php';
 $app=require 'bootstrap/app.php';
 $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+// CLI smoke requests bypass StartSession/ShareErrorsFromSession middleware;
+// supply Laravel's standard empty error bag just as an HTTP request would.
+\Illuminate\Support\Facades\View::share('errors', new \Illuminate\Support\ViewErrorBag());
 $controller=app(\App\Http\Controllers\Web\StaffLiveLocationController::class);
 $admin=\App\Models\ErpAuthUser::query()->where('active',true)->get()
     ->first(static fn($u)=>$u->isAdmin());
