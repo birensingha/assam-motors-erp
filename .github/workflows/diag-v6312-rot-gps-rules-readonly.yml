@@ -93,6 +93,8 @@ jobs:
             echo 'ROT_DIAGNOSTICS_COMPLETE=YES'.PHP_EOL;
           } catch(\Throwable $e) {echo 'ROT_DIAGNOSTICS_ERROR='.get_class($e).PHP_EOL;exit(1);}
           PHP
+          echo '=== Exact privileged and ordinary consented native GPS gates ==='
+          sed -n '16,89p' app/Http/Controllers/Api/V1/StaffLocationController.php | cut -c 1-270
           echo '=== Live location upload rejects and accuracy threshold (no coords) ==='
           grep -nE -C 2 'NO_DUTY_ATTENDANCE|OUTSIDE_DUTY_WINDOW|STALE_GPS_FIX|WEAK_ACCURACY|privileged|sampleMinutes' app/Http/Controllers/Api/V1/StaffLocationController.php | head -125
           echo 'V6312_READ_ONLY_INSPECTION=COMPLETE'
