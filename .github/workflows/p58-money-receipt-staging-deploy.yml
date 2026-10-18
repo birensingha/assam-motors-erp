@@ -1,0 +1,165 @@
+name: P58 Money Receipt on NEW STAGING ERP
+on:
+  push:
+    branches: [feature/p58-customer-money-receipts-20261018]
+    paths:
+      - '.github/workflows/p58-money-receipt-staging-deploy.yml'
+      - 'deployment/live-fixes/P58_MONEY_RECEIPT/PATCH_P58.php'
+      - 'deployment/live-fixes/P58_MONEY_RECEIPT/QA_P58.mjs'
+      - 'deployment/live-fixes/P58_MONEY_RECEIPT/payload/**'
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+      STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL || 'https://staging.assammotors.com' }}
+      STAGING_ADMIN_LOGIN: ${{ secrets.STAGING_ADMIN_LOGIN }}
+      STAGING_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint P58 receipt controller and source installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          P=deployment/live-fixes/P58_MONEY_RECEIPT
+          php -l "$P/PATCH_P58.php"
+          php -l "$P/payload/AdminMoneyReceiptController.php"
+          node --check "$P/QA_P58.mjs"
+          test -s "$P/payload/print.blade.php"
+          echo 'P58_SOURCE_LINT_PASS'
+      - name: Setup staging SSH
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+          fi
+      - name: Install native receipts with safe backup and Blade route checks
+        id: install
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            SSH=(ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          TEMP="/home/$SSH_USER/p58-money-$GITHUB_RUN_ID"
+          tar -czf /tmp/p58.tar.gz -C deployment/live-fixes/P58_MONEY_RECEIPT PATCH_P58.php payload
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "mkdir -p '$TEMP'"
+          "${SCP[@]}" /tmp/p58.tar.gz "$SSH_USER@$SSH_HOST:$TEMP/p58.tar.gz"
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "APP_ROOT='$APP_ROOT' TEMP='$TEMP' RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$APP_ROOT"
+          test -f "$ROOT/artisan"
+          tar -xzf "$TEMP/p58.tar.gz" -C "$TEMP"
+          BACKUP="$(dirname "$ROOT")/ASSAM_P58_MONEY_BACKUP_$RUN_ID"
+          test ! -e "$BACKUP"
+          mkdir -p "$BACKUP"
+          files=(routes/web.php resources/views/layouts/erp.blade.php resources/views/invoices/show.blade.php)
+          newfiles=(
+            app/Http/Controllers/Web/AdminMoneyReceiptController.php
+            resources/views/money-receipts/index.blade.php
+            resources/views/money-receipts/create.blade.php
+            resources/views/money-receipts/show.blade.php
+            resources/views/money-receipts/print.blade.php
+          )
+          for f in "${files[@]}";do
+            test -f "$ROOT/$f"
+            cp -p "$ROOT/$f" "$BACKUP/$(printf '%s' "$f" | tr / _)"
+          done
+          for f in "${newfiles[@]}";do test ! -e "$ROOT/$f";done
+          rollback(){
+            for f in "${files[@]}";do cp -p "$BACKUP/$(printf '%s' "$f" | tr / _)" "$ROOT/$f" || true;done
+            for f in "${newfiles[@]}";do rm -f "$ROOT/$f";done
+            (cd "$ROOT" && php artisan route:clear && php artisan view:clear && php artisan view:cache) >/dev/null 2>&1 || true
+            echo 'P58_SAFE_SOURCE_ROLLBACK_PASS'
+          }
+          trap rollback ERR
+          php "$TEMP/PATCH_P58.php" check "$ROOT"
+          php "$TEMP/PATCH_P58.php" apply "$ROOT"
+          cd "$ROOT"
+          php artisan route:clear
+          php artisan view:clear
+          php artisan view:cache
+          php -l app/Http/Controllers/Web/AdminMoneyReceiptController.php
+          php artisan route:list --name=erp.money-receipts | grep -q 'money-receipts'
+          grep -q 'P58_RECEIPT_NAV_LINK' resources/views/layouts/erp.blade.php
+          grep -q 'P58_RECEIVE_AGAINST_INVOICE' resources/views/invoices/show.blade.php
+          echo 'P58_STAGING_RECEIPT_SOURCE_ROUTES_BLADE_PASS'
+          echo "P58_BACKUP=$BACKUP"
+          trap - ERR
+          rm -rf "$TEMP"
+          REMOTE
+      - uses: actions/setup-node@v4
+        if: steps.install.outcome == 'success'
+        with:
+          node-version: '22'
+      - name: Install Chromium
+        if: steps.install.outcome == 'success'
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Test register create all modes show and print
+        id: qa
+        if: steps.install.outcome == 'success'
+        run: node deployment/live-fixes/P58_MONEY_RECEIPT/QA_P58.mjs
+      - name: Rollback if browser QA fails
+        if: failure() && steps.install.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            SSH=(ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "APP_ROOT='$APP_ROOT' RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$APP_ROOT"
+          BACKUP="$(dirname "$ROOT")/ASSAM_P58_MONEY_BACKUP_$RUN_ID"
+          files=(routes/web.php resources/views/layouts/erp.blade.php resources/views/invoices/show.blade.php)
+          newfiles=(
+            app/Http/Controllers/Web/AdminMoneyReceiptController.php
+            resources/views/money-receipts/index.blade.php
+            resources/views/money-receipts/create.blade.php
+            resources/views/money-receipts/show.blade.php
+            resources/views/money-receipts/print.blade.php
+          )
+          for f in "${files[@]}";do
+            cp -p "$BACKUP/$(printf '%s' "$f" | tr / _)" "$ROOT/$f"
+          done
+          for f in "${newfiles[@]}";do rm -f "$ROOT/$f";done
+          cd "$ROOT"
+          php artisan route:clear
+          php artisan view:clear
+          php artisan view:cache
+          echo 'P58_BROWSER_QA_FAILURE_ROLLBACK_PASS'
+          REMOTE
+      - name: Deployment result
+        if: always()
+        run: |
+          echo "P58 install: ${{ steps.install.outcome }}"
+          echo "P58 browser QA: ${{ steps.qa.outcome }}"
+          echo 'No customer payment or ledger POST was made by this deployment.'
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
