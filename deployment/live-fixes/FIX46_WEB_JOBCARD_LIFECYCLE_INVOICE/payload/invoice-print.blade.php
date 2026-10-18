@@ -51,7 +51,7 @@ $amTotalsVerified=$amTaxDataComplete
 </div>
 {{-- Existing company logo lives in the primary site's public_html/images/logo.png. --}}
 <div class="head"><div style="display:flex;align-items:center;gap:12px">
-<img src="https://assammotors.com/images/logo.png" alt="Assam Motors logo" style="width:58px;height:58px;object-fit:contain" />
+<div class="invoice-logo-box" style="width:74px;height:74px;display:flex;align-items:center;justify-content:center;flex-shrink:0;padding:3px;box-sizing:border-box"><img src="https://assammotors.com/images/logo.png" alt="Assam Motors logo" style="display:block;width:100%;height:100%;object-fit:contain;object-position:center center" /></div>
 <div><h1>ASSAM MOTORS</h1><div>{{ $isCostSummary ? "Customer Cost Summary — Tax Included — Not a Tax Invoice" : "Tax / Service Invoice" }}</div></div></div><div><strong>{{ $inv->invoice_no }}</strong><br>Job: {{ $job->job_no }}</div></div>
 @if($isCostSummary)
 <p style="background:#edf4fb;padding:8px">Customer cost summary. Amounts include applicable taxes. This document is not a tax invoice.</p>
