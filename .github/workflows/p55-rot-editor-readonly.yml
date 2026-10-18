@@ -1,0 +1,60 @@
+name: P55 Old ERP Style ROT Editing — STAGING Readonly Audit
+on:
+  push:
+    branches: [feature/p55-jc-rot-alteration-20261018]
+    paths:
+      - '.github/workflows/p55-rot-editor-readonly.yml'
+      - 'deployment/live-fixes/P55_JC_ROT_ALTERATION/AUDIT_P55.php'
+      - 'deployment/live-fixes/P55_JC_ROT_ALTERATION/AUDIT_P55.php'
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint
+        run: php -l deployment/live-fixes/P55_JC_ROT_ALTERATION/AUDIT_P55.php
+      - name: Prepare SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+          fi
+      - name: Read only selected Job Card and source file references
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          TEMP="/home/$SSH_USER/p55-rot-audit-$GITHUB_RUN_ID"
+          "${SSH[@]}" "$REMOTE" "mkdir -p '$TEMP'"
+          "${SCP[@]}" deployment/live-fixes/P55_JC_ROT_ALTERATION/AUDIT_P55.php "$REMOTE:$TEMP/AUDIT_P55.php"
+          "${SSH[@]}" "$REMOTE" "APP_ROOT='$APP_ROOT' TEMP='$TEMP' bash -s" <<'REMOTE'
+          set -euo pipefail
+          trap 'rm -rf "$TEMP"' EXIT
+          php "$TEMP/AUDIT_P55.php" "$APP_ROOT"
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
