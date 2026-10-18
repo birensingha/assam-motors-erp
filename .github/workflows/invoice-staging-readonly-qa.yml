@@ -79,6 +79,7 @@ jobs:
           for n in list(range(88,114))+list(range(168,257)):
               if n<=len(ls): print('TARGET_LINE',n,ls[n-1][:650])
           print('INVOICE_PRINT_TARGET_STRUCTURE_END')
+          for n in range(45,86): print('STYLE_LINE',n,ls[n-1][:260])
           print('LIVE_HEADER_EXACT_LINES')
           for n in list(range(12,45))+list(range(113,140)):
               if n<=len(ls): print('HEADER_LINE',n,ls[n-1][:400])
