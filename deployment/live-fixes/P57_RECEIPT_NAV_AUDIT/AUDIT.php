@@ -39,4 +39,32 @@ foreach($paths as $path){
 foreach(['customer_payments','customer_ledger','invoices'] as $t)
  if(\Illuminate\Support\Facades\Schema::hasTable($t))
    result('TABLE',[$t,\Illuminate\Support\Facades\Schema::getColumnListing($t)]);
+// Legacy filename discovery only: never read personal customer records.
+$legacyCandidates=[
+ dirname($root).'/public_html/legacy/workshop',
+ dirname($root).'/public_html/workshop',
+ dirname($root).'/public_html/legacy',
+ dirname($root).'/public_html',
+ dirname($root).'/legacy/workshop',
+];
+foreach($legacyCandidates as $directory){
+ if(!is_dir($directory))continue;
+ $found=[];
+ $walk=function(string $base,int $depth) use (&$walk,&$found):void{
+   if($depth>2||count($found)>=35)return;
+   $entries=@scandir($base);if(!$entries)return;
+   foreach($entries as $entry){
+     if($entry==='.'||$entry==='..'||str_starts_with($entry,'.'))continue;
+     $full=$base.'/'.$entry;
+     if(is_link($full))continue;
+     if(is_file($full)&&preg_match('/(?:receipt|collection|payment|voucher)/i',$entry)){
+        $found[]=substr($full,0,300);
+     }elseif(is_dir($full)&&preg_match('/^(?:workshop|legacy|receipt|payment|finance|account|admin|pages)$/i',$entry)){
+        $walk($full,$depth+1);
+     }
+   }
+ };
+ $walk($directory,0);
+ result('LEGACY_FILENAME_MATCHES',[$directory,$found]);
+}
 echo "RECEIPT_AUDIT_COMPLETE_NO_WRITES\n";
