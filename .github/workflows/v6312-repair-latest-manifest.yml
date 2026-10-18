@@ -43,7 +43,7 @@ jobs:
           ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
           test -f "$SITE/latest.json" && test -s "$SITE/private/Assam-Motors-Staff-v6.3.12-FRESH-PRODUCTION.apk"
           test -f "$ROOT/artisan"
-          echo '3c2bb0c62c3a7b06e9b625b7cb04eb21dd9aba6049beba025a94057c0bb833f9  '+"$SITE"+'/private/Assam-Motors-Staff-v6.3.12-FRESH-PRODUCTION.apk' | sha256sum -c -
+          echo "3c2bb0c62c3a7b06e9b625b7cb04eb21dd9aba6049beba025a94057c0bb833f9  $SITE/private/Assam-Motors-Staff-v6.3.12-FRESH-PRODUCTION.apk" | sha256sum -c -
           SITE="$SITE" ROOT="$ROOT" python3 - <<'PY'
           import os,json,pathlib,hashlib,tempfile,datetime
           site=pathlib.Path(os.environ["SITE"])
