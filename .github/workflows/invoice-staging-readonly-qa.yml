@@ -1,0 +1,91 @@
+name: Read-only staging invoice print audit
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/invoice-staging-readonly-qa.yml"
+      - "deployment/live-fixes/FIX46_WEB_JOBCARD_LIFECYCLE_INVOICE/payload/invoice-print.blade.php"
+permissions:
+  contents: read
+jobs:
+  audit:
+    if: github.head_ref == 'fix/dual-invoice-print-modes-20261018'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - name: Check staged invoice print template on Hostinger without modification
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [[ -n "$SSH_KEY" ]]; then
+            printf '%s\n' "$SSH_KEY" > ~/.ssh/invoice-qa-key
+            chmod 600 ~/.ssh/invoice-qa-key
+            SSH=(ssh -i ~/.ssh/invoice-qa-key -p "$SSH_PORT" -o BatchMode=yes)
+          else
+            test -n "$SSH_PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' -- "$APP_ROOT" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          test -f "$ROOT/artisan"
+          export INVOICE_QA_ROOT="$ROOT"
+          python3 - <<'PY'
+          import os,re,hashlib
+          from pathlib import Path
+          root=Path(os.environ['INVOICE_QA_ROOT'])
+          views=root/'resources'/'views'
+          files=list(views.rglob('*.blade.php'))
+          print('STAGING_BLADE_COUNT',len(files))
+          patterns=['DOCUMENT NO.','TAX / SERVICE','ASSAM MOTORS','invoice-logo','GST Amount','Taxable Amount']
+          matches=0
+          for p in files:
+              name=str(p.relative_to(root))
+              if not any(k in name.lower() for k in ('invoice','print','document','receipt','voucher')):
+                  continue
+              txt=p.read_text(encoding='utf-8',errors='replace')
+              present=[pat for pat in patterns if pat.lower() in txt.lower()]
+              if not present:
+                  continue
+              matches+=1
+              print('TEMPLATE',name,'SHA256',hashlib.sha256(txt.encode()).hexdigest()[:16],'MARKERS',','.join(present),'AM_LOGO_ASSET',('images/logo.png' in txt))
+          print('CANDIDATE_COUNT',matches)
+          PY
+          if [ -f "$ROOT/vendor/autoload.php" ]; then
+            cd "$ROOT"
+            php -r '
+              require "vendor/autoload.php";
+              $app=require "bootstrap/app.php";
+              $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+              foreach (["job_card_parts","job_card_labour","invoices"] as $table) {
+                try {
+                  if (Illuminate\Support\Facades\Schema::hasTable($table)) {
+                    $columns=Illuminate\Support\Facades\Schema::getColumnListing($table);
+                    $selected=array_values(array_filter($columns,function($v) {
+                      return preg_match("/^(total|rate|qty|labour_rate|parts_total|labour_total|grand_total|tax_total|gst_total|round_off|.*discount.*|.*taxable.*|.*gst.*|.*sac.*|.*hsn.*)$/i",$v);
+                    }));
+                    echo "TABLE_COLUMNS ".$table." ".implode(",",$selected)."\n";
+                  } else echo "MISSING_TABLE ".$table."\n";
+                } catch (Throwable $e) {
+                  echo "SCHEMA_CHECK_UNAVAILABLE ".$table."\n";
+                }
+              }'
+          fi
+          echo 'STAGING_INVOICE_READ_ONLY_AUDIT_DONE'
+          REMOTE
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/invoice-qa-key
