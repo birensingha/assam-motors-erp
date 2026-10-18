@@ -1,0 +1,91 @@
+name: Staging Invoice Logo Only (Safe)
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/staging-invoice-logo-only.yml']
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  logo:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USER: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASS: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Verify logo URL
+        run: |
+          set -euo pipefail
+          curl --fail --location --silent --show-error --max-time 25 --output /tmp/am-logo 'https://assammotors.com/images/logo.png'
+          file /tmp/am-logo
+          file --mime-type /tmp/am-logo | grep -E 'image/(png|jpeg|webp)'
+      - name: Set up staging connection
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USER"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/staging-logo
+            chmod 600 ~/.ssh/staging-logo
+          else
+            test -n "$PASS"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Find and replace ONLY known AM invoice logo placeholders
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -p "$PORT" -i ~/.ssh/staging-logo -o BatchMode=yes -o StrictHostKeyChecking=yes)
+          else
+            export SSHPASS="$PASS"
+            SSH=(sshpass -e ssh -p "$PORT" -o StrictHostKeyChecking=yes)
+          fi
+          "${SSH[@]}" "$USER@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f "$ROOT/artisan"
+          ROOT="$ROOT" python3 - <<'PY'
+          import os,re,sys,time,shutil
+          from pathlib import Path
+          root=Path(os.environ['ROOT'])
+          files=[p for p in (root/'resources/views').rglob('*.blade.php') if any(x in p.name.lower() for x in ['invoice','receipt','voucher','statement','print'])]
+          logo='<img src="https://assammotors.com/images/logo.png" alt="Assam Motors logo" style="width:58px;height:58px;object-fit:contain">'
+          # Only replace standalone AM inside an identifiable logo-brand element, never text/data.
+          pattern=re.compile(r'(<(?P<tag>div|span)\b(?P<attrs>[^>]*\bclass=["\'][^"\']*(?:logo|brand-mark|company-mark|brand-icon)[^"\']*["\'][^>]*)>)\s*AM\s*(</(?P=tag)>)',re.I)
+          matched=[]
+          for p in files:
+              s=p.read_text(encoding='utf-8',errors='replace')
+              new,n=pattern.subn(lambda m:logo,s)
+              if n:matched.append((p,s,new,n))
+          print('PRINT_TEMPLATES_SCANNED='+str(len(files)))
+          print('MATCHED_TEMPLATES='+str(len(matched)))
+          if not matched:
+              print('SAFE_STOP: No identifiable standalone AM logo placeholder; template inspection needed.')
+              sys.exit(3)
+          if len(matched)>12:
+              print('SAFE_STOP: Unexpectedly many matching templates')
+              sys.exit(4)
+          stamp=time.strftime('%Y%m%d%H%M%S')
+          for p,old,new,n in matched:
+              backup=p.with_name(p.name+'.pre-logo-'+stamp+'.bak')
+              shutil.copy2(p,backup)
+              p.write_text(new,encoding='utf-8')
+              print('UPDATED='+str(p.relative_to(root))+' MATCHES='+str(n)+' BACKUP='+backup.name)
+          PY
+          cd "$ROOT"
+          php artisan view:clear
+          echo 'LOGO_PATCH_APPLIED'
+          REMOTE
+      - name: Remove credentials
+        if: always()
+        run: rm -f ~/.ssh/staging-logo /tmp/am-logo
