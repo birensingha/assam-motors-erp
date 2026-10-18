@@ -72,7 +72,19 @@ jobs:
           assert hashlib.sha256(apk.read_bytes()).hexdigest()==expected,'APK SHA-256 mismatch'
           if version==60312:
               assert data.get('apk_file')==filename and data.get('sha256')==expected,'Published release conflict'
-              print('STAFF_V6312_OTA=ALREADY_PUBLISHED_IDENTICAL')
+              if data.get('version_name')!='6.3.12':
+                  stamp=datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
+                  backup=root/('latest.json.backup-v6312-version-name-'+stamp)
+                  backup.write_bytes(original)
+                  data['version_name']='6.3.12'
+                  fd,tmp=tempfile.mkstemp(prefix='.latest-v6312-name-',dir=root)
+                  with os.fdopen(fd,'w') as fh:
+                      json.dump(data,fh,indent=2)
+                      fh.write('\\n')
+                  os.replace(tmp,manifest)
+                  print('STAFF_V6312_VERSION_NAME_CORRECTED')
+              else:
+                  print('STAFF_V6312_OTA=ALREADY_PUBLISHED_IDENTICAL')
           else:
               stamp=datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')
               backup=root/('latest.json.backup-before-v6312-'+stamp)
@@ -89,7 +101,7 @@ jobs:
               )
               data.update({
                 'version_code':60312,
-                'version_name':'6.3.11',
+                'version_name':'6.3.12',
                 'apk_file':filename,
                 'sha256':expected,
                 'release_notes_file':notes,
