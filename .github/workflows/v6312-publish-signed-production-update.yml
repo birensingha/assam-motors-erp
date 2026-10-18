@@ -80,7 +80,8 @@ jobs:
                   fd,tmp=tempfile.mkstemp(prefix='.latest-v6312-name-',dir=root)
                   with os.fdopen(fd,'w') as fh:
                       json.dump(data,fh,indent=2)
-                      fh.write('\\n')
+                      fh.write('\n')
+                  os.chmod(tmp,0o644)
                   os.replace(tmp,manifest)
                   print('STAFF_V6312_VERSION_NAME_CORRECTED')
               else:
@@ -123,6 +124,7 @@ jobs:
           verify=json.loads(manifest.read_text())
           assert verify.get('package_id')=='com.assammotors.staff'
           assert int(verify.get('version_code',0))==60312
+          assert verify.get('version_name')=='6.3.12'
           assert verify.get('apk_file')==filename
           assert verify.get('sha256')==expected
           assert verify.get('licence_file')
