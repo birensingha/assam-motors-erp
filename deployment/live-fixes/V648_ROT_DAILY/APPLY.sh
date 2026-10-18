@@ -142,6 +142,38 @@ perf=replace(perf,'<section class="card">',
 <section class="card">""",'performance daily report view')
 new['performance']=perf.encode('utf-8','surrogateescape')
 
+# V648 single-instance invariant: previous interrupted CI retries may have
+# repeated an include before the same anchor. Normalize to exactly one.
+def normalize_view(blob,remove,anchor,insert,label):
+ source=blob.decode('utf-8','surrogateescape')
+ lines=[line for line in source.splitlines(keepends=True) if line.strip() not in remove]
+ source=''.join(lines)
+ if source.count(anchor)!=1:raise RuntimeError('UI normalization anchor invalid '+label)
+ return source.replace(anchor,insert+anchor,1).encode('utf-8','surrogateescape')
+new['main']=normalize_view(new['main'],{
+ '{{-- V648_PENDING_PANEL_MAIN --}}',
+ "@include('dashboard.partials.pending-rot-panel')"
+},'<div class="dashboard-grid">',
+ """{{-- V648_PENDING_PANEL_MAIN }}
+@include('dashboard.partials.pending-rot-panel')
+""".replace('MAIN }}','MAIN --}}'),'main')
+new['workshop']=normalize_view(new['workshop'],{
+ '{{-- V648_PENDING_PANEL_WORKSHOP --}}',
+ "@include('dashboard.partials.pending-rot-panel')"
+},'<div class="section-gap module-grid">',
+ """{{-- V648_PENDING_PANEL_WORKSHOP --}}
+@include('dashboard.partials.pending-rot-panel')
+""",'workshop')
+new['performance']=normalize_view(new['performance'],{
+ '{{-- V648_STAFF_DAILY_ROT_REPORT --}}',
+ "@include('dashboard.partials.staff-daily-report')",
+ "@include('dashboard.partials.pending-rot-panel')",
+},'<section class="card">',
+ """{{-- V648_STAFF_DAILY_ROT_REPORT --}}
+@include('dashboard.partials.staff-daily-report')
+@include('dashboard.partials.pending-rot-panel')
+""",'performance')
+
 for key in ['attendance','admin_attendance','dashboard','service']:
  p=subprocess.run(['php','-l'],input=new[key],capture_output=True)
  if p.returncode:raise RuntimeError('V648 PHP precheck '+key+': '+(p.stdout+p.stderr).decode('utf-8','replace'))
