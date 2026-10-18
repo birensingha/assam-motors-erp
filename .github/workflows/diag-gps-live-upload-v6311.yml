@@ -1,0 +1,70 @@
+name: Read-only Staff GPS Upload / Hostinger Diagnostics (v6.3.11)
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/diag-gps-live-upload-v6311.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Check staging SSH and protected GPS route
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/am-gps-diag
+            chmod 600 ~/.ssh/am-gps-diag
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -i ~/.ssh/am-gps-diag -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          test -f "$ROOT/artisan" && test -f "$SITE/latest.json"
+          cd "$ROOT"
+          echo "GPS_STAGING_DATE=$(date -Is)"
+          echo '== ROUTE SNAPSHOT (no secrets / coordinates) =='
+          php artisan route:list --path=staff/location --columns=method,uri,name,action,middleware 2>/dev/null | head -25 || php artisan route:list --path=staff/location | head -25 || true
+          echo '== RELEVANT FILE NAMES (no content) =='
+          find app/Http/Controllers app/Services -type f \( -iname '*Location*' -o -iname '*Attendance*' \) -printf '%p\n' 2>/dev/null | head -50 || true
+          echo '== LOCATION API REGISTRATION =='
+          grep -nE 'staff/location|staff-locations' routes/api.php 2>/dev/null | head -50 || true
+          echo '== LARAVEL LOG EVENT COUNTS (no actual messages or locations) =='
+          if [ -d storage/logs ]; then
+            find storage/logs -maxdepth 1 -type f -name 'laravel*.log' -mtime -2 -print0 |
+              xargs -0 -r grep -ciE 'GPS|StaffLocation|staff/location|location.*error' 2>/dev/null |
+              awk '{sum+=$1} END{print "GPS_RELATED_LOG_LINES="sum+0}'
+          fi
+          echo '== SAFE UPDATE FEED METADATA =='
+          php -r '$v=json_decode(file_get_contents($argv[1]),true)?:[]; echo "CURRENT_VERSION_CODE=".((int)($v["version_code"]??0)).PHP_EOL;echo "CURRENT_VERSION_NAME=".($v["version_name"]??"unknown").PHP_EOL;echo "PACKAGE_VALID=".(($v["package_id"]??"")==="com.assammotors.staff"?"YES":"NO").PHP_EOL;' "$SITE/latest.json"
+          echo 'READ_ONLY_STAGING_GPS_DIAGNOSTIC=COMPLETE'
+          REMOTE
+      - name: Check unauthenticated GPS API protections
+        run: |
+          set -euo pipefail
+          for path in /api/v1/staff/location /api/v1/admin/mobile/staff-locations; do
+            status="$(curl --silent --show-error --max-time 20 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path" || true)"
+            echo "PATH=$path HTTP=$status (unauthenticated; GET-only)"
+          done
+      - if: always()
+        run: rm -f ~/.ssh/am-gps-diag
