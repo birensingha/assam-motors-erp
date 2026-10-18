@@ -41,7 +41,7 @@ foreach($checks as $name=>$criteria){
   if($group['vehicle_out']!=='Not Recorded')throw new RuntimeException('Invented vehicle Out time!');
  }
  foreach($data['groups'] as $group)foreach($group['rots'] as $rot){
-   foreach(['actual','elapsed','nonproductive','over_standard','pause_count','resume_count','pause_records','staff_segments','history'] as $k)
+   foreach(['actual','elapsed','nonproductive','over_standard','pause_count','resume_count','pause_records','staff_segments','history','staff_activity','days_since_start'] as $k)
     if(!array_key_exists($k,$rot))throw new RuntimeException('Missing ROT detail: '.$k);
    if($rot['actual_seconds']<0 || $rot['nonproductive_seconds']<0)
     throw new RuntimeException('Negative time incorrect');
@@ -63,6 +63,7 @@ $req->setUserResolver(fn()=>$admin);
 $view=app(AdminDashboardPageController::class)->rotPerformance($req);
 $html=$view->render();
 foreach(['Advanced Staff / ROT Performance Register','Job Card-wise ROT Register',
+ 'Staff-wise Activity Counts & Pause Reasons',
  'Pause Reasons / Durations','Check-In / Check-Out Raw Attendance Records','name="job_card"',
  'name="vehicle"','name="rot_code"','name="from"','name="to"'] as $needle){
  if(!str_contains($html,$needle))throw new RuntimeException('Rendered HTML missing '.$needle);
