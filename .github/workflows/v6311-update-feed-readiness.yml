@@ -1,0 +1,64 @@
+name: v6.3.11 Staff Old-App Update Feed Readiness
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/v6311-update-feed-readiness.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 13
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Check current update feed and exact signed APK without modifying files
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/v6311-readiness
+            chmod 600 ~/.ssh/v6311-readiness
+            SSH=(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -i ~/.ssh/v6311-readiness -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          API="$SITE/../legacy/api/staff-app-update.php"
+          FILE="$SITE/private/Assam-Motors-Staff-v6.3.11-GPS-RECOVERY-SIGNED-QA.apk"
+          test -f "$API" && test -f "$SITE/latest.json" && test -f "$FILE"
+          php -l "$API"
+          test "$(wc -c < "$FILE")" = 3341044
+          echo "f741ce4a15b416e298b955a6a48260c0e5a76e4abc9ac6b517f02b820185ddae  $FILE" | sha256sum -c -
+          php -r '$m=json_decode(file_get_contents($argv[1]),true);if(!is_array($m))exit(4); foreach(["package_id","version_code","version_name","apk_file","sha256"] as $key){echo $key."=".($key==="sha256"?"[present]":(string)($m[$key]??"[missing]")).PHP_EOL;}echo "license_metadata=".(!empty($m["licence_file"])?"present":"missing").PHP_EOL;' "$SITE/latest.json"
+          echo '== App updater route configuration (only names, no tokens) =='
+          grep -nE 'download_url|apk_file|latest.json|staff-app-download|private/|update_available|Authorization|version_code|Bearer|https' "$API" | head -65 | cut -c 1-240 || true
+          echo '== Download endpoint filenames =='
+          find "$SITE" "$SITE/../legacy/api" -maxdepth 1 -type f \( -iname '*download*.php' -o -iname '*update*.php' \) -printf '%f\n' 2>/dev/null | head -30 || true
+          echo 'V6311_OTA_PREFLIGHT=PASS'
+          REMOTE
+      - name: Check protected public update API requires login
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL=https://staging.assammotors.com/legacy/api/staff-app-update.php?platform=android\&version_code=60309
+          code=$(curl --silent --show-error --max-time 25 -o /tmp/am-v6311-update -w '%{http_code}' "$URL")
+          echo "UNAUTH_OTA_ENDPOINT_HTTP=$code"
+          test "$code" = 401 || test "$code" = 403
+      - if: always()
+        run: rm -f ~/.ssh/v6311-readiness /tmp/am-v6311-update
