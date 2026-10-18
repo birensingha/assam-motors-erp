@@ -50,10 +50,12 @@ try{
   const hasFinanceForm=(await rev.locator('form[action*="/reversal/request"] input[name=scope][value=FINANCE]').count())===1;
   const hasAmountLink=(await rev.locator('a[href*="billing-edit"]').count())===1;
   const hasInvoiceLink=(await rev.locator('a[href*="/erp/invoices/"]').count())>=1;
-  const noFakeReversed=invoice.includes('review')&&invoice.includes('not a posted reversal')&&
+  const lower=invoice.toLowerCase();
+  const noFakeReversed=lower.includes('review')&&lower.includes('not a posted reversal')&&
      !invoice.includes('Reopen CLOSED Job Card to WIP');
   const revOkay=r?.status()===200&&(await rev.count())===1&&hasFinanceForm&&hasAmountLink&&hasInvoiceLink&&noFakeReversed;
   console.log('P56_INVOICED_REVERSAL_CENTRE_CONTROLS_'+width+' '+(revOkay?'PASS':'FAIL')+' HTTP '+r?.status());
+  if(!revOkay)console.log('P56_REVERSAL_TEST_DETAILS '+JSON.stringify({section:await rev.count(),hasFinanceForm,hasAmountLink,hasInvoiceLink,noFakeReversed,excerpt:invoice.slice(0,1350)}));
   if(!revOkay)failed.push('reversal centre '+width);
   const bodyScroll=await page.evaluate(()=>document.documentElement.scrollWidth-innerWidth);
   console.log('P56_REVERSAL_LAYOUT_'+width+' BODY_SCROLL='+bodyScroll);
