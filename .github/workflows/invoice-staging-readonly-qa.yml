@@ -64,6 +64,7 @@ jobs:
               print('TEMPLATE',name,'SHA256',hashlib.sha256(txt.encode()).hexdigest()[:16],'MARKERS',','.join(present),'AM_LOGO_ASSET',('images/logo.png' in txt))
           print('CANDIDATE_COUNT',matches)
 
+          print('LIVE_VEHICLE_SECTION_LINES')
           print('LIVE_INVOICE_PRINT_STRUCTURE')
           p=views/'invoices'/'print.blade.php'
           ls=p.read_text(encoding='utf-8',errors='replace').splitlines()
@@ -75,6 +76,8 @@ jobs:
           for i,line in selected[:100]:
               print('VIEW_LINE',i,line[:340])
           print('VIEW_LINES_TOTAL',len(ls),'SELECTED',len(selected))
+          for n in range(151,209):
+              if n<=len(ls): print('VEHICLE_VIEW_LINE',n,ls[n-1][:440])
           print('INVOICE_PRINT_TARGET_STRUCTURE_BEGIN')
           for n in list(range(88,114))+list(range(168,257)):
               if n<=len(ls): print('TARGET_LINE',n,ls[n-1][:650])
@@ -188,6 +191,28 @@ jobs:
                   echo "MATCHED_FIELD ".$k."=".($v===null||$v===''?'EMPTY':'SET')."\n";
               }
             }
+          }
+          PHP
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $d=Illuminate\Support\Facades\DB::class;
+          $inv=$d::table('invoices')->where('invoice_no','INV-2026-00018')->first();
+          $j=$inv?$d::table('job_cards')->where('id',$inv->job_card_id)->first():null;
+          if($j){
+            $norm=static fn($v)=>strtoupper(preg_replace('/[^A-Z0-9]/','',strtoupper((string)$v)));
+            foreach(['am_vehicle_master','customer_vehicles'] as $t){
+              $v=$d::table($t)->where('id',$j->vehicle_id)->first();
+              echo "RELATION ".$t." BY_ID=".($v?'yes':'no');
+              if($v) echo " REG_MATCH=".($norm($v->registration_no??'')===$norm($j->vehicle_reg_no??'')?'yes':'no')." CUSTOMER_MATCH=".(($v->customer_id??'')===$j->customer_id?'yes':'no');
+              $count=$d::table($t)->where('customer_id',$j->customer_id)->where('registration_no',$j->vehicle_reg_no)->count();
+              echo " BY_CUSTOMER_REG_COUNT=".$count."\n";
+            }
+            $src=$d::table('am_vehicle_sources_v2')->where('vehicle_id',$j->vehicle_id)->get();
+            echo "BRIDGE_ROWS=".count($src)."\n";
+            foreach($src as $q)echo "BRIDGE_SOURCE_TYPE=".$q->source_type."\n";
           }
           PHP
           echo 'VEHICLE_SCHEMA_AUDIT_END'
