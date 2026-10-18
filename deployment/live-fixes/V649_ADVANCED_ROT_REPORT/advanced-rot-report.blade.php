@@ -109,7 +109,7 @@ $fmtTime = static fn($seconds)=>sprintf('%02d:%02d:%02d', intdiv(max(0,(int)$sec
             <thead><tr>
               <th>ROT / Staff</th><th>Standard</th><th>Actual</th><th>Selected Period</th>
               <th>Elapsed TAT</th><th>Non-Productive</th><th>Over Std</th><th>Pause / Resume</th>
-              <th>Days Since Start</th><th>Status</th>
+              <th>Days Open / Pending</th><th>Status</th>
             </tr></thead>
             <tbody>
               @foreach($group['rots'] as $r)
@@ -163,6 +163,22 @@ $fmtTime = static fn($seconds)=>sprintf('%02d:%02d:%02d', intdiv(max(0,(int)$sec
                               <td>{{ $segment['assigned_at'] }}</td><td>{{ $segment['first_started_at'] }}</td>
                               <td>{{ $segment['ended_at'] }}</td><td><b>{{ $segment['productive'] }}</b></td><td>{{ $segment['reason']?:'—' }}</td></tr>
                           @empty<tr><td colspan="6">Mechanic segments not recorded for this ROT.</td></tr>@endforelse
+                        </tbody>
+                      </table></div>
+                      <h4 style="font-size:12px;font-weight:900;color:#254d70;margin:14px 0 8px">D. Staff-wise Activity Counts & Pause Reasons</h4>
+                      <div style="overflow-x:auto"><table class="data-table" style="width:100%;min-width:640px">
+                        <thead><tr><th>Staff / Actor</th><th>Start</th><th>Pause</th><th>Resume</th><th>Complete</th><th>Pause Reasons</th></tr></thead>
+                        <tbody>
+                          @forelse($r['staff_activity'] as $byStaff)
+                            <tr>
+                              <td><b>{{ $byStaff['name'] }}</b><div class="muted">{{ $byStaff['code'] }}</div></td>
+                              <td>{{ $byStaff['start'] }}</td><td>{{ $byStaff['pause'] }}</td>
+                              <td>{{ $byStaff['resume'] }}</td><td>{{ $byStaff['complete'] }}</td>
+                              <td>{{ count($byStaff['reasons'])?implode('; ',$byStaff['reasons']):'—' }}</td>
+                            </tr>
+                          @empty
+                            <tr><td colspan="6">No staff-tagged events found for this ROT.</td></tr>
+                          @endforelse
                         </tbody>
                       </table></div>
                       <a class="btn small" href="{{ route('erp.rot.history',$r['id']) }}" style="display:inline-block;margin-top:12px">
