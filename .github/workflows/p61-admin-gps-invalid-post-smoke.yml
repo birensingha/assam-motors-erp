@@ -1,0 +1,29 @@
+name: P61 Admin GPS Permission Live Validation (No Coordinates)
+on:
+  push:
+    branches: [feature/p61-admin-hr-gps-remote-20261018]
+    paths:
+      - '.github/workflows/p61-admin-gps-invalid-post-smoke.yml'
+      - 'deployment/live-fixes/P61_GPS_API/QA_ADMIN_GPS_NO_COORDS.mjs'
+permissions:
+  contents: read
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL || 'https://staging.assammotors.com' }}
+      STAGING_ADMIN_LOGIN: ${{ secrets.STAGING_ADMIN_LOGIN }}
+      STAGING_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Parse test script
+        run: node --check deployment/live-fixes/P61_GPS_API/QA_ADMIN_GPS_NO_COORDS.mjs
+      - name: Admin login and invalid GPS request must return 422 not 403
+        run: node deployment/live-fixes/P61_GPS_API/QA_ADMIN_GPS_NO_COORDS.mjs
+      - name: Safety
+        if: always()
+        run: echo 'No latitude/longitude was collected or saved. This test checks authentication and rejection of an invalid request only.'
