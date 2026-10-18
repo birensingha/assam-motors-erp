@@ -1,0 +1,83 @@
+name: QA Compact Mobile Single-Staff GPS Focus
+on:
+  push:
+    branches: [feature/mobile-staff-live-solo-track-20261018]
+    paths:
+      - 'deployment/live-fixes/FIX_NATIVE_STAFF_LIVE_LOCATION/**'
+      - '.github/workflows/qa-mobile-solo-staff-location-20261018.yml'
+permissions: {contents: read}
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup PHP 8.3
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: none
+          coverage: none
+      - name: Lint Controller and Python Installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          SRC=deployment/live-fixes/FIX_NATIVE_STAFF_LIVE_LOCATION
+          php -l "$SRC/payload/StaffLiveLocationController.php"
+          python3 -m py_compile "$SRC/apply.py"
+      - name: Verify dashboard JavaScript syntax and read-only security gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          import pathlib,re
+          p=pathlib.Path('deployment/live-fixes/FIX_NATIVE_STAFF_LIVE_LOCATION/payload')
+          html=(p/'staff-live-location.blade.php').read_text()
+          php=(p/'StaffLiveLocationController.php').read_text()
+          x=re.search(r'<script>\s*(\(function\(\)\{.*?\}\)\(\);)\s*</script>',html,re.S)
+          assert x,'Live dashboard JS not found'
+          js=x.group(1)
+          for a,b in [
+            ("@json(route('erp.staff-live-location.feed'))", '"/erp/staff-live-location/feed"'),
+            ("@json(route('erp.staff-live-location.history'))", '"/erp/staff-live-location/history"'),
+            ('@json($mapSettings)','{}'),
+          ]:js=js.replace(a,b)
+          assert '@json(' not in js
+          pathlib.Path('/tmp/am-staff-live-ui.js').write_text(js)
+          for marker in ['setInterval(()=>poll(),1000)','recorded_at','received_at','STALE','accuracy_m','GPS','Last Position','geofence']:
+            assert marker.lower() in html.lower(),f'Missing transparent tracking UI {marker}'
+          for required in ["$user->active && $user->isAdmin()","where('id', '>', $after)","limit(200)","Cache-Control","abort_unless"]:
+            assert required in php,required
+          for forbidden in ['DB::table(\'staff_location_logs\')->insert(', 'StaffLocationLog::create(', 'DB::table(\'attendance\')->update(']:
+            assert forbidden not in php
+
+          for element_id in ['slFocus','slFocusName','slFocusAge','slFocusAccuracy',
+             'slFocusSync','slFocusBadge','slAllStaff','slFollow','slMapTitle',
+             'slSearch','slHistoryButton','slGoogleMaps']:
+              assert f'id="{element_id}"' in html, element_id
+          for mobile_marker in [
+            'AM_COMPACT_MOBILE_SOLO_TRACK',
+            '.sl-shell.solo .sl-staff-panel{display:none}',
+            '.sl-shell.solo .sl-metrics{display:none}',
+            '.sl-shell:not(.solo) .sl-detail{display:none}',
+            '@media(max-width:850px)',
+            '.sl-shell.solo .sl-map-wrap{display:flex',
+            'if(soloMode && selected!==s.id)continue',
+            "if(!people.has(id))return;",
+            "if(selected!==id)clearHistory();",
+            'function showAllStaff(){',
+            "selected=null;followSelected=false",
+            "followSelected=!followSelected",
+            "if(mapPoint(p) && accuracy!==null",
+            "setText('slFocusSync'",
+            "setText('slFocusAge'",
+            "if(soloMode)drawSelected()",
+            "document.addEventListener('keydown'",
+          ]:
+              assert mobile_marker in html,mobile_marker
+          assert "filter(s=>s.id===selected)" not in html, 'Marker privacy enforced at rendering, not only roster'
+          print('STAFF_MOBILE_SOLO_FILTER_BACK_HISTORY_FOLLOW_CONFIDENCE=PASS')
+          print('STAFF_LIVE_PRIVACY_AUTH_AND_INCREMENTAL_REFRESH=PASS')
+          PY
+          node --check /tmp/am-staff-live-ui.js
+          echo "STAFF_LIVE_UI_NODE_SYNTAX=PASS"
