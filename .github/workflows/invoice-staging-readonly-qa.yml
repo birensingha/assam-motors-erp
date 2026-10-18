@@ -130,6 +130,38 @@ jobs:
                 }
               }'
           fi
+          echo 'VEHICLE_SCHEMA_AUDIT_BEGIN'
+          cd "$ROOT"
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $schema=Illuminate\Support\Facades\Schema::class;
+          $db=Illuminate\Support\Facades\DB::class;
+          foreach (['job_cards','vehicles','vehicle_master','vehicle_masters','vehicle_models','vehicle_variants','invoices'] as $table) {
+              if (!$schema::hasTable($table)) {echo "NO_TABLE ".$table."\n";continue;}
+              echo "COLS ".$table." ".implode(',',$schema::getColumnListing($table))."\n";
+          }
+          $inv=$db::table('invoices')->where('invoice_no','INV-2026-00018')->first();
+          if(!$inv) {echo "SAMPLE_VEHICLE_INVOICE_ABSENT\n";}
+          else {
+              $job=$db::table('job_cards')->where('id',$inv->job_card_id)->first();
+              if(!$job) echo "SAMPLE_VEHICLE_JOB_ABSENT\n";
+              else {
+                  echo "SAMPLE_VEHICLE_JOB_FOUND vehicle_id_present=".(!empty($job->vehicle_id)?'yes':'no')."\n";
+                  if($schema::hasTable('vehicles') && !empty($job->vehicle_id)){
+                      $v=$db::table('vehicles')->where('id',$job->vehicle_id)->first();
+                      echo "SAMPLE_VEHICLE_MASTER_LINKED=".($v?'yes':'no')."\n";
+                      if ($v) foreach ((array)$v as $k=>$val) {
+                          if (preg_match('/(make|model|variant|year|fuel|engine|chassis|cc|capacity|transmi|vin|registration|reg_no|color)/i',$k))
+                              echo "MASTER_FIELD ".$k."=".($val===null||$val===''?'EMPTY':'POPULATED')."\n";
+                      }
+                  }
+              }
+          }
+          PHP
+          echo 'VEHICLE_SCHEMA_AUDIT_END'
           echo 'STAGING_INVOICE_READ_ONLY_AUDIT_DONE'
           REMOTE
       - name: Cleanup SSH key
