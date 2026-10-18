@@ -7,7 +7,8 @@ const browser=await chromium.launch({headless:true});
 const errors=[];
 try{
  const guest=await browser.newPage();
- await guest.goto(base+'/erp/job-cards/36/edit',{waitUntil:'domcontentloaded',timeout:30000});
+ await guest.goto(base+'/erp/job-cards/21/edit',{waitUntil:'domcontentloaded',timeout:30000});
+ // JC-2026-0021: live read-only audit verified in-progress with seven ROT rows.
  const guestProtected=new URL(guest.url()).pathname.endsWith('/login');
  console.log('P55_ADMIN_AUTH_REQUIRED '+(guestProtected?'PASS':'FAIL'));
  if(!guestProtected)errors.push('anonymous JC edit not protected');
@@ -20,13 +21,13 @@ try{
  await page.waitForLoadState('domcontentloaded',{timeout:16000}).catch(()=>{});
  for(const width of [1440,390]){
   await page.setViewportSize({width,height:850});
-  const response=await page.goto(base+'/erp/job-cards/36/edit',{waitUntil:'domcontentloaded',timeout:30000});
+  const response=await page.goto(base+'/erp/job-cards/21/edit',{waitUntil:'domcontentloaded',timeout:30000});
   const panel=page.locator('#p55-rot-edit');
   const found=response?.status()===200&&(await panel.count())===1;
   const row=panel.locator('[data-p55-item]').first();
   const form=panel.locator('[data-p55-form]').first();
   const count=await panel.locator('[data-p55-item]').count();
-  const original=page.locator('form[action*="/job-cards/36"]:not([data-p55-form])');
+  const original=page.locator('form[action*="/job-cards/21"]:not([data-p55-form])');
   const baseFields=await page.locator('input[name=customer_name]').count();
   const exists=found&&count>0&&(await original.count())>0&&baseFields>0;
   console.log('P55_EDITOR_'+width+' '+(exists?'PASS':'FAIL')+' rows='+count+' http='+response?.status());
