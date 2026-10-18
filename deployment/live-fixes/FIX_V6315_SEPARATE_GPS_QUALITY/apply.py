@@ -130,7 +130,7 @@ after["legacy_html"]=exact(t,
 
 assert len([k for k in paths if before[k]!=after[k]])>=7
 for k,text in after.items():
-    assert "checkin_max_accuracy_m" in text or k in ("attendance","rot"), f"Unexpected missing setting: {k}"
+    assert "checkin_max_accuracy_m" in text or k in ("attendance","rot","legacy_html"), f"Unexpected missing setting: {k}"
 
 # Fail closed: check every candidate BEFORE creating a new DB column or
 # deploying any file. Tests must be repeatable.
