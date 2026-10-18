@@ -45,7 +45,7 @@ $amLogoUrl = is_file($amLogoFile) ? asset('images/assam-motors-logo.png') : null
 </tbody></table>
 
 <h2>Labour / ROT</h2>
-<table><thead><tr><th>#</th><th>ROT</th><th>Description</th><th class="num">Std Hrs</th><th class="num">Rate</th><th class="num">GST</th><th class="num">Total</th></tr></thead><tbody>
+<table><thead><tr><th>#</th><th>ROT</th><th>Description</th><th class="num">Std Hrs</th><th class="num">Rate</th>@unless($isCostSummary)<th class="num">GST</th>@endunless<th class="num">Total</th></tr></thead><tbody>
 @forelse($labour as $l)<tr><td>{{ $loop->iteration }}</td><td>{{ $l->rot_code }}</td><td>{{ $l->description }}</td><td class="num">{{ number_format((float)$l->standard_hours,2) }}</td><td class="num">₹{{ number_format($isCostSummary ? (float)$l->total : (float)$l->labour_rate,2) }}</td>@unless($isCostSummary)<td class="num">{{ number_format((float)($l->gst_percent??0),2) }}%</td>@endunless<td class="num">₹{{ number_format((float)$l->total,2) }}</td></tr>@empty<tr><td colspan="{{ $isCostSummary ? 6 : 7 }}">No Labour.</td></tr>@endforelse
 </tbody></table>
 
