@@ -29,7 +29,8 @@ jobs:
         run: |
           set -euo pipefail
           bash -n deployment/live-fixes/V647_ROT_DATETIME/APPLY.sh
-          test -s deployment/live-fixes/V647_ROT_DATETIME/APPLY.sh
+          php -l deployment/live-fixes/V647_ROT_DATETIME/AdminRotTimelineController.php
+          test -s deployment/live-fixes/V647_ROT_DATETIME/rot-time-editor.blade.php
       - name: Deploy backed-up Admin time-correction controller, audited edit UI and WIP/invoice guards to Staging
         shell: bash
         run: |
@@ -51,7 +52,7 @@ jobs:
           ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
           TEMP_DIR="/tmp/v647-rot-clock-${GITHUB_RUN_ID}"
           # Stage authenticated PHP only in the Laravel project folder.
-          tar -czf /tmp/v647-clock-bundle.tgz -C deployment/live-fixes/V647_ROT_DATETIME APPLY.sh
+          tar -czf /tmp/v647-clock-bundle.tgz -C deployment/live-fixes/V647_ROT_DATETIME APPLY.sh AdminRotTimelineController.php rot-time-editor.blade.php
           if [ -n "$KEY" ]; then
             SCP=(scp -o StrictHostKeyChecking=accept-new -i ~/.ssh/v647 -P "$PORT")
           else
