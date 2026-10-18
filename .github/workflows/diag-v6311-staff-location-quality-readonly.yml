@@ -127,6 +127,17 @@ jobs:
             exit(1);
           }
           PHP
+          echo '=== Read-only real geofence distance-vs-accuracy decision locations ==='
+          for f in app/Http/Controllers/Api/V1/StaffLocationController.php app/Http/Controllers/Web/AdminStaffLocationPageController.php app/Http/Controllers/Web/AdminNativeModuleController.php resources/views/admin/native/staff-location.blade.php; do
+            test -f "$f" || continue
+            echo "GPS_AUDIT_FILE=$f"
+            grep -nE -C 2 'inside_geofence|accuracy_m|distance_m|outside_duration|outsideMinutes|outsideSeconds|weak_accuracy|WEAK_ACCURACY|radius_m|confidence|source|recorded_at' "$f" | head -125 | cut -c 1-220 || true
+          done
+          echo '=== Where outside duration is calculated in staging ==='
+          grep -RnlE 'Outside Duration|Outside duration|outsideDuration|outside_duration|10-minute duty coordinate trail' app/Http/Controllers resources/views public/legacy/admin 2>/dev/null | head -14 | while IFS= read -r f; do
+            echo "GPS_DURATION_SOURCE=$f"
+            grep -nE -C 2 'Outside Duration|Outside duration|outsideDuration|outside_duration|10-minute duty coordinate trail' "$f" | head -45 | cut -c 1-220 || true
+          done
           echo '=== Exact Staff Location admin badge UI logic ==='
           sed -n '273,291p' public/legacy/admin/admin.js | cut -c 1-260
           echo 'GPS_SOURCE_AND_METRICS_READ_ONLY=COMPLETE'
