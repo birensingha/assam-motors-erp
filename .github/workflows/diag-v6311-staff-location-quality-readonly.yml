@@ -1,0 +1,91 @@
+name: Diagnose v6.3.11 GPS Weak-Unverified Labels (read only)
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/diag-v6311-staff-location-quality-readonly.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Inspect exact ERP label and anonymized GPS quality history
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/v6311-quality
+            chmod 600 ~/.ssh/v6311-quality
+            SSH=(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -i ~/.ssh/v6311-quality -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f "$ROOT/artisan"
+          cd "$ROOT"
+          echo "STAGING_DIAG_UTC=$(date -u +%FT%TZ)"
+          echo '=== Label definition in presentation/controller source (line numbers; no user data) ==='
+          grep -RnilE 'GPS WEAK|WEAK/UNVERIFIED|WEAK_ACCURACY|UNVERIFIED|GPS.*STALE|STALE.*GPS' \
+            app/Http resources/views public 2>/dev/null |
+            grep -vE '/vendor/|/storage/|/node_modules/|\.min\.' | head -25 | while IFS= read -r f; do
+              echo "SOURCE_FILE=$f"
+              grep -nE -i -C 3 'GPS WEAK|WEAK/UNVERIFIED|WEAK_ACCURACY|UNVERIFIED|GPS.*STALE|STALE.*GPS' "$f" |
+                head -110 | cut -c 1-240
+            done
+          echo '=== LIVE StaffLocationController code without any actual coordinates ==='
+          f=app/Http/Controllers/Api/V1/StaffLocationController.php
+          test -f "$f"
+          grep -nE -C 3 'NO_DUTY_ATTENDANCE|OUTSIDE_DUTY_WINDOW|WEAK_ACCURACY|TRACKING_DISABLED|isStaff|isAdmin|gps.*consent|accuracy_m|quality|recordedAt|received_at|activeRot|mocked|reject|sample' "$f" |
+            head -210 | cut -c 1-240
+          echo '=== Safe tracking settings only (never actual geofence coordinates) ==='
+          php -r '
+            require "vendor/autoload.php";
+            $app=require "bootstrap/app.php";
+            $app->make(Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
+            $db=Illuminate\\Support\\Facades\\DB::class;
+            $schema=Illuminate\\Support\\Facades\\Schema::class;
+            if($schema::hasTable("staff_location_settings")){
+              $x=$db::table("staff_location_settings")->where("id",1)->first();
+              if($x)foreach(["tracking_enabled","max_accuracy_m","radius_m","sample_minutes"] as $k)echo "GPS_CONFIG_$k=".($x->$k??"NULL").PHP_EOL;
+            }
+            if(!$schema::hasTable("staff_location_logs")){echo "NO_LOCATION_LOG_TABLE=YES".PHP_EOL;exit;}
+            $base=$db::table("staff_location_logs");
+            foreach([1,4,24,72] as $hours){
+              $q=$db::table("staff_location_logs")->where("received_at",">=",date("Y-m-d H:i:s",time()-$hours*3600));
+              echo "RECEIVED_LAST_".$hours."H=".$q->count().PHP_EOL;
+            }
+            $q=$db::table("staff_location_logs")->where("received_at",">=",date("Y-m-d H:i:s",time()-24*3600));
+            foreach($q->selectRaw("COALESCE(quality, 'NULL') as k, count(*) as n")->groupBy("quality")->get() as $x)
+              echo "QUALITY_24H=".preg_replace("/[^A-Za-z0-9_]/","",strtoupper($x->k)).":".$x->n.PHP_EOL;
+            foreach($db::table("staff_location_logs")->where("received_at",">=",date("Y-m-d H:i:s",time()-24*3600))
+                     ->selectRaw("COALESCE(app_version, 'NULL') as v, count(*) as n")->groupBy("app_version")->get() as $x)
+              echo "APP_VERSION_24H=".preg_replace("/[^A-Za-z0-9._-]/","",$x->v).":".$x->n.PHP_EOL;
+            $x=$db::table("staff_location_logs")->where("received_at",">=",date("Y-m-d H:i:s",time()-24*3600))
+              ->selectRaw("min(accuracy_m) as lo, avg(accuracy_m) as avg, max(accuracy_m) as hi, count(*) as n")->first();
+            echo "ACCURACY_METRES_24H=min:".($x->lo??"-").",avg:".(isset($x->avg)?round($x->avg,1):"-").",max:".($x->hi??"-").PHP_EOL;
+            $x=$db::table("staff_location_logs")->selectRaw("MAX(received_at) as latest")->first();
+            echo "LATEST_RECEIPT_MINUTES_AGO=".($x->latest?round((time()-strtotime($x->latest))/60):"NONE").PHP_EOL;
+            echo "ANONYMIZED_GPS_DATABASE_CHECK=COMPLETE".PHP_EOL;
+          ' || echo 'ANONYMIZED_GPS_DATABASE_CHECK=FAILED'
+          echo 'GPS_SOURCE_AND_METRICS_READ_ONLY=COMPLETE'
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/v6311-quality
