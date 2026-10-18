@@ -97,7 +97,7 @@ jobs:
             if(count($items)!==30)exit(11);
             if(count(array_unique($items))!==30)exit(12);
             $card=["id"=>0,"job_no"=>"STAGING-QA","vehicle_reg_no"=>"QA","customer_name"=>"QA","status"=>"open","inspection_status"=>"pending","diagnosis_status"=>"pending"];
-            $html=view("staff.assigned-inspection",["card"=>$card,"assignment"=>null,"items"=>[],"checks"=>$items,"pending"=>true,"errors"=>new \\Illuminate\\Support\\ViewErrorBag()])->render();
+            $html=view("staff.assigned-inspection",["card"=>$card,"assignment"=>null,"items"=>[],"checks"=>$items,"pending"=>true,"errors"=>new \Illuminate\Support\ViewErrorBag()])->render();
             $n=substr_count($html,"][status]");
             if($n!==30) {echo "P60_STAFF_FORM_COUNT_BAD=$n\n";exit(13);}
             if(!str_contains($html,"Complete Vehicle Inspection"))exit(14);
