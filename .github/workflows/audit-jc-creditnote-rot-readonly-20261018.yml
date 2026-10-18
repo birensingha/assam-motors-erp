@@ -55,6 +55,25 @@ jobs:
           sed -n '17,63p' app/Services/RotAssignmentService.php | cut -c 1-240
           echo 'CREDIT_NOTE_MATCHES'
           grep -RnlEi 'credit[ _-]?note|refund[ _-]?voucher|reverse[ _-]?job.?card|reverseJobCard|invoice.?reversal' app/Http/Controllers app/Services routes resources/views 2>/dev/null | head -42
+          echo '=== LIVE JC EDIT VIEW STRUCTURE ==='
+          find resources/views/job-cards resources/views/invoices -maxdepth 2 -type f -name '*.blade.php' 2>/dev/null | sort | head -65
+          echo '=== JC ROUTES FOR EDIT AND UNWIND ==='
+          grep -nE -C 1 'credit.note|job.card.*unwind|reopen.*job|invoice.*return|job.card.*edit|line.*labour|line.*part' routes/web.php routes/api.php | head -100 | cut -c1-220 || true
+          echo '=== WORKSHOP LEDGER/CREDIT RELATED TABLE STRUCTURE ==='
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $sc=Illuminate\Support\Facades\Schema::class;
+          $db=Illuminate\Support\Facades\DB::class;
+          $names=array_map(fn($x)=>array_values((array)$x)[0],$db::select('SHOW TABLES'));
+          foreach ($names as $table) {
+            if (!preg_match('/invoice|ledger|credit|refund|return|payment|stock|inventory|receipt|job.card/i',$table))continue;
+            $cols=$sc::getColumnListing($table);
+            echo 'FIN_TABLE '.$table.' FIELDS='.implode(',',array_slice($cols,0,45))."\n";
+          }
+          PHP
           echo 'JC_EDIT_MATCHES'
           grep -RnlEi 'delete.*part|reverse.*part|update.*part|update.*rot|reopen.*rot' app/Http/Controllers/Web app/Services 2>/dev/null | head -38
           php <<'PHP'
