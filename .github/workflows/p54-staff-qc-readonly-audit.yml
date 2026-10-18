@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/p54-staff-qc-readonly-audit.yml'
       - 'deployment/live-fixes/P54_QC_STAFF/READONLY_AUDIT.php'
+      - 'deployment/live-fixes/P54_QC_STAFF/READONLY_AUDIT.php'
 permissions:
   contents: read
 jobs:
