@@ -1,0 +1,106 @@
+name: Diagnose v6.3.16 GPS weak and background DELAYED read-only
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/diag-v6316-live-gps-weak-background-20261018.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Check staging SSH and protected GPS route
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/am-gps-diag
+            chmod 600 ~/.ssh/am-gps-diag
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -i ~/.ssh/am-gps-diag -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          test -f "$ROOT/artisan" && test -f "$SITE/latest.json"
+          cd "$ROOT"
+          echo '=== Current time and protected GPS reporting statistics ==='
+          TZ=Asia/Kolkata date '+SERVER_NOW_IST=%Y-%m-%d %H:%M:%S %z'
+          echo '=== Published update feed (nonsecret version metadata only) ==='
+          php -r '$j=json_decode(file_get_contents(getenv("HOME")."/domains/assammotors.com/public_html/staging/staff-app/latest.json"),true);foreach(["version_name","version_code","published_at"] as $k)echo "APK_MANIFEST_".strtoupper($k)."=".($j[$k]??"missing").PHP_EOL;'
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::class;
+          $settings=$db::table('staff_location_settings')->where('id',1)->first();
+          foreach(['max_accuracy_m','checkin_max_accuracy_m','radius_m','sample_minutes','geofence_checkin_enabled'] as $k){
+            echo 'GPS_CONFIG_'.strtoupper($k).'='.($settings->$k??'MISSING').PHP_EOL;
+          }
+          $now=\Carbon\CarbonImmutable::now('Asia/Kolkata');
+          foreach(['AM5077'] as $code) {
+            $s=$db::table('staff')->where('staff_code',$code)->first();
+            if(!$s){echo "GPS_STAFF_CODE_{$code}_NOT_FOUND=YES\n";continue;}
+            echo "GPS_STAFF_CODE=$code\n";
+            $last=$db::table('staff_location_logs')->where('staff_id',$s->id)
+               ->orderByDesc('received_at')->orderByDesc('id')->limit(18)
+               ->get(['recorded_at','received_at','accuracy_m','provider','quality','app_version','source']);
+            echo 'GPS_LAST_18_RECORDS='.count($last).PHP_EOL;
+            $prev=null;
+            foreach($last as $l){
+                $ts=(string)($l->received_at??'');
+                $fix=(string)($l->recorded_at??'');
+                $gap=$prev?(\Carbon\CarbonImmutable::parse($prev,'Asia/Kolkata')->diffInSeconds(\Carbon\CarbonImmutable::parse($ts,'Asia/Kolkata'))):0;
+                $age=$fix?(int)$now->diffInSeconds(\Carbon\CarbonImmutable::parse($fix,'Asia/Kolkata')):0;
+                echo 'GPS_SNAPSHOT_IST='. $ts.
+                ' fix_age_seconds='.$age.
+                ' gap_from_newer_seconds='.$gap.
+                ' quality='.(string)$l->quality.
+                ' accuracy_m='.(string)$l->accuracy_m.
+                ' provider='.(string)$l->provider.
+                ' app='.(string)$l->app_version.
+                ' source='.(string)$l->source.PHP_EOL;
+                $prev=$ts;
+            }
+          }
+          $last4=$db::table('staff_location_logs')->where('received_at','>=',$now->subHours(4)->toDateTimeString());
+          echo 'GPS_TOTAL_LAST_4H='. $last4->count().PHP_EOL;
+          foreach ($db::table('staff_location_logs')->where('received_at','>=',$now->subHours(4)->toDateTimeString())
+                   ->selectRaw("COALESCE(app_version,'none') as app, COUNT(*) as count")
+                   ->groupBy('app_version')->get() as $r) {
+            echo 'GPS_VERSION_'.preg_replace('/[^A-Za-z0-9.-]/','',(string)$r->app).'_COUNT='.$r->count.PHP_EOL;
+          }
+          echo "GPS_QUALITY_DIAG_READONLY=PASS\n";
+          PHP
+          echo '=== GPS server response and weak geofence branches ==='
+          grep -nE -B 2 -A 4 "max_accuracy_m|WEAK_ACCURACY|quality.*WEAK|inside_geofence" app/Http/Controllers/Api/V1/StaffLocationController.php | head -130 | cut -c 1-240 || true
+          echo 'STAGING_GPS_CURRENT_DIAG=PASS'
+          REMOTE
+      - name: Check unauthenticated GPS API protections
+        run: |
+          set -euo pipefail
+          for path in /api/v1/staff/location /api/v1/admin/mobile/staff-locations; do
+            status="$(curl --silent --show-error --max-time 20 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path" || true)"
+            echo "PATH=$path HTTP=$status (unauthenticated; GET-only)"
+          done
+      - if: always()
+        run: rm -f ~/.ssh/am-gps-diag
