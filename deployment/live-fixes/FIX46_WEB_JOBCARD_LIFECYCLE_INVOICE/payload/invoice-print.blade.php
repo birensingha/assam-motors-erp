@@ -30,14 +30,34 @@ $isCostSummary = request()->query('mode') === 'cost_summary';
   <div><span>Status</span>{{ strtoupper((string)$inv->status) }}</div>
 </div>
 
-<h2>Parts</h2>
-<table><thead><tr><th>#</th><th>Part</th><th>Part No.</th><th class="num">Qty</th><th class="num">Rate</th>@unless($isCostSummary)<th class="num">GST</th>@endunless<th class="num">Total</th></tr></thead><tbody>
-@forelse($parts as $p)<tr><td>{{ $loop->iteration }}</td><td>{{ $p->part_name }}</td><td>{{ $p->part_number ?: $p->part_code }}</td><td class="num">{{ $p->qty }}</td><td class="num">₹{{ number_format($isCostSummary && (float)$p->qty > 0 ? (float)$p->total / (float)$p->qty : (float)$p->rate,2) }}</td>@unless($isCostSummary)<td class="num">{{ number_format((float)($p->gst_percent??0),2) }}%</td>@endunless<td class="num">₹{{ number_format((float)$p->total,2) }}</td></tr>@empty<tr><td colspan="{{ $isCostSummary ? 6 : 7 }}">No Parts.</td></tr>@endforelse
+<h2>Parts / Materials</h2>
+<table><thead><tr><th>SL No.</th><th>Part</th><th>Code</th><th>HSN</th><th class="num">Qty</th><th class="num">Rate</th><th class="num">Dis.</th>@unless($isCostSummary)<th class="num">GST</th>@endunless<th class="num">Amt</th></tr></thead><tbody>
+@forelse($parts as $p)
+@php
+  $pr=(array)$p;
+  $pQty=(float)($p->qty??0);
+  $pNet=(float)($p->total??0);
+  $pTax=(float)($pr['gst_amount']??$pr['tax_amount']??0);
+  // Cost summary line amount is inclusive only when saved tax values are available.
+  $pGross=$pNet+$pTax;
+  $pDisplayTotal=$isCostSummary?$pGross:$pNet;
+  $pDisplayRate=$isCostSummary&&$pQty>0?$pGross/$pQty:(float)($p->rate??0);
+@endphp
+<tr><td>{{ $loop->iteration }}</td><td>{{ $p->part_name }}</td><td>{{ $p->part_number ?? $p->part_code ?? '—' }}</td><td>{{ $pr['hsn_code']??$pr['hsn']??'—' }}</td><td class="num">{{ $p->qty }}</td><td class="num">₹{{ number_format($pDisplayRate,2) }}</td><td class="num">{{ number_format((float)($pr['discount_amount']??$pr['discount']??0),2) }}</td>@unless($isCostSummary)<td class="num">{{ number_format((float)($p->gst_percent??0),2) }}%</td>@endunless<td class="num">₹{{ number_format($pDisplayTotal,2) }}</td></tr>
+@empty<tr><td colspan="{{ $isCostSummary?8:9 }}">No Parts lines.</td></tr>@endforelse
 </tbody></table>
 
-<h2>Labour / ROT</h2>
-<table><thead><tr><th>#</th><th>ROT</th><th>Description</th><th class="num">Std Hrs</th><th class="num">Rate</th>@unless($isCostSummary)<th class="num">GST</th>@endunless<th class="num">Total</th></tr></thead><tbody>
-@forelse($labour as $l)<tr><td>{{ $loop->iteration }}</td><td>{{ $l->rot_code }}</td><td>{{ $l->description }}</td><td class="num">{{ number_format((float)$l->standard_hours,2) }}</td><td class="num">₹{{ number_format($isCostSummary ? (float)$l->total : (float)$l->labour_rate,2) }}</td>@unless($isCostSummary)<td class="num">{{ number_format((float)($l->gst_percent??0),2) }}%</td>@endunless<td class="num">₹{{ number_format((float)$l->total,2) }}</td></tr>@empty<tr><td colspan="{{ $isCostSummary ? 6 : 7 }}">No Labour.</td></tr>@endforelse
+<h2>Labour / ROT Charges</h2>
+<table><thead><tr><th>SL No.</th><th>Labour</th><th>ROT</th><th>SAC</th><th class="num">Std Hrs</th><th class="num">Rate</th><th class="num">Dis.</th>@unless($isCostSummary)<th class="num">GST</th>@endunless<th class="num">Amt</th></tr></thead><tbody>
+@forelse($labour as $l)
+@php
+  $lr=(array)$l;
+  $lNet=(float)($l->total??0);
+  $lTax=(float)($lr['gst_amount']??$lr['tax_amount']??0);
+  $lDisplayTotal=$isCostSummary?$lNet+$lTax:$lNet;
+@endphp
+<tr><td>{{ $loop->iteration }}</td><td>{{ $l->description }}</td><td>{{ $l->rot_code }}</td><td>{{ $lr['sac_code']??$lr['sac']??'—' }}</td><td class="num">{{ number_format((float)$l->standard_hours,2) }}</td><td class="num">₹{{ number_format($isCostSummary?$lDisplayTotal:(float)$l->labour_rate,2) }}</td><td class="num">{{ number_format((float)($lr['discount_amount']??$lr['discount']??0),2) }}</td>@unless($isCostSummary)<td class="num">{{ number_format((float)($l->gst_percent??0),2) }}%</td>@endunless<td class="num">₹{{ number_format($lDisplayTotal,2) }}</td></tr>
+@empty<tr><td colspan="{{ $isCostSummary?8:9 }}">No Labour lines.</td></tr>@endforelse
 </tbody></table>
 
 <div class="tot">
