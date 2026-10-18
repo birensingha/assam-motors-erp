@@ -59,9 +59,9 @@ jobs:
           REMOTE="$SSH_USER@$SSH_HOST"
           TEMP="/home/$SSH_USER/p53-print-$GITHUB_RUN_ID"
           tar -czf /tmp/am-p53.tgz -C deployment/live-fixes/P53_APPROVED_DUAL_INVOICE PATCH_P53.php print.blade.php
-          "${{SSH[@]}" "$REMOTE" "mkdir -p '$TEMP'"
-          "${{SCP[@]}" /tmp/am-p53.tgz "$REMOTE:$TEMP/package.tgz"
-          "${{SSH[@]}" "$REMOTE" "APP_ROOT='$APP_ROOT' TEMP='$TEMP' RUN_ID='$GITHUB_RUN_ID' bash -s" ${{'REMOTE'
+          "${SSH[@]}" "$REMOTE" "mkdir -p '$TEMP'"
+          "${SCP[@]}" /tmp/am-p53.tgz "$REMOTE:$TEMP/package.tgz"
+          "${SSH[@]}" "$REMOTE" "APP_ROOT='$APP_ROOT' TEMP='$TEMP' RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
           set -euo pipefail
           ROOT="$APP_ROOT"
           PRINT="$ROOT/resources/views/invoices/print.blade.php"
@@ -115,7 +115,7 @@ jobs:
             export SSHPASS="$SSH_PASSWORD"
             SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
           fi
-          "${{SSH[@]}" "$SSH_USER@$SSH_HOST" "APP_ROOT='$APP_ROOT' RUN_ID='$GITHUB_RUN_ID' bash -s" ${{'REMOTE'
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "APP_ROOT='$APP_ROOT' RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
           set -euo pipefail
           ROOT="$APP_ROOT"
           BACKUP="$(dirname "$ROOT")/ASSAM_P53_INVOICE_BACKUP_$RUN_ID"
