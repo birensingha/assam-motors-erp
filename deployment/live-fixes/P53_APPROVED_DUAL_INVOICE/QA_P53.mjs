@@ -36,8 +36,8 @@ try {
      const parts=visible.includes('Parts / Materials')&&visible.includes('Labour / ROT Charges')&&visible.includes('OSL Jobs / Outside Services');
      const brand=await page.locator('.brand').evaluate(el=>getComputedStyle(el).borderTopColor).catch(()=>'');
      const matched=format==='tax'?
-       doc.includes('Tax / Service Invoice')&&hasTaxCol>0:
-       doc.includes('Customer Cost Summary')&&hasTaxCol===0&&visible.includes('NOT A TAX INVOICE')&&
+       doc.toLowerCase().includes('tax / service invoice')&&hasTaxCol>0:
+       doc.toLowerCase().includes('customer cost summary')&&hasTaxCol===0&&visible.includes('NOT A TAX INVOICE')&&
         !visible.includes('Tax / GST (recorded)');
      const bounds=await page.evaluate(()=>({
        bodyScroll:document.documentElement.scrollWidth-innerWidth,
@@ -49,7 +49,10 @@ try {
      console.log('P53_PRINT_'+format.toUpperCase()+'_'+width+' HTTP '+response?.status()+
        ' COL_GST '+hasTaxCol+' GRAND_TOTAL '+money+' OVERFLOW '+bounds.bodyScroll+' '+(ok?'PASS':'FAIL'));
      amounts.push(money);
-     if(!ok)failures.push(format+'/'+width);
+     if(!ok){
+       console.log('P53_QA_DETAILS '+JSON.stringify({format,width,doc,bank,notes,parts,matched,brand,bounds,money,hasTaxCol,hasCompany:visible.includes('ASSAM MOTORS')}));
+       failures.push(format+'/'+width);
+     }
    }
   }
   if(new Set(amounts).size!==1){console.log('P53_SAME_GRAND_TOTAL_FAIL');failures.push('different amounts');}
