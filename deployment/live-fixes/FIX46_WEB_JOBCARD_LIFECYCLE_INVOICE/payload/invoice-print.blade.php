@@ -33,33 +33,43 @@ $showDiscount = request()->query('show_discount') === '1';
 </div>
 
 <h2>Parts / Materials</h2>
-<table><thead><tr><th>SL No.</th><th>Part</th><th>Code</th><th>HSN</th><th class="num">Qty</th><th class="num">Rate</th>@if($showDiscount)<th class="num">Dis%</th><th class="num">Discount Amount</th>@endif @unless($isCostSummary)<th class="num">GST%</th><th class="num">GST Amount</th>@endunless<th class="num">Amt</th></tr></thead><tbody>
+<table><thead><tr><th>SL No.</th><th>Part</th><th>Code</th><th>HSN</th><th class="num">Qty</th><th class="num">Rate</th>@if($showDiscount)<th class="num">Dis%</th><th class="num">Discount Amount</th>@endif @unless($isCostSummary)<th class="num">Taxable Amount</th><th class="num">GST%</th><th class="num">GST Amount</th>@endunless<th class="num">Final Amount</th></tr></thead><tbody>
 @forelse($parts as $p)
 @php
   $pr=(array)$p;
   $pQty=(float)($p->qty??0);
   $pNet=(float)($p->total??0);
-  $pTax=(float)($pr['gst_amount']??$pr['tax_amount']??0);
+  $pTax=isset($pr['gst_amount'])&&is_numeric($pr['gst_amount'])
+    ? (float)$pr['gst_amount']
+    : (isset($pr['tax_amount'])&&is_numeric($pr['tax_amount'])
+      ? (float)$pr['tax_amount']
+      : (isset($pr['gst_percent'])&&is_numeric($pr['gst_percent'])
+        ? round($pNet*(float)$pr['gst_percent']/100,2) : null));
   // Cost summary line amount is inclusive only when saved tax values are available.
-  $pGross=$pNet+$pTax;
-  $pDisplayTotal=$isCostSummary?$pGross:$pNet;
-  $pDisplayRate=$isCostSummary&&$pQty>0?$pGross/$pQty:(float)($p->rate??0);
+  $pGross=$pTax===null ? null : round($pNet+$pTax,2);
+  $pDisplayTotal=$pGross;
+  $pDisplayRate=$isCostSummary&&$pQty>0&&$pGross!==null?$pGross/$pQty:(float)($p->rate??0);
 @endphp
-<tr><td>{{ $loop->iteration }}</td><td>{{ $p->part_name }}</td><td>{{ $p->part_number ?? $p->part_code ?? '—' }}</td><td>{{ $pr['hsn_code']??$pr['hsn']??'—' }}</td><td class="num">{{ $p->qty }}</td><td class="num">₹{{ number_format($pDisplayRate,2) }}</td>@if($showDiscount)<td class="num">{{ isset($pr['discount_percent']) ? number_format((float)$pr['discount_percent'],2).'%' : '—' }}</td><td class="num">₹{{ number_format((float)($pr['discount_amount']??$pr['discount']??0),2) }}</td>@endif @unless($isCostSummary)<td class="num">{{ number_format((float)($p->gst_percent??0),2) }}%</td><td class="num">{{ isset($pr['gst_amount']) || isset($pr['tax_amount']) ? '₹'.number_format($pTax,2) : '—' }}</td>@endunless<td class="num">₹{{ number_format($pDisplayTotal,2) }}</td></tr>
-@empty<tr><td colspan="{{ 7 + ($showDiscount ? 2 : 0) + ($isCostSummary ? 0 : 2) }}">No Parts lines.</td></tr>@endforelse
+<tr><td>{{ $loop->iteration }}</td><td>{{ $p->part_name }}</td><td>{{ $p->part_number ?? $p->part_code ?? '—' }}</td><td>{{ $pr['hsn_code']??$pr['hsn']??'—' }}</td><td class="num">{{ $p->qty }}</td><td class="num">₹{{ number_format($pDisplayRate,2) }}</td>@if($showDiscount)<td class="num">{{ isset($pr['discount_percent']) ? number_format((float)$pr['discount_percent'],2).'%' : '—' }}</td><td class="num">₹{{ number_format((float)($pr['discount_amount']??$pr['discount']??0),2) }}</td>@endif @unless($isCostSummary)<td class="num">₹{{ number_format($pNet,2) }}</td><td class="num">{{ number_format((float)($p->gst_percent??0),2) }}%</td><td class="num">{{ $pTax===null ? '—' : '₹'.number_format($pTax,2) }}</td>@endunless<td class="num">{{ $pDisplayTotal===null ? '—' : '₹'.number_format($pDisplayTotal,2) }}</td></tr>
+@empty<tr><td colspan="{{ 7 + ($showDiscount ? 2 : 0) + ($isCostSummary ? 0 : 3) }}">No Parts lines.</td></tr>@endforelse
 </tbody></table>
 
 <h2>Labour / ROT Charges</h2>
-<table><thead><tr><th>SL No.</th><th>Labour</th><th>ROT</th><th>SAC</th><th class="num">Std Hrs</th><th class="num">Rate</th>@if($showDiscount)<th class="num">Dis%</th><th class="num">Discount Amount</th>@endif @unless($isCostSummary)<th class="num">GST%</th><th class="num">GST Amount</th>@endunless<th class="num">Amt</th></tr></thead><tbody>
+<table><thead><tr><th>SL No.</th><th>Labour</th><th>ROT</th><th>SAC</th><th class="num">Std Hrs</th><th class="num">Rate</th>@if($showDiscount)<th class="num">Dis%</th><th class="num">Discount Amount</th>@endif @unless($isCostSummary)<th class="num">Taxable Amount</th><th class="num">GST%</th><th class="num">GST Amount</th>@endunless<th class="num">Final Amount</th></tr></thead><tbody>
 @forelse($labour as $l)
 @php
   $lr=(array)$l;
   $lNet=(float)($l->total??0);
-  $lTax=(float)($lr['gst_amount']??$lr['tax_amount']??0);
-  $lDisplayTotal=$isCostSummary?$lNet+$lTax:$lNet;
+  $lTax=isset($lr['gst_amount'])&&is_numeric($lr['gst_amount'])
+    ? (float)$lr['gst_amount']
+    : (isset($lr['tax_amount'])&&is_numeric($lr['tax_amount'])
+      ? (float)$lr['tax_amount']
+      : (isset($lr['gst_percent'])&&is_numeric($lr['gst_percent'])
+        ? round($lNet*(float)$lr['gst_percent']/100,2) : null));
+  $lDisplayTotal=$lTax===null ? null : round($lNet+$lTax,2);
 @endphp
-<tr><td>{{ $loop->iteration }}</td><td>{{ $l->description }}</td><td>{{ $l->rot_code }}</td><td>{{ $lr['sac_code']??$lr['sac']??'—' }}</td><td class="num">{{ number_format((float)$l->standard_hours,2) }}</td><td class="num">₹{{ number_format($isCostSummary?$lDisplayTotal:(float)$l->labour_rate,2) }}</td>@if($showDiscount)<td class="num">{{ isset($lr['discount_percent']) ? number_format((float)$lr['discount_percent'],2).'%' : '—' }}</td><td class="num">₹{{ number_format((float)($lr['discount_amount']??$lr['discount']??0),2) }}</td>@endif @unless($isCostSummary)<td class="num">{{ number_format((float)($l->gst_percent??0),2) }}%</td><td class="num">{{ isset($lr['gst_amount']) || isset($lr['tax_amount']) ? '₹'.number_format($lTax,2) : '—' }}</td>@endunless<td class="num">₹{{ number_format($lDisplayTotal,2) }}</td></tr>
-@empty<tr><td colspan="{{ 7 + ($showDiscount ? 2 : 0) + ($isCostSummary ? 0 : 2) }}">No Labour lines.</td></tr>@endforelse
+<tr><td>{{ $loop->iteration }}</td><td>{{ $l->description }}</td><td>{{ $l->rot_code }}</td><td>{{ $lr['sac_code']??$lr['sac']??'—' }}</td><td class="num">{{ number_format((float)$l->standard_hours,2) }}</td><td class="num">₹{{ number_format($isCostSummary?$lDisplayTotal:(float)$l->labour_rate,2) }}</td>@if($showDiscount)<td class="num">{{ isset($lr['discount_percent']) ? number_format((float)$lr['discount_percent'],2).'%' : '—' }}</td><td class="num">₹{{ number_format((float)($lr['discount_amount']??$lr['discount']??0),2) }}</td>@endif @unless($isCostSummary)<td class="num">₹{{ number_format($lNet,2) }}</td><td class="num">{{ number_format((float)($l->gst_percent??0),2) }}%</td><td class="num">{{ $lTax===null ? '—' : '₹'.number_format($lTax,2) }}</td>@endunless<td class="num">{{ $lDisplayTotal===null ? '—' : '₹'.number_format($lDisplayTotal,2) }}</td></tr>
+@empty<tr><td colspan="{{ 7 + ($showDiscount ? 2 : 0) + ($isCostSummary ? 0 : 3) }}">No Labour lines.</td></tr>@endforelse
 </tbody></table>
 
 <div class="tot">
