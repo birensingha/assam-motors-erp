@@ -108,4 +108,26 @@ PHP
   echo 'CURRENT_DB_READ=RETRY_'$attempt
   sleep 4
 done
+echo '=== JC36 ROT TIME HISTORY vs INVOICE DATE (read-only) ==='
+php <<'PHP'
+<?php
+require 'vendor/autoload.php';
+$app=require 'bootstrap/app.php';
+$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+$j=DB::table('job_cards')->where('id',36)->first();
+$inv=DB::table('invoices')->where('job_card_id',36)->first();
+if($j && $inv){
+ $a=[];foreach(['invoice_no','invoice_date','created_at','updated_at','status'] as $k)if(property_exists($inv,$k))$a[$k]=$inv->$k;
+ echo 'JC36_INVOICE_TIMELINE='.json_encode($a).PHP_EOL;
+ foreach(DB::table('rot_sessions')->where('job_card_id',36)->get() as $r){
+  if(Schema::hasTable('rot_session_events')){
+   $ev=DB::table('rot_session_events')->where('session_id',$r->id)->orderBy('event_at')->get();
+   foreach($ev as $e){$d=[];foreach(['action','event_at','staff_id','created_at'] as $k)if(property_exists($e,$k))$d[$k]=$e->$k;
+    echo 'ROT_EVENT='.json_encode(['rot_id'=>$r->id,'event'=>$d]).PHP_EOL;}
+  }
+ }
+}
+PHP
 echo 'V646_READONLY_ROT_INVOICE_AUDIT=COMPLETE'
