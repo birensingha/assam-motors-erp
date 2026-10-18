@@ -140,6 +140,9 @@ jobs:
           done
           echo '=== Exact Staff Location admin badge UI logic ==='
           sed -n '273,291p' public/legacy/admin/admin.js | cut -c 1-260
+          echo '=== Admin staff coordinate history and outside-seconds source ==='
+          sed -n '294,312p' public/legacy/admin/admin.js | cut -c 1-340
+          grep -RniE 'outside_seconds|outsideSeconds|outside_seconds|history.*location|staff-location-history|location/history' routes app/Http app/Services 2>/dev/null | head -85 | cut -c 1-220 || true
           echo 'GPS_SOURCE_AND_METRICS_READ_ONLY=COMPLETE'
           REMOTE
       - if: always()
