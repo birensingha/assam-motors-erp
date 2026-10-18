@@ -64,12 +64,12 @@ replace_once(
     ''
 )
 replace_once(
-    '  @if($hasRateAndNoTax)',
+    '@if($hasRateAndNoTax)',
     '''  <div class="invoice-record-note" style="font-size:8.2px;color:#657b91;margin-top:6px">
     <strong>Invoice No. {{ $invoiceNo }}</strong> &nbsp;·&nbsp;
     All amounts come from the saved invoice. Changing print format does not create another invoice or ledger entry.
   </div>
-  @if($hasRateAndNoTax)'''
+@if($hasRateAndNoTax)'''
 )
 # Read-only mutation assertion: only CSS and moving explanatory lines
 assert s.count('AM_HSN_PANEL_V1')==1
