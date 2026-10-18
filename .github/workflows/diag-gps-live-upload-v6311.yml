@@ -44,7 +44,7 @@ jobs:
           cd "$ROOT"
           echo "GPS_STAGING_DATE=$(date -Is)"
           echo '== ROUTE SNAPSHOT (no secrets / coordinates) =='
-          php artisan route:list --path=staff/location --columns=method,uri,name,action,middleware 2>/dev/null | head -25 || php artisan route:list --path=staff/location | head -25 || true
+          php artisan route:list --path=staff/location | head -25 || true
           echo '== RELEVANT FILE NAMES (no content) =='
           find app/Http/Controllers app/Services -type f \( -iname '*Location*' -o -iname '*Attendance*' \) -printf '%p\n' 2>/dev/null | head -50 || true
           echo '== LOCATION API REGISTRATION =='
@@ -53,7 +53,7 @@ jobs:
           if [ -d storage/logs ]; then
             find storage/logs -maxdepth 1 -type f -name 'laravel*.log' -mtime -2 -print0 |
               xargs -0 -r grep -ciE 'GPS|StaffLocation|staff/location|location.*error' 2>/dev/null |
-              awk '{sum+=$1} END{print "GPS_RELATED_LOG_LINES="sum+0}'
+              awk '{sum+=$1} END{print "GPS_RELATED_LOG_LINES="sum+0}' || true
           fi
           echo '== SAFE UPDATE FEED METADATA =='
           php -r '$v=json_decode(file_get_contents($argv[1]),true)?:[]; echo "CURRENT_VERSION_CODE=".((int)($v["version_code"]??0)).PHP_EOL;echo "CURRENT_VERSION_NAME=".($v["version_name"]??"unknown").PHP_EOL;echo "PACKAGE_VALID=".(($v["package_id"]??"")==="com.assammotors.staff"?"YES":"NO").PHP_EOL;' "$SITE/latest.json"
