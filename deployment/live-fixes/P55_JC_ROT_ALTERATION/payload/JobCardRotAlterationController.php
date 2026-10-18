@@ -130,8 +130,9 @@ final class JobCardRotAlterationController extends Controller
                     $this->block('Only completed ROT can backdate its actual Start/End. Running/Paused ROT must use workflow actions.','rot_start');
                 $baseUpdate['rot_start']=$newStart->toDateTimeString();
                 $baseUpdate['rot_end']=$newEnd->toDateTimeString();
-                // Calendar turnaround. Do NOT replace actual productive seconds.
-                $baseUpdate['total_hours']=round($newStart->diffInMinutes($newEnd)/60,2);
+                // The displayed calendar TAT is derived from corrected Start/End.
+                // Leave total_hours and productive_seconds untouched: those are
+                // actual worked time, not elapsed wall-clock time.
             }
 
             $session=null;
