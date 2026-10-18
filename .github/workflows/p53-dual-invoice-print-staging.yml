@@ -1,0 +1,138 @@
+name: P53 Approved Dual Invoice Printing on STAGING
+on:
+  push:
+    branches: [feature/p53-dual-invoice-print-20261018]
+    paths: ['.github/workflows/p53-dual-invoice-print-staging.yml']
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+      STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL || 'https://staging.assammotors.com' }}
+      STAGING_ADMIN_LOGIN: ${{ secrets.STAGING_ADMIN_LOGIN }}
+      STAGING_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate P53 code
+        run: |
+          set -euo pipefail
+          php -l deployment/live-fixes/P53_APPROVED_DUAL_INVOICE/PATCH_P53.php
+          node --check deployment/live-fixes/P53_APPROVED_DUAL_INVOICE/QA_P53.mjs
+          test -s deployment/live-fixes/P53_APPROVED_DUAL_INVOICE/print.blade.php
+          echo 'P53_SOURCE_LINT_PASS'
+      - name: SSH credentials
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Guarded install invoice-only presentation files
+        id: install
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          TEMP="/home/$SSH_USER/p53-print-$GITHUB_RUN_ID"
+          tar -czf /tmp/am-p53.tgz -C deployment/live-fixes/P53_APPROVED_DUAL_INVOICE PATCH_P53.php print.blade.php
+          "${{SSH[@]}" "$REMOTE" "mkdir -p '$TEMP'"
+          "${{SCP[@]}" /tmp/am-p53.tgz "$REMOTE:$TEMP/package.tgz"
+          "${{SSH[@]}" "$REMOTE" "APP_ROOT='$APP_ROOT' TEMP='$TEMP' RUN_ID='$GITHUB_RUN_ID' bash -s" ${{'REMOTE'
+          set -euo pipefail
+          ROOT="$APP_ROOT"
+          PRINT="$ROOT/resources/views/invoices/print.blade.php"
+          SHOW="$ROOT/resources/views/invoices/show.blade.php"
+          test -f "$ROOT/artisan" && test -f "$PRINT" && test -f "$SHOW"
+          BACKUP="$(dirname "$ROOT")/ASSAM_P53_INVOICE_BACKUP_$RUN_ID"
+          test ! -e "$BACKUP"
+          mkdir -p "$BACKUP"
+          cp -p "$PRINT" "$BACKUP/print.blade.php"
+          cp -p "$SHOW" "$BACKUP/show.blade.php"
+          rollback(){
+            cp -p "$BACKUP/print.blade.php" "$PRINT" || true
+            cp -p "$BACKUP/show.blade.php" "$SHOW" || true
+            (cd "$ROOT" && php artisan view:clear && php artisan view:cache) >/dev/null 2>&1 || true
+            echo 'P53_SOURCE_ROLLBACK_COMPLETED'
+          }
+          trap rollback ERR
+          tar -xzf "$TEMP/package.tgz" -C "$TEMP"
+          php "$TEMP/PATCH_P53.php" check "$ROOT"
+          php "$TEMP/PATCH_P53.php" apply "$ROOT"
+          cd "$ROOT"
+          php artisan view:clear
+          php artisan view:cache
+          grep -q 'P53_APPROVED_DUAL_INVOICE_PRINT' "$PRINT"
+          grep -q 'P53_DUAL_INVOICE_BUTTONS' "$SHOW"
+          echo 'P53_PRINT_VIEW_STAGING_INSTALLED'
+          echo "P53_SAFE_BACKUP=$BACKUP"
+          trap - ERR
+          rm -rf "$TEMP"
+          REMOTE
+      - uses: actions/setup-node@v4
+        if: steps.install.outcome == 'success'
+        with:
+          node-version: '22'
+      - name: Install Chromium browser
+        if: steps.install.outcome == 'success'
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Test both invoice layouts and unchanged grand total (GET only)
+        id: qa
+        if: steps.install.outcome == 'success'
+        run: node deployment/live-fixes/P53_APPROVED_DUAL_INVOICE/QA_P53.mjs
+      - name: Restore both original print templates if browser QA fails
+        if: failure() && steps.install.outcome == 'success'
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            SSH=(ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          fi
+          "${{SSH[@]}" "$SSH_USER@$SSH_HOST" "APP_ROOT='$APP_ROOT' RUN_ID='$GITHUB_RUN_ID' bash -s" ${{'REMOTE'
+          set -euo pipefail
+          ROOT="$APP_ROOT"
+          BACKUP="$(dirname "$ROOT")/ASSAM_P53_INVOICE_BACKUP_$RUN_ID"
+          test -s "$BACKUP/print.blade.php"
+          test -s "$BACKUP/show.blade.php"
+          cp -p "$BACKUP/print.blade.php" "$ROOT/resources/views/invoices/print.blade.php"
+          cp -p "$BACKUP/show.blade.php" "$ROOT/resources/views/invoices/show.blade.php"
+          cd "$ROOT"
+          php artisan view:clear
+          php artisan view:cache
+          echo 'P53_INVOICE_PRINT_ROLLBACK_COMPLETE'
+          REMOTE
+      - name: Outcomes
+        if: always()
+        run: |
+          echo "P53 install: ${{ steps.install.outcome }}"
+          echo "P53 browser QA: ${{ steps.qa.outcome }}"
+          echo 'No invoice financial values, customer ledger, old ERP or old admin were modified.'
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
