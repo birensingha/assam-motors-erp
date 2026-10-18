@@ -1,0 +1,87 @@
+name: Staging Admin Mobile GPS History API (guarded)
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/staging-admin-mobile-gps-history-apply.yml']
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USER: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASS: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Python patch
+        run: python3 -m py_compile deployment/live-fixes/FIX_ADMIN_MOBILE_LOCATION_HISTORY_20261018/APPLY_HISTORY.py
+      - name: Connect to Hostinger
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USER"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/gps-history-key
+            chmod 600 ~/.ssh/gps-history-key
+          else
+            test -n "$PASS"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Deploy authenticated history API and verify PHP
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -p "$PORT" -i ~/.ssh/gps-history-key -o BatchMode=yes)
+          else
+            export SSHPASS="$PASS"
+            SSH=(sshpass -e ssh -p "$PORT")
+          fi
+          "${SSH[@]}" "$USER@$HOST" "python3 - '$ROOT'" < deployment/live-fixes/FIX_ADMIN_MOBILE_LOCATION_HISTORY_20261018/APPLY_HISTORY.py
+          "${SSH[@]}" "$USER@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          TARGET="$ROOT/app/Http/Controllers/Api/V1/AdminMobileController.php"
+          if ! php -l "$TARGET"; then
+            echo 'PHP_LINT_FAILED_RESTORING_ORIGINAL'
+            python3 - "$TARGET" <<'PY'
+          import shutil,sys
+          from pathlib import Path
+          p=Path(sys.argv[1])
+          b=sorted(p.parent.glob(p.name+'.pre-history-*.bak'))
+          if not b:raise SystemExit('ORIGINAL_BACKUP_MISSING')
+          shutil.copy2(b[-1],p)
+          print('RESTORED_ORIGINAL',b[-1].name)
+          PY
+            php -l "$TARGET"
+            exit 2
+          fi
+          cd "$ROOT"
+          php artisan route:list --path=api/v1/admin/mobile/staff-locations > /dev/null
+          python3 - "$TARGET" <<'PY'
+          from pathlib import Path
+          import sys
+          s=Path(sys.argv[1]).read_text()
+          assert 'AM_ADMIN_LOCATION_HISTORY_PARITY_V1' in s
+          assert s.count('public function locations(Request $request)')==1
+          assert "'history'=>true" in s
+          assert "'verified_outside_seconds'" in s
+          print('ADMIN_GPS_HISTORY_PATCH_VERIFIED')
+          PY
+          REMOTE
+          status="$(curl -sS --max-time 20 -o /dev/null -w '%{http_code}' 'https://staging.assammotors.com/api/v1/admin/mobile/staff-locations?history=1&staff_id=1&date=2026-10-18' || true)"
+          echo "UNAUTHENTICATED_ADMIN_API_HTTP=$status"
+          case "$status" in 401|403|302) echo 'ADMIN_AUTH_STILL_ENFORCED' ;; *) echo 'ADMIN_AUTH_SMOKE_REQUIRES_REVIEW' ;; esac
+      - name: Remove credentials
+        if: always()
+        run: rm -f ~/.ssh/gps-history-key
