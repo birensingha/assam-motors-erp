@@ -1,0 +1,120 @@
+name: Stage Staff v6.3.18 signed WMS GPS APK private receiver
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/v6318-stage-signed-wms-gps-receiver.yml"]
+permissions: { contents: read }
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Setup secure Hostinger access
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/v6318stage; chmod 600 ~/.ssh/v6318stage
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Stage short-lived SHA-256-locked upload, keep old feed unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -i ~/.ssh/v6318stage -p "$PORT")
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          test -f "$SITE/latest.json"
+          test -d "$SITE/private"
+          test -f "$SITE/../legacy/api/staff-app-update.php"
+          php -r '$m=json_decode(file_get_contents($argv[1]),true); if(!is_array($m)||$m["package_id"]!=="com.assammotors.staff"||!in_array((int)$m["version_code"],[60317],true)){fwrite(STDERR,"Unexpected current update version; refusing change\n");exit(1);}' "$SITE/latest.json"
+          RECEIVER="$SITE/v6318-upload-once.php"
+          if [ -e "$RECEIVER" ]; then
+            if grep -Fq '95599c8868fb432960f760e4a5ca679dc8f975fff7808fb0d9edef08901f3775' "$RECEIVER"; then
+              echo 'V6318_EXACT_RECEIVER=ALREADY_STAGED'; exit 0
+            fi
+            echo 'Unexpected existing upload receiver'; exit 1
+          fi
+          cat > "$RECEIVER.tmp" <<'PHP'
+          <?php
+          declare(strict_types=1);
+          header('Content-Type: application/json; charset=utf-8');
+          header('Cache-Control: no-store');
+          header('X-Content-Type-Options: nosniff');
+          const EXPECTED_SHA='95599c8868fb432960f760e4a5ca679dc8f975fff7808fb0d9edef08901f3775';
+          const EXPECTED_SIZE=3365620;
+          const FILE='Assam-Motors-Staff-v6.3.18-WMS-IMMEDIATE-GPS-SIGNED-QA.apk';
+          function stop(int $code,string $msg):void {
+              http_response_code($code);
+              echo json_encode(['ok'=>false,'reason'=>$msg]); exit;
+          }
+          if(time()>filemtime(__FILE__)+3600)stop(410,'Upload window expired');
+          if(strtolower((string)($_SERVER['HTTP_HOST']??''))!=='staging.assammotors.com')stop(403,'Wrong host');
+          if(($_SERVER['REQUEST_METHOD']??'')!=='POST')stop(405,'POST only');
+          if(strtolower(trim((string)($_SERVER['CONTENT_TYPE']??'')))!=='application/octet-stream')stop(415,'Bad content type');
+          if((int)($_SERVER['CONTENT_LENGTH']??-1)!==EXPECTED_SIZE)stop(413,'Wrong size');
+          $dir=__DIR__.'/private';
+          if(!is_dir($dir))stop(500,'Protected directory missing');
+          $target=$dir.'/'.FILE;
+          if(file_exists($target)){
+              if(hash_equals(EXPECTED_SHA,(string)hash_file('sha256',$target))){
+                  echo json_encode(['ok'=>true,'already_present'=>true,'sha256'=>EXPECTED_SHA]); exit;
+              }
+              stop(409,'Existing file SHA mismatch');
+          }
+          $tmp=tempnam($dir,'.v6318-');
+          if($tmp===false)stop(500,'Cannot create temp file');
+          $inp=fopen('php://input','rb');$out=fopen($tmp,'wb');
+          if(!$inp||!$out){@unlink($tmp);stop(500,'Stream failure');}
+          $n=0;
+          while(!feof($inp)){
+              $chunk=fread($inp,65536);
+              if($chunk===false)break;
+              $n+=strlen($chunk);
+              if($n>EXPECTED_SIZE || fwrite($out,$chunk)!==strlen($chunk))break;
+          }
+          fclose($inp);fclose($out);
+          if($n!==EXPECTED_SIZE || !hash_equals(EXPECTED_SHA,(string)hash_file('sha256',$tmp))){
+              @unlink($tmp);stop(422,'SHA mismatch');
+          }
+          chmod($tmp,0640);
+          if(file_exists($target)||!rename($tmp,$target)){@unlink($tmp);stop(409,'Conflicting file');}
+          http_response_code(201);
+          echo json_encode(['ok'=>true,'version_code'=>60318,'sha256'=>EXPECTED_SHA]);
+          PHP
+          chmod 0644 "$RECEIVER.tmp"; mv "$RECEIVER.tmp" "$RECEIVER"
+          php -l "$RECEIVER"
+          echo 'V6318_EXACT_RECEIVER=STAGED'
+          echo 'STAGING_UPDATE_FEED=UNCHANGED'
+          REMOTE
+      - name: Reject unauthenticated GET and do not leak files
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=$(curl -sS --max-time 20 -o /tmp/v6318get -w '%{http_code}' 'https://staging.assammotors.com/staff-app/v6318-upload-once.php')
+          echo "V6318_RECEIVER_GET_HTTP=$status"
+          test "$status" = 405
+      - name: Cleanup runner secret key
+        if: always()
+        run: rm -f ~/.ssh/v6318stage /tmp/v6318get
