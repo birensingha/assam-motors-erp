@@ -1,0 +1,85 @@
+name: P54 Admin Mobile QC Guard — Staff Assigned Only
+on:
+  push:
+    branches: [feature/p54-staff-qc-flow-and-clean-jc-20261018]
+    paths: ['.github/workflows/p54-admin-mobile-qc-guard.yml']
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate P54 Admin mobile guard
+        run: |
+          php -l deployment/live-fixes/P54_QC_STAFF/PATCH_P54_ADMIN_API.php
+          echo 'P54_ADMIN_QC_GUARD_SOURCE_LINT_PASS'
+      - name: SSH transport
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Install guarded QC permission in Admin mobile API
+        id: install
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            SSH=(ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          TEMP="/home/$SSH_USER/p54-api-guard-$GITHUB_RUN_ID"
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "mkdir -p '$TEMP'"
+          "${SCP[@]}" deployment/live-fixes/P54_QC_STAFF/PATCH_P54_ADMIN_API.php "$SSH_USER@$SSH_HOST:$TEMP/patch.php"
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "APP_ROOT='$APP_ROOT' TEMP='$TEMP' RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$APP_ROOT"
+          CONTROLLER="$ROOT/app/Http/Controllers/Api/V1/OwnerWorkshopController.php"
+          test -f "$ROOT/artisan" && test -f "$CONTROLLER"
+          BACKUP="$(dirname "$ROOT")/ASSAM_P54_ADMIN_QC_API_BACKUP_$RUN_ID.php"
+          test ! -e "$BACKUP"
+          cp -p "$CONTROLLER" "$BACKUP"
+          rollback(){
+            cp -p "$BACKUP" "$CONTROLLER" || true
+            echo 'P54_ADMIN_API_ROLLBACK_DONE'
+          }
+          trap rollback ERR
+          php "$TEMP/patch.php" check "$ROOT"
+          php "$TEMP/patch.php" apply "$ROOT"
+          php -l "$CONTROLLER"
+          grep -q 'P54_API_QC_ASSIGNED_STAFF_ONLY' "$CONTROLLER"
+          cd "$ROOT"
+          php artisan route:list --path=api/v1/admin/mobile/job-cards | grep -q 'qc'
+          echo 'P54_ADMIN_MOBILE_QC_BYPASS_PREVENTION_PASS'
+          trap - ERR
+          rm -rf "$TEMP"
+          REMOTE
+      - name: Results
+        if: always()
+        run: |
+          echo "P54 API QC guard deployment: ${{ steps.install.outcome }}"
+          echo 'No existing QC records, Parts, invoices, ledger or OLD ERP were modified.'
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
