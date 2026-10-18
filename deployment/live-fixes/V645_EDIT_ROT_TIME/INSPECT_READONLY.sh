@@ -74,4 +74,30 @@ foreach(['JC-20261018-00037'] as $jobNo) {
  }
 }
 PHP
+echo "=== EXACT WEB ROT CONTROLLER + ROUTES + ROT SYNC ==="
+python3 - <<'PY'
+from pathlib import Path
+import re
+def show(p,start,end):
+ f=Path(p)
+ if not f.exists():return
+ a=f.read_text(errors='replace').splitlines()
+ print('EXACT',p,start,end,'TOTAL',len(a))
+ for i in range(start-1,min(len(a),end)):
+  t=a[i]
+  if re.search(r'password|private.?key|api.?secret|bearer',t,re.I):continue
+  print(f'{i+1}: {t[:300]}')
+show('app/Http/Controllers/Web/AdminRotPageController.php',1,210)
+show('app/Services/RotWorkflowService.php',325,502)
+show('app/Models/RotSession.php',1,130)
+show('resources/views/job-cards/show.blade.php',572,625)
+show('resources/views/job-cards/rot-billing-control.blade.php',1,65)
+for file in ['routes/web.php','routes/erp.php']:
+ f=Path(file)
+ if not f.exists():continue
+ a=f.read_text(errors='replace').splitlines()
+ for i,t in enumerate(a):
+  if "AdminRotPageController" in t or "erp.rot" in t or "rot/{session}" in t or "RotAlteration" in t:
+   for j in range(max(0,i-2),min(i+4,len(a))):print('ROUTE',file,j+1,a[j][:280])
+PY
 echo 'V645_READONLY_SOURCE_AUDIT=COMPLETE'
