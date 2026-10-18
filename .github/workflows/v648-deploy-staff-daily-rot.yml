@@ -30,7 +30,8 @@ jobs:
           set -euo pipefail
           bash -n deployment/live-fixes/V648_ROT_DAILY/APPLY.sh
           php -l deployment/live-fixes/V648_ROT_DAILY/StaffDailyRotPerformanceService.php
-          test -s deployment/live-fixes/V648_ROT_DAILY/staff-daily-report.blade.php pending-rot-panel.blade.php
+          test -s deployment/live-fixes/V648_ROT_DAILY/staff-daily-report.blade.php
+          test -s deployment/live-fixes/V648_ROT_DAILY/pending-rot-panel.blade.php
       - name: Deploy backed-up Admin time-correction controller, audited edit UI and WIP/invoice guards to Staging
         shell: bash
         run: |
