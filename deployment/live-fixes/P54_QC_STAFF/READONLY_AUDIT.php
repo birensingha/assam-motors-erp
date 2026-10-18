@@ -48,4 +48,19 @@ foreach($dirs as $dir){
  }
  showAudit('dir',[$dir,$names]);
 }
+foreach([
+ ['resources/views/staff/portal.blade.php',1,130],
+ ['app/Http/Controllers/Web/StaffPortalController.php',1,112],
+ ['app/Http/Middleware/EnsureStaffUser.php',1,84],
+ ['app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php',108,251],
+ ['resources/views/job-cards/lifecycle-panel.blade.php',92,166],
+ ['resources/views/job-cards/lifecycle-panel.blade.php',202,275],
+ ['resources/views/job-cards/show.blade.php',1,85]
+] as [$p,$from,$to]){
+ $fp="$root/$p";if(!is_file($fp))continue;
+ $lines=file($fp);$selected=[];
+ for($i=$from-1;$i<min(count($lines),$to);$i++)
+  $selected[]=($i+1).':'.trim($lines[$i]);
+ showAudit('excerpt',[$p,$from,$to,$selected]);
+}
 echo "P54_AUDIT_FINISHED\n";
