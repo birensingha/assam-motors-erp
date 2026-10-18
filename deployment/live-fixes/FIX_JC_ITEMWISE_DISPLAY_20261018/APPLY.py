@@ -7,8 +7,8 @@ from pathlib import Path
 root=Path(sys.argv[1]).resolve()
 p=root/'resources/views/job-cards/show.blade.php'
 if not (root/'artisan').is_file() or not p.is_file():raise SystemExit('SAFE_STOP: wrong JC template')
-s=p.read_text(encoding='utf-8')
-print('JC_SHOW_HASH_BEFORE',hashlib.sha256(s.encode()).hexdigest()[:16])
+s=p.read_text(encoding='utf-8',errors='surrogateescape')
+print('JC_SHOW_HASH_BEFORE',hashlib.sha256(s.encode('utf-8',errors='surrogateescape')).hexdigest()[:16])
 marker='AM_JC_ITEMWISE_BILLING_READONLY_V1'
 if marker in s:
     print('JC_ITEMWISE_ALREADY_APPLIED')
@@ -116,7 +116,7 @@ assert s.count('jc-itemised-billing')>=3
 backup=p.with_name(p.name+'.before-itemwise-pricing-'+time.strftime('%Y%m%d%H%M%S')+'.bak')
 shutil.copy2(p,backup)
 fd,tmp=tempfile.mkstemp(prefix='.jc-itemised-',suffix='.blade.php',dir=p.parent)
-with os.fdopen(fd,'w',encoding='utf-8') as h:h.write(s)
+with os.fdopen(fd,'w',encoding='utf-8',errors='surrogateescape') as h:h.write(s)
 os.chmod(tmp,stat.S_IMODE(p.stat().st_mode))
 os.replace(tmp,p)
-print('JC_ITEMWISE_DISPLAY_APPLIED','BACKUP='+backup.name,'AFTER_SHA='+hashlib.sha256(s.encode()).hexdigest()[:16])
+print('JC_ITEMWISE_DISPLAY_APPLIED','BACKUP='+backup.name,'AFTER_SHA='+hashlib.sha256(s.encode('utf-8',errors='surrogateescape')).hexdigest()[:16])
