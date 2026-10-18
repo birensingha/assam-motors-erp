@@ -62,4 +62,28 @@ foreach($staff as $person){
  }
 }
 PHP
+echo '=== START RESUME EXISTING CHECK IN ENFORCEMENT / STAFF API ==='
+python3 - <<'PY'
+from pathlib import Path
+import re
+for name,lo,hi in [('app/Services/RotWorkflowService.php',1,80),('app/Services/RotWorkflowService.php',260,390),
+                    ('app/Http/Controllers/Api/V1/StaffRotSessionController.php',1,150),
+                    ('app/Http/Controllers/Api/V1/StaffRotController.php',1,150),
+                    ('app/Http/Controllers/Web/StaffPortalController.php',65,150),
+                    ('app/Http/Controllers/Web/AdminRotPageController.php',1,50)]:
+ p=Path(name)
+ if not p.exists():continue
+ a=p.read_text(errors='replace').splitlines()
+ print('SOURCE',name,lo,hi,len(a))
+ for i in range(lo-1,min(hi,len(a))):
+  if re.search(r'password|bearer|api.?key|secret|private.?key',a[i],re.I):continue
+  print(f'{i+1}: {a[i][:280]}')
+for root in ['app/Http/Controllers/Api','app/Http/Controllers/Web']:
+ for p in Path(root).rglob('*.php'):
+  if any(t in p.name.lower() for t in ['rot','staff','attendance']):
+   a=p.read_text(errors='replace').splitlines()
+   for i,line in enumerate(a):
+    if re.search(r"->pause\(|pause\(\$.*(?:rot|session)",line):
+     print('PAUSE_CALLER',p,i+1,line[:280])
+PY
 echo 'V650_ROT_PAUSE_READONLY_AUDIT=COMPLETE'
