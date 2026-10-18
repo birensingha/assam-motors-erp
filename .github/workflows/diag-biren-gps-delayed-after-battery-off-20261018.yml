@@ -1,0 +1,92 @@
+name: Diagnose Biren GPS delayed with Battery Saver Off read only
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/diag-biren-gps-delayed-after-battery-off-20261018.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Check staging SSH and protected GPS route
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/am-gps-diag
+            chmod 600 ~/.ssh/am-gps-diag
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -i ~/.ssh/am-gps-diag -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          test -f "$ROOT/artisan" && test -f "$SITE/latest.json"
+          cd "$ROOT"
+          echo '=== Server accepted GPS after Battery Saver OFF; reporting vs fix age ==='
+          TZ=Asia/Kolkata date '+SERVER_NOW_IST=%Y-%m-%d %H:%M:%S %z'
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::class;
+          $now=\Carbon\CarbonImmutable::now('Asia/Kolkata');
+          $st=$db::table('staff_location_settings')->where('id',1)->first();
+          echo 'CONFIG_REPORTING_M='.($st->max_accuracy_m??'NULL').PHP_EOL;
+          echo 'CONFIG_CHECKIN_M='.($st->checkin_max_accuracy_m??'NULL').PHP_EOL;
+          foreach(['AM5077'] as $code) {
+            $staff=$db::table('staff')->where('staff_code',$code)->first();
+            if(!$staff){echo 'DIAG_STAFF_NOT_FOUND='. $code.PHP_EOL;continue;}
+            echo 'CHECK_STAFF='.$code.PHP_EOL;
+            $records=$db::table('staff_location_logs')->where('staff_id',$staff->id)
+              ->orderByDesc('received_at')->orderByDesc('id')->limit(22)
+              ->get(['id','recorded_at','received_at','accuracy_m','quality','provider','source','app_version']);
+            $prev=null;
+            foreach($records as $r) {
+              $recv=\Carbon\CarbonImmutable::parse((string)$r->received_at,'Asia/Kolkata');
+              $recorded=\Carbon\CarbonImmutable::parse((string)$r->recorded_at,'Asia/Kolkata');
+              $recvAge=(int)abs($now->diffInSeconds($recv,false));
+              $fixAge=(int)abs($now->diffInSeconds($recorded,false));
+              $gap=$prev===null?0:(int)abs($recv->diffInSeconds($prev,false));
+              echo 'UPLOAD recv_ist='.$recv->format('Y-m-d H:i:s').
+                ' receive_age_s='.$recvAge.' fix_age_s='.$fixAge.' gap_s='.$gap.
+                ' accuracy_m='.($r->accuracy_m??'NULL').
+                ' quality='.(string)$r->quality.
+                ' provider='.(string)$r->provider.
+                ' app='.(string)$r->app_version.
+                ' source='.(string)$r->source.PHP_EOL;
+              $prev=$recv;
+            }
+          }
+          echo "AFTER_BATTERY_SAVER_OFF_GPS_DIAG_READONLY=PASS\n";
+          PHP
+          REMOTE
+      - name: Check unauthenticated GPS API protections
+        run: |
+          set -euo pipefail
+          for path in /api/v1/staff/location /api/v1/admin/mobile/staff-locations; do
+            status="$(curl --silent --show-error --max-time 20 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path" || true)"
+            echo "PATH=$path HTTP=$status (unauthenticated; GET-only)"
+          done
+      - if: always()
+        run: rm -f ~/.ssh/am-gps-diag
