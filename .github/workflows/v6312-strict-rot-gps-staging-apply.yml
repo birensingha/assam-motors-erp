@@ -1,0 +1,58 @@
+name: Apply v6.3.12 Strict ROT and Consented Login GPS (Staging)
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/v6312-strict-rot-gps-staging-apply.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply rollbackable strict GPS/ROT staging patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/am-gps-diag
+            chmod 600 ~/.ssh/am-gps-diag
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -i ~/.ssh/am-gps-diag -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          echo 'V6312_DRY_RUN'
+          test -f deployment/live-fixes/FIX_V6312_STRICT_ROT_GPS/apply_v6312.py
+          "${SSH[@]}" "$USERNAME@$HOST" 'python3 - --root "$HOME/domains/assammotors.com/assam-erp-staging"' < deployment/live-fixes/FIX_V6312_STRICT_ROT_GPS/apply_v6312.py
+          echo 'V6312_APPLY_STAGING_WITH_BACKUP'
+          "${SSH[@]}" "$USERNAME@$HOST" 'python3 - --root "$HOME/domains/assammotors.com/assam-erp-staging" --apply' < deployment/live-fixes/FIX_V6312_STRICT_ROT_GPS/apply_v6312.py
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          php -l app/Services/RotAssignmentService.php
+          php -l app/Services/RotWorkflowService.php
+          php -l app/Http/Controllers/Api/V1/StaffLocationController.php
+          grep -Fq 'FIX V6312: assigning an active ROT requires a real Check-In' app/Services/RotAssignmentService.php
+          grep -Fq 'FIX V6312: completing a ROT without an active staff Check-In' app/Services/RotWorkflowService.php
+          grep -Fq 'FIX V6312: regular Staff may submit explicitly consented native' app/Http/Controllers/Api/V1/StaffLocationController.php
+          php artisan route:list --path=staff/location | head -12
+          echo 'V6312_ERP_STAGING_RULES=VERIFIED'
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/am-gps-diag
