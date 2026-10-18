@@ -62,13 +62,14 @@ one('<main class="sheet">',
 </div>
 @endif
 <main class="sheet">""")
-one('</style>', """/* Narrow financial columns fit A4 while the existing blue letterhead remains unchanged. */
+one('</style>\n</head>', """/* Narrow financial columns fit A4 while the existing blue letterhead remains unchanged. */
 .section table{table-layout:auto}
 .section th{font-size:7.3px;padding:6px 3px}
 .section td{font-size:8.2px;padding:6px 3px}
 .section .num{white-space:nowrap}
 @media print{.section th{font-size:7px}.section td{font-size:7.8px}}
-</style>""")
+</style>
+</head>""")
 
 parts = """<table><thead><tr>
 <th>SL</th><th>Part</th><th>Code</th><th>HSN</th>
