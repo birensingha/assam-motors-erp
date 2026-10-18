@@ -1,0 +1,70 @@
+name: Deploy New Native Staff Live Location to Staging ERP
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/deploy-native-staff-live-location-20261018.yml", "deployment/live-fixes/FIX_NATIVE_STAFF_LIVE_LOCATION/**"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy native live map after staging dry-run with rollback and authenticated smoke tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/am-gps-diag
+            chmod 600 ~/.ssh/am-gps-diag
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -i ~/.ssh/am-gps-diag -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          SRC=deployment/live-fixes/FIX_NATIVE_STAFF_LIVE_LOCATION
+          BUNDLE='$HOME/.assam-native-staff-live-deploy'
+          "${SSH[@]}" "$USERNAME@$HOST" 'mkdir -p "$HOME/.assam-native-staff-live-deploy"'
+          tar -czf - -C "$SRC" payload | "${SSH[@]}" "$USERNAME@$HOST" 'tar -xzf - -C "$HOME/.assam-native-staff-live-deploy"'
+          "${SSH[@]}" "$USERNAME@$HOST" 'python3 - --root "$HOME/domains/assammotors.com/assam-erp-staging" --bundle "$HOME/.assam-native-staff-live-deploy/payload"' < "$SRC/apply.py"
+          echo 'NATIVE_STAFF_LIVE_APPLY_WITH_PRIVATE_BACKUPS'
+          "${SSH[@]}" "$USERNAME@$HOST" 'python3 - --root "$HOME/domains/assammotors.com/assam-erp-staging" --bundle "$HOME/.assam-native-staff-live-deploy/payload" --apply' < "$SRC/apply.py"
+          echo 'NATIVE_STAFF_LIVE_ROUTES_AND_AUTHENTICATED_SMOKE'
+          "${SSH[@]}" "$USERNAME@$HOST" 'cd "$HOME/domains/assammotors.com/assam-erp-staging" && php' < "$SRC/smoke-readonly.php"
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          php -l app/Http/Controllers/Web/StaffLiveLocationController.php
+          php -l routes/web.php
+          php artisan route:list --path=erp/staff-live-location
+          php artisan view:cache >/dev/null
+          php artisan view:clear >/dev/null
+          echo 'NATIVE_STAFF_LIVE_LARAVEL_ROUTE_BLADE_CACHE=PASS'
+          REMOTE
+          url='https://staging.assammotors.com/erp/staff-live-location'
+          result=$(curl -sS --max-time 30 -o /dev/null -w '%{http_code}' "$url")
+          echo "STAFF_LIVE_GUEST_PAGE_HTTP=$result"
+          test "$result" = 302 || test "$result" = 401 || test "$result" = 403
+          for path in /erp/login /staff/login; do
+             code=$(curl -sS -L --max-time 30 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")
+             echo "STAGING_LOGIN_HEALTH_HTTP=$code"
+             test "$code" = 200
+          done
+          echo 'NATIVE_STAFF_LIVE_STAGING_DEPLOY_VERIFIED=PASS'
+      - if: always()
+        run: rm -f ~/.ssh/am-gps-diag
