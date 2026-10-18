@@ -56,7 +56,7 @@ jobs:
           echo 'CREDIT_NOTE_MATCHES'
           grep -RnlEi 'credit[ _-]?note|refund[ _-]?voucher|reverse[ _-]?job.?card|reverseJobCard|invoice.?reversal' app/Http/Controllers app/Services routes resources/views 2>/dev/null | head -42
           echo '=== EXISTING INVOICE RETURN LOGIC ==='
-          grep -Rnl 'returned_at\|return_reason\|status.*Returned' app/Http/Controllers/Web app/Services | head -24 | while IFS= read -r file; do
+          (grep -Rnl 'returned_at\|return_reason\|status.*Returned' app/Http/Controllers/Web app/Services || true) | head -24 | while IFS= read -r file; do
             echo "RETURN_FILE=$file"
             grep -nE -C 3 'returned_at|return_reason|status.*Returned|invoice.*return|return.*invoice' "$file" | head -90 | cut -c1-240 || true
           done
