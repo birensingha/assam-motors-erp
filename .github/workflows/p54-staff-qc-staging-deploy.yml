@@ -1,0 +1,169 @@
+name: P54 Clean Job Card + Assigned Staff Quality Check — STAGING
+on:
+  push:
+    branches: [feature/p54-staff-qc-flow-and-clean-jc-20261018]
+    paths: ['.github/workflows/p54-staff-qc-staging-deploy.yml']
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  stage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+      STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL || 'https://staging.assammotors.com' }}
+      STAGING_ADMIN_LOGIN: ${{ secrets.STAGING_ADMIN_LOGIN }}
+      STAGING_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint guarded P54 source
+        run: |
+          set -euo pipefail
+          P=deployment/live-fixes/P54_QC_STAFF
+          php -l "$P/PATCH_P54.php"
+          php -l "$P/payload/StaffQcController.php"
+          node --check "$P/QA_P54.mjs"
+          test -s "$P/payload/qc-review.blade.php"
+          echo 'P54_LOCAL_LINT_PASS'
+      - name: SSH configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Guarded staging install and Blade compilation
+        id: install
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            SSH=(ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          TEMP="/home/$SSH_USER/p54-staff-qc-$GITHUB_RUN_ID"
+          tar -czf /tmp/p54.tgz -C deployment/live-fixes/P54_QC_STAFF PATCH_P54.php payload
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "mkdir -p '$TEMP'"
+          "${SCP[@]}" /tmp/p54.tgz "$SSH_USER@$SSH_HOST:$TEMP/p54.tgz"
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "APP_ROOT='$APP_ROOT' TEMP='$TEMP' RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$APP_ROOT"; test -f "$ROOT/artisan"
+          tar -xzf "$TEMP/p54.tgz" -C "$TEMP"
+          BACKUP="$(dirname "$ROOT")/ASSAM_P54_QC_BACKUP_$RUN_ID"
+          test ! -e "$BACKUP";mkdir -p "$BACKUP"
+          files=(
+            resources/views/job-cards/index.blade.php
+            resources/views/job-cards/lifecycle-panel.blade.php
+            app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php
+            app/Http/Controllers/Web/StaffPortalController.php
+            resources/views/staff/portal.blade.php
+            routes/web.php
+          )
+          CONTROLLER="$ROOT/app/Http/Controllers/Web/StaffQcController.php"
+          STAFF_VIEW="$ROOT/resources/views/staff/qc-review.blade.php"
+          test ! -e "$CONTROLLER" && test ! -e "$STAFF_VIEW"
+          for file in "${files[@]}";do
+            test -f "$ROOT/$file"
+            cp -p "$ROOT/$file" "$BACKUP/$(printf '%s' "$file" | tr / _)"
+          done
+          rollback(){
+            echo 'P54_ROLLBACK_START'
+            for file in "${files[@]}";do
+              cp -p "$BACKUP/$(printf '%s' "$file" | tr / _)" "$ROOT/$file" || true
+            done
+            rm -f "$CONTROLLER" "$STAFF_VIEW"
+            (cd "$ROOT" && php artisan route:clear && php artisan view:clear && php artisan view:cache) >/dev/null 2>&1 || true
+            echo 'P54_ROLLBACK_DONE'
+          }
+          trap rollback ERR
+          php "$TEMP/PATCH_P54.php" check "$ROOT"
+          php "$TEMP/PATCH_P54.php" apply "$ROOT"
+          cd "$ROOT"
+          php artisan route:clear
+          php artisan view:clear
+          php artisan view:cache
+          php artisan route:list --name=staff.qc | grep -q 'staff/qc'
+          php artisan route:list --name=staff.qc | grep -q 'StaffQcController'
+          grep -q 'P54_CLEAN_JC_ACTIONS' resources/views/job-cards/index.blade.php
+          grep -q 'P54_STAFF_QC_PENDING' resources/views/job-cards/lifecycle-panel.blade.php
+          grep -q 'P54_STAFF_QC_PORTAL' resources/views/staff/portal.blade.php
+          php -l "$CONTROLLER"
+          echo 'P54_STAGING_ROUTING_BLADE_SOURCE_PASS'
+          echo "P54_STAGE_BACKUP=$BACKUP"
+          trap - ERR
+          rm -rf "$TEMP"
+          REMOTE
+      - uses: actions/setup-node@v4
+        if: steps.install.outcome == 'success'
+        with:
+          node-version: '22'
+      - name: Install Playwright Chromium
+        if: steps.install.outcome == 'success'
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Verify Job Card index and QC permission in authenticated browser
+        id: browser
+        if: steps.install.outcome == 'success'
+        run: node deployment/live-fixes/P54_QC_STAFF/QA_P54.mjs
+      - name: Restore original staging files if browser verification fails
+        if: failure() && steps.install.outcome == 'success'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ];then
+            SSH=(ssh -i ~/.ssh/id_ed25519 -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "APP_ROOT='$APP_ROOT' RUN_ID='$GITHUB_RUN_ID' bash -s" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$APP_ROOT"
+          BACKUP="$(dirname "$ROOT")/ASSAM_P54_QC_BACKUP_$RUN_ID"
+          files=(
+            resources/views/job-cards/index.blade.php
+            resources/views/job-cards/lifecycle-panel.blade.php
+            app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php
+            app/Http/Controllers/Web/StaffPortalController.php
+            resources/views/staff/portal.blade.php
+            routes/web.php
+          )
+          for file in "${files[@]}";do
+            cp -p "$BACKUP/$(printf '%s' "$file" | tr / _)" "$ROOT/$file"
+          done
+          rm -f "$ROOT/app/Http/Controllers/Web/StaffQcController.php"
+          rm -f "$ROOT/resources/views/staff/qc-review.blade.php"
+          cd "$ROOT"
+          php artisan route:clear
+          php artisan view:clear
+          php artisan view:cache
+          echo 'P54_BROWSER_QA_FAILURE_ROLLBACK_PASS'
+          REMOTE
+      - name: Outcome proof
+        if: always()
+        run: |
+          echo "P54 install: ${{ steps.install.outcome }}"
+          echo "P54 browser QA: ${{ steps.browser.outcome }}"
+          echo 'No old ERP, invoice, ledger, Job Card or QC transaction was changed during install or GET-only browser QA.'
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
