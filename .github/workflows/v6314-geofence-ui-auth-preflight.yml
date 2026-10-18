@@ -1,0 +1,66 @@
+name: Read-only GPS geofence UI login and Check-In access map
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/v6314-geofence-ui-auth-preflight.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Check staging SSH and protected GPS route
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/am-gps-diag
+            chmod 600 ~/.ssh/am-gps-diag
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -i ~/.ssh/am-gps-diag -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          test -f "$ROOT/artisan" && test -f "$SITE/latest.json"
+          cd "$ROOT"
+          echo '=== Login geofence use ==='
+          sed -n '33,97p' app/Http/Controllers/Api/V1/AuthController.php | cut -c 1-350
+          echo '=== Staff Portal checkin ==='
+          sed -n '65,131p' app/Http/Controllers/Web/StaffPortalController.php | cut -c 1-350
+          echo '=== Owner and admin self checkin ==='
+          sed -n '25,120p' app/Http/Controllers/Web/AdminSelfAttendanceController.php | cut -c 1-350
+          echo '=== Native web form setting validation ==='
+          sed -n '390,436p' app/Http/Controllers/Web/AdminNativeModuleController.php | cut -c 1-350
+          echo '=== Legacy admin html/js location settings form IDs and payload ==='
+          grep -nE -C 4 'max_accuracy_m|geofence_checkin_enabled|sample_minutes|saveLocationSettings|staffLocationSettings' public/legacy/admin/admin.js | head -140 | cut -c 1-350 || true
+          grep -Rnl 'max_accuracy_m' public/legacy/admin resources/views 2>/dev/null | head -12 | while read -r f; do echo "FORM_SOURCE=$f"; grep -nE -C 5 'max_accuracy_m' "$f" | head -100 | cut -c 1-340; done
+          echo 'GEOFENCE_UI_AUTH_PREFLIGHT=PASS'
+          REMOTE
+      - name: Check unauthenticated GPS API protections
+        run: |
+          set -euo pipefail
+          for path in /api/v1/staff/location /api/v1/admin/mobile/staff-locations; do
+            status="$(curl --silent --show-error --max-time 20 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path" || true)"
+            echo "PATH=$path HTTP=$status (unauthenticated; GET-only)"
+          done
+      - if: always()
+        run: rm -f ~/.ssh/am-gps-diag
