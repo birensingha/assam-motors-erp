@@ -63,6 +63,12 @@ jobs:
           done
           echo '=== API RotWorkflowController relevant authorization ==='
           test -f app/Http/Controllers/Api/V1/RotWorkflowController.php && grep -nE -C 7 'function (start|pause|resume|complete|reopen|changeMechanic|actor|admin)|assertStaffGeoFence|Attendance|check.?in' app/Http/Controllers/Api/V1/RotWorkflowController.php | head -260 | cut -c 1-230
+          echo '=== ROT Workflow service Complete/Reopen/Reassign exact blocks ==='
+          sed -n '149,178p' app/Services/RotWorkflowService.php | cut -c 1-260
+          sed -n '182,246p' app/Services/RotWorkflowService.php | cut -c 1-260
+          sed -n '258,330p' app/Services/RotWorkflowService.php | cut -c 1-260
+          echo '=== Job Card direct ROT alterations exact assignment block ==='
+          sed -n '180,244p' app/Http/Controllers/Web/JobCardRotAlterationController.php | cut -c 1-260
           echo '=== ROT table fields and current duplicate counts (aggregate only) ==='
           php <<'PHP'
           <?php
