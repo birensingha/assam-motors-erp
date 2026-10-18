@@ -1,0 +1,76 @@
+name: Deploy Restore Approved Desktop Staff Live BLUE V2 Keep Mobile Solo
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/deploy-restore-staff-location-desktop-blue-v2-20261018.yml", "deployment/live-fixes/FIX_STAFF_LIVE_DESKTOP_V2_RESTORE_20261018/**"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Restore original desktop BLUE V2 with a dry-run, private backup and mobile V3 preservation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/am-gps-diag
+            chmod 600 ~/.ssh/am-gps-diag
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -i ~/.ssh/am-gps-diag -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          SRC=deployment/live-fixes/FIX_STAFF_LIVE_DESKTOP_V2_RESTORE_20261018
+          python3 -m py_compile "$SRC/apply.py"
+          
+          "${SSH[@]}" "$USERNAME@$HOST" 'python3 - --root "$HOME/domains/assammotors.com/assam-erp-staging"' < "$SRC/apply.py"
+          echo 'DESKTOP_BLUE_V2_STAGING_PREFLIGHT=PASS'
+          "${SSH[@]}" "$USERNAME@$HOST" 'python3 - --root "$HOME/domains/assammotors.com/assam-erp-staging" --apply' < "$SRC/apply.py"
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          FILE=resources/views/admin/native/staff-live-location.blade.php
+          grep -Fq 'AM_STAFF_LIVE_BLUE_V2_20261018' "$FILE"
+          grep -Fq 'AM_COMPACT_MOBILE_SOLO_TRACK' "$FILE"
+          grep -Fq 'AM_RESTORE_DESKTOP_BLUE_V2_MOBILE_SOLO_V31' "$FILE"
+          grep -Fq "window.matchMedia('(min-width:701px)').matches" "$FILE"
+          grep -Fq "if(selected!==null)drawSelected();" "$FILE"
+          grep -Fq "if(soloMode && selected!==s.id)continue;" "$FILE"
+          grep -Fq 'id="slV2Focus"' "$FILE"
+          grep -Fq 'id="slV2Tools"' "$FILE"
+          grep -Fq 'id="slAllStaff"' "$FILE"
+          grep -Fq 'id="slMap"' "$FILE"
+          grep -Fq 'id="slSearch"' "$FILE"
+          php artisan view:cache >/dev/null
+          php artisan view:clear >/dev/null
+          echo 'DESKTOP_BLUE_V2_RESTORE_MOBILE_SOLO_PRESERVATION=PASS'
+          REMOTE
+          url='https://staging.assammotors.com/erp/staff-live-location'
+          status=$(curl -sS --max-time 30 -o /dev/null -w '%{http_code}' "$url")
+          echo "DESKTOP_BLUE_V2_PROTECTED_GUEST_HTTP=$status"
+          test "$status" = 302 || test "$status" = 401 || test "$status" = 403
+          for path in /erp/login /staff/login; do
+             code=$(curl -sS --location --max-time 30 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")
+             echo "DESKTOP_BLUE_V2_LOGIN_HEALTH=$path HTTP=$code"
+             test "$code" = 200
+          done
+          echo 'DESKTOP_BLUE_V2_STAGING_RESTORE_VERIFIED=PASS'
+      - if: always()
+        run: rm -f ~/.ssh/am-gps-diag
