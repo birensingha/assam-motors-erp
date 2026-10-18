@@ -42,7 +42,7 @@ def swap(old,new,label):
 # SOLO styles formerly used <=850px (small laptops/tablets). Restrict SOLO to
 # actual phones <=700px, preserving V2's map-left/register-right desktop.
 css_start=view.index('/* '+solo)
-css_end=view.index('@media(max-width:1190px)',css_start)
+css_end=view.index('</style>',css_start)
 css_fragment=view[css_start:css_end]
 assert css_fragment.count('@media(max-width:850px){')==1
 view=view[:css_start] + css_fragment.replace('@media(max-width:850px){','@media(max-width:700px){',1) + view[css_end:]
