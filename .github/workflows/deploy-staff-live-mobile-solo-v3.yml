@@ -1,0 +1,73 @@
+name: Deploy Compact Mobile Solo-Staff Tracking on existing BLUE V2 Staging
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/deploy-staff-live-mobile-solo-v3.yml", "deployment/live-fixes/FIX_STAFF_LIVE_MOBILE_SOLO_V3_20261018/**"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply mobile solo tracking only after dry-run, private backup and live V2 preservation checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/am-gps-diag
+            chmod 600 ~/.ssh/am-gps-diag
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -i ~/.ssh/am-gps-diag -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          SRC=deployment/live-fixes/FIX_STAFF_LIVE_MOBILE_SOLO_V3_20261018
+          BUNDLE='$HOME/.assam-staff-mobile-solo-v3'
+          "${SSH[@]}" "$USERNAME@$HOST" 'mkdir -p "$HOME/.assam-staff-mobile-solo-v3"'
+          tar -czf - -C "$SRC" payload | "${SSH[@]}" "$USERNAME@$HOST" 'tar -xzf - -C "$HOME/.assam-staff-mobile-solo-v3"'
+          "${SSH[@]}" "$USERNAME@$HOST" 'python3 - --root "$HOME/domains/assammotors.com/assam-erp-staging" --bundle "$HOME/.assam-staff-mobile-solo-v3/payload"' < "$SRC/apply.py"
+          echo 'MOBILE_SOLO_V3_STAGING_DRY_RUN_COMPLETE=PASS'
+          "${SSH[@]}" "$USERNAME@$HOST" 'python3 - --root "$HOME/domains/assammotors.com/assam-erp-staging" --bundle "$HOME/.assam-staff-mobile-solo-v3/payload" --apply' < "$SRC/apply.py"
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          FILE=resources/views/admin/native/staff-live-location.blade.php
+          grep -Fq 'AM_STAFF_LIVE_BLUE_V2_20261018' "$FILE"
+          grep -Fq 'AM_COMPACT_MOBILE_SOLO_TRACK' "$FILE"
+          grep -Fq 'id="slV2Tools"' "$FILE"
+          grep -Fq 'id="slAllStaff"' "$FILE"
+          grep -Fq 'id="slFocusAge"' "$FILE"
+          grep -Fq 'id="slFocusSync"' "$FILE"
+          grep -Fq 'if(soloMode && selected!==s.id)continue;' "$FILE"
+          grep -Fq 'setInterval(()=>poll(),1000)' "$FILE"
+          php artisan view:cache >/dev/null
+          php artisan view:clear >/dev/null
+          echo 'STAFF_MOBILE_SOLO_V3_V2_PRESERVATION_AND_BLADE=PASS'
+          REMOTE
+          status=$(curl -sS --max-time 25 -o /dev/null -w '%{http_code}' 'https://staging.assammotors.com/erp/staff-live-location')
+          echo "STAFF_MOBILE_SOLO_V3_GUEST_HTTP=$status"
+          test "$status" = 302 || test "$status" = 401 || test "$status" = 403
+          for path in /erp/login /staff/login; do
+             code=$(curl -sS -L --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")
+             test "$code" = 200
+             echo "STAFF_MOBILE_SOLO_V3_LOGIN=$path HTTP=$code"
+          done
+          echo 'STAFF_MOBILE_SOLO_V3_STAGING_DEPLOY_VERIFIED=PASS'
+      - if: always()
+        run: rm -f ~/.ssh/am-gps-diag
