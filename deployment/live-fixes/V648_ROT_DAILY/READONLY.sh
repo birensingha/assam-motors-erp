@@ -37,4 +37,45 @@ foreach(['staff_attendance','staff_attendances','attendances','attendance_logs',
  echo 'TABLE='.$table.'='.json_encode(array_map(fn($x)=>['f'=>$x->Field,'type'=>$x->Type],DB::select('SHOW COLUMNS FROM '.$table))).PHP_EOL;
 }
 PHP
+echo '=== SOURCE FOCUSED FULL ==='
+python3 - <<'PY'
+from pathlib import Path
+targets=[
+ ('app/Services/AttendanceService.php',1,185),
+ ('app/Http/Controllers/Api/V1/AttendanceController.php',1,110),
+ ('app/Http/Controllers/Api/V1/OwnerSelfAttendanceInspectionController.php',1,135),
+ ('app/Http/Controllers/Web/AdminSelfAttendanceController.php',1,160),
+ ('app/Http/Controllers/Web/StaffPortalController.php',1,185),
+ ('app/Http/Controllers/Web/AdminDashboardPageController.php',1,145),
+ ('resources/views/dashboard/rot-performance.blade.php',1,130),
+ ('resources/views/dashboard/workshop.blade.php',1,135),
+ ('app/Services/RotWorkflowService.php',35,170),
+ ('app/Services/RotWorkflowService.php',190,300),
+ ('routes/web.php',60,140),
+]
+for p,start,end in targets:
+ f=Path(p)
+ if not f.exists():continue
+ a=f.read_text(errors='replace').splitlines()
+ print('===SRC',p,'START',start,'END',end,'===')
+ for i in range(start-1,min(end,len(a))):
+  line=a[i]
+  if 'password' in line.lower() or 'private_key' in line.lower() or 'secret' in line.lower():continue
+  print(f'{i+1}: {line[:240]}')
+PY
+echo '=== ATTENDANCE SOURCE SCHEMA ==='
+php <<'PHP'
+<?php
+require 'vendor/autoload.php';
+$app=require 'bootstrap/app.php';
+$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
+foreach(DB::select('SHOW TABLES') as $v){
+ $t=(string)array_values((array)$v)[0];
+ if(preg_match('/attend|check.?in|work.?log|daily|staff.*log/i',$t)){
+  echo 'ATTEND_TABLE='.$t.' '.json_encode(array_map(fn($c)=>['f'=>$c->Field,'t'=>$c->Type],DB::select('SHOW COLUMNS FROM '.$t))).PHP_EOL;
+ }
+}
+PHP
 echo 'V648_READONLY=COMPLETE'
