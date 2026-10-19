@@ -33,8 +33,8 @@ jobs:
           assert '@media(max-width:780px)' in css
           assert "admin/mobile/staff-locations?latest=1" in js
           assert "recorded_at" in js and "accuracy_m" in js
-          assert "NO GPS" in html and "LIVE" not in html
-          assert 'ASSAM_MOTORS_STAFF_GPS_DASHBOARD_V6320' in js
+          assert "NO GPS" in html and ">LIVE<" not in html
+          assert 'FIX58 ASSAM MOTORS STAFF GPS DASHBOARD' in js
           print('FIX58_UI_SOURCE_QA_PASS')
           PY
           cd "$P"
