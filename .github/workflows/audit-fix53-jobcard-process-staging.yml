@@ -34,6 +34,10 @@ jobs:
           "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
           cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          echo "=== JC STORE TAIL 240-283 ==="
+          sed -n '238,284p' app/Http/Controllers/Web/AdminJobCardPageController.php
+          echo "=== JOBCARD MODEL HEAD 1-100 ==="
+          sed -n '1,105p' app/Models/JobCard.php
           echo "=== EDIT JOB CARD FORM FIRST 120 ==="
           sed -n '1,155p' resources/views/job-cards/edit.blade.php
           echo "=== JC UPDATE CONTROLLER 350-465 ==="
