@@ -85,6 +85,14 @@ jobs:
             }catch(Throwable $e){echo "SCHEMA_DETAILS_UNAVAILABLE ",$t,"\n";}
           }
           '
+          echo "=== FIX52 PRINT DETAIL CONTEXT (read only) ==="
+          grep -n -E 'function (showInvoice|printInvoice|createInvoice)|return view.*invoice|customer_id|customer_name' app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php | tail -100 || true
+          grep -n -i -C 7 -E 'customer_name|bill.?to|customer.?details|customer.?address|gstin|customer.?phone' resources/views/invoices/print.blade.php | head -135 || true
+          grep -n -i -C 4 -E 'customer_name|bill.?to|customer.?details|customer.?address|gstin' resources/views/invoices/show.blade.php | head -105 || true
+          grep -n -i -C 4 -E 'customer|gstin' resources/views/job-cards/print.blade.php 2>/dev/null | head -65 || true
+          sed -n '110,145p' resources/views/invoices/print.blade.php
+          sed -n '30,44p' resources/views/admin/native/customers.blade.php
+          sed -n '88,95p' resources/views/admin/native/customer-detail.blade.php
           echo "=== FIX52 ACTUAL CUSTOMER SOURCE (read only) ==="
           sed -n '600,672p' app/Http/Controllers/Web/AdminNativeModuleController.php
           sed -n '1,180p' resources/views/admin/native/partials/customer-vehicle-form.blade.php
