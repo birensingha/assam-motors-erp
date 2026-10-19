@@ -85,6 +85,23 @@ jobs:
             }catch(Throwable $e){echo "SCHEMA_DETAILS_UNAVAILABLE ",$t,"\n";}
           }
           '
+          echo "=== FIX52 CUSTOMER GST FIELD AUDIT (read only) ==="
+          find app/Http/Controllers/Web resources/views -maxdepth 4 -type f | grep -Ei 'customer|native' | head -70 || true
+          grep -n -E 'customers.(create|store|edit|update)|customer.*gst' routes/web.php | head -85 || true
+          for f in resources/views/customers/create.blade.php resources/views/customers/edit.blade.php resources/views/customers/form.blade.php app/Http/Controllers/Web/AdminNativeModuleController.php app/Http/Controllers/Web/AdminCustomerPageController.php; do
+            [ -f "$f" ] || continue
+            echo "CUSTOMER_SOURCE=$f"
+            grep -n -i -E 'gst|tax|customer|function.*(store|update|create|edit)|request->validate|fillable' "$f" | head -85 || true
+          done
+          php -r '
+          require "vendor/autoload.php";
+          $app=require "bootstrap/app.php";
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $sc=Illuminate\Support\Facades\Schema::class;
+          foreach(["customers","customer_profiles"] as $t){
+            if($sc::hasTable($t))echo "CUSTOMER_TABLE_COLUMNS ",$t," ",implode(",",$sc::getColumnListing($t)),"\n";
+          }
+          '
           echo "=== DISCOUNT EDIT CODE (read only) ==="
           sed -n '100,237p' app/Http/Controllers/Web/AdminWorkshopControlPageController.php
           echo "=== JC HEAD + TAIL ANCHOR ==="
