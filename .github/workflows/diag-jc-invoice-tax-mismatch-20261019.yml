@@ -85,6 +85,13 @@ jobs:
             }catch(Throwable $e){echo "SCHEMA_DETAILS_UNAVAILABLE ",$t,"\n";}
           }
           '
+          echo "=== DISCOUNT EDIT CODE (read only) ==="
+          sed -n '100,237p' app/Http/Controllers/Web/AdminWorkshopControlPageController.php
+          echo "=== JC HEAD + TAIL ANCHOR ==="
+          sed -n '1,88p' resources/views/job-cards/show.blade.php
+          tail -n 28 resources/views/job-cards/show.blade.php
+          echo "=== INVOICE PRINT FORMAT (bounded) ==="
+          sed -n '1,100p' resources/views/invoices/print.blade.php
           echo "=== ROT1 ID, discount and existing billing edit hooks (read only) ==="
           grep -n -E 'function (updateJobLine|jobAmounts)|discount_amount|discount_percent' app/Http/Controllers/Web/AdminWorkshopControlPageController.php | head -55 || true
           grep -n -E '@section|@endsection|Labour / ROT|lifecycle-panel|parts_total|grand_total' resources/views/job-cards/show.blade.php | tail -50 || true
