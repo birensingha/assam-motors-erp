@@ -1,6 +1,6 @@
 --- a/app/Http/Controllers/Web/AdminJobCardPageController.php
 +++ b/app/Http/Controllers/Web/AdminJobCardPageController.php
-@@ -1,7 +1,17 @@
+@@ -1,7 +1,15 @@
          if (Schema::hasColumn('job_cards','updated_at')) {
              $update['updated_at']=now();
          }
@@ -18,7 +18,7 @@
          }
 --- a/app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php
 +++ b/app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php
-@@ -1,5 +1,21 @@
+@@ -1,4 +1,20 @@
              if($grand<=0) $grand=round($preRound+$roundOff,2);
              if(abs($grand-($preRound+$roundOff))>0.01) $roundOff=round($grand-$preRound,2);
  
