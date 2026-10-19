@@ -1,0 +1,92 @@
+name: FIX59 Deploy Android-style Mobile Web ERP STAGING
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/deploy-fix59-mobile-erp-staging.yml"]
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: JavaScript and staging package guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          P=deployment/live-fixes/FIX59_MOBILE_WEB
+          node --check "$P/mobile-erp.js"
+          bash -n "$P/APPLY_STAGING.sh"
+          test -s "$P/mobile-erp.css"
+          grep -Fq "@auth" "$P/mobile-erp.blade.php"
+          grep -Fq '@media screen and (max-width:767px)' "$P/mobile-erp.css"
+          grep -Fq "erpSidebar" "$P/mobile-erp.js"
+          echo "FIX59_STATIC_SOURCE_CHECK_PASS"
+      - name: Guarded deployment only to STAGING Laravel
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh; chmod 700 ~/.ssh
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+            SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          P=deployment/live-fixes/FIX59_MOBILE_WEB
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/.am-fix59-deploy"'
+          "${SCP[@]}" "$P/mobile-erp.js" "$P/mobile-erp.css" "$P/mobile-erp.blade.php" "$P/APPLY_STAGING.sh" "$REMOTE:.am-fix59-deploy/"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          cd "$ROOT"
+          bash "$HOME/.am-fix59-deploy/APPLY_STAGING.sh" "$ROOT"
+          php -r '
+            require "vendor/autoload.php";
+            $app=require "bootstrap/app.php";
+            $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $layout=file_get_contents(resource_path("views/layouts/erp.blade.php"));
+            $partial=file_get_contents(resource_path("views/partials/mobile-erp.blade.php"));
+            if(substr_count($layout,"@include('\''partials.mobile-erp'\'')")!==1 ||
+               !str_contains($partial,"@auth"))exit(10);
+            foreach(["mobile-erp.css","mobile-erp.js"] as $name){
+                $file=public_path("mobile-erp/".$name);
+                if(!is_file($file)||filesize($file)<1500)exit(11);
+            }
+            echo "FIX59_LARAVEL_RUNTIME_VERIFY_PASS\n";
+            echo "FIX59_CSS_PUBLIC_URL=".asset("mobile-erp/mobile-erp.css")."\n";
+          '
+          echo "FIX59_PUBLIC_FILES_STAGING_DEPLOYED"
+          REMOTE
+      - name: Remote assets HTTP checks (read only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          for type in css js; do
+            url="https://staging.assammotors.com/erp/mobile-erp/mobile-erp.$type?v=59.1"
+            code="$(curl -L -sS --max-time 25 -o "/tmp/am59.$type" -w '%{http_code}' "$url")"
+            echo "FIX59_ASSET_$type HTTP=$code BYTES=$(wc -c < "/tmp/am59.$type")"
+            test "$code" = 200
+            test "$(wc -c < "/tmp/am59.$type")" -gt 1500
+          done
+          echo "FIX59_HTTP_STATIC_ASSETS_PASS"
+      - name: Remove temporary SSH material
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
