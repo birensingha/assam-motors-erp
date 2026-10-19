@@ -18,7 +18,7 @@ for entry in spec['files']:
     if not dest.is_relative_to(root) or not dest.is_file():raise SystemExit('Missing expected source '+str(rel))
     original=dest.read_bytes()
     crlf=b'\r\n' in original
-    text=original.decode('utf-8').replace('\r\n','\n')
+    text=original.decode('utf-8','surrogateescape').replace('\r\n','\n')
     for op in entry['ops']:
         if op['kind']=='replace':
             old,new=op['old'],op['new']
@@ -35,7 +35,7 @@ for entry in spec['files']:
             text=text[:a]+op['new']+text[b:]
         else:raise SystemExit('Invalid operation type')
     if crlf:text=text.replace('\n','\r\n')
-    todo.append((dest,text.encode('utf-8')))
+    todo.append((dest,text.encode('utf-8','surrogateescape')))
 if len(todo)!=4:raise SystemExit('Expected exactly 4 source files')
 if mode=='--check':print('FIX53_SOURCE_PREFLIGHT_PASS_NO_WRITES');sys.exit(0)
 for dest,b in todo:
