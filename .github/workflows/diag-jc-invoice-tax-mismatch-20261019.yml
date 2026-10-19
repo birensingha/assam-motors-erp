@@ -50,6 +50,12 @@ jobs:
           grep -n -E '(partsTotal=|labourTotal=|gstTotal=|preRound=|roundOff=|grand=|existingColumns\(.invoices|customer_ledger.*insert)' app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php | head -35 || true
           echo "=== Relevant Job Card total calculation references ==="
           grep -Rnl -m 1 -E "(pre_round_total|gst_total|grand_total)" app/Services/JobCardService.php app/Http/Controllers/Web/AdminJobCardPageController.php 2>/dev/null || true
+          echo "=== Job Card recalc exact source (bounded snippet) ==="
+          f=app/Http/Controllers/Web/AdminJobCardPageController.php
+          line="$(grep -n -m 1 'private function recalculateJobTotals(' "$f" | cut -d: -f1 || true)"
+          if [ -n "$line" ]; then sed -n "${line},$((line+65))p" "$f"; fi
+          echo "=== Invoice conversion source (bounded snippet) ==="
+          sed -n '377,410p' app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php
           echo "=== Numeric database record and lines ==="
           php -r '
           require "vendor/autoload.php";
