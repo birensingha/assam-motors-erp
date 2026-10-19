@@ -33,6 +33,16 @@ jobs:
           cd "$HOME/domains/assammotors.com/assam-erp-staging"
           echo "=== PARTS STATE AND BUTTON MARKERS ==="
           grep -RInEi '(requisition|requested|mark.?fitted|fitted|parts.*issue|issue.*parts|part-stock-control|part-actions-visible)' resources/views/job-cards/{show.blade.php,part-actions-visible.blade.php,part-stock-control.blade.php} | head -125 || true
+          echo "=== ESTIMATE RELEASE 295-430 ==="
+          sed -n '290,435p' app/Services/EstimateService.php
+          echo "=== LIFECYCLE CLOSE 270-350 ==="
+          sed -n '270,350p' app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php
+          echo "=== LIFECYCLE unfinishedWork FUNCTION ==="
+          grep -n -A 110 -B 8 'function unfinishedWork' app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php | head -130
+          echo "=== JOB CARD PART ACTION TEMPLATE TAIL ==="
+          sed -n '430,525p' resources/views/job-cards/show.blade.php
+          echo "=== BILLING/INVENTORY PART REVERSE refs ==="
+          grep -RInE 'issue_status.*(FITTED|ISSUED)|stock_movement.*JOB_ISSUE|inventory_movements.*JOB_ISSUE|PART_REQUISITIONED' app/Http/Controllers/Web app/Services | head -115
           echo "=== ESTIMATE SERVICE RELEASE EXACT REFS ==="
           grep -nEi 'function (sendToJobCard|release|convertToJob)|job_card_parts|source_estimate_item_id|issue_status' app/Services/EstimateService.php | head -135
           echo "=== ESTIMATE SERVICE RELEASE SOURCE ==="
