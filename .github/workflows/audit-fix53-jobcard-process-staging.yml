@@ -34,6 +34,23 @@ jobs:
           "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
           cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          echo "=== JC UPDATE ROUTES AND EDIT CONTROLLER ==="
+          grep -nE "job-cards/\\{job\\}.*edit|job-cards/\\{job\\}.*update|job-cards/\\{job\\}'" routes/web.php | head -22 || true
+          grep -n -E 'public function (edit|update)|technician_id|technician|staff =|staff=' app/Http/Controllers/Web/AdminJobCardEditPageController.php | head -90 || true
+          find app/Http/Controllers/Web -maxdepth 1 -name '*JobCard*Edit*' -print
+          echo "=== JC EDIT CONTROLLER MAIN ==="
+          sed -n '1,240p' app/Http/Controllers/Web/AdminJobCardEditPageController.php 2>/dev/null || true
+          echo "=== MANAGER INSPECTION COMPLETION 75-185 ==="
+          sed -n '75,185p' app/Http/Controllers/Web/ManagerInspectionWorkController.php
+          echo "=== JC PRIMARY PAGE SHOW PREPARATION 280-370 ==="
+          sed -n '280,370p' app/Http/Controllers/Web/AdminJobCardPageController.php
+          echo "=== STAFF MASTER ROLES (non-sensitive) ==="
+          php -r '
+            require "vendor/autoload.php";$app=require "bootstrap/app.php";
+            $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $sc=Illuminate\Support\Facades\Schema::class;
+            if($sc::hasTable("staff"))echo "STAFF_COLUMNS=".implode(",",$sc::getColumnListing("staff"))."\n";
+          '
           echo "=== SHOW 120-325 ==="
           sed -n '120,325p' resources/views/job-cards/show.blade.php
           echo "=== CREATE FORM 1-240 ==="
