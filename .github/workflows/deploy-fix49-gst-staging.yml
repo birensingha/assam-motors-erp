@@ -1,0 +1,108 @@
+name: Deploy FIX49 GST reconciliation to staging
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/deploy-fix49-gst-staging.yml"]
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh; chmod 700 ~/.ssh
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Guarded source-only staging deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          PKG=deployment/live-fixes/FIX49_GST_RECONCILIATION
+          "${SSH[@]}" "$REMOTE" "mkdir -p ~/FIX49_GST_RECONCILIATION"
+          "${SCP[@]}" "$PKG/JobCardTaxTotals.php" "$PKG/FIX49-staging.patch" "$REMOTE:~/FIX49_GST_RECONCILIATION/"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          FILES="$HOME/FIX49_GST_RECONCILIATION"
+          test -f "$ROOT/artisan"
+          cd "$ROOT"
+          SVC=app/Services/JobCardTaxTotals.php
+          JC=app/Http/Controllers/Web/AdminJobCardPageController.php
+          INV=app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php
+          php -l "$FILES/JobCardTaxTotals.php"
+          if grep -q 'FIX49_GST_RECONCILIATION' "$JC" || grep -q 'FIX49_GST_RECONCILIATION' "$INV"; then
+            echo "FIX49 partially/already installed - STOP for review"; exit 3
+          fi
+          patch --dry-run --fuzz=0 -p1 < "$FILES/FIX49-staging.patch"
+          STAMP="$(date +%Y%m%d_%H%M%S)"
+          BACKUP="storage/app/fix49_backup_$STAMP"
+          mkdir -p "$BACKUP"
+          cp -p "$JC" "$BACKUP/JC.php"; cp -p "$INV" "$BACKUP/INV.php"
+          if [ -f "$SVC" ]; then
+            if ! cmp -s "$SVC" "$FILES/JobCardTaxTotals.php"; then
+              echo "Different existing TaxTotals service; STOP"; exit 4
+            fi
+            cp -p "$SVC" "$BACKUP/TaxTotals.php"
+          fi
+          rollback(){
+            echo "FIX49 source rollback"
+            cp -p "$BACKUP/JC.php" "$JC"; cp -p "$BACKUP/INV.php" "$INV"
+            if [ -f "$BACKUP/TaxTotals.php" ]; then cp -p "$BACKUP/TaxTotals.php" "$SVC"; else rm -f "$SVC"; fi
+            php artisan optimize:clear >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          cp "$FILES/JobCardTaxTotals.php" "$SVC"
+          patch --fuzz=0 -p1 < "$FILES/FIX49-staging.patch"
+          php -l "$SVC"; php -l "$JC"; php -l "$INV"
+          php artisan optimize:clear >/dev/null
+          php -r '
+          require "vendor/autoload.php";
+          $app=require "bootstrap/app.php";
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $a=\App\Services\JobCardTaxTotals::fromLines(
+            [(object)["total"=>1459.50,"gst_percent"=>18],(object)["total"=>101.69,"gst_percent"=>18],
+             (object)["total"=>101.69,"gst_percent"=>18],(object)["total"=>278.26,"gst_percent"=>18]],
+            [(object)["total"=>423.72,"gst_percent"=>18],(object)["total"=>889.83,"gst_percent"=>18]]);
+          if(abs($a["gst_total"]-585.84)>0.01 || abs($a["grand_total"]-3841.00)>0.01)exit(5);
+          echo "FIXTURE_PASS_GST=",number_format($a["gst_total"],2)," GRAND=",number_format($a["grand_total"],2),"\n";
+          $j=\Illuminate\Support\Facades\DB::table("job_cards")->where("job_no","JC-20261019-00039")->first();
+          if($j) {
+            $live=\App\Services\JobCardTaxTotals::forJob((int)$j->id);
+            echo "EXISTING_JC_EXPECTED=",number_format($live["grand_total"],2),"\n";
+          }
+          '
+          trap - ERR
+          echo "FIX49 SOURCE DEPLOY SUCCESS. FINANCIAL DATA NOT CHANGED. BACKUP=$BACKUP"
+          REMOTE_SCRIPT
+      - name: Cleanup key
+        if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519
