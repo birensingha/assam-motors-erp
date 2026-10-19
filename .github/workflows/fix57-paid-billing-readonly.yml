@@ -1,0 +1,36 @@
+name: FIX57 Paid Billing Read-only Summary
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/fix57-paid-billing-readonly.yml"]
+permissions: {contents: read}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Inspect unpaid and payment link counts
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq sshpass
+          SSHPASS="$PASSWORD" sshpass -e ssh -o StrictHostKeyChecking=no -p "$PORT" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          cd "$HOME/domains/assammotors.com/assam-erp-staging" || exit 1
+          php -r '
+          require "vendor/autoload.php";
+          $app=require "bootstrap/app.php";
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $d=Illuminate\Support\Facades\DB::class;
+          $i=$d::table("invoices")->where("id",23)->first();
+          echo "INV_STATE ".json_encode(["status"=>$i->status,"grand_total"=>$i->grand_total,"paid_amount"=>$i->paid_amount,"balance_due"=>$i->balance_due])."\n";
+          foreach(["customer_payments","customer_payment_allocations","customer_ledger","invoice_credit_notes"] as $table)
+            echo "LINKS ".$table." ".$d::table($table)->where("invoice_id",23)->count()."\n";
+          $a=$d::table("customer_payment_allocations")->where("invoice_id",23)->get();
+          foreach($a as $x)echo "ALLOCATED_AMOUNT ".json_encode(["amount"=>$x->amount,"status"=>$x->status,"reversed"=>!empty($x->reversed_at)])."\n";
+          '
+          REMOTE
