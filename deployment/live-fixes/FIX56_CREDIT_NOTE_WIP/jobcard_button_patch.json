@@ -1,0 +1,10 @@
+{
+  "fix": "FIX56_CREDIT_NOTE_WIP",
+  "changes": [
+    {
+      "path": "resources/views/job-cards/show.blade.php",
+      "old": "    <a class=\"btn primary\" href=\"{{ route('erp.job-cards.reversal',$job->id) }}\">Open Reversal Centre →</a>",
+      "new": "    <a class=\"btn primary\" href=\"{{ route('erp.job-cards.credit-correction',$job->id) }}\">Simple Billing Correction →</a>\n    <a class=\"btn\" href=\"{{ route('erp.job-cards.reversal',$job->id) }}\">Advanced Reversal Centre →</a>"
+    }
+  ]
+}
