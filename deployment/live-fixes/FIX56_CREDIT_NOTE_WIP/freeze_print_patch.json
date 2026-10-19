@@ -1,0 +1,10 @@
+{
+  "fix": "FIX56_CREDIT_NOTE_WIP",
+  "changes": [
+    {
+      "path": "app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php",
+      "old": "        return compact('inv','job','parts','labour','ledger');",
+      "new": "        // FIX56: Reversed original invoices always print their frozen pre-credit lines.\n        if(strtolower(trim((string)$inv->status))==='reversed' && Schema::hasTable('invoice_credit_notes')){\n            $cn=DB::table('invoice_credit_notes')->where('invoice_id',$invoice)->first();\n            if($cn){\n                $snap=json_decode((string)$cn->original_snapshot,true,512,JSON_THROW_ON_ERROR);\n                $job=(object)($snap['job']??(array)$job);\n                $parts=collect(array_map(fn($row)=>(object)$row,$snap['parts']??[]));\n                $labour=collect(array_map(fn($row)=>(object)$row,$snap['labour']??[]))\n                    ->filter(fn($row)=>(int)($row->billing_included??1)===1)->values();\n            }\n        }\n        return compact('inv','job','parts','labour','ledger');"
+    }
+  ]
+}
