@@ -1,0 +1,52 @@
+name: AUDIT Android GPS UI Source Build 20261019
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/audit-android-gps-ui-build-20261019.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Audit mobile Android GPS source and build without changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh;chmod 700 ~/.ssh
+          if [ -n "$KEY" ]; then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519;SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$PORT")
+          else sudo apt-get update -qq;sudo apt-get install -y -qq sshpass;export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT");fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          SRC="$HOME/domains/assammotors.com/assam-erp-staging/android-staff-app"
+          cd "$SRC"
+          echo "=== Android App source tree ==="
+          find app/src/main -maxdepth 10 -type f \( -name '*.kt' -o -name '*.java' -o -name '*.xml' \) | head -135
+          echo "=== Build configuration ==="
+          sed -n '1,180p' app/build.gradle.kts 2>/dev/null || true
+          echo "=== Gradle availability ==="
+          command -v java || true
+          test -f gradlew && echo "GRADLE_WRAPPER=YES" || echo "GRADLE_WRAPPER=NO"
+          test -d app/build/outputs/apk && find app/build/outputs/apk -maxdepth 4 -type f -printf '%p\n' | head -15 || true
+          echo "=== GPS/Location UI references ==="
+          grep -RInE '(Staff Live Location|Staff Location|Live Location|Live GPS|staff-locations|staffLocations|locationHistory|LocationHistory|staffGps|staffLocation)' app/src/main/java app/src/main/kotlin app/src/main/res 2>/dev/null | head -135 || true
+          echo "=== App Android launch entries ==="
+          sed -n '1,180p' app/src/main/AndroidManifest.xml
+          echo "=== Gradle signing references NAMES ONLY ==="
+          grep -nE 'signingConfig|versionCode|versionName|applicationId|compileSdk|buildTypes' app/build.gradle.kts 2>/dev/null || true
+          echo "=== GPS API response live fields ==="
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          sed -n '70,212p' app/Http/Controllers/Api/V1/AdminMobileController.php
+          REMOTE
+      - name: Cleanup key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
