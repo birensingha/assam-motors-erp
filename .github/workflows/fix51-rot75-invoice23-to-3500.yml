@@ -1,0 +1,87 @@
+name: FIX51 Invoice23 ROT75 discount to 3500
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/fix51-rot75-invoice23-to-3500.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  repair_one_invoice:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh; chmod 700 ~/.ssh
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Dry-run then transaction-correct exactly invoice 23
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" "mkdir -p ~/FIX51_ROT75_DISCOUNT_TO_3500"
+          "${SCP[@]}" deployment/live-fixes/FIX51_ROT75_DISCOUNT_TO_3500/RECONCILE_INVOICE23_ROT75.php "$REMOTE:~/FIX51_ROT75_DISCOUNT_TO_3500/"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          SCRIPT="$HOME/FIX51_ROT75_DISCOUNT_TO_3500/RECONCILE_INVOICE23_ROT75.php"
+          cd "$ROOT"
+          test -f artisan
+          php -l "$SCRIPT"
+          grep -q 'FIX49_GST_RECONCILIATION' app/Http/Controllers/Web/AdminJobCardPageController.php
+          grep -q 'FIX49_GST_RECONCILIATION' app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php
+          php "$SCRIPT" --check "$ROOT"
+          export ASSAM_FIX51_CONFIRM=APPLY_INVOICE23_ROT75_TO_3500
+          php "$SCRIPT" --apply "$ROOT"
+          unset ASSAM_FIX51_CONFIRM
+          php -r '
+          require "vendor/autoload.php";
+          $app=require "bootstrap/app.php";
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=Illuminate\Support\Facades\DB::class;
+          $inv=$db::table("invoices")->where("id",23)->first();
+          $job=$db::table("job_cards")->where("id",39)->first();
+          $rows=$db::table("customer_ledger")->where("invoice_id",23)->get();
+          $audit=$db::table("job_card_change_audits")->where("job_card_id",39)->where("action","INVOICE_ROT_DISCOUNT_TO_3500_FIX51")->count();
+          $rot=$db::table("job_card_labour")->where("id",75)->first();
+          $expected=\App\Services\JobCardTaxTotals::forJob(39);
+          if(!$inv||!$job||!$rot||$rows->count()!==1||$audit!==1
+             ||abs((float)$rot->total-134.74)>0.01
+             ||abs((float)$rot->discount_amount-288.98)>0.01
+             ||abs((float)$expected["grand_total"]-3500.00)>0.01
+             ||abs((float)$inv->grand_total-3500.00)>0.01
+             ||abs((float)$inv->gst_total-533.82)>0.01
+             ||abs((float)$job->grand_total-3500.00)>0.01
+             ||abs((float)$rows->first()->debit-3500.00)>0.01)exit(6);
+          echo "FIX51_VERIFIED_INVOICE23=3500.00 ROT75_TAXABLE_DISCOUNT=288.98 GST_BENEFIT=52.02 GROSS_DISCOUNT=341.00 GST=533.82 LEDGER=3500.00 AUDIT=1\n";
+          '
+          REMOTE_SCRIPT
+      - name: Cleanup SSH
+        if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519
