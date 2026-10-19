@@ -41,7 +41,7 @@ jobs:
             export SSHPASS="$SSH_PASSWORD"
             SSH=(sshpass -e ssh -o ConnectTimeout=20 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$SSH_PORT")
           fi
-          "\${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
           ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
           test -f "$ROOT/artisan"
