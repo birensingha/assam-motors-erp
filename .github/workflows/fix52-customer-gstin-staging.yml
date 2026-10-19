@@ -1,0 +1,122 @@
+name: FIX52 Customer GSTIN Create Edit and Print (Staging)
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/fix52-customer-gstin-staging.yml"]
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure staging SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Guarded staging deploy - GSTIN input and invoice printing
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          PKG="deployment/live-fixes/FIX52_CUSTOMER_GSTIN_PRINT"
+          "${SSH[@]}" "$REMOTE" "mkdir -p ~/FIX52_CUSTOMER_GSTIN_PRINT"
+          "${SCP[@]}" "$PKG/manifest.json" "$PKG/apply.py" "$PKG/add_gstin_column.php" "$REMOTE:~/FIX52_CUSTOMER_GSTIN_PRINT/"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          PKG="$HOME/FIX52_CUSTOMER_GSTIN_PRINT"
+          cd "$ROOT"
+          test -f artisan
+          python3 "$PKG/apply.py" --check "$ROOT" "$PKG/manifest.json"
+          STAMP="$(date +%Y%m%d_%H%M%S)"
+          BACKUP="storage/app/fix52_customer_gstin_backup_$STAMP"
+          mkdir -p "$BACKUP"
+          cp -p app/Http/Controllers/Web/AdminNativeModuleController.php "$BACKUP/Controller.php"
+          cp -p resources/views/admin/native/customers.blade.php "$BACKUP/Customers.php"
+          cp -p resources/views/admin/native/customer-detail.blade.php "$BACKUP/CustomerDetail.php"
+          cp -p resources/views/invoices/print.blade.php "$BACKUP/Print.php"
+          cp -p resources/views/invoices/show.blade.php "$BACKUP/InvoiceShow.php"
+          rollback(){
+            echo "FIX52_ROLLING_BACK_SOURCE"
+            cp -p "$BACKUP/Controller.php" app/Http/Controllers/Web/AdminNativeModuleController.php
+            cp -p "$BACKUP/Customers.php" resources/views/admin/native/customers.blade.php
+            cp -p "$BACKUP/CustomerDetail.php" resources/views/admin/native/customer-detail.blade.php
+            cp -p "$BACKUP/Print.php" resources/views/invoices/print.blade.php
+            cp -p "$BACKUP/InvoiceShow.php" resources/views/invoices/show.blade.php
+            php artisan view:clear >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          php -l "$PKG/add_gstin_column.php"
+          php "$PKG/add_gstin_column.php" "$ROOT"
+          python3 "$PKG/apply.py" --apply "$ROOT" "$PKG/manifest.json"
+          php -l app/Http/Controllers/Web/AdminNativeModuleController.php
+          php artisan view:clear >/dev/null
+          php -r '
+          require "vendor/autoload.php";
+          $app=require "bootstrap/app.php";
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $s=Illuminate\Support\Facades\Schema::class;
+          if(!$s::hasColumn("am_customer_master","gstin"))exit(10);
+          $rule=["nullable","string","regex:/^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$/"];
+          $valid=Illuminate\Support\Facades\Validator::make(["gstin"=>"18CAHPS7155P1ZQ"],["gstin"=>$rule]);
+          $invalid=Illuminate\Support\Facades\Validator::make(["gstin"=>"INVALID123"],["gstin"=>$rule]);
+          if($valid->fails() || !$invalid->fails())exit(11);
+          $blade=app("blade.compiler");
+          foreach(["admin/native/customers","admin/native/customer-detail","invoices/print","invoices/show"] as $view){
+            $file=resource_path("views/".$view.".blade.php");
+            $compiled=$blade->compileString(file_get_contents($file));
+            $tmp=tempnam(sys_get_temp_dir(),"am52_blade_");
+            file_put_contents($tmp,$compiled);
+            $output=[];$status=0;
+            exec("php -l ".escapeshellarg($tmp)." 2>&1",$output,$status);
+            unlink($tmp);
+            if($status!==0){echo "INVALID_BLADE_PHP ".$view." ".implode(" ",$output)."\n";exit(12);}
+            echo "FIX52_BLADE_OK ".$view."\n";
+          }
+          $inv=Illuminate\Support\Facades\DB::table("invoices")->where("id",23)->first();
+          $job=Illuminate\Support\Facades\DB::table("job_cards")->where("id",39)->first();
+          if($inv && $job){
+            $db=Illuminate\Support\Facades\DB::class;
+            $parts=$db::table("job_card_parts")->where("job_card_id",39)->get();
+            $labour=$db::table("job_card_labour")->where("job_card_id",39)->get();
+            $ledger=$db::table("customer_ledger")->where("invoice_id",23)->get();
+            $html=view("invoices.print",compact("inv","job","parts","labour","ledger"))->render();
+            if(!str_contains($html,"3,500.00"))exit(13);
+            echo "FIX52_INVOICE23_PRINT_OK_GRAND=3500.00\n";
+          }
+          echo "FIX52_GSTIN_VALIDATION_AND_VIEWS_PASS\n";
+          '
+          trap - ERR
+          echo "FIX52_GSTIN_STAGING_DEPLOY_SUCCESS BACKUP=$BACKUP"
+          REMOTE
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
