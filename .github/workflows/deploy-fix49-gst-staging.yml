@@ -47,7 +47,7 @@ jobs:
           REMOTE="$USERNAME@$HOST"
           PKG=deployment/live-fixes/FIX49_GST_RECONCILIATION
           "${SSH[@]}" "$REMOTE" "mkdir -p ~/FIX49_GST_RECONCILIATION"
-          "${SCP[@]}" "$PKG/JobCardTaxTotals.php" "$PKG/FIX49-staging.patch" "$REMOTE:~/FIX49_GST_RECONCILIATION/"
+          "${SCP[@]}" "$PKG/JobCardTaxTotals.php" "$PKG/FIX49-staging.patch" "$PKG/apply_context_patch.py" "$REMOTE:~/FIX49_GST_RECONCILIATION/"
           "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE_SCRIPT'
           set -euo pipefail
           ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
@@ -61,7 +61,7 @@ jobs:
           if grep -q 'FIX49_GST_RECONCILIATION' "$JC" || grep -q 'FIX49_GST_RECONCILIATION' "$INV"; then
             echo "FIX49 partially/already installed - STOP for review"; exit 3
           fi
-          patch --dry-run --fuzz=0 -p1 < "$FILES/FIX49-staging.patch"
+          python3 "$FILES/apply_context_patch.py" --check "$ROOT" "$FILES/FIX49-staging.patch"
           STAMP="$(date +%Y%m%d_%H%M%S)"
           BACKUP="storage/app/fix49_backup_$STAMP"
           mkdir -p "$BACKUP"
@@ -80,7 +80,7 @@ jobs:
           }
           trap rollback ERR
           cp "$FILES/JobCardTaxTotals.php" "$SVC"
-          patch --fuzz=0 -p1 < "$FILES/FIX49-staging.patch"
+          python3 "$FILES/apply_context_patch.py" --apply "$ROOT" "$FILES/FIX49-staging.patch"
           php -l "$SVC"; php -l "$JC"; php -l "$INV"
           php artisan optimize:clear >/dev/null
           php -r '
