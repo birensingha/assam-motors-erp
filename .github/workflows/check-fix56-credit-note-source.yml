@@ -1,0 +1,33 @@
+name: Check FIX56 Credit Note source (no deployment)
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/check-fix56-credit-note-source.yml"]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          tools: none
+      - name: Syntax and safety preflight only
+        shell: bash
+        run: |
+          set -euo pipefail
+          ROOT=deployment/live-fixes/FIX56_CREDIT_NOTE_WIP
+          for file in AdminInvoiceCreditNoteController.php AdminJobCardBillingCorrectionPageController.php migrate_credit_notes.php; do
+            php -l "$ROOT/$file"
+          done
+          test -s "$ROOT/credit-correction.blade.php"
+          test -s "$ROOT/credit-note.blade.php"
+          grep -Fq "where('invoice_id',$""invoice)->exists()" "$ROOT/AdminInvoiceCreditNoteController.php"
+          grep -Fq "lockForUpdate()" "$ROOT/AdminInvoiceCreditNoteController.php"
+          grep -Fq "original_snapshot" "$ROOT/AdminInvoiceCreditNoteController.php"
+          grep -Fq "credit_note_no" "$ROOT/migrate_credit_notes.php"
+          echo "FIX56_STATIC_TEST_PASS — no staging server, database, invoice or ledger touched"
