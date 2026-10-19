@@ -1,0 +1,10 @@
+{
+  "fix": "FIX56_CREDIT_NOTE_WIP",
+  "changes": [
+    {
+      "path": "routes/web.php",
+      "old": "    Route::post('/job-cards/{job}/invoice', [AdminJobCardLifecyclePageController::class,'createInvoice'])->whereNumber('job')->name('erp.job-cards.invoice.create');",
+      "new": "    Route::post('/job-cards/{job}/invoice', [AdminJobCardLifecyclePageController::class,'createInvoice'])->whereNumber('job')->name('erp.job-cards.invoice.create');\n    // FIX56: protected billing correction page, credit note and original print.\n    Route::get('/job-cards/{job}/billing-correction', [\\App\\Http\\Controllers\\Web\\AdminJobCardBillingCorrectionPageController::class,'index'])->whereNumber('job')->name('erp.job-cards.credit-correction');\n    Route::post('/job-cards/{job}/credit-note/{invoice}', [\\App\\Http\\Controllers\\Web\\AdminInvoiceCreditNoteController::class,'post'])->whereNumber('job')->whereNumber('invoice')->name('erp.job-cards.credit-note.post');\n    Route::get('/credit-notes/{credit}/print', [\\App\\Http\\Controllers\\Web\\AdminInvoiceCreditNoteController::class,'print'])->whereNumber('credit')->name('erp.invoice-credit-note.print');"
+    }
+  ]
+}
