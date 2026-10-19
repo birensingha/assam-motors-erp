@@ -1,0 +1,10 @@
+{
+  "fix": "FIX57_PAID_TO_ADVANCE",
+  "changes": [
+    {
+      "path": "routes/web.php",
+      "old": "    Route::get('/credit-notes/{credit}/print', [\\App\\Http\\Controllers\\Web\\AdminInvoiceCreditNoteController::class,'print'])->whereNumber('credit')->name('erp.invoice-credit-note.print');",
+      "new": "    Route::get('/credit-notes/{credit}/print', [\\App\\Http\\Controllers\\Web\\AdminInvoiceCreditNoteController::class,'print'])->whereNumber('credit')->name('erp.invoice-credit-note.print');\n    Route::post('/job-cards/{job}/credit-note-paid/{invoice}', [\\App\\Http\\Controllers\\Web\\AdminPaidInvoiceAdvancePageController::class,'post'])->whereNumber('job')->whereNumber('invoice')->name('erp.job-cards.credit-note.paid');"
+    }
+  ]
+}
