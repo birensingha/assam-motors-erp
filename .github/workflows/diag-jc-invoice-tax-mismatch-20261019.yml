@@ -56,6 +56,35 @@ jobs:
           if [ -n "$line" ]; then sed -n "${line},$((line+65))p" "$f"; fi
           echo "=== Invoice conversion source (bounded snippet) ==="
           sed -n '377,410p' app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php
+          echo "=== Invoice-23 financial correction preflight (read only) ==="
+          php -r '
+          require "vendor/autoload.php";
+          $app=require "bootstrap/app.php";
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=Illuminate\Support\Facades\DB::class;
+          $sc=Illuminate\Support\Facades\Schema::class;
+          $inv=$db::table("invoices")->where("invoice_no","INV-2026-00023")->first();
+          if(!$inv){echo "INV23_NOT_FOUND\n";exit(2);}
+          echo "INVOICE_ID=",$inv->id," STATUS=",$inv->status," PAID=",$inv->paid_amount??"n/a"," PAID_TOTAL=",$inv->paid_total??"n/a","\n";
+          $tables=$db::select("SHOW TABLES");
+          foreach($tables as $entry){
+            $table=(string)reset((array)$entry);
+            if(!$table||!preg_match("/^[a-z0-9_]+$/i",$table))continue;
+            try{
+              if($sc::hasColumn($table,"invoice_id")){
+                $n=$db::table($table)->where("invoice_id",$inv->id)->count();
+                if($n>0)echo "INVOICE_REFERENCE_COUNT ",$table," ",$n,"\n";
+              }
+            }catch(Throwable $e){echo "REFERENCE_SCAN_UNAVAILABLE ",$table,"\n";}
+          }
+          foreach(["job_card_change_audits","invoices","customer_ledger"] as $t){
+            try{$cols=$db::select("SHOW COLUMNS FROM ".$t);
+              echo "SCHEMA_FIELDS ",$t," ";
+              foreach($cols as $c)echo $c->Field,"(",$c->Null,") ";
+              echo "\n";
+            }catch(Throwable $e){echo "SCHEMA_DETAILS_UNAVAILABLE ",$t,"\n";}
+          }
+          '
           echo "=== Numeric database record and lines ==="
           php -r '
           require "vendor/autoload.php";
