@@ -34,6 +34,16 @@ jobs:
           "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
           cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          echo "=== SHOW 120-325 ==="
+          sed -n '120,325p' resources/views/job-cards/show.blade.php
+          echo "=== CREATE FORM 1-240 ==="
+          sed -n '1,240p' resources/views/job-cards/form.blade.php
+          echo "=== CREATE CONTROLLER 80-255 ==="
+          sed -n '80,255p' app/Http/Controllers/Web/AdminJobCardPageController.php
+          echo "=== MANAGER INSPECTION ASSIGNMENT LOGIC ==="
+          grep -nE 'function |technician|assigned_staff_id|completed_by_staff_id|assignInspection|inspection_status|inspection_submitted' app/Http/Controllers/Web/ManagerInspectionWorkController.php | head -95 || true
+          echo "=== DECIDER ASSIGN EXACT ==="
+          sed -n '890,955p' app/Http/Controllers/Web/AdminJobCardPageController.php
           echo "=== JOB CARD VIEW SOURCE 1-120 ==="
           sed -n '1,120p' resources/views/job-cards/show.blade.php
           echo "=== JC SHOW PANELS 330-395 ==="
