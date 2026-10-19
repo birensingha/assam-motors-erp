@@ -1,0 +1,103 @@
+name: FIX56 Credit Note and Simple Job Card Correction STAGING
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/deploy-fix56-credit-note-staging.yml"]
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 17
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh; chmod 700 ~/.ssh
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Deploy guarded staging sources without touching existing finance
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$PORT")
+            SCP=(scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -P "$PORT")
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          PKG="deployment/live-fixes/FIX56_CREDIT_NOTE_WIP"
+          "${SSH[@]}" "$REMOTE" "mkdir -p ~/FIX56_CREDIT_NOTE_WIP"
+          "${SCP[@]}" "$PKG/"{AdminInvoiceCreditNoteController.php,AdminJobCardBillingCorrectionPageController.php,credit-correction.blade.php,credit-note.blade.php,migrate_credit_notes.php,apply.py,routes_patch.json,freeze_print_patch.json,jobcard_button_patch.json,verify_readonly.php} "$REMOTE:~/FIX56_CREDIT_NOTE_WIP/"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          PKG="$HOME/FIX56_CREDIT_NOTE_WIP"
+          cd "$ROOT"
+          test -f artisan && test -d vendor
+          python3 "$PKG/apply.py" --check "$ROOT" "$PKG"
+          for f in "$PKG/"{AdminInvoiceCreditNoteController.php,AdminJobCardBillingCorrectionPageController.php,migrate_credit_notes.php,verify_readonly.php}; do
+            php -l "$f"
+          done
+          for f in app/Http/Controllers/Web/AdminInvoiceCreditNoteController.php app/Http/Controllers/Web/AdminJobCardBillingCorrectionPageController.php resources/views/job-cards/credit-correction.blade.php resources/views/invoices/credit-note.blade.php; do
+            if [ -e "$f" ]; then echo "FIX56_ABORT_EXISTING_TARGET=$f";exit 15; fi
+          done
+          STAMP="$(date +%Y%m%d_%H%M%S)"
+          BACKUP="storage/app/fix56_credit_note_backup_$STAMP"
+          mkdir -p "$BACKUP"
+          cp -p routes/web.php "$BACKUP/web.php"
+          cp -p app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php "$BACKUP/AdminJobCardLifecyclePageController.php"
+          cp -p resources/views/job-cards/show.blade.php "$BACKUP/show.blade.php"
+          rollback(){
+            echo "FIX56_ROLLING_BACK_SOURCE"
+            cp -p "$BACKUP/web.php" routes/web.php
+            cp -p "$BACKUP/AdminJobCardLifecyclePageController.php" app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php
+            cp -p "$BACKUP/show.blade.php" resources/views/job-cards/show.blade.php
+            rm -f app/Http/Controllers/Web/AdminInvoiceCreditNoteController.php
+            rm -f app/Http/Controllers/Web/AdminJobCardBillingCorrectionPageController.php
+            rm -f resources/views/job-cards/credit-correction.blade.php
+            rm -f resources/views/invoices/credit-note.blade.php
+            php artisan view:clear >/dev/null 2>&1 || true
+            php artisan route:clear >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          php "$PKG/migrate_credit_notes.php" "$ROOT"
+          cp "$PKG/AdminInvoiceCreditNoteController.php" app/Http/Controllers/Web/AdminInvoiceCreditNoteController.php
+          cp "$PKG/AdminJobCardBillingCorrectionPageController.php" app/Http/Controllers/Web/AdminJobCardBillingCorrectionPageController.php
+          cp "$PKG/credit-correction.blade.php" resources/views/job-cards/credit-correction.blade.php
+          cp "$PKG/credit-note.blade.php" resources/views/invoices/credit-note.blade.php
+          python3 "$PKG/apply.py" --apply "$ROOT" "$PKG"
+          php -l app/Http/Controllers/Web/AdminInvoiceCreditNoteController.php
+          php -l app/Http/Controllers/Web/AdminJobCardBillingCorrectionPageController.php
+          php -l app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php
+          php -l routes/web.php
+          php artisan view:clear >/dev/null
+          php artisan route:clear >/dev/null
+          php "$PKG/verify_readonly.php" "$ROOT"
+          trap - ERR
+          echo "FIX56_STAGING_DEPLOY_SUCCESS BACKUP=$BACKUP NO_INVOICE_LEDGER_WRITES"
+          REMOTE
+      - name: Cleanup
+        if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519
