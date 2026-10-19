@@ -33,19 +33,19 @@
           "kind": "span",
           "start": "{{-- WORKSHOP_JOB_ACTION_BAR --}}",
           "end": "<div class=\"card section-gap diagnosis-card",
-          "new": "{{-- FIX53_STAGE1: remove redundant Job Card Controls panel; retain missing-part-rate notice --}}\n@if($parts->contains(fn($x)=>(float)($x->rate??0)<=0))\n  <div class=\"workflow-message locked\" style=\"margin:10px 0\">\n    <strong>Part Price Missing</strong>\n    <span>Parts section mein ₹0 rate entries ko invoice se pehle correct karein.</span>\n  </div>\n@endif\n<div class=\"card section-gap diagnosis-card"
+          "new": "{{-- FIX53_STAGE1: remove redundant Job Card Controls panel; retain missing-part-rate notice --}}\n@if($parts->contains(fn($x)=>(float)($x->rate??0)<=0))\n  <div class=\"workflow-message locked\" style=\"margin:10px 0\">\n    <strong>Part Price Missing</strong>\n    <span>Parts section mein ₹0 rate entries ko invoice se pehle correct karein.</span>\n  </div>\n@endif\n"
         },
         {
           "kind": "span",
           "start": "<div class=\"card section-gap\">\n  <div class=\"section-head\"><div><h2 class=\"section-title\">Estimate History",
           "end": "{{-- FIX37_DIRECT_ENTRY_PANEL --}}",
-          "new": "{{-- FIX53_STAGE1: Estimate History table hidden here; approved estimate release controls remain above. --}}\n\n{{-- FIX37_DIRECT_ENTRY_PANEL --}}"
+          "new": "{{-- FIX53_STAGE1: Estimate History table hidden here; approved estimate release controls remain above. --}}\n\n"
         },
         {
           "kind": "span",
           "start": "        <strong>Inspection Assigned To:</strong>",
           "end": "        {{-- P39_JC_RENDER_SCOPE_V1",
-          "new": "        <strong>Assigned Inspector:</strong>\n        {{ $p21InspectionAssignment->manager_name ?? 'NOT ASSIGNED' }}\n        @if($p21InspectionAssignment?->manager_code) ({{ $p21InspectionAssignment->manager_code }}) @endif\n        · <strong>Status:</strong> {{ strtoupper((string)$job->inspection_status) }}\n        @if($job->inspection_submitted_at)\n           · <strong>Submitted:</strong> {{ optional($job->inspection_submitted_at)->format('d-m-Y h:i A') }}\n        @endif\n        @if($p21InspectionAssignment && $job->inspection_submitted_by && (int)$p21InspectionAssignment->assigned_staff_id !== (int)$job->inspection_submitted_by)\n           <span style=\"color:#a32424\">Inspector identity mismatch — audit review required</span>\n        @endif\n        <div class=\"muted\" style=\"margin-top:4px\">Service Advisor (Admin) assigns inspection and reviews the staff report before diagnosis and estimate.</div>\n        {{-- P39_JC_RENDER_SCOPE_V1"
+          "new": "        <strong>Assigned Inspector:</strong>\n        {{ $p21InspectionAssignment->manager_name ?? 'NOT ASSIGNED' }}\n        @if($p21InspectionAssignment?->manager_code) ({{ $p21InspectionAssignment->manager_code }}) @endif\n        · <strong>Status:</strong> {{ strtoupper((string)$job->inspection_status) }}\n        @if($job->inspection_submitted_at)\n           · <strong>Submitted:</strong> {{ optional($job->inspection_submitted_at)->format('d-m-Y h:i A') }}\n        @endif\n        @if($p21InspectionAssignment && $job->inspection_submitted_by && (int)$p21InspectionAssignment->assigned_staff_id !== (int)$job->inspection_submitted_by)\n           <span style=\"color:#a32424\">Inspector identity mismatch — audit review required</span>\n        @endif\n        <div class=\"muted\" style=\"margin-top:4px\">Service Advisor (Admin) assigns inspection and reviews the staff report before diagnosis and estimate.</div>\n"
         },
         {
           "kind": "replace",
@@ -76,7 +76,7 @@
           "kind": "span",
           "start": "      <label>Technician\n        <select name=\"technician_id\"",
           "end": "      <label>Customer App Status",
-          "new": "      <label>Floor Supervisor (Optional)\n        <select name=\"floor_supervisor_id\" id=\"jcFloorSupervisor\">\n          <option value=\"\">— Select later —</option>\n          @foreach($staff as $s)\n            <option value=\"{{ $s->id }}\" @selected((string)old('floor_supervisor_id',data_get($job,'floor_supervisor_id',''))===(string)$s->id)>{{ $s->name }} ({{ $s->staff_code }})</option>\n          @endforeach\n        </select>\n        <span class=\"field-help\">Floor Supervisor name stays unchanged when inspector or deciding technician changes.</span>\n      </label>\n      <label>Customer App Status"
+          "new": "      <label>Floor Supervisor (Optional)\n        <select name=\"floor_supervisor_id\" id=\"jcFloorSupervisor\">\n          <option value=\"\">— Select later —</option>\n          @foreach($staff as $s)\n            <option value=\"{{ $s->id }}\" @selected((string)old('floor_supervisor_id',data_get($job,'floor_supervisor_id',''))===(string)$s->id)>{{ $s->name }} ({{ $s->staff_code }})</option>\n          @endforeach\n        </select>\n        <span class=\"field-help\">Floor Supervisor name stays unchanged when inspector or deciding technician changes.</span>\n      </label>\n"
         }
       ]
     },
@@ -102,7 +102,7 @@
           "kind": "span",
           "start": "        $technicianId = (int)($data['technician_id'] ?? 0);",
           "end": "        $customerName = trim((string)($customer->name ?? $data['customer_name']));",
-          "new": "        // FIX53_STAGE1: Floor Supervisor is a stable, independent staff identity.\n        // Never assign Job Card Deciding Technician at creation time.\n        $floorSupervisorId=(int)($data['floor_supervisor_id']??0);\n        $floorSupervisor=null;\n        if($floorSupervisorId>0){\n            $floorSupervisor=Staff::query()->whereKey($floorSupervisorId)\n                ->whereRaw(\"LOWER(status)='active'\")->first();\n            if(!$floorSupervisor){\n                throw ValidationException::withMessages(['floor_supervisor_id'=>'Selected active Floor Supervisor not found.']);\n            }\n        }\n\n        $customerName = trim((string)($customer->name ?? $data['customer_name']));"
+          "new": "        // FIX53_STAGE1: Floor Supervisor is a stable, independent staff identity.\n        // Never assign Job Card Deciding Technician at creation time.\n        $floorSupervisorId=(int)($data['floor_supervisor_id']??0);\n        $floorSupervisor=null;\n        if($floorSupervisorId>0){\n            $floorSupervisor=Staff::query()->whereKey($floorSupervisorId)\n                ->whereRaw(\"LOWER(status)='active'\")->first();\n            if(!$floorSupervisor){\n                throw ValidationException::withMessages(['floor_supervisor_id'=>'Selected active Floor Supervisor not found.']);\n            }\n        }\n\n"
         },
         {
           "kind": "replace",
