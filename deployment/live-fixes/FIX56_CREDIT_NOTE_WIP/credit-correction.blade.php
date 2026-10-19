@@ -29,8 +29,16 @@
   <section class="am56-card" id="am56-credit">
     <h2>1. Invoice Return through Credit Note</h2>
     @if($am56Active)
+      @php
+        $am56PaymentLinked=((float)($am56Active->paid_amount??0)>0.009)||((float)($am56Active->paid_total??0)>0.009)||
+          \Illuminate\Support\Facades\DB::table('customer_payment_allocations')->where('invoice_id',$am56Active->id)->exists()||
+          \Illuminate\Support\Facades\DB::table('customer_payments')->where('invoice_id',$am56Active->id)->exists();
+      @endphp
       <p><strong>{{ $am56Active->invoice_no }}</strong> · ₹{{ number_format((float)$am56Active->grand_total,2) }} · {{ strtoupper($am56Active->status) }}</p>
       <p class="am56-alert">Original invoice is never deleted. Credit Note creates a balancing ledger credit and preserves an immutable invoice line snapshot. Payment-linked invoices require Finance settlement first. GST/e-Invoice portal reporting is NOT automatic.</p>
+      @if($am56PaymentLinked)
+        <div class="am56-alert"><strong>Payment linked — Credit Note posting locked.</strong> Reconcile payment allocation / refund / adjustment through Finance first. Original receipt and ledger history are preserved.</div>
+      @else
       <form method="post" action="{{ route('erp.job-cards.credit-note.post',[$card->id,$am56Active->id]) }}"
           onsubmit="return confirm('Post full Credit Note against issued invoice? This is an accounting transaction.');">
         @csrf
@@ -45,6 +53,7 @@
         </label>
         <button class="am56-btn" type="submit">Issue Full Credit Note (Unpaid Invoice Only)</button>
       </form>
+      @endif
     @else
       <div class="am56-muted">No active issued invoice linked to this Job Card.</div>
     @endif
