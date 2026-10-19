@@ -33,6 +33,24 @@ jobs:
           cd "$HOME/domains/assammotors.com/assam-erp-staging"
           echo "=== PARTS STATE AND BUTTON MARKERS ==="
           grep -RInEi '(requisition|requested|mark.?fitted|fitted|parts.*issue|issue.*parts|part-stock-control|part-actions-visible)' resources/views/job-cards/{show.blade.php,part-actions-visible.blade.php,part-stock-control.blade.php} | head -125 || true
+          echo "=== ESTIMATE SERVICE RELEASE EXACT REFS ==="
+          grep -nEi 'function (sendToJobCard|release|convertToJob)|job_card_parts|source_estimate_item_id|issue_status' app/Services/EstimateService.php | head -135
+          echo "=== ESTIMATE SERVICE RELEASE SOURCE ==="
+          line="$(grep -n -m 1 'function sendToJobCard' app/Services/EstimateService.php | cut -d: -f1 || true)"
+          if [ -n "$line" ]; then sed -n "${line},$((line+245))p" app/Services/EstimateService.php; fi
+          echo "=== JC LIFECYCLE CLOSURE ROUTES + HANDLERS ==="
+          grep -nE 'function (close|complete|markClosed|createInvoice|readyForDelivery)|function .*close' app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php | head -80
+          grep -nE "job-cards/\\{job\\}/(close|.*closed|.*complete)" routes/web.php | head -50
+          sed -n '60,260p' app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php
+          echo "=== JC PARTS ROW TEMPLATES ==="
+          sed -n '355,435p' resources/views/job-cards/show.blade.php
+          echo "=== STOCK MOVEMENT SCHEMA ==="
+          php -r '
+            require "vendor/autoload.php";
+            $app=require "bootstrap/app.php";$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $s=Illuminate\Support\Facades\Schema::class;
+            foreach(["parts_master","inventory_movements","job_card_parts"] as $t)if($s::hasTable($t))echo "COLUMNS ".$t." ".implode(",",$s::getColumnListing($t))."\n";
+          '
           echo "=== PARTS CONTROLLER FULL ==="
           sed -n '1,365p' app/Http/Controllers/Web/AdminJobCardPartIssueController.php
           echo "=== JC DIRECT PART ADD ACTION 740-825 ==="
