@@ -1,0 +1,10 @@
+{
+  "fix": "FIX58_APP_GPS_DASHBOARD",
+  "changes": [
+    {
+      "path": "app/Http/Controllers/Api/V1/AdminMobileController.php",
+      "old": "        return response()->json(['ok' => true, 'locations' => $rows]);",
+      "new": "        // FIX58_APP_GPS_DASHBOARD: backward-compatible read-only metadata.\n        // Server time prevents fresh GPS being inferred from the mobile poll clock.\n        $gpsSettings=Schema::hasTable('staff_location_settings')\n            ? DB::table('staff_location_settings')->where('id',1)->first() : null;\n        return response()->json([\n            'ok'=>true,\n            'locations'=>$rows,\n            'server_time'=>\\Carbon\\CarbonImmutable::now('Asia/Kolkata')->toIso8601String(),\n            'settings'=>[\n                'latitude'=>$gpsSettings?->latitude===null?null:(float)$gpsSettings->latitude,\n                'longitude'=>$gpsSettings?->longitude===null?null:(float)$gpsSettings->longitude,\n                'reporting_accuracy_m'=>(int)($gpsSettings?->max_accuracy_m??100),\n                'radius_m'=>(int)($gpsSettings?->radius_m??100),\n            ],\n        ])->header('Cache-Control','private, no-store, max-age=0');"
+    }
+  ]
+}
