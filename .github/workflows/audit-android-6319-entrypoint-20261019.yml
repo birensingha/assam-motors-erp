@@ -1,0 +1,67 @@
+name: AUDIT Published Android 6319 GPS UI entrypoint
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/audit-android-6319-entrypoint-20261019.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Inspect current signed APK published app entrypoint read only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh;chmod 700 ~/.ssh
+          if [ -n "$KEY" ]; then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519;SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$PORT")
+          else sudo apt-get update -qq;sudo apt-get install -y -qq sshpass;export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT");fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          cd "$SITE"
+          APK="$(php -r '$j=json_decode(file_get_contents("latest.json"),true);echo "private/".$j["apk_file"];')"
+          test -s "$APK"
+          echo "=== APK CATALOG ==="
+          unzip -l "$APK" | grep -E '(classes[0-9]*\.dex|AndroidManifest.xml|assets/|lib/)' | head -80
+          echo "=== APK DEX LOCATION ROUTE REFS ==="
+          python3 - "$APK" <<'PY'
+          import sys,zipfile,re
+          z=zipfile.ZipFile(sys.argv[1])
+          needles=[
+              b'staff-live-location',b'/erp/staff-live-location',
+              b'admin/mobile/staff-locations',b'admin/mobile/staff',
+              b'www.assammotors.com',b'staging.assammotors.com',
+              b'WebView',b'Leaflet',b'openstreetmap',b'Staff Live Location',
+              b'live.location',b'admin/mobile/locations',b'locationHistory',
+          ]
+          for fname in z.namelist():
+              if not re.fullmatch(r'classes\d*\.dex',fname):continue
+              data=z.read(fname)
+              print('DEX',fname,len(data))
+              for n in needles:
+                  pos=data.find(n)
+                  print('DEX_MARKER',n.decode(),pos>=0)
+                  if pos!=-1:
+                      print('DEX_CONTEXT',repr(data[max(0,pos-75):pos+max(85,len(n))])[:400])
+          PY
+          echo "=== APK SIGNATURE TOOL INFO ==="
+          command -v apksigner || true
+          command -v keytool || true
+          echo "=== MAP/STAFF AUTH WEB ENTRY ==="
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          sed -n '1,145p' app/Http/Controllers/Web/StaffLiveLocationController.php
+          echo "ANDROID_6319_ENTRYPOINT_AUDIT_PASS"
+          REMOTE
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
