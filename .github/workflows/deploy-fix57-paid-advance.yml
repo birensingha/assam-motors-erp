@@ -1,0 +1,95 @@
+name: Deploy FIX57 paid receipt advance STAGING safely
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/deploy-fix57-paid-advance.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up SSH connection
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh;chmod 700 ~/.ssh
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Migrate additive advance register and deploy guarded web workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$PORT")
+            SCP=(scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -P "$PORT")
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          PKG="deployment/live-fixes/FIX57_PAID_TO_ADVANCE"
+          "${SSH[@]}" "$REMOTE" "mkdir -p ~/FIX57_PAID_TO_ADVANCE"
+          "${SCP[@]}" "$PKG/"{PaidInvoiceAdvanceService.php,AdminPaidInvoiceAdvancePageController.php,migrate.php,apply.py,patch-routes.json,patch-invoice.json,patch-ui.json,verify_readonly.php} "$REMOTE:~/FIX57_PAID_TO_ADVANCE/"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          PKG="$HOME/FIX57_PAID_TO_ADVANCE"
+          cd "$ROOT"
+          test -f artisan && test -d vendor
+          python3 "$PKG/apply.py" "$ROOT" "$PKG" check
+          for f in "$PKG/"{PaidInvoiceAdvanceService.php,AdminPaidInvoiceAdvancePageController.php,migrate.php,verify_readonly.php}; do php -l "$f"; done
+          for f in app/Services/PaidInvoiceAdvanceService.php app/Http/Controllers/Web/AdminPaidInvoiceAdvancePageController.php; do
+            if [ -e "$f" ]; then echo "FIX57_ABORT_EXISTING_CLASS=$f";exit 15;fi
+          done
+          STAMP="$(date +%Y%m%d_%H%M%S)"
+          BACKUP="storage/app/fix57_paid_advance_backup_$STAMP"
+          mkdir -p "$BACKUP"
+          cp -p routes/web.php "$BACKUP/web.php"
+          cp -p app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php "$BACKUP/AdminJobCardLifecyclePageController.php"
+          cp -p resources/views/job-cards/credit-correction.blade.php "$BACKUP/credit-correction.blade.php"
+          rollback(){
+            echo "FIX57_ROLLBACK_SOURCE"
+            cp -p "$BACKUP/web.php" routes/web.php
+            cp -p "$BACKUP/AdminJobCardLifecyclePageController.php" app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php
+            cp -p "$BACKUP/credit-correction.blade.php" resources/views/job-cards/credit-correction.blade.php
+            rm -f app/Services/PaidInvoiceAdvanceService.php
+            rm -f app/Http/Controllers/Web/AdminPaidInvoiceAdvancePageController.php
+            php artisan view:clear >/dev/null 2>&1 || true
+            php artisan route:clear >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          php "$PKG/migrate.php" "$ROOT"
+          cp "$PKG/PaidInvoiceAdvanceService.php" app/Services/PaidInvoiceAdvanceService.php
+          cp "$PKG/AdminPaidInvoiceAdvancePageController.php" app/Http/Controllers/Web/AdminPaidInvoiceAdvancePageController.php
+          python3 "$PKG/apply.py" "$ROOT" "$PKG" apply
+          php -l routes/web.php
+          php -l app/Services/PaidInvoiceAdvanceService.php
+          php -l app/Http/Controllers/Web/AdminPaidInvoiceAdvancePageController.php
+          php -l app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php
+          php artisan view:clear >/dev/null
+          php artisan route:clear >/dev/null
+          php "$PKG/verify_readonly.php" "$ROOT"
+          trap - ERR
+          echo "FIX57_DEPLOY_SUCCESS BACKUP=$BACKUP FINANCIAL_DATA_UNCHANGED"
+          REMOTE
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
