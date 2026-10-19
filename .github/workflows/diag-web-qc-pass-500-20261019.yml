@@ -1,0 +1,129 @@
+name: Diagnose Web Staff QC PASS HTTP 500 (read-only)
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/diag-web-qc-pass-500-20261019.yml"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  qc_diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Configure SSH for readonly checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Inspect staging routes schema and sanitized errors without writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -o ConnectTimeout=20 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=20 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$SSH_PORT")
+          fi
+          "\${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f "$ROOT/artisan"
+          cd "$ROOT"
+          echo "=== QC READ ONLY DIAGNOSTIC ==="
+          date -u '+UTC %Y-%m-%dT%H:%M:%SZ'
+          echo "--- QC route actions (no private values) ---"
+          php artisan route:list --json 2>/dev/null | php -r '
+          $data=json_decode(stream_get_contents(STDIN),true);
+          if(!is_array($data)){echo "ROUTE_JSON_UNAVAILABLE\n";exit(0);}
+          foreach($data as $route){
+            $uri=(string)($route["uri"]??"");
+            $action=(string)($route["action"]??"");
+            if(preg_match("/qc|quality/i",$uri." ".$action)){
+              echo substr((string)($route["method"]??""),0,30)," ",substr($uri,0,120)," => ",substr($action,0,150),"\n";
+            }
+          }'
+          echo "--- Blade files with QC assignment labels (paths only) ---"
+          grep -Ril -m 1 -E 'AUTHORISED QC STAFF|Assigned to You|QC Result' resources/views 2>/dev/null | head -15 || true
+          echo "--- Schema and target JC status (SELECT only) ---"
+          php -r '
+          require "vendor/autoload.php";
+          $app=require "bootstrap/app.php";
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=Illuminate\Support\Facades\DB::class;
+          $schema=Illuminate\Support\Facades\Schema::class;
+          foreach(["workshop_qc_checks","job_card_change_audits","job_cards"] as $t){
+            try{
+              echo "TABLE ",$t," exists=",($schema::hasTable($t)?"YES":"NO"),"\n";
+              if($schema::hasTable($t)){
+                $cols=$schema::getColumnListing($t);
+                if($t!=="job_cards")echo "COLUMNS ",$t,"=",implode(",",$cols),"\n";
+              }
+            }catch(Throwable $e){echo "SCHEMA_CHECK_EXCEPTION=",get_class($e),"\n";}
+          }
+          try{
+            $job=$db::table("job_cards")->where("job_no","JC-20261019-00039")->first(["id","status","customer_public_status"]);
+            echo "TARGET_JOB_FOUND=",($job?"YES":"NO"),"\n";
+            if($job){
+              echo "TARGET_JOB_ID=",(int)$job->id," STATUS=",(string)$job->status," PUBLIC_STAGE=",(string)$job->customer_public_status,"\n";
+              if($schema::hasTable("workshop_qc_checks")){
+                $latest=$db::table("workshop_qc_checks")->where("job_card_id",$job->id)->orderByDesc("id")->first(["result"]);
+                echo "LATEST_QC_RESULT=",($latest?$latest->result:"NONE"),"\n";
+              }
+            }
+          }catch(Throwable $e){echo "TARGET_SELECT_EXCEPTION=",get_class($e),"\n";}
+          '
+          echo "--- Last Laravel error signatures (redacted, newest first) ---"
+          php -r '
+          $files=glob("storage/logs/laravel*.log");
+          usort($files,fn($a,$b)=>filemtime($b)<=>filemtime($a));
+          if(!$files){echo "NO_LARAVEL_LOGS\n";exit;}
+          $cnt=0;
+          foreach(array_slice($files,0,3) as $f){
+            $lines=@file($f);if(!$lines)continue;
+            $lines=array_slice($lines,-6500);
+            $entries=[];$cur=null;
+            foreach($lines as $line){
+              if(preg_match("/^\[([0-9]{4}-[0-9]{2}-[0-9]{2} [^\]]+)\] [a-z0-9_.-]+\.ERROR: (.*)$/i",$line,$m)){
+                if($cur)$entries[]=$cur;
+                $cur=["date"=>$m[1],"msg"=>$m[2],"frame"=>""];
+              }elseif($cur && $cur["frame"]==="" && preg_match("~(?:app/Http/Controllers/|app/Services/)[A-Za-z0-9_./-]+\.php(?:\(|:)[0-9]+~",$line,$m)){
+                $cur["frame"]=$m[0];
+              }
+            }
+            if($cur)$entries[]=$cur;
+            foreach(array_reverse($entries) as $entry){
+              if($cnt>=20)break 2;
+              $msg=$entry["msg"];
+              $signature="OTHER_EXCEPTION";
+              if(preg_match("/SQLSTATE\[([A-Z0-9]+)\]/",$msg,$m))$signature="SQLSTATE_".$m[1];
+              if(preg_match("/Unknown column [\x27\x22\x60]([A-Za-z0-9_.-]+)[\x27\x22\x60]/i",$msg,$m))$signature.=" UNKNOWN_COLUMN_".$m[1];
+              if(preg_match("/(?:Base table or view not found|doesn\x27t exist)/i",$msg))$signature.=" TABLE_NOT_FOUND";
+              if(preg_match("/(Call to undefined method|Undefined variable|Undefined property|Trying to access array offset|Class .* not found|Integrity constraint violation|Incorrect (?:integer|decimal|string|date)|Data truncated|Too few arguments|TypeError|ParseError)/i",$msg,$m))$signature.=" ".strtoupper(str_replace(" ","_",$m[1]));
+              echo $entry["date"]," ",$signature," FRAME=",($entry["frame"]?:"NOT_RESOLVED"),"\n";
+              $cnt++;
+            }
+          }
+          if(!$cnt)echo "NO_MATCHING_ERROR_HEADERS\n";
+          '
+          REMOTE
+      - name: Remove credentials
+        if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519
