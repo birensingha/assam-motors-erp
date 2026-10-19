@@ -1,0 +1,48 @@
+name: FIX56 finance route and print preflight
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/fix56-finance-preflight.yml"]
+permissions: {contents: read}
+jobs:
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: SSH read-only source inspection
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq sshpass
+          SSHPASS="$PASSWORD" sshpass -e ssh -o StrictHostKeyChecking=no -p "$PORT" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          echo "=== INVOICE DATA END ==="
+          grep -n -A 42 -B 8 "private function invoiceData" app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php
+          echo "=== INVOICE DATA RETURN ==="
+          grep -n -A 7 -B 14 "return compact('inv','job','parts','labour','ledger')" app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php
+          echo "=== ROUTE INSERTION ==="
+          grep -n -B 5 -A 9 "erp.job-cards.invoice.create" routes/web.php
+          echo "=== JOB CARD SHOW EXISTING CONTROLS ==="
+          grep -n -B 4 -A 4 "erp.job-cards.reversal" resources/views/job-cards/show.blade.php | head -68
+          echo "=== ROT REOPEN ROUTE ==="
+          grep -n -B 2 -A 2 "erp.rot.reopen" routes/web.php
+          echo "=== INVOICE FINANCE TABLE DEFINITIONS ==="
+          php -r '
+          require "vendor/autoload.php";
+          $app=require "bootstrap/app.php";$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $d=Illuminate\Support\Facades\DB::class;
+          $s=Illuminate\Support\Facades\Schema::class;
+          foreach(["customer_ledger","invoices","job_cards","customer_payments","customer_payment_allocations","job_card_change_audits"] as $t){
+             echo "SCHEMA ".$t." ".implode(",",$s::getColumnListing($t))."\n";
+          }
+          $i=$d::table("invoices")->where("id",23)->first();
+          echo "INVOICE23 ",json_encode(["status"=>$i->status??null,"total"=>$i->grand_total??null,"paid"=>$i->paid_amount??null,"balance"=>$i->balance_due??null]),"\n";
+          '
+          REMOTE
