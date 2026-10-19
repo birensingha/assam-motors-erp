@@ -1,0 +1,66 @@
+name: FIX59 Publish STAGING Mobile ERP CSS JS Correct Webroot
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/fix59-correct-public-static-assets.yml"]
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Correct existing deployed FIX59 static document root
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh;chmod 700 ~/.ssh
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+            SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$PORT")
+            SCP=(scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -P "$PORT")
+          else
+            sudo apt-get update -qq;sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          SRC=deployment/live-fixes/FIX59_MOBILE_WEB/PUBLISH_HOSTINGER_ASSETS.sh
+          "${SCP[@]}" "$SRC" "$REMOTE:.am-fix59-deploy/PUBLISH_HOSTINGER_ASSETS.sh"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          cd "$ROOT"
+          grep -Fq "@include('partials.mobile-erp')" resources/views/layouts/erp.blade.php
+          test -s resources/views/partials/mobile-erp.blade.php
+          bash "$HOME/.am-fix59-deploy/PUBLISH_HOSTINGER_ASSETS.sh"
+          echo FIX59_MOBILE_LAYOUT_AND_WEBROOT_VERIFIED
+          REMOTE
+      - name: Verify publicly served static files are the real CSS/JS
+        shell: bash
+        run: |
+          set -euo pipefail
+          for ext in css js;do
+            url="https://staging.assammotors.com/mobile-erp/mobile-erp.$ext?v=59.1"
+            status="$(curl --max-time 25 -sSL -o "/tmp/fix59.$ext" -w '%{http_code}' "$url")"
+            echo "FIX59_MOBILE_ASSET_$ext HTTP=$status BYTES=$(wc -c </tmp/fix59.$ext)"
+            test "$status" = 200
+            test "$(wc -c <"/tmp/fix59.$ext")" -gt 1500
+            grep -Fq 'am59-top' "/tmp/fix59.$ext"
+          done
+          node --check /tmp/fix59.js
+          echo FIX59_STAGING_MOBILE_ASSET_HTTP_AND_JS_CHECK_PASS
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
