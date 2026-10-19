@@ -1,0 +1,58 @@
+name: AUDIT Android Existing Project and GPS Dashboard Source 20261019
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/audit-android-gps-dashboard-project-20261019.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Read only inspect mobile source and GPS APIs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh;chmod 700 ~/.ssh
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+            SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$PORT")
+          else
+            sudo apt-get update -qq;sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          SITE="$HOME/domains/assammotors.com/public_html/staging"
+          echo "=== EXISTING ANDROID PROJECT ROOTS ==="
+          for d in "$HOME" "$HOME/domains/assammotors.com" "$SITE"; do
+            echo "ROOT=$d"
+            find "$d" -maxdepth 6 \( -name settings.gradle -o -name settings.gradle.kts -o -name gradlew -o -name AndroidManifest.xml -o -name '*.kt' -o -name '*.java' \) -type f 2>/dev/null | head -75 || true
+          done
+          echo "=== SOURCE ARCHIVES ==="
+          find "$HOME/domains/assammotors.com" -maxdepth 5 -type f \( -iname '*android*.zip' -o -iname '*staff*.zip' -o -iname '*source*.zip' \) 2>/dev/null | head -40 || true
+          echo "=== LIVE STAGING GPS CONTROLLER ROUTES ==="
+          cd "$APP"
+          grep -RInE "(staff-live-location|live.location|staff.location|StaffLocationController|AdminMobileController)" routes/api.php routes/web.php | head -100 || true
+          echo "=== GPS ENDPOINT METHODS ==="
+          grep -nE 'public function |function |return response|coordinates|accuracy|heartbeat' app/Http/Controllers/Api/V1/StaffLocationController.php app/Http/Controllers/Api/V1/AdminMobileController.php | head -130 || true
+          echo "=== USER OWNED WEB MOBILE VIEW MARKERS ==="
+          grep -nE '(AM_COMPACT_MOBILE_SOLO_TRACK|slAllStaff|slFocusAge|refresh|Leaflet)' resources/views/admin/native/staff-live-location.blade.php | head -60 || true
+          echo "=== CURRENT UPDATE FEED (no secrets) ==="
+          php -r '$p=getenv("HOME")."/domains/assammotors.com/public_html/staging/staff-app/latest.json"; $x=json_decode(file_get_contents($p),true);foreach(["package_id","version_code","version_name","apk_file"] as $k)echo $k."=".($x[$k]??"NONE")."\n";'
+          echo "ANDROID_GPS_AUDIT_READ_ONLY_DONE"
+          REMOTE
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
