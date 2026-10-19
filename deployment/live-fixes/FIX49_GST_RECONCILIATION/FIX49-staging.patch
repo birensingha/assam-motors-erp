@@ -1,0 +1,41 @@
+--- a/app/Http/Controllers/Web/AdminJobCardPageController.php
++++ b/app/Http/Controllers/Web/AdminJobCardPageController.php
+@@ -1,7 +1,17 @@
+         if (Schema::hasColumn('job_cards','updated_at')) {
+             $update['updated_at']=now();
+         }
+ 
++        // FIX49_GST_RECONCILIATION: linewise GST from taxable items, excluding No Charge ROT.
++        $amTax=\App\Services\JobCardTaxTotals::forJob($jobId);
++        foreach (['parts_total','labour_total','gst_total','pre_round_total','round_off','grand_total'] as $amKey) {
++            if (Schema::hasColumn('job_cards',$amKey)) {
++                $update[$amKey]=$amTax[$amKey];
++            }
++        }
++
+         if ($update) {
+             DB::table('job_cards')->where('id',$jobId)->update($update);
+         }
+--- a/app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php
++++ b/app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php
+@@ -1,5 +1,21 @@
+             if($grand<=0) $grand=round($preRound+$roundOff,2);
+             if(abs($grand-($preRound+$roundOff))>0.01) $roundOff=round($grand-$preRound,2);
+ 
++            // FIX49_GST_RECONCILIATION: stop incorrect invoice and customer ledger postings.
++            $amTax=\App\Services\JobCardTaxTotals::forJob($job);
++            foreach (['parts_total','labour_total','gst_total','pre_round_total','round_off','grand_total'] as $amKey) {
++                if (abs(round((float)($card->{$amKey}??0),2)-$amTax[$amKey])>0.01) {
++                    throw ValidationException::withMessages(['status'=>
++                        'GST reconciliation failed ('.$amKey.'). Fix Job Card totals before invoicing.']);
++                }
++            }
++            $partsTotal=$amTax['parts_total'];
++            $labourTotal=$amTax['labour_total'];
++            $subtotal=$amTax['subtotal'];
++            $gstTotal=$amTax['gst_total'];
++            $preRound=$amTax['pre_round_total'];
++            $roundOff=$amTax['round_off'];
++            $grand=$amTax['grand_total'];
++
+             $tmp='TMP-INV-'.strtoupper(bin2hex(random_bytes(6)));
