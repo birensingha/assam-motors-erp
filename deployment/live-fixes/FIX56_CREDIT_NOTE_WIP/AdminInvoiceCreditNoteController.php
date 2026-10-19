@@ -104,7 +104,7 @@ final class AdminInvoiceCreditNoteController extends Controller
             ]);
             return $cnId;
         },3);
-        return redirect()->route('erp.job-cards.reversal',$job)
+        return redirect()->route('erp.job-cards.credit-correction',$job)
            ->with('success','Credit Note posted and ledger credited. Now enter reason and reopen CLOSED JC to WIP.');
     }
 
