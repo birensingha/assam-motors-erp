@@ -1,0 +1,52 @@
+name: AUDIT Staff Android MainActivity and signed APK parity
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/audit-staff-android-ui-parity-20261019.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Read-only inspect Android UI architecture
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh;chmod 700 ~/.ssh
+          if [ -n "$KEY" ]; then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519;SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$PORT")
+          else sudo apt-get update -qq;sudo apt-get install -y -qq sshpass;export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT");fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          BASE="$HOME/domains/assammotors.com/assam-erp-staging"
+          cd "$BASE/android-staff-app"
+          echo "=== SOURCE MAINACTIVITY ==="
+          sed -n '1,300p' app/src/main/java/com/assammotors/staff/ui/MainActivity.kt
+          echo "=== MAIN XML ==="
+          sed -n '1,250p' app/src/main/res/layout/activity_main.xml
+          echo "=== ANDROID SOURCE README / BUILD ENV ==="
+          find . -maxdepth 2 -type f \( -iname '*.md' -o -name 'keystore.properties' -o -name 'gradle.properties' \) -printf '%p\n' | head -45
+          command -v gradle || true
+          command -v apksigner || true
+          command -v zipalign || true
+          command -v javac || true
+          echo "=== LATEST APK SIGNING COMPARISON INPUT ==="
+          SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          php -r '$v=json_decode(file_get_contents($argv[1]),true);foreach(["package_id","version_code","version_name"] as $k)echo $k."=".($v[$k]??"")."\n";echo "apk_size=".filesize($argv[2]."/private/".$v["apk_file"])."\n";' "$SITE/latest.json" "$SITE"
+          echo "=== OTHER SOURCE PROJECTS NEAR DEPLOY ==="
+          find "$BASE" "$HOME/domains/assammotors.com" -maxdepth 4 -type d -iname '*android*' 2>/dev/null | head -45 || true
+          echo "=== ADMIN STAFF MOBILE API/VIEW PARTIAL ==="
+          grep -RInEi '(admin/mobile/staff-locations|admin/mobile/staff|staff-live-location|gpsTracking|staffLocations|staff_location)' app/src/main/java/com/assammotors/staff 2>/dev/null | head -95 || true
+          REMOTE
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
