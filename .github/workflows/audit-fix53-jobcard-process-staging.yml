@@ -1,0 +1,70 @@
+name: Audit Job Card Process FIX53 Staging (read only)
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/audit-fix53-jobcard-process-staging.yml"]
+permissions: {contents: read}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Setup SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh; chmod 700 ~/.ssh
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq; sudo apt-get install -y -qq sshpass
+          fi
+      - name: Inspect routes forms and technician/inspection behavior
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$PORT")
+          else export SSHPASS="$PASSWORD"; SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT"); fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          echo "=== JOB CARD VIEW SOURCE 1-120 ==="
+          sed -n '1,120p' resources/views/job-cards/show.blade.php
+          echo "=== JC SHOW PANELS 330-395 ==="
+          sed -n '320,395p' resources/views/job-cards/show.blade.php
+          echo "=== SEARCH ALL TEMPLATE REFERENCES ==="
+          grep -nEi 'Job Card Controls|Estimate History|Edit OSL Purchases|Vendor Database|Inspection / Final Diagnosis|Technician Decision|Inspection Assigned|Completed By|Technician|Edit Job Card|OSL Purchase|Edit Job Card Amount' resources/views/job-cards/show.blade.php | head -110
+          echo "=== JOB CARD CREATE FILES ==="
+          find resources/views/job-cards -maxdepth 2 -type f -name '*.blade.php' -printf '%p\n' | sort
+          for file in resources/views/job-cards/create.blade.php resources/views/job-cards/partials/create.blade.php; do
+            test -f "$file" || continue
+            echo "=== $file ==="
+            grep -nEi 'Technician|customer|vehicle|Inspection|stage|create|Save Job Card|staff_id|technician_id' "$file" | head -100
+            line="$(grep -n -m 1 'Technician' "$file" | cut -d: -f1 || true)"
+            if [ -n "$line" ]; then sed -n "$((line>25?line-25:1)),$((line+35))p" "$file"; fi
+          done
+          echo "=== CORE WEB ROUTES ==="
+          grep -nEi 'job-cards.*(create|store|show|inspection|decision|assignment|estimate)|inspection.assign|assignInspection' routes/web.php | head -125
+          echo "=== JOB CARD CONTROLLER CREATE AND STORE ==="
+          grep -nE 'public function (create|store|show)|technician_id|technician_name|mechanic_id|inspection_assign|assigned_staff_id|inspection_completed_by' app/Http/Controllers/Web/AdminJobCardPageController.php | head -115
+          echo "=== INSPECTION CONTROLLER ASSIGNMENT SOURCE MATCHES ==="
+          grep -Rnl -m 1 'job_card_inspection_assignments' app/Http/Controllers/Web app/Services | head -30
+          grep -Rnl -m 1 'technician_name' app/Http/Controllers/Web app/Services | head -40
+          echo "=== JOB CARD SCHEMA AND ASSIGNMENT FIELD NAMES ==="
+          php -r '
+            require "vendor/autoload.php";
+            $app=require "bootstrap/app.php";$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $s=Illuminate\Support\Facades\Schema::class;
+            foreach(["job_cards","job_card_inspection_assignments","workshop_inspections","job_card_decisions"] as $t)
+              if($s::hasTable($t))echo "TABLE_COLUMNS ".$t." ".implode(",",$s::getColumnListing($t))."\n";
+          '
+          REMOTE
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
