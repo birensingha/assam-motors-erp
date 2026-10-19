@@ -1,0 +1,101 @@
+name: Apply FIX48 Staff QC PASS Audit Schema (Staging)
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/fix48-staff-qc-audit-actor-staging.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  fix48_staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Connect to staging Hostinger
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Upload tiny patch and apply with rollback and schema guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -o ConnectTimeout=20 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$SSH_PORT")
+            SCP=(scp -o ConnectTimeout=20 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=20 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o ConnectTimeout=20 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P "$SSH_PORT")
+          fi
+          REMOTE="$SSH_USER@$SSH_HOST"
+          "${SSH[@]}" "$REMOTE" "mkdir -p ~/FIX48_STAFF_QC_AUDIT_ACTOR"
+          "\${SCP[@]}" deployment/live-fixes/FIX48_STAFF_QC_AUDIT_ACTOR/PATCH_FIX48.php "$REMOTE:~/FIX48_STAFF_QC_AUDIT_ACTOR/PATCH_FIX48.php"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          FILE="$ROOT/app/Http/Controllers/Web/StaffQcController.php"
+          PATCH="$HOME/FIX48_STAFF_QC_AUDIT_ACTOR/PATCH_FIX48.php"
+          test -f "$ROOT/artisan" && test -f "$FILE"
+          php -l "$PATCH"
+          cd "$ROOT"
+          php -r '
+          require "vendor/autoload.php";
+          $app=require "bootstrap/app.php";
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $schema=Illuminate\Support\Facades\Schema::class;
+          foreach(["job_card_change_audits","workshop_qc_checks"] as $table){
+              if(!$schema::hasTable($table)){fwrite(STDERR,"Missing table ".$table."\n");exit(2);}
+          }
+          foreach(["actor_id","actor_name"] as $col){
+              if(!$schema::hasColumn("job_card_change_audits",$col)){fwrite(STDERR,"Missing audit column ".$col."\n");exit(2);}
+          }
+          echo "FIX48 schema guard PASS\n";
+          '
+          BACKUP="$ROOT/storage/app/fix48_staff_qc_controller_$(date +%Y%m%d_%H%M%S).php"
+          cp -p "$FILE" "$BACKUP"
+          rollback(){
+            echo "FIX48 rollback restoring StaffQcController.php"
+            cp -p "$BACKUP" "$FILE"
+          }
+          trap rollback ERR
+          php "$PATCH" "$ROOT"
+          php -l "$FILE"
+          grep -Fq "'actor_id'=>\$staffId" "$FILE"
+          grep -Fq "'actor_name'=>'STAFF:'" "$FILE"
+          if grep -Fq "'actor'=>'STAFF:'" "$FILE"; then echo "Legacy actor column still in staff audit"; exit 3; fi
+          php artisan route:list --json 2>/dev/null | php -r '
+          $rs=json_decode(stream_get_contents(STDIN),true);
+          if(!is_array($rs)){fwrite(STDERR,"Route list failed\n");exit(4);}
+          foreach($rs as $r){
+            if(($r["method"]??"")==="POST" && ($r["uri"]??"")==="staff/qc/{job}/result"
+                && str_contains((string)($r["action"]??""),"StaffQcController@submit")){
+              echo "FIX48 QC submit route verified\n";exit(0);
+            }
+          }
+          fwrite(STDERR,"QC submit route missing\n");exit(5);
+          '
+          trap - ERR
+          echo "FIX48 STAGING APPLY VERIFIED; backup retained at storage/app (no database rows changed)"
+          REMOTE_SCRIPT
+      - name: Forget SSH credential
+        if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519
