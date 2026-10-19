@@ -1,0 +1,50 @@
+name: FIX58 Standalone Android GPS Dashboard Patch Bundle QA
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/qa-fix58-offline-source-bundle.yml"]
+permissions: {contents: read}
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify exact original APK patch source and JS syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          P=deployment/mobile/FIX58_STAFF_GPS_DASHBOARD_6319
+          node --check "$P/gps-dashboard-v6320.js"
+          python3 -m py_compile "$P/apply_to_original_android_assets.py"
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('deployment/mobile/FIX58_STAFF_GPS_DASHBOARD_6319')
+          html=(p/'gps-dashboard.fragment.html').read_text()
+          css=(p/'gps-dashboard-v6320.css').read_text()
+          js=(p/'gps-dashboard-v6320.js').read_text()
+          ids=re.findall(r'id="([^"]+)"',html)
+          assert len(ids)==len(set(ids))
+          for i in ids:
+              if i=='amGps6320Template':continue
+              assert '#'+i in js or "'"+i+"'" in js,('No JS binding',i)
+          assert 'AM_GPS' not in html or 'GPS' in html
+          assert '@media(max-width:780px)' in css
+          assert "admin/mobile/staff-locations?latest=1" in js
+          assert "recorded_at" in js and "accuracy_m" in js
+          assert "NO GPS" in html and "LIVE" not in html
+          assert 'ASSAM_MOTORS_STAFF_GPS_DASHBOARD_V6320' in js
+          print('FIX58_UI_SOURCE_QA_PASS')
+          PY
+          cd "$P"
+          zip -q -9 -r "$GITHUB_WORKSPACE/ASSAM-MOTORS-FIX58-ANDROID-GPS-SOURCE-PATCH.zip" \
+            gps-dashboard.fragment.html gps-dashboard-v6320.css gps-dashboard-v6320.js \
+            apply_to_original_android_assets.py README.md
+          echo 'FIX58_SOURCE_PATCH_BUNDLE_READY_FOR_ORIGINAL_SIGNED_BUILD'
+          echo 'SIGNED_APK_NOT_GENERATED_AND_OTA_FEED_UNCHANGED'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FIX58-Staff-Android-GPS-dashboard-source-kit
+          path: ASSAM-MOTORS-FIX58-ANDROID-GPS-SOURCE-PATCH.zip
+          retention-days: 30
