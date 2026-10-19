@@ -1,0 +1,119 @@
+name: FIX54 Simple Parts Job Card Staging
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/deploy-fix54-simple-parts-staging.yml"]
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: SSH setup
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh;chmod 700 ~/.ssh
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Guarded FIX54 deploy, stock-safe no historical financial writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          PKG="deployment/live-fixes/FIX54_SIMPLE_PARTS"
+          "${SSH[@]}" "$REMOTE" "mkdir -p ~/FIX54_SIMPLE_PARTS"
+          "${SCP[@]}" "$PKG/manifest.json" "$PKG/apply.py" "$PKG/JobCardPartsAutoClose.php" "$REMOTE:~/FIX54_SIMPLE_PARTS/"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          PKG="$HOME/FIX54_SIMPLE_PARTS"
+          cd "$ROOT"
+          test -f artisan
+          php -l "$PKG/JobCardPartsAutoClose.php"
+          python3 "$PKG/apply.py" --check "$ROOT" "$PKG/manifest.json"
+          FILE=app/Services/JobCardPartsAutoClose.php
+          if [ -f "$FILE" ]; then echo "FIX54_EXISTS_ABORT";exit 15;fi
+          STAMP="$(date +%Y%m%d_%H%M%S)"
+          BACKUP="storage/app/fix54_simple_parts_backup_$STAMP"
+          mkdir -p "$BACKUP"
+          cp -p resources/views/job-cards/show.blade.php "$BACKUP/show.blade.php"
+          cp -p app/Http/Controllers/Web/AdminJobCardPageController.php "$BACKUP/AdminJobCardPageController.php"
+          cp -p app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php "$BACKUP/AdminJobCardLifecyclePageController.php"
+          cp -p app/Services/EstimateService.php "$BACKUP/EstimateService.php"
+          rollback(){
+            echo "FIX54_ROLLBACK_SOURCE"
+            cp -p "$BACKUP/show.blade.php" resources/views/job-cards/show.blade.php
+            cp -p "$BACKUP/AdminJobCardPageController.php" app/Http/Controllers/Web/AdminJobCardPageController.php
+            cp -p "$BACKUP/AdminJobCardLifecyclePageController.php" app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php
+            cp -p "$BACKUP/EstimateService.php" app/Services/EstimateService.php
+            rm -f "$FILE"
+            php artisan view:clear >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          cp "$PKG/JobCardPartsAutoClose.php" "$FILE"
+          python3 "$PKG/apply.py" --apply "$ROOT" "$PKG/manifest.json"
+          php -l "$FILE"
+          php -l app/Http/Controllers/Web/AdminJobCardPageController.php
+          php -l app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php
+          php -l app/Services/EstimateService.php
+          php artisan view:clear >/dev/null
+          php -r '
+            require "vendor/autoload.php";
+            $app=require "bootstrap/app.php";$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $blade=app("blade.compiler");
+            $src=file_get_contents(resource_path("views/job-cards/show.blade.php"));
+            $compiled=$blade->compileString($src);
+            if(!$compiled)exit(20);
+            try{token_get_all($compiled,TOKEN_PARSE);}
+            catch(ParseError $e){echo "FIX54_BLADE_PARSE_ERROR ".$e->getMessage()."\n";exit(21);}
+            if(str_contains($src,"@include('\''job-cards.part-actions-visible'\'')") ||
+               str_contains($src,"<th>Status</th>") ||
+               !str_contains($src,"am54FilterPartSelect")){
+              echo "FIX54_PART_UI_MISMATCH\n";exit(22);
+            }
+            echo "FIX54_BLADE_AND_SEARCH_PASS\n";
+            $totals=\App\Services\JobCardTaxTotals::fromLines(
+              [(object)["total"=>100,"gst_percent"=>18]],
+              [(object)["total"=>200,"gst_percent"=>18]]);
+            if(abs($totals["gst_total"]-54)>0.01 ||
+               abs($totals["grand_total"]-354)>0.01)exit(23);
+            $inv=Illuminate\Support\Facades\DB::table("invoices")->where("id",23)->first();
+            if(!$inv || abs((float)$inv->grand_total-3500)>0.01)exit(24);
+            echo "FIX54_FINANCIAL_HISTORICAL_UNCHANGED=3500.00\n";
+            $job=Illuminate\Support\Facades\DB::table("job_cards")->where("id",39)->first();
+            if(!$job || strtolower((string)$job->status)!=="invoiced")exit(25);
+            echo "FIX54_STAGING_SMOKE_PASS\n";
+          '
+          trap - ERR
+          echo "FIX54_SOURCE_DEPLOY_SUCCESS BACKUP=$BACKUP NO_FINANCIAL_WRITES"
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519
