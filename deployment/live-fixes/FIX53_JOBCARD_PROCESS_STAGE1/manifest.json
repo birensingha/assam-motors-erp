@@ -56,6 +56,11 @@
           "kind": "replace",
           "old": "<span>Pehle Deciding Technician assign kijiye. Assigned technician ko Staff Portal me isi Job Card ka read-only Inspection Report milega. Report review ke baad Final Diagnosis save karein; uske baad assigned technician Staff Portal se alag Decision dega.</span>",
           "new": "<span>Service Advisor inspection assign karta hai. Assigned inspector Staff App/Portal se report submit karta hai. Service Advisor report review karke Final Diagnosis record karta hai, phir designated technician decision deta hai. Estimate uske baad hi unlock hota hai.</span>"
+        },
+        {
+          "kind": "replace",
+          "old": "{{-- FIX48_WORKSHOP_DIRECT_CONTROLS: direct Admin access to financial editing and Vendor Database --}}",
+          "new": "{{-- FIX53_STAGE1: only the Amount/GST action remains in the former three-button bar. --}}"
         }
       ]
     },
