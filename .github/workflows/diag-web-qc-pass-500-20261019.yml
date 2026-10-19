@@ -61,6 +61,10 @@ jobs:
           }'
           echo "--- Blade files with QC assignment labels (paths only) ---"
           grep -Ril -m 1 -E 'AUTHORISED QC STAFF|Assigned to You|QC Result' resources/views 2>/dev/null | head -15 || true
+          echo "--- Deployed Staff QC controller audit context (code only) ---"
+          nl -ba app/Http/Controllers/Web/StaffQcController.php | sed -n '65,135p'
+          echo "--- Reference lifecycle audit context (code only) ---"
+          grep -n -C 5 -E "job_card_change_audits|actor_id|actor_name" app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php | tail -75 || true
           echo "--- Schema and target JC status (SELECT only) ---"
           php -r '
           require "vendor/autoload.php";
