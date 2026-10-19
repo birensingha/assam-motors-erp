@@ -1,0 +1,66 @@
+name: Verify FIX53 Job Card Render (read only)
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/verify-fix53-jobcard-staging.yml"]
+permissions: {contents: read}
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh; chmod 700 ~/.ssh
+          if [ -n "$KEY" ]; then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          else sudo apt-get update -qq; sudo apt-get install -y -qq sshpass; fi
+      - name: Render Job Card form and existing Job Card without changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$PORT")
+          else export SSHPASS="$PASSWORD"; SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT"); fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          php -r '
+          require "vendor/autoload.php";
+          $app=require "bootstrap/app.php";
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $c=Illuminate\Support\Collection::class;
+          $html=view("job-cards.form",[
+            "job"=>new App\Models\JobCard,"editing"=>false,
+            "customers"=>collect(),"vehicles"=>collect(),"staff"=>collect(),
+          ])->render();
+          if(!str_contains($html,"Floor Supervisor")||str_contains($html,"id=\"jcTechnician\"")){
+            echo "FIX53_CREATE_FORM_RENDER_FAILED\n";exit(2);
+          }
+          echo "FIX53_CREATE_FORM_RENDER_PASS\n";
+          $service=app(App\Services\JobCardService::class);
+          $data=$service->detail(39);
+          $data["staff"]=App\Models\Staff::whereRaw("LOWER(status)='\''active'\''")->orderBy("name")->limit(30)->get();
+          $data["partsMaster"]=collect();
+          $data["labourMaster"]=collect();
+          try{$html=view("job-cards.show",$data)->render();}
+          catch(Throwable $e){echo "FIX53_JOBCARD_RENDER_FAILED ".get_class($e)." ".$e->getMessage()."\n";exit(3);}
+          if(str_contains($html,"Job Card Controls")||str_contains($html,"Edit OSL Purchases")||
+            !str_contains($html,"Floor Supervisor")||!str_contains($html,"Edit Job Card Amount / GST")){
+            echo "FIX53_SHOW_UI_ASSERT_FAILED\n";exit(4);
+          }
+          echo "FIX53_JOBCARD_SHOW_RENDER_PASS\n";
+          $inv=Illuminate\Support\Facades\DB::table("invoices")->where("id",23)->first();
+          if(!$inv||abs((float)$inv->grand_total-3500)>0.01)exit(5);
+          echo "FIX53_FINANCIAL_UNCHANGED_GRAND=3500.00\n";
+          '
+          REMOTE
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
