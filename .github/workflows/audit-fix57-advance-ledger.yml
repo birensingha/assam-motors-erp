@@ -1,0 +1,60 @@
+name: Audit FIX57 receipt and advance accounting hooks read only
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/audit-fix57-advance-ledger.yml"]
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 13
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Source and database read-only inspection
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq sshpass
+          SSHPASS="$PASSWORD" sshpass -e ssh -o StrictHostKeyChecking=no -p "$PORT" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          echo "=== INVOICE23 PRECISE PAYMENT AND LEDGER STATE ==="
+          php -r '
+          require "vendor/autoload.php";
+          $app=require "bootstrap/app.php";$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=Illuminate\Support\Facades\DB::class;$sc=Illuminate\Support\Facades\Schema::class;
+          $inv=$db::table("invoices")->where("id",23)->first();
+          $job=$db::table("job_cards")->where("id",39)->first();
+          echo "INV ".json_encode(["status"=>$inv->status,"paid_amount"=>$inv->paid_amount,"paid_total"=>$inv->paid_total,"balance_due"=>$inv->balance_due,"balance_total"=>$inv->balance_total,"total"=>$inv->grand_total,"customer_id"=>$inv->customer_id,"job_id"=>$inv->job_card_id])."\n";
+          echo "JOB ".json_encode(["status"=>$job->status,"invoice_id"=>$job->invoice_id,"customer_id"=>$job->customer_id])."\n";
+          foreach($db::table("customer_payments")->where("invoice_id",23)->get() as $r){
+            echo "PAYMENT ".json_encode(["id"=>$r->id,"receipt_no"=>$r->receipt_no,"invoice_id"=>$r->invoice_id,"customer_id"=>$r->customer_id,"reference_type"=>$r->reference_type,"reference_kind"=>$r->reference_kind,"reference_id"=>$r->reference_id,"reference_no"=>$r->reference_no,"amount"=>$r->amount,"total_amount"=>$r->total_amount,"allocated_amount"=>$r->allocated_amount,"payment_status"=>$r->payment_status,"reversed_at"=>$r->reversed_at,"cash_amount"=>$r->cash_amount,"online_amount"=>$r->online_amount])."\n";
+            foreach($db::table("customer_payment_allocations")->where("payment_id",$r->id)->get() as $a){
+               echo "PAY_ALLOC ".json_encode(["id"=>$a->id,"invoice_id"=>$a->invoice_id,"payment_id"=>$a->payment_id,"amount"=>$a->amount,"status"=>$a->status,"reversed_at"=>$a->reversed_at])."\n";
+            }
+            foreach($db::table("customer_ledger")->where("payment_id",$r->id)->orderBy("id")->get() as $row){
+               echo "RECEIPT_LEDGER ".json_encode(["id"=>$row->id,"invoice_id"=>$row->invoice_id,"entry_type"=>$row->entry_type,"amount"=>$row->amount,"reference_no"=>$row->reference_no,"reference_type"=>$row->reference_type,"reference_id"=>$row->reference_id,"debit"=>$row->debit,"credit"=>$row->credit,"note"=>$row->note,"narration"=>$row->narration])."\n";
+            }
+          }
+          foreach($db::table("customer_ledger")->where("invoice_id",23)->orderBy("id")->get() as $r){
+            echo "INV_LEDGER ".json_encode(["id"=>$r->id,"entry_type"=>$r->entry_type,"amount"=>$r->amount,"reference_no"=>$r->reference_no,"reference_type"=>$r->reference_type,"reference_id"=>$r->reference_id,"payment_id"=>$r->payment_id,"debit"=>$r->debit,"credit"=>$r->credit])."\n";
+          }
+          foreach(["payment_adjustments","customer_advances","customer_advance_allocations","money_receipts","invoice_credit_notes","customer_payment_allocations"] as $t){
+            if($sc::hasTable($t))echo "OPTIONAL_TABLE ".$t." ".implode(",",$sc::getColumnListing($t))."\n";
+          }
+          '
+          echo "=== MONEY RECEIPT HANDLER ==="
+          grep -n -E 'function |customer_payment_allocations|customer_ledger|allocated_amount|reference_kind|advance|on.account|On Account|paid_total' app/Http/Controllers/Web/AdminMoneyReceiptController.php | head -160
+          echo "=== MONEY RECEIPT HANDLER STORE AND ALLOCATION ==="
+          sed -n '100,390p' app/Http/Controllers/Web/AdminMoneyReceiptController.php
+          echo "=== INVOICE CREATION APPLY PAYMENT ==="
+          grep -n -E 'customer_payment_allocations|customer_payments|customer_ledger|paid_total|paid_amount|balance_due|balance_total|function createInvoice' app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php | head -140
+          sed -n '395,505p' app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php
+          echo "=== OTHER ADVANCE ALLOCATION SOURCES ==="
+          grep -Rnl -m 1 'customer_payment_allocations' app/Http/Controllers/Web app/Services | head -35
+          REMOTE
