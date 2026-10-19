@@ -1,0 +1,97 @@
+{
+  "fix": "FIX54_SIMPLE_PARTS",
+  "files": [
+    {
+      "path": "resources/views/job-cards/show.blade.php",
+      "ops": [
+        {
+          "kind": "replace",
+          "old": "      {{-- P36_VISIBLE_PARTS_ACTIONS: prominent always-visible action panel above Parts table --}}\n      @include('job-cards.part-actions-visible')\n",
+          "new": ""
+        },
+        {
+          "kind": "replace",
+          "old": "<p class=\"muted\">Edit planned parts and correct missing price. Issued/Fitted quantity deletion is protected for stock safety.</p>",
+          "new": "<p class=\"muted\">Search or add Parts directly. Qty / Rate / Discount / GST / Delete editable until Job Card Close. Stock is posted automatically at Close, exactly once.</p>"
+        },
+        {
+          "kind": "replace",
+          "old": "        <th>Status</th>\n        <th>Action</th>",
+          "new": "        <th>Action</th>"
+        },
+        {
+          "kind": "replace",
+          "old": "        <td><span class=\"badge\">{{ $p->issue_status }}</span></td>\n",
+          "new": ""
+        },
+        {
+          "kind": "replace",
+          "old": "<td colspan=\"11\" class=\"empty\">No parts lines.</td>",
+          "new": "<td colspan=\"10\" class=\"empty\">No parts lines.</td>"
+        },
+        {
+          "kind": "replace",
+          "old": "<h3>Parts</h3><p class=\"muted\">Parts Master se PLANNED line add hogi. Stock issue is step par nahi hoga.</p>",
+          "new": "<h3>Parts — Quick Add</h3><p class=\"muted\">Part select karke seedha Job Card mein add karein. Requisition / Issue / Fitted ki zaroorat nahi; final stock automatic Job Card Close par post hoga.</p>"
+        },
+        {
+          "kind": "replace",
+          "old": "        <label class=\"wide\">Part<select name=\"part_master_id\" required>",
+          "new": "        <label class=\"wide\">Search Part <input type=\"search\" placeholder=\"Part name / code type karein…\" autocomplete=\"off\" oninput=\"am54FilterPartSelect(this)\" style=\"margin-top:5px\"></label>\n        <label class=\"wide\">Part<select name=\"part_master_id\" required>"
+        },
+        {
+          "kind": "replace",
+          "old": "        <label>Qty<input type=\"number\" step=\"0.001\" min=\"0.001\" name=\"qty\" value=\"1\" required></label>",
+          "new": "        <label>Qty<input type=\"number\" step=\"0.001\" min=\"0.001\" name=\"qty\" value=\"1\" required></label>"
+        },
+        {
+          "kind": "replace",
+          "old": "@endif\n<div class=\"card section-gap jc-purchase-block jc-parts-block\">",
+          "new": "@endif\n<script>\nfunction am54FilterPartSelect(input){\n  const select=input.closest('form')?.querySelector('select[name=\"part_master_id\"]');\n  if(!select)return;\n  const q=(input.value||'').toLocaleLowerCase().trim();\n  for(const opt of select.options){\n    opt.hidden=!!q && !!opt.value && !opt.text.toLocaleLowerCase().includes(q);\n  }\n  if(q && select.selectedOptions[0]?.hidden)select.value='';\n}\n</script>\n<div class=\"card section-gap jc-purchase-block jc-parts-block\">"
+        }
+      ]
+    },
+    {
+      "path": "app/Http/Controllers/Web/AdminJobCardPageController.php",
+      "ops": [
+        {
+          "kind": "replace",
+          "old": "            $total = round($taxable + $gstAmount,2);",
+          "new": "            // FIX54_SIMPLE_PARTS: stored line total is TAXABLE; header adds GST once.\n            $total = $taxable;"
+        },
+        {
+          "kind": "replace",
+          "old": "        return redirect()->route('erp.job-cards.show',$job)->with('success','Part added directly to Job Card as PLANNED.');",
+          "new": "        return redirect()->route('erp.job-cards.show',$job)->with('success','Part added to Job Card. Edit until Job Card Close. Stock posting is automatic at Close.');"
+        }
+      ]
+    },
+    {
+      "path": "app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php",
+      "ops": [
+        {
+          "kind": "replace",
+          "old": "            $before=$card->toArray();\n            $card->status='closed';",
+          "new": "            // FIX54_SIMPLE_PARTS: stock-out posted exactly once at JC Close, under same DB transaction.\n            \\App\\Services\\JobCardPartsAutoClose::reconcile($job,(int)$user->id,(string)($user->name??'Admin'));\n            $before=$card->toArray();\n            $card->status='closed';"
+        },
+        {
+          "kind": "span",
+          "start": "        if(Schema::hasTable('job_card_parts') && Schema::hasColumn('job_card_parts','issue_status')){",
+          "end": "        if(Schema::hasTable('workshop_osl_requests')){",
+          "new": "        // FIX54_SIMPLE_PARTS: planned parts need no manual requisition/issue/fitted.\n        // Inventory is atomically reconciled with the exact current JC lines at Close.\n"
+        }
+      ]
+    },
+    {
+      "path": "app/Services/EstimateService.php",
+      "ops": [
+        {
+          "kind": "span",
+          "start": "    private function syncJobTotals(int $jobId): void",
+          "end": "    private function resolvePart(JobEstimateItem $item): ?PartMaster",
+          "new": "    private function syncJobTotals(int $jobId): void\n    {\n        // FIX54_SIMPLE_PARTS: Estimate->Job Card release must preserve GST-inclusive totals.\n        // All released Part lines remain editable PLANNED lines until Close.\n        $parts=JobCardPart::query()->where('job_card_id',$jobId)->orderBy('id')->get();\n        $labour=JobCardLabour::query()->where('job_card_id',$jobId)->orderBy('id')->get();\n        $tax=\\App\\Services\\JobCardTaxTotals::forJob($jobId);\n        JobCard::query()->whereKey($jobId)->update([\n            'parts_json'=>json_encode($parts->toArray(),JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),\n            'labour_json'=>json_encode($labour->toArray(),JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES),\n            'parts_total'=>$tax['parts_total'],'labour_total'=>$tax['labour_total'],\n            'gst_total'=>$tax['gst_total'],'pre_round_total'=>$tax['pre_round_total'],\n            'round_off'=>$tax['round_off'],'grand_total'=>$tax['grand_total'],\n        ]);\n    }\n\n"
+        }
+      ]
+    }
+  ]
+}
