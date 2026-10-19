@@ -31,6 +31,16 @@ jobs:
           "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
           set -euo pipefail
           cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          echo "=== WORKSHOP AMOUNT EDIT VIEW SOURCES ==="
+          grep -n -E 'job-amounts|job-lines|updateJobLine|jobAmounts|billing.update' routes/web.php
+          grep -n -E 'p55OperationalLocked|invoiced|form|route\(|labour|line->id|expected_old_total|quantity|action|isLocked|editable' resources/views/workshop-controls/job-amounts.blade.php | head -150
+          sed -n '1,205p' resources/views/workshop-controls/job-amounts.blade.php
+          echo "=== JOB AMOUNT VALIDATION & EDIT LINES ==="
+          sed -n '155,260p' app/Http/Controllers/Web/AdminWorkshopControlPageController.php
+          echo "=== JOB CARD ROUTES SETUP 115-175 ==="
+          sed -n '115,177p' routes/web.php
+          echo "=== JOBCARD CONTROLLER HEADER ==="
+          sed -n '1,84p' app/Http/Controllers/Web/AdminJobCardPageController.php
           echo "=== JC SHOW DIRECT PANEL 295-390 ==="
           sed -n '295,390p' resources/views/job-cards/show.blade.php
           echo "=== JC SHOW LABOUR PANEL 500-750 ==="
@@ -53,7 +63,7 @@ jobs:
           foreach(["job_card_labour","job_estimate_items","labour_master","workshop_osl_requests","workshop_purchases","job_cards"] as $t)
             if($schema::hasTable($t))echo "COLUMNS $t ".implode(",",$schema::getColumnListing($t))."\n";
           $db=Illuminate\Support\Facades\DB::class;
-          $n=$db::table("job_card_labour")->whereRaw("UPPER(COALESCE(mechanic_name,''))='OSL'")->count();
+          $n=$db::table("job_card_labour")->where("mechanic_name","OSL")->count();
           echo "CURRENT_OSL_LABOUR_LINE_COUNT=$n\n";
           '
           REMOTE
