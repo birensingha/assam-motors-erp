@@ -1,0 +1,53 @@
+name: AUDIT Android 6319 Embedded GPS Feature and Build Signing
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/audit-android-6319-embedded-gps-20261019.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Audit bundled mobile GPS UI read only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh;chmod 700 ~/.ssh
+          if [ -n "$KEY" ]; then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519;SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$PORT")
+          else sudo apt-get update -qq;sudo apt-get install -y -qq sshpass;export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT");fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          APK="$(php -r '$j=json_decode(file_get_contents($argv[1]),true);echo $argv[2]."/private/".$j["apk_file"];' "$SITE/latest.json" "$SITE")"
+          python3 - "$APK" <<'PY'
+          import zipfile,sys,re
+          z=zipfile.ZipFile(sys.argv[1])
+          for f in ('assets/fresh/index.html','assets/fresh/app.js','assets/fresh/owner-extra.js','assets/portal-patch.js'):
+              s=z.read(f).decode('utf-8','replace')
+              print('=== ASSET',f,'chars',len(s),'===')
+              needles=['Staff Live Location','Live Location','Live GPS','GPS','locationRegister','staff-locations','staff-live-location','admin/mobile/staff','admin/mobile/locations','location-history','map','leaflet','iframe','loadUrl','owner']
+              for n in needles:
+                  matches=list(re.finditer(re.escape(n),s,re.I))
+                  print('NEEDLE',n,'COUNT',len(matches))
+                  for m in matches[:3]:
+                      print('REF',repr(s[max(0,m.start()-135):m.end()+220])[:480])
+          PY
+          echo "=== SIGNING ARTIFACT NAMES ONLY ==="
+          find "$HOME/domains/assammotors.com" -maxdepth 7 -type f \( -name '*.jks' -o -name '*.keystore' -o -name '*.p12' -o -name 'keystore.properties' \) -printf '%p\n' 2>/dev/null | head -35 || true
+          echo "=== HR SOURCE ARCHIVE STRUCTURE ==="
+          unzip -Z1 "$HOME/domains/assammotors.com/ASSAM_MOTORS_HR_SOURCE.zip" 2>/dev/null | grep -Ei '(gradle|MainActivity|assets/fresh|\\.kt$|\\.java$|\\.jks$)' | head -45 || true
+          echo "ANDROID_ASSET_AUDIT_COMPLETE"
+          REMOTE
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
