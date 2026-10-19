@@ -85,6 +85,19 @@ jobs:
             }catch(Throwable $e){echo "SCHEMA_DETAILS_UNAVAILABLE ",$t,"\n";}
           }
           '
+          echo "=== ROT1 ID, discount and existing billing edit hooks (read only) ==="
+          grep -n -E 'function (updateJobLine|jobAmounts)|discount_amount|discount_percent' app/Http/Controllers/Web/AdminWorkshopControlPageController.php | head -55 || true
+          grep -n -E '@section|@endsection|Labour / ROT|lifecycle-panel|parts_total|grand_total' resources/views/job-cards/show.blade.php | tail -50 || true
+          php -r '
+          require "vendor/autoload.php";
+          $app=require "bootstrap/app.php";
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=Illuminate\Support\Facades\DB::class;
+          $rows=$db::table("job_card_labour")->where("job_card_id",39)->orderBy("id")->get();
+          foreach($rows as $n=>$r){
+            echo "ROT_POSITION=",($n+1)," ID=",$r->id," CODE=",$r->rot_code," TAXABLE=",$r->total," DISCOUNT=",$r->discount_amount," DISCOUNT_PCT=",$r->discount_percent," GST=",$r->gst_percent," BILLABLE=",($r->billing_included??"NULL"),"\n";
+          }
+          '
           echo "=== TAX INVOICE PRINT HTML SMOKE (read-only) ==="
           php -r '
           require "vendor/autoload.php";
