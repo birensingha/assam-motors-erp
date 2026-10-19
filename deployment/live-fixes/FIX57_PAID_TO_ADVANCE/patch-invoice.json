@@ -1,0 +1,10 @@
+{
+  "fix": "FIX57_PAID_TO_ADVANCE",
+  "changes": [
+    {
+      "path": "app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php",
+      "old": "            DB::table('customer_ledger')->insert($this->existingColumns('customer_ledger',$ledger));\n\n            $before=$card->toArray();",
+      "new": "            DB::table('customer_ledger')->insert($this->existingColumns('customer_ledger',$ledger));\n\n            // FIX57: apply original receipt advance during new invoice posting.\n            \\App\\Services\\PaidInvoiceAdvanceService::applyToNewInvoice(\n                $job,$invoiceId,(int)$user->id,(string)($user->name??'Admin'));\n\n            $before=$card->toArray();"
+    }
+  ]
+}
