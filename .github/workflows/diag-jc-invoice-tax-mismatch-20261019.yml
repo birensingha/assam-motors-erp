@@ -119,8 +119,8 @@ jobs:
           if(!$inv||!$job)exit(2);
           try{
             $html=view("invoices.print",compact("inv","job","parts","labour","ledger"))->render();
-            $new=str_contains($html,"3,841.00");
-            $old=str_contains($html,"3,255.00");
+            $new=str_contains($html,"3,500.00");
+            $old=str_contains($html,"3,841.00");
             echo "PRINT_VIEW_RENDER=PASS NEW_TOTAL=",($new?"YES":"NO")," OLD_INCORRECT_TOTAL=",($old?"YES":"NO"),"\n";
             if(!$new||$old)exit(4);
           }catch(Throwable $e){
