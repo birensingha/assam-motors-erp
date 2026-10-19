@@ -47,7 +47,7 @@ jobs:
           fi
           REMOTE="$SSH_USER@$SSH_HOST"
           "${SSH[@]}" "$REMOTE" "mkdir -p ~/FIX48_STAFF_QC_AUDIT_ACTOR"
-          "\${SCP[@]}" deployment/live-fixes/FIX48_STAFF_QC_AUDIT_ACTOR/PATCH_FIX48.php "$REMOTE:~/FIX48_STAFF_QC_AUDIT_ACTOR/PATCH_FIX48.php"
+          "${SCP[@]}" deployment/live-fixes/FIX48_STAFF_QC_AUDIT_ACTOR/PATCH_FIX48.php "$REMOTE:~/FIX48_STAFF_QC_AUDIT_ACTOR/PATCH_FIX48.php"
           "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE_SCRIPT'
           set -euo pipefail
           ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
