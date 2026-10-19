@@ -35,6 +35,7 @@ jobs:
           require "vendor/autoload.php";
           $app=require "bootstrap/app.php";
           $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          app("view")->share("errors",new Illuminate\Support\ViewErrorBag());
           $c=Illuminate\Support\Collection::class;
           $html=view("job-cards.form",[
             "job"=>new App\Models\JobCard,"editing"=>false,
