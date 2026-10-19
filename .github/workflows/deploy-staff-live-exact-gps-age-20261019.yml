@@ -1,0 +1,71 @@
+name: Verify and Deploy Staff Live Exact GPS Age
+on:
+  push:
+    branches:
+      - main
+      - fix/explicit-staff-gps-age-20261019
+    paths:
+      - '.github/workflows/deploy-staff-live-exact-gps-age-20261019.yml'
+      - 'deployment/live-fixes/FIX_STAFF_LIVE_EXACT_GPS_AGE_20261019/**'
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  validate-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dry-run safely against staging view; deploy ONLY after main merge
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          SRC=deployment/live-fixes/FIX_STAFF_LIVE_EXACT_GPS_AGE_20261019/apply.py
+          python3 -m py_compile "$SRC"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/am-staff-gps-age
+            chmod 600 ~/.ssh/am-staff-gps-age
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -i ~/.ssh/am-staff-gps-age -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          ROOT='"$HOME/domains/assammotors.com/assam-erp-staging"'
+          "${SSH[@]}" "$USERNAME@$HOST" "python3 - --root $ROOT" < "$SRC"
+          echo 'GPS_AGE_REMOTE_DRY_RUN=PASS'
+          if [ "$GITHUB_REF" = 'refs/heads/main' ]; then
+            "${SSH[@]}" "$USERNAME@$HOST" "python3 - --root $ROOT --apply" < "$SRC"
+            "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          FILE=resources/views/admin/native/staff-live-location.blade.php
+          grep -Fq 'AM_STAFF_LIVE_EXACT_GPS_AGE_20261019' "$FILE"
+          grep -Fq 'AM_RESTORE_DESKTOP_BLUE_V2_MOBILE_SOLO_V31' "$FILE"
+          grep -Fq 'GPS AGE: ' "$FILE"
+          php artisan view:cache >/dev/null
+          php artisan view:clear >/dev/null
+          echo 'GPS_AGE_DESKTOP_V2_MOBILE_V3_VIEW_VERIFIED=PASS'
+          REMOTE
+            status=$(curl --silent --show-error --max-time 30 -o /dev/null -w '%{http_code}' 'https://staging.assammotors.com/erp/staff-live-location')
+            echo "STAFF_GPS_AGE_GUEST_PROTECTION_HTTP=$status"
+            test "$status" = 302 || test "$status" = 401 || test "$status" = 403
+            echo 'GPS_AGE_STAGING_DEPLOY_VERIFIED=PASS'
+          else
+            echo 'GPS_AGE_PREVIEW_BRANCH_ONLY_NO_DEPLOY=PASS'
+          fi
+      - if: always()
+        run: rm -f ~/.ssh/am-staff-gps-age
