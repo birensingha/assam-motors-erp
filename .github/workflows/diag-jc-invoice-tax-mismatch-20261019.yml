@@ -68,7 +68,7 @@ jobs:
           echo "INVOICE_ID=",$inv->id," STATUS=",$inv->status," PAID=",$inv->paid_amount??"n/a"," PAID_TOTAL=",$inv->paid_total??"n/a","\n";
           $tables=$db::select("SHOW TABLES");
           foreach($tables as $entry){
-            $table=(string)reset((array)$entry);
+            $values=array_values((array)$entry);$table=(string)($values[0]??"");
             if(!$table||!preg_match("/^[a-z0-9_]+$/i",$table))continue;
             try{
               if($sc::hasColumn($table,"invoice_id")){
