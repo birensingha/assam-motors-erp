@@ -1,0 +1,66 @@
+name: Verify FIX54 Simple Parts Render (read only)
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/verify-fix54-simple-parts-staging.yml"]
+permissions: {contents: read}
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh;chmod 700 ~/.ssh
+          if [ -n "$KEY" ]; then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else sudo apt-get update -qq;sudo apt-get install -y -qq sshpass;fi
+      - name: Render active Parts Job Card and verify invoice unchanged
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$PASSWORD"; SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT");fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          php -r '
+          require "vendor/autoload.php";
+          $app=require "bootstrap/app.php";$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          app("view")->share("errors",new Illuminate\Support\ViewErrorBag());
+          $db=Illuminate\Support\Facades\DB::class;
+          $active=$db::table("job_cards as j")
+            ->join("job_card_parts as p","p.job_card_id","=","j.id")
+            ->whereNotIn("j.status",["closed","invoiced","cancelled"])
+            ->select("j.id")->orderByDesc("j.id")->first();
+          $id=(int)($active->id??39);
+          $data=app(App\Services\JobCardService::class)->detail($id);
+          $data["staff"]=App\Models\Staff::whereRaw("LOWER(status)='\''active'\''")->orderBy("name")->limit(30)->get();
+          $data["partsMaster"]=$db::table("parts_master")->orderBy("part_name")->limit(50)->get();
+          $data["labourMaster"]=$db::table("labour_master")->orderBy("rot_code")->limit(50)->get();
+          try{$html=view("job-cards.show",$data)->render();}
+          catch(Throwable $e){echo "FIX54_RUNTIME_RENDER_FAILED ".get_class($e)." ".$e->getMessage()."\n";exit(3);}
+          foreach(["Create Part Requisition","Issue Part from Stock","Confirm Part Fitted","Parts Requisition / Issue / Fitted"] as $old)
+             if(str_contains($html,$old)){echo "FIX54_OLD_PART_CONTROL_VISIBLE ".$old."\n";exit(4);}
+          if(!str_contains($html,"am54FilterPartSelect") ||
+             !str_contains($html,"Parts — Quick Add")){
+             echo "FIX54_SEARCH_UI_NOT_PRESENT\n";exit(5);
+          }
+          echo "FIX54_RUNTIME_RENDER_PASS JOB_ID=".$id."\n";
+          $inv=$db::table("invoices")->where("id",23)->first();
+          if(!$inv || abs((float)$inv->grand_total-3500)>0.01)exit(6);
+          echo "FIX54_INVOICE23_UNCHANGED=3500.00\n";
+          $svc=new App\Services\JobCardPartsAutoClose;
+          echo "FIX54_AUTOCLOSE_SERVICE_PRESENT\n";
+          '
+          REMOTE
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
