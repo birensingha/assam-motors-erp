@@ -1,0 +1,58 @@
+name: AUDIT Current Staff 6319 GPS DOM and JS API
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/audit-6319-gps-asset-hooks-20261019.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Read-only exact existing GPS DOM and data source hooks
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh;chmod 700 ~/.ssh
+          if [ -n "$KEY" ]; then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519;SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$PORT")
+          else sudo apt-get update -qq;sudo apt-get install -y -qq sshpass;export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT");fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          APK="$(php -r '$j=json_decode(file_get_contents($argv[1]),true);echo $argv[2]."/private/".$j["apk_file"];' "$SITE/latest.json" "$SITE")"
+          python3 - "$APK" <<'PY'
+          import zipfile,sys,re
+          with zipfile.ZipFile(sys.argv[1]) as z:
+            html=z.read('assets/fresh/index.html').decode('utf8')
+            js=z.read('assets/fresh/app.js').decode('utf8')
+            css=z.read('assets/fresh/app.css').decode('utf8')
+          def dump(text,label,before,after,n=1,limit=8500):
+            for i,m in enumerate(re.finditer(re.escape(before),text,re.I)):
+              if i>=n:break
+              print('===',label,i,'===')
+              print(text[max(0,m.start()-after):min(len(text),m.start()+limit)])
+          dump(html,'EXISTING GPS DOM','ownerGpsInAppMap',1350,1,4700)
+          dump(html,'EXISTING OWNER LOCATION KPI DOM','owner-location-overview',1300,1,5700)
+          dump(html,'LOCAL APP JS SCRIPT TAGS','<script',60,4,450)
+          dump(js,'NATIVE_API_INTERFACE',"nativeRequest(method",850,1,2500)
+          dump(js,'OWNER_LOCATION_POLL', "async function loadOwnerLocations",1100,1,10700)
+          dump(js,'OWNER_LOCATION_MAP', "function showOwnerGpsMap",1050,1,6500)
+          dump(js,'GPS_TIMESTAMP_PARSE', "function ownerLocationAge",450,1,1700)
+          dump(js,'OWNER_MODE', "function ownerMode()",400,1,950)
+          print('=== CSS GPS CLASS SAMPLE ===')
+          for match in list(re.finditer(r'\.gps-admin-map-container|\#ownerGpsMapCanvas|\.owner-location-filter|\#ownerLocationsList',css))[:10]:
+            print(css[match.start():match.start()+380])
+          PY
+          REMOTE
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
