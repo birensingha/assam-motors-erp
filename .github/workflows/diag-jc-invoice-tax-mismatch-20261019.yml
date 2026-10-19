@@ -85,6 +85,20 @@ jobs:
             }catch(Throwable $e){echo "SCHEMA_DETAILS_UNAVAILABLE ",$t,"\n";}
           }
           '
+          echo "=== FIX52 ACTUAL CUSTOMER SOURCE (read only) ==="
+          sed -n '600,672p' app/Http/Controllers/Web/AdminNativeModuleController.php
+          sed -n '1,180p' resources/views/admin/native/partials/customer-vehicle-form.blade.php
+          grep -n -E 'customer-vehicle-form|name="(name|phone|email|address)"|customer|Update' resources/views/admin/native/customers.blade.php | head -100 || true
+          grep -n -E 'customer-vehicle-form|name="(name|phone|email|address)"|customer|Update' resources/views/admin/native/customer-detail.blade.php | head -80 || true
+          php -r '
+          require "vendor/autoload.php";
+          $app=require "bootstrap/app.php";
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $sc=Illuminate\Support\Facades\Schema::class;
+          foreach(["am_customer_master","customers","am_customer_contact"] as $t){
+            if($sc::hasTable($t))echo "ACTUAL_CUSTOMER_TABLE ",$t," ",implode(",",$sc::getColumnListing($t)),"\n";
+          }
+          '
           echo "=== FIX52 CUSTOMER GST FIELD AUDIT (read only) ==="
           find app/Http/Controllers/Web resources/views -maxdepth 4 -type f | grep -Ei 'customer|native' | head -70 || true
           grep -n -E 'customers.(create|store|edit|update)|customer.*gst' routes/web.php | head -85 || true
