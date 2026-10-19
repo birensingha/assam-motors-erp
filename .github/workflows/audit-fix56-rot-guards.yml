@@ -1,0 +1,31 @@
+name: Audit ROT live guards for FIX56
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/audit-fix56-rot-guards.yml"]
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Inspect SSH
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq sshpass
+          SSHPASS="$PASSWORD" sshpass -e ssh -o StrictHostKeyChecking=no -p "$PORT" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          cd "$HOME/domains/assammotors.com/assam-erp-staging" || exit 1
+          echo "=== ROT WORKFLOW METHOD LOCATIONS ==="
+          grep -n "function " app/Services/RotWorkflowService.php
+          echo "=== ROT WORKFLOW 1-325 ==="
+          sed -n '1,325p' app/Services/RotWorkflowService.php
+          echo "=== REVERSAL UI HEAD ==="
+          sed -n '1,120p' resources/views/job-cards/unwind.blade.php
+          echo "=== REOPEN CLOSED ==="
+          sed -n '300,341p' app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php
+          REMOTE
