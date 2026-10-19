@@ -1,0 +1,125 @@
+{
+  "fix": "FIX53_JOBCARD_PROCESS_STAGE1",
+  "files": [
+    {
+      "path": "resources/views/job-cards/show.blade.php",
+      "ops": [
+        {
+          "kind": "replace",
+          "old": "$supplementaryReady=$hasReleasedEstimate && in_array($jobStatusForEstimate,[\n    'open','completed','in progress','in-progress','work in progress','wip'\n],true);",
+          "new": "$supplementaryReady=$hasReleasedEstimate && in_array($jobStatusForEstimate,[\n    'open','completed','in progress','in-progress','work in progress','wip'\n],true);\n$amJobStatusNorm=strtolower(trim((string)$job->status)); // FIX53_STAGE1"
+        },
+        {
+          "kind": "replace",
+          "old": "  <div class=\"actions wrap\">\n    @if($supplementaryReady)",
+          "new": "  <div class=\"actions wrap\">\n    @if(!in_array($amJobStatusNorm,['closed','invoiced','cancelled'],true))\n      <a class=\"btn primary\" href=\"{{ route('erp.job-cards.edit',$job->id) }}\">✏ Edit Job Card</a>\n    @endif\n    @if($supplementaryReady)"
+        },
+        {
+          "kind": "replace",
+          "old": "    <a class=\"btn\" href=\"{{ route('erp.job.purchase',$job->id) }}\">Purchase for Job</a>",
+          "new": "    @if(in_array($amJobStatusNorm,['wip','in progress','in-progress','work in progress'],true))\n      <details class=\"action-pop\">\n        <summary class=\"btn small warning-btn\">↩ Return to Estimate Review</summary>\n        <form method=\"post\" action=\"{{ route('erp.job-cards.return-estimate-review',$job->id) }}\" class=\"pop-form\">\n          @csrf\n          <label>Reason *<textarea name=\"reason\" rows=\"3\" required minlength=\"5\"></textarea></label>\n          <button class=\"btn warning-btn\">Return to Estimate Review</button>\n        </form>\n      </details>\n    @endif\n    <a class=\"btn\" href=\"{{ route('erp.job.purchase',$job->id) }}\">Purchase for Job</a>"
+        },
+        {
+          "kind": "replace",
+          "old": "  <a href=\"{{ route('erp.fix48.osl-index') }}\" style=\"background:#e2a01f;color:#182d45;padding:10px 15px;border-radius:9px;font-weight:800;text-decoration:none\">🛠 Edit OSL Purchases</a>\n  <a href=\"{{ route('erp.fix48.vendor-database') }}\" style=\"background:#118045;color:white;padding:10px 15px;border-radius:9px;font-weight:800;text-decoration:none\">🏢 Vendor Database</a>\n",
+          "new": ""
+        },
+        {
+          "kind": "replace",
+          "old": "    <div><span>Technician</span>{{ $job->technician ?: '—' }}</div>",
+          "new": "    <div><span>Floor Supervisor</span><strong>{{ $job->floor_supervisor_name ?? '—' }}</strong></div>"
+        },
+        {
+          "kind": "span",
+          "start": "{{-- WORKSHOP_JOB_ACTION_BAR --}}",
+          "end": "<div class=\"card section-gap diagnosis-card",
+          "new": "{{-- FIX53_STAGE1: remove redundant Job Card Controls panel; retain missing-part-rate notice --}}\n@if($parts->contains(fn($x)=>(float)($x->rate??0)<=0))\n  <div class=\"workflow-message locked\" style=\"margin:10px 0\">\n    <strong>Part Price Missing</strong>\n    <span>Parts section mein ₹0 rate entries ko invoice se pehle correct karein.</span>\n  </div>\n@endif\n<div class=\"card section-gap diagnosis-card"
+        },
+        {
+          "kind": "span",
+          "start": "<div class=\"card section-gap\">\n  <div class=\"section-head\"><div><h2 class=\"section-title\">Estimate History",
+          "end": "{{-- FIX37_DIRECT_ENTRY_PANEL --}}",
+          "new": "{{-- FIX53_STAGE1: Estimate History table hidden here; approved estimate release controls remain above. --}}\n\n{{-- FIX37_DIRECT_ENTRY_PANEL --}}"
+        },
+        {
+          "kind": "span",
+          "start": "        <strong>Inspection Assigned To:</strong>",
+          "end": "        {{-- P39_JC_RENDER_SCOPE_V1",
+          "new": "        <strong>Assigned Inspector:</strong>\n        {{ $p21InspectionAssignment->manager_name ?? 'NOT ASSIGNED' }}\n        @if($p21InspectionAssignment?->manager_code) ({{ $p21InspectionAssignment->manager_code }}) @endif\n        · <strong>Status:</strong> {{ strtoupper((string)$job->inspection_status) }}\n        @if($job->inspection_submitted_at)\n           · <strong>Submitted:</strong> {{ optional($job->inspection_submitted_at)->format('d-m-Y h:i A') }}\n        @endif\n        @if($p21InspectionAssignment && $job->inspection_submitted_by && (int)$p21InspectionAssignment->assigned_staff_id !== (int)$job->inspection_submitted_by)\n           <span style=\"color:#a32424\">Inspector identity mismatch — audit review required</span>\n        @endif\n        <div class=\"muted\" style=\"margin-top:4px\">Service Advisor (Admin) assigns inspection and reviews the staff report before diagnosis and estimate.</div>\n        {{-- P39_JC_RENDER_SCOPE_V1"
+        },
+        {
+          "kind": "replace",
+          "old": "<strong>Step 1 Manager Inspection → Step 2 Final Diagnosis → Step 3 Technician Decision → Step 4 Estimate</strong>",
+          "new": "<strong>1. Advisor Assigns Inspection → 2. Inspector Submits Report → 3. Advisor Reviews &amp; Records Diagnosis → 4. Technician Decision → 5. Estimate &amp; Approval</strong>"
+        },
+        {
+          "kind": "replace",
+          "old": "<span>Pehle Deciding Technician assign kijiye. Assigned technician ko Staff Portal me isi Job Card ka read-only Inspection Report milega. Report review ke baad Final Diagnosis save karein; uske baad assigned technician Staff Portal se alag Decision dega.</span>",
+          "new": "<span>Service Advisor inspection assign karta hai. Assigned inspector Staff App/Portal se report submit karta hai. Service Advisor report review karke Final Diagnosis record karta hai, phir designated technician decision deta hai. Estimate uske baad hi unlock hota hai.</span>"
+        }
+      ]
+    },
+    {
+      "path": "resources/views/job-cards/form.blade.php",
+      "ops": [
+        {
+          "kind": "replace",
+          "old": "<p>Customer, vehicle, complaint, inward date and technician details. Save ke baad Estimate / Inspection / Parts / ROT workflow available hoga.</p>",
+          "new": "<p>Stage 1 Customer → Stage 2 Vehicle → Stage 3 Job &amp; Floor Supervisor. Inspection staff and Deciding Technician are assigned after Job Card creation.</p>"
+        },
+        {
+          "kind": "replace",
+          "old": "<h2>Job / Service Details</h2><p>Job Card date future date nahi ho sakta. Technician assignment yahan se select kar sakte hain.</p>",
+          "new": "<h2>Job / Service Details</h2><p>Floor Supervisor optional hai. Inspection staff aur Deciding Technician Job Card banne ke baad assign honge.</p>"
+        },
+        {
+          "kind": "span",
+          "start": "      <label>Technician\n        <select name=\"technician_id\"",
+          "end": "      <label>Customer App Status",
+          "new": "      <label>Floor Supervisor (Optional)\n        <select name=\"floor_supervisor_id\" id=\"jcFloorSupervisor\">\n          <option value=\"\">— Select later —</option>\n          @foreach($staff as $s)\n            <option value=\"{{ $s->id }}\" @selected((string)old('floor_supervisor_id',data_get($job,'floor_supervisor_id',''))===(string)$s->id)>{{ $s->name }} ({{ $s->staff_code }})</option>\n          @endforeach\n        </select>\n        <span class=\"field-help\">Floor Supervisor name stays unchanged when inspector or deciding technician changes.</span>\n      </label>\n      <label>Customer App Status"
+        }
+      ]
+    },
+    {
+      "path": "resources/views/job-cards/edit.blade.php",
+      "ops": [
+        {
+          "kind": "replace",
+          "old": "    <label class=\"span-2\">\n        Customer Complaint / Job Requirement",
+          "new": "    <label class=\"span-2\">\n        Floor Supervisor (Independent of Inspector &amp; Deciding Technician)\n        <select name=\"floor_supervisor_id\">\n            <option value=\"\">— Not Assigned —</option>\n            @foreach($p55Staff as $s)\n              <option value=\"{{ $s->id }}\" @selected((string)old('floor_supervisor_id', $job->floor_supervisor_id ?? '')===(string)$s->id)>{{ $s->name }} ({{ $s->staff_code }})</option>\n            @endforeach\n        </select>\n    </label>\n\n    <label class=\"span-2\">\n        Customer Complaint / Job Requirement"
+        }
+      ]
+    },
+    {
+      "path": "app/Http/Controllers/Web/AdminJobCardPageController.php",
+      "ops": [
+        {
+          "kind": "replace",
+          "old": "        'technician_id'=>['nullable','integer','min:1'],\n        'technician'=>['nullable','string','max:100'],\n        'customer_public_status'=>",
+          "new": "        'floor_supervisor_id'=>['nullable','integer','min:1'],\n        'customer_public_status'=>"
+        },
+        {
+          "kind": "span",
+          "start": "        $technicianId = (int)($data['technician_id'] ?? 0);",
+          "end": "        $customerName = trim((string)($customer->name ?? $data['customer_name']));",
+          "new": "        // FIX53_STAGE1: Floor Supervisor is a stable, independent staff identity.\n        // Never assign Job Card Deciding Technician at creation time.\n        $floorSupervisorId=(int)($data['floor_supervisor_id']??0);\n        $floorSupervisor=null;\n        if($floorSupervisorId>0){\n            $floorSupervisor=Staff::query()->whereKey($floorSupervisorId)\n                ->whereRaw(\"LOWER(status)='active'\")->first();\n            if(!$floorSupervisor){\n                throw ValidationException::withMessages(['floor_supervisor_id'=>'Selected active Floor Supervisor not found.']);\n            }\n        }\n\n        $customerName = trim((string)($customer->name ?? $data['customer_name']));"
+        },
+        {
+          "kind": "replace",
+          "old": "            'technician_id'=>$technicianId ?: null,\n            'technician'=>$technician?->name ?: (trim((string)($data['technician'] ?? '')) ?: null),",
+          "new": "            'technician_id'=>null,\n            'technician'=>null,\n            'floor_supervisor_id'=>$floorSupervisorId?:null,\n            'floor_supervisor_name'=>$floorSupervisor?->name,"
+        },
+        {
+          "kind": "replace",
+          "old": "            'complaint'=>['nullable','string','max:4000'],\n            'reason'=>['required','string','max:1000'],",
+          "new": "            'complaint'=>['nullable','string','max:4000'],\n            'floor_supervisor_id'=>['nullable','integer','min:1'],\n            'reason'=>['required','string','max:1000'],"
+        },
+        {
+          "kind": "replace",
+          "old": "            $before = $card->toArray();\n            $update = [];",
+          "new": "            $before = $card->toArray();\n            $update = [];\n            // FIX53_STAGE1: editing Floor Supervisor never changes Deciding Technician.\n            $floorSupervisorId=(int)($data['floor_supervisor_id']??0);\n            $floorSupervisor=null;\n            if($floorSupervisorId>0){\n                $floorSupervisor=Staff::query()->whereKey($floorSupervisorId)\n                    ->whereRaw(\"LOWER(status)='active'\")->first();\n                if(!$floorSupervisor){\n                    throw ValidationException::withMessages(['floor_supervisor_id'=>'Active Floor Supervisor not found.']);\n                }\n            }\n            $update['floor_supervisor_id']=$floorSupervisorId?:null;\n            $update['floor_supervisor_name']=$floorSupervisor?->name;"
+        }
+      ]
+    }
+  ]
+}
