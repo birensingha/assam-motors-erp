@@ -1,0 +1,93 @@
+name: Diagnose JC Invoice Tax Reconciliation (read-only)
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/diag-jc-invoice-tax-mismatch-20261019.yml"]
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Configure readonly SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          mkdir -p ~/.ssh; chmod 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Read exact job card invoice and line totals without modifications
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -o ConnectTimeout=20 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=20 -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f "$ROOT/artisan"
+          cd "$ROOT"
+          echo "=== READ-ONLY INVOICE TAX RECONCILIATION ==="
+          date -u '+%Y-%m-%dT%H:%M:%SZ'
+          echo "=== Staging current billing source ==="
+          grep -n -E '(partsTotal=|labourTotal=|gstTotal=|preRound=|roundOff=|grand=|existingColumns\(.invoices|customer_ledger.*insert)' app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php | head -35 || true
+          echo "=== Relevant Job Card total calculation references ==="
+          grep -Rnl -m 1 -E "(pre_round_total|gst_total|grand_total)" app/Services/JobCardService.php app/Http/Controllers/Web/AdminJobCardPageController.php 2>/dev/null || true
+          echo "=== Numeric database record and lines ==="
+          php -r '
+          require "vendor/autoload.php";
+          $app=require "bootstrap/app.php";
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=Illuminate\Support\Facades\DB::class;
+          $sc=Illuminate\Support\Facades\Schema::class;
+          $names=["parts_total","labour_total","subtotal","taxable_total","tax_total","gst_total","pre_round_total","round_off","grand_total","paid_amount","paid_total","balance_due","balance_total"];
+          function numericRow($row,$keys){$result=[];foreach($keys as $k){if(property_exists($row,$k))$result[$k]=$row->$k;}return $result;}
+          $job=$db::table("job_cards")->where("job_no","JC-20261019-00039")->first();
+          $inv=$db::table("invoices")->where("invoice_no","INV-2026-00023")->first();
+          echo "JOB_FOUND=",($job?"YES":"NO")," INVOICE_FOUND=",($inv?"YES":"NO"),"\n";
+          if(!$job||!$inv)exit(1);
+          echo "JOB_ID=",(int)$job->id," JOB_STATUS=",(string)$job->status,"\n";
+          echo "INVOICE_ID=",(int)$inv->id," INVOICE_STATUS=",(string)$inv->status," LINK_MATCH=",(((int)$inv->job_card_id===(int)$job->id)?"YES":"NO"),"\n";
+          echo "JOB_NUMERIC=",json_encode(numericRow($job,$names)),"\n";
+          echo "INVOICE_NUMERIC=",json_encode(numericRow($inv,$names)),"\n";
+          foreach(["job_card_parts","job_card_labour"] as $table){
+            if(!$sc::hasTable($table)){echo "TABLE_",$table,"=MISSING\n";continue;}
+            $cols=$sc::getColumnListing($table);
+            $amountKeys=array_values(array_filter($cols,fn($col)=>preg_match("/^(qty|rate|labour_rate|standard_hours|gst_percent|gst_amount|gst_value|taxable|taxable_amount|discount|discount_percent|discount_amount|total|line_total|amount|net_amount|final_amount|base_amount)$/i",$col)));
+            echo "LINE_COLUMNS_",$table,"=",implode(",",$amountKeys),"\n";
+            $rows=$db::table($table)->where("job_card_id",$job->id)->orderBy("id")->get();
+            echo "LINE_COUNT_",$table,"=",$rows->count(),"\n";
+            $sumKeys=["total","taxable","taxable_amount","gst_amount","discount_amount","final_amount","net_amount","line_total"];
+            foreach($sumKeys as $k){
+              if(in_array($k,$cols,true)){echo "SUM_",$table,"_",$k,"=",number_format((float)$rows->sum(fn($r)=>(float)($r->$k??0)),2,".",""),"\n";}
+            }
+            foreach($rows->take(10) as $idx=>$row){echo "LINE_",$table,"_",($idx+1),"=",json_encode(numericRow($row,$amountKeys)),"\n";}
+          }
+          if($sc::hasTable("customer_ledger")){
+            $col=$sc::getColumnListing("customer_ledger");
+            $entries=$db::table("customer_ledger")->where("invoice_id",$inv->id)->get();
+            echo "LEDGER_INVOICE_ROW_COUNT=",$entries->count(),"\n";
+            foreach($entries as $idx=>$r){echo "LEDGER_ROW_",($idx+1),"=",json_encode(numericRow($r,["amount","debit","credit","entry_type","reference_type"])),"\n";}
+          }
+          '
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
