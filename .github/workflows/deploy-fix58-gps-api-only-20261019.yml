@@ -1,0 +1,87 @@
+name: FIX58 Native Staff GPS API accuracy metadata STAGING
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/deploy-fix58-gps-api-only-20261019.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  api:
+    runs-on: ubuntu-latest
+    timeout-minutes: 13
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Staging admin GPS API compatibility metadata only
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh; chmod 700 ~/.ssh
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+            SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$PORT")
+            SCP=(scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -P "$PORT")
+          else
+            sudo apt-get update -qq;sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P "$PORT")
+          fi
+          PKG=deployment/mobile/FIX58_STAFF_GPS_DASHBOARD_6319
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/.am-fix58-mobile-api"'
+          "${SCP[@]}" "$PKG/api-manifest.json" "$PKG/apply_api.py" "$REMOTE:.am-fix58-mobile-api/"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          PKG="$HOME/.am-fix58-mobile-api"
+          cd "$ROOT"
+          SOURCE="app/Http/Controllers/Api/V1/AdminMobileController.php"
+          test -f "$SOURCE"
+          python3 "$PKG/apply_api.py" check "$ROOT" "$PKG/api-manifest.json"
+          STAMP="$(date +%Y%m%d_%H%M%S)"
+          BACKUP="storage/app/fix58_admin_mobile_gps_api_$STAMP"
+          mkdir -p "$BACKUP"
+          cp -p "$SOURCE" "$BACKUP/AdminMobileController.php"
+          rollback(){
+            cp -p "$BACKUP/AdminMobileController.php" "$SOURCE"
+            php artisan optimize:clear >/dev/null 2>&1 || true
+            echo "FIX58_API_ROLLED_BACK_AFTER_ERROR"
+          }
+          trap rollback ERR
+          python3 "$PKG/apply_api.py" apply "$ROOT" "$PKG/api-manifest.json"
+          php -l "$SOURCE"
+          php artisan route:clear >/dev/null
+          php -r '
+          require "vendor/autoload.php";
+          $app=require "bootstrap/app.php";
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          if(!Illuminate\Support\Facades\Route::has("api.v1.admin.mobile.staff-locations")) {
+            // Route names differ across versions; inspect path registration instead.
+            $found=false;
+            foreach(Illuminate\Support\Facades\Route::getRoutes() as $r){
+              if(str_contains($r->uri(),"admin/mobile/staff-locations")){$found=true;break;}
+            }
+            if(!$found)exit(5);
+          }
+          $s=file_get_contents("app/Http/Controllers/Api/V1/AdminMobileController.php");
+          if(!str_contains($s,"FIX58_APP_GPS_DASHBOARD")||!str_contains($s,"server_time")||
+             !str_contains($s,"reporting_accuracy_m"))exit(6);
+          echo "FIX58_API_SOURCE_AUTH_ROUTE_PASS\n";
+          '
+          trap - ERR
+          echo "FIX58_STAGING_ADMIN_LOCATION_READONLY_API_PASS BACKUP=$BACKUP"
+          REMOTE
+          code=$(curl -sS --max-time 20 -o /dev/null -w '%{http_code}' 'https://staging.assammotors.com/api/v1/admin/mobile/staff-locations?latest=1')
+          echo "FIX58_GUEST_STAFF_LOCATION_HTTP=$code"
+          test "$code" = 401 || test "$code" = 403
+      - name: Remove temporary key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
