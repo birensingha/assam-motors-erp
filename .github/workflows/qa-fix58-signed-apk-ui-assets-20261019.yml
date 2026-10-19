@@ -1,0 +1,113 @@
+name: QA FIX58 GPS Dashboard Source Against Published Staff APK
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/qa-fix58-signed-apk-ui-assets-20261019.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  source_asset_qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify own GPS UI source JS
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG=deployment/mobile/FIX58_STAFF_GPS_DASHBOARD_6319
+          node --check "$PKG/gps-dashboard-v6320.js"
+          test -s "$PKG/gps-dashboard-v6320.css"
+          grep -Fq 'amGps6320Template' "$PKG/gps-dashboard.fragment.html"
+          grep -Fq '/admin/mobile/staff-locations?latest=1' "$PKG/gps-dashboard-v6320.js"
+          grep -Fq 'point?.recorded_at' "$PKG/gps-dashboard-v6320.js"
+          grep -Fq 'Weak and stale' "$PKG/gps-dashboard.fragment.html"
+          echo 'FIX58_SOURCE_JS_SYNTAX_AND_GPS_TRUTH_CHECK=PASS'
+      - name: Fetch ONLY current published signed Android APK for source compatibility testing
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh;chmod 700 ~/.ssh
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+            SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$PORT")
+            SCP=(scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -P "$PORT")
+          else
+            sudo apt-get update -qq;sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          SITE_REL="domains/assammotors.com/public_html/staging/staff-app"
+          "${SCP[@]}" "$REMOTE:$SITE_REL/latest.json" /tmp/am58-latest.json
+          python3 - <<'PY'
+          import json
+          m=json.load(open('/tmp/am58-latest.json'))
+          assert m['package_id']=='com.assammotors.staff'
+          assert int(m['version_code'])==60319,'Current signed app version changed: re-audit before patch'
+          assert m['apk_file']=='Assam-Motors-Staff-v6.3.19-GPS-FIX-SIGNED.apk'
+          print('FIX58_BASELINE_SIGNED_APK_VERSION=60319')
+          PY
+          "${SCP[@]}" "$REMOTE:$SITE_REL/private/Assam-Motors-Staff-v6.3.19-GPS-FIX-SIGNED.apk" /tmp/am58-original.apk
+          python3 - <<'PY'
+          import hashlib,json
+          m=json.load(open('/tmp/am58-latest.json'))
+          with open('/tmp/am58-original.apk','rb') as f: digest=hashlib.file_digest(f,'sha256').hexdigest()
+          assert digest==m['sha256'],'Original published signed APK SHA-256 mismatch'
+          print('FIX58_ORIGINAL_SIGNED_APK_HASH_VERIFIED=PASS')
+          PY
+      - name: Generate tested embedded WebView source-assets ZIP only (NOT installable)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import zipfile,shutil,re
+          from pathlib import Path
+          pkg=Path('deployment/mobile/FIX58_STAFF_GPS_DASHBOARD_6319')
+          out=Path('fix58-assets/assets/fresh')
+          out.mkdir(parents=True,exist_ok=True)
+          with zipfile.ZipFile('/tmp/am58-original.apk') as z:
+              names=z.namelist()
+              assert all(x in names for x in ['assets/fresh/index.html','assets/fresh/app.js','assets/fresh/app.css','assets/fresh/owner-extra.js'])
+              src=z.read('assets/fresh/index.html').decode('utf8')
+          assert src.count('id="view-owner-locations"')==1
+          assert src.count('<script src="owner-extra.js"></script>')==1
+          assert src.count('</head>')==1 and src.count('</body>')==1
+          assert 'amGps6320Template' not in src
+          fragment=(pkg/'gps-dashboard.fragment.html').read_text()
+          ids=re.findall(r'id="([^"]+)"',fragment)
+          assert len(ids)==len(set(ids)),'Duplicate FIX58 UI element ids'
+          assert not set(ids)&set(re.findall(r'id="([^"]+)"',src)),'Conflicting existing App DOM ids'
+          html=src.replace('</head>','  <link rel="stylesheet" href="gps-dashboard-v6320.css">\n</head>')
+          html=html.replace('</body>',fragment+'\n  <script src="gps-dashboard-v6320.js"></script>\n</body>')
+          assert html.count('amGps6320Template')==1
+          assert html.count('gps-dashboard-v6320.js')==1
+          assert html.index('<script src="app.js">') < html.index('<script src="gps-dashboard-v6320.js">')
+          (out/'index.html').write_text(html)
+          shutil.copy2(pkg/'gps-dashboard-v6320.css',out/'gps-dashboard-v6320.css')
+          shutil.copy2(pkg/'gps-dashboard-v6320.js',out/'gps-dashboard-v6320.js')
+          with zipfile.ZipFile('Assam-Motors-FIX58-GPS-Dashboard-SOURCE-ASSETS.zip','w',compression=zipfile.ZIP_DEFLATED) as z:
+              for f in out.iterdir():z.write(f,arcname='assets/fresh/'+f.name)
+          print('FIX58_PUBLISHED_APK_WEBVIEW_ASSET_COMPATIBILITY=PASS')
+          print('FIX58_SOURCE_ASSETS_ONLY=YES')
+          print('FIX58_INSTALLABLE_APK_CREATED=NO')
+          print('FIX58_ORIGINAL_SIGNED_OTA_FEED_UNCHANGED=YES')
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Assam-Motors-FIX58-GPS-Dashboard-source-assets
+          path: Assam-Motors-FIX58-GPS-Dashboard-SOURCE-ASSETS.zip
+          retention-days: 14
+      - name: Cleanup private baseline APK and keys
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519 /tmp/am58-original.apk /tmp/am58-latest.json
