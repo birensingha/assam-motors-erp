@@ -1,0 +1,116 @@
+name: FIX53 Job Card Process Stage1 - Staging
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/deploy-fix53-jobcard-process-staging.yml"]
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh; chmod 700 ~/.ssh
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Guarded Job Card source deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          PKG="deployment/live-fixes/FIX53_JOBCARD_PROCESS_STAGE1"
+          "${SSH[@]}" "$REMOTE" "mkdir -p ~/FIX53_JOBCARD_PROCESS_STAGE1"
+          "${SCP[@]}" "$PKG/manifest.json" "$PKG/apply.py" "$PKG/add_supervisor_columns.php" "$REMOTE:~/FIX53_JOBCARD_PROCESS_STAGE1/"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          PKG="$HOME/FIX53_JOBCARD_PROCESS_STAGE1"
+          cd "$ROOT"
+          test -f artisan
+          python3 "$PKG/apply.py" --check "$ROOT" "$PKG/manifest.json"
+          STAMP="$(date +%Y%m%d_%H%M%S)"
+          BACKUP="storage/app/fix53_jobcard_backup_$STAMP"
+          mkdir -p "$BACKUP"
+          cp -p resources/views/job-cards/show.blade.php "$BACKUP/show.blade.php"
+          cp -p resources/views/job-cards/form.blade.php "$BACKUP/form.blade.php"
+          cp -p resources/views/job-cards/edit.blade.php "$BACKUP/edit.blade.php"
+          cp -p app/Http/Controllers/Web/AdminJobCardPageController.php "$BACKUP/AdminJobCardPageController.php"
+          rollback(){
+            echo "FIX53_ROLLING_BACK_SOURCE"
+            cp -p "$BACKUP/show.blade.php" resources/views/job-cards/show.blade.php
+            cp -p "$BACKUP/form.blade.php" resources/views/job-cards/form.blade.php
+            cp -p "$BACKUP/edit.blade.php" resources/views/job-cards/edit.blade.php
+            cp -p "$BACKUP/AdminJobCardPageController.php" app/Http/Controllers/Web/AdminJobCardPageController.php
+            php artisan view:clear >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          php -l "$PKG/add_supervisor_columns.php"
+          php "$PKG/add_supervisor_columns.php" "$ROOT"
+          python3 "$PKG/apply.py" --apply "$ROOT" "$PKG/manifest.json"
+          php -l app/Http/Controllers/Web/AdminJobCardPageController.php
+          php artisan view:clear >/dev/null
+          php -r '
+            require "vendor/autoload.php";
+            $app=require "bootstrap/app.php";
+            $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $sc=Illuminate\Support\Facades\Schema::class;
+            foreach(["floor_supervisor_id","floor_supervisor_name"] as $field)
+              if(!$sc::hasColumn("job_cards",$field))exit(20);
+            $blade=app("blade.compiler");
+            foreach(["job-cards.show","job-cards.form","job-cards.edit"] as $view){
+              $path=resource_path("views/".str_replace(".","/",$view).".blade.php");
+              $source=file_get_contents($path);
+              $compiled=$blade->compileString($source);
+              if(trim($compiled)==="")exit(21);
+              try{token_get_all($compiled,TOKEN_PARSE);}
+              catch(ParseError $ex){echo "FIX53_BLADE_PARSE_FAILED ".$view." ".$ex->getMessage()."\n";exit(22);}
+              echo "FIX53_BLADE_PARSE_OK ".$view."\n";
+            }
+            $show=file_get_contents(resource_path("views/job-cards/show.blade.php"));
+            $form=file_get_contents(resource_path("views/job-cards/form.blade.php"));
+            $edit=file_get_contents(resource_path("views/job-cards/edit.blade.php"));
+            if(str_contains($show,"<h2 class=\"section-title\">Job Card Controls</h2>") ||
+               str_contains($show,"<h2 class=\"section-title\">Estimate History</h2>") ||
+               str_contains($show,"Edit OSL Purchases") ||
+               str_contains($show,"Vendor Database"))exit(23);
+            if(!str_contains($form,"name=\"floor_supervisor_id\"") ||
+               str_contains($form,"id=\"jcTechnician\"") ||
+               !str_contains($edit,"name=\"floor_supervisor_id\""))exit(24);
+            $inv=Illuminate\Support\Facades\DB::table("invoices")->where("id",23)->first();
+            if($inv && abs((float)$inv->grand_total-3500)>0.01)exit(25);
+            echo "FIX53_UI_SCHEMA_AND_INVOICE_SAFETY_PASS\n";
+          '
+          trap - ERR
+          echo "FIX53_STAGING_SOURCE_DEPLOY_SUCCESS BACKUP=$BACKUP"
+          REMOTE
+      - name: Cleanup key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
