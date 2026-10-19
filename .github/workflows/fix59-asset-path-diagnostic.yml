@@ -1,0 +1,66 @@
+name: FIX59 Static Asset Hosting Diagnostics
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/fix59-asset-path-diagnostic.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Inspect webroot link and public static asset serving
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh; chmod 700 ~/.ssh
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+            SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$PORT")
+          else
+            sudo apt-get update -qq;sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          echo "=== SITE PATHS ==="
+          ls -ld "$ROOT/public" "$ROOT/public/css/erp.css" "$ROOT/public/mobile-erp" \
+          "$HOME/domains/assammotors.com/public_html/staging" "$HOME/domains/assammotors.com/public_html/staging/erp" \
+          "$HOME/domains/assammotors.com/public_html/staging/css/erp.css" 2>/dev/null || true
+          echo "=== PUBLIC REALPATH ==="
+          readlink -f "$ROOT/public"
+          readlink -f "$HOME/domains/assammotors.com/public_html/staging/erp" 2>/dev/null || true
+          echo "=== PUBLIC ERP ROUTES ==="
+          cd "$ROOT"
+          php -r '
+          require "vendor/autoload.php";$app=require "bootstrap/app.php";
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          echo "APP_URL=".config("app.url")."\n";
+          echo "EXISTING_CSS=".asset("css/erp.css")."\n";
+          echo "MOBILE_CSS=".asset("mobile-erp/mobile-erp.css")."\n";
+          '
+          echo "=== STAGING DEPLOYED NAV ROOT LIST ==="
+          find "$HOME/domains/assammotors.com/public_html/staging" -maxdepth 2 -name erp.css -o -name index.php 2>/dev/null | head -18
+          REMOTE
+      - name: Public URLs GET status only
+        run: |
+          set -euo pipefail
+          for url in \
+          https://staging.assammotors.com/css/erp.css \
+          https://staging.assammotors.com/erp/css/erp.css \
+          https://staging.assammotors.com/mobile-erp/mobile-erp.css \
+          https://staging.assammotors.com/erp/mobile-erp/mobile-erp.css; do
+            result="$(curl -L -sS --max-time 15 -o /dev/null -w '%{http_code}' "$url" || true)"
+            echo "ASSET_URL $url HTTP=$result"
+          done
