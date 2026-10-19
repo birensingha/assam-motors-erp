@@ -33,6 +33,16 @@ jobs:
           cd "$HOME/domains/assammotors.com/assam-erp-staging"
           echo "=== PARTS STATE AND BUTTON MARKERS ==="
           grep -RInEi '(requisition|requested|mark.?fitted|fitted|parts.*issue|issue.*parts|part-stock-control|part-actions-visible)' resources/views/job-cards/{show.blade.php,part-actions-visible.blade.php,part-stock-control.blade.php} | head -125 || true
+          echo "=== PARTS CONTROLLER FULL ==="
+          sed -n '1,365p' app/Http/Controllers/Web/AdminJobCardPartIssueController.php
+          echo "=== JC DIRECT PART ADD ACTION 740-825 ==="
+          sed -n '728,840p' app/Http/Controllers/Web/AdminJobCardPageController.php
+          echo "=== ESTIMATE RELEASE SOURCE DETAILS ==="
+          grep -nE 'function sendToJob|sendToJob|converted_to_job|job_card_parts|part_master_id|stock_movements' app/Http/Controllers/Web/AdminEstimatePageController.php | head -100 || true
+          echo "=== JC BILLING EDIT RESTRICTIONS ==="
+          sed -n '70,270p' app/Http/Controllers/Web/AdminWorkshopControlPageController.php
+          echo "=== PART-LINE EDIT GUARDS ==="
+          sed -n '460,560p' app/Http/Controllers/Web/AdminJobCardPageController.php
           echo "=== PART CONTROL VIEW SAMPLES ==="
           sed -n '1,210p' resources/views/job-cards/part-stock-control.blade.php
           sed -n '1,155p' resources/views/job-cards/part-actions-visible.blade.php
