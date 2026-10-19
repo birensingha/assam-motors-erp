@@ -1,0 +1,56 @@
+name: Audit Parts Fitted Simplification Staging
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/audit-parts-simple-stage-staging.yml"]
+permissions: {contents: read}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Set up SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh; chmod 700 ~/.ssh
+          if [ -n "$KEY" ]; then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          else sudo apt-get update -qq; sudo apt-get install -y -qq sshpass; fi
+      - name: Read parts screens and routes without changing anything
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -i ~/.ssh/id_ed25519 -p "$PORT")
+          else export SSHPASS="$PASSWORD"; SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT"); fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          echo "=== PARTS STATE AND BUTTON MARKERS ==="
+          grep -RInEi '(requisition|requested|mark.?fitted|fitted|parts.*issue|issue.*parts|part-stock-control|part-actions-visible)' resources/views/job-cards/{show.blade.php,part-actions-visible.blade.php,part-stock-control.blade.php} | head -125 || true
+          echo "=== PART CONTROL VIEW SAMPLES ==="
+          sed -n '1,210p' resources/views/job-cards/part-stock-control.blade.php
+          sed -n '1,155p' resources/views/job-cards/part-actions-visible.blade.php
+          echo "=== JOB CARD SHOW INCLUDE MARKERS ==="
+          grep -nE '(part-actions-visible|part-stock-control|Request Parts|Issue Parts|Mark Fitted|Parts Requisition|Parts Issue)' resources/views/job-cards/show.blade.php | head -90 || true
+          echo "=== ROUTES FOR PARTS ==="
+          grep -nEi '(requisition|parts.*issue|issue.*parts|part.*fitted|fitted)' routes/web.php | head -120 || true
+          echo "=== PART HANDLER DEFINITIONS ==="
+          grep -RInE 'function (requisition|requestPart|issuePart|fitPart|markFitted|.*Fitted|.*Issued)' app/Http/Controllers/Web | head -80 || true
+          echo "=== SCHEMA FOR STOCK SAFETY ==="
+          php -r '
+           require "vendor/autoload.php";
+           $app=require "bootstrap/app.php";$app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+           $s=Illuminate\Support\Facades\Schema::class;
+           foreach(["job_card_parts","part_requisitions","parts_requisitions","part_stock_movements","stock_movements"] as $t)
+             if($s::hasTable($t))echo $t." ".implode(",",$s::getColumnListing($t))."\n";
+          '
+          REMOTE
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
