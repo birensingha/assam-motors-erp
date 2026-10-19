@@ -1,0 +1,82 @@
+name: Reconcile unpaid staging Invoice23 FIX49 (audited)
+on:
+  push:
+    branches: [main]
+    paths: [".github/workflows/reconcile-fix49-invoice23-staging.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  repair_one_invoice:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh; chmod 700 ~/.ssh
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Dry-run then transaction-correct exactly invoice 23
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -p "$PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" "mkdir -p ~/FIX49_GST_RECONCILIATION"
+          "${SCP[@]}" deployment/live-fixes/FIX49_GST_RECONCILIATION/RECONCILE_ISSUED_INVOICE23.php "$REMOTE:~/FIX49_GST_RECONCILIATION/"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          SCRIPT="$HOME/FIX49_GST_RECONCILIATION/RECONCILE_ISSUED_INVOICE23.php"
+          cd "$ROOT"
+          test -f artisan
+          php -l "$SCRIPT"
+          grep -q 'FIX49_GST_RECONCILIATION' app/Http/Controllers/Web/AdminJobCardPageController.php
+          grep -q 'FIX49_GST_RECONCILIATION' app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php
+          php "$SCRIPT" --check "$ROOT"
+          export FIX49_APPROVE_INVOICE23=APPROVED_STAGING_INVOICE23
+          php "$SCRIPT" --apply "$ROOT"
+          unset FIX49_APPROVE_INVOICE23
+          php -r '
+          require "vendor/autoload.php";
+          $app=require "bootstrap/app.php";
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=Illuminate\Support\Facades\DB::class;
+          $inv=$db::table("invoices")->where("id",23)->first();
+          $job=$db::table("job_cards")->where("id",39)->first();
+          $rows=$db::table("customer_ledger")->where("invoice_id",23)->get();
+          $audit=$db::table("job_card_change_audits")->where("job_card_id",39)->where("action","INVOICE_GST_RECONCILE_FIX49")->count();
+          if(!$inv||!$job||$rows->count()!==1||$audit!==1
+             ||abs((float)$inv->grand_total-3841.00)>0.01
+             ||abs((float)$inv->gst_total-585.84)>0.01
+             ||abs((float)$job->grand_total-3841.00)>0.01
+             ||abs((float)$rows->first()->debit-3841.00)>0.01)exit(6);
+          echo "FINAL_VERIFIED_INVOICE=INV-2026-00023 GRAND=3841.00 GST=585.84 LEDGER_DEBIT=3841.00 AUDIT=1\n";
+          '
+          REMOTE_SCRIPT
+      - name: Cleanup SSH
+        if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519
