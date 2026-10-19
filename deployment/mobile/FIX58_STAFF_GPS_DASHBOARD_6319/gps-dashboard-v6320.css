@@ -1,0 +1,56 @@
+/* ASSAM_MOTORS_APP_GPS_DASHBOARD_V6320
+   UI-only overlay for the original signed Staff App WebView.
+   CSS is scoped to the mobile Owner GPS page, not desktop ERP or Staff GPS service.
+*/
+#amGps6320{display:none}
+@media(max-width:780px){
+body.owner-mode #view-owner-locations.am-gps6320-active>:not(#amGps6320){display:none!important}
+body.owner-mode #view-owner-locations.am-gps6320-active #amGps6320{display:block!important}
+#amGps6320{font-family:Arial,system-ui,sans-serif;color:#142f53;padding:0 0 18px}
+#amGps6320 *,#amGps6320 *::before,#amGps6320 *::after{box-sizing:border-box}
+#amGps6320 .amg-head{background:linear-gradient(112deg,#113763,#1479cb);color:white;padding:17px 13px;border-radius:0 0 15px 15px;display:flex;justify-content:space-between;gap:9px;align-items:center}
+#amGps6320 .amg-heading{font-size:18px;font-weight:800;line-height:1.3}
+#amGps6320 .amg-sub{font-size:9px;font-weight:700;letter-spacing:.35px;color:#d1eaff}
+#amGps6320 .amg-clock{font-size:10px;text-align:right;min-width:92px;color:#eff7ff}
+#amGps6320 .amg-badge{display:inline-flex;gap:5px;align-items:center;border-radius:20px;background:#dbf8e9;color:#07804c;font-size:10px;font-weight:800;padding:5px 8px;white-space:nowrap}
+#amGps6320 .amg-badge.weak{background:#fff1d7;color:#91600d}
+#amGps6320 .amg-badge.stale{background:#e8edf4;color:#536c8b}
+#amGps6320 .amg-badge::before{content:"";display:block;width:7px;height:7px;border-radius:50%;background:currentColor}
+#amGps6320 .amg-kpis{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;padding:9px 1px}
+#amGps6320 .amg-kpi{background:#fff;border:1px solid #dce7f3;box-shadow:0 2px 8px #183d6812;border-radius:10px;min-height:79px;padding:9px 8px}
+#amGps6320 .amg-kpi label{font-size:10px;line-height:1.2;color:#456989;display:block;margin-bottom:5px}
+#amGps6320 .amg-kpi strong{display:block;font-size:20px;font-weight:850;color:#193962}
+#amGps6320 .amg-card{background:white;border:1px solid #d5e2ee;border-radius:13px;margin:6px 0;padding:11px;box-shadow:0 2px 10px #183d6810}
+#amGps6320 .amg-person{display:flex;align-items:center;gap:10px}
+#amGps6320 .amg-avatar{display:grid;place-items:center;background:#d9eafa;color:#2062a5;width:40px;height:40px;border-radius:50%;font-weight:850;font-size:15px;flex-shrink:0}
+#amGps6320 .amg-person-content{min-width:0;flex:1}
+#amGps6320 .amg-person-content strong{display:block;font-size:13px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+#amGps6320 .amg-person-content small{font-size:10px;color:#69809c;display:block;margin-top:4px}
+#amGps6320 .amg-map-shell{padding:0;overflow:hidden}
+#amGps6320 .amg-map-toolbar{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:5px;padding:7px;background:#eef5fc}
+#amGps6320 button,#amGps6320 select,#amGps6320 input{font:inherit}
+#amGps6320 .amg-map-toolbar button{font-size:10px;padding:8px 2px;border-radius:7px;border:1px solid #d0deeb;color:#1e538a;background:white;min-width:0;font-weight:700;white-space:nowrap}
+#amGps6320 .amg-map-toolbar button.amg-primary{background:#1268b9;color:white;border-color:#1268b9}
+#amGps6320 button:disabled{opacity:.5}
+#amGps6320 .amg-map-frame{width:100%;height:clamp(290px,45vh,520px);background:#e7eef4;position:relative}
+#amGps6320 .amg-map-frame iframe{height:100%;width:100%;border:0}
+#amGps6320 .amg-map-empty{display:grid;place-content:center;height:100%;padding:25px;color:#567590;text-align:center;font-size:12px}
+#amGps6320 .amg-map-note{font-size:10px;color:#637e99;padding:7px 11px;line-height:1.5}
+#amGps6320 .amg-section-title{display:flex;align-items:center;justify-content:space-between;gap:7px;margin-bottom:8px}
+#amGps6320 .amg-section-title strong{font-size:13px}
+#amGps6320 .amg-section-title small{font-size:10px;color:#758da3}
+#amGps6320 .amg-search{width:100%;border:1px solid #cfdeeb;border-radius:9px;padding:11px;min-height:42px;font-size:12px;margin-bottom:8px}
+#amGps6320 .amg-filters{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+#amGps6320 .amg-filters select{width:100%;border:1px solid #cfdeeb;background:white;border-radius:8px;padding:9px;font-size:11px}
+#amGps6320 .amg-staff-list{margin-top:8px;max-height:300px;overflow:auto;border-radius:10px;border:1px solid #e0ebf4}
+#amGps6320 .amg-staff{background:white;width:100%;border:0;border-bottom:1px solid #e0ebf4;display:flex;align-items:center;text-align:left;gap:9px;padding:10px 8px;color:#17375b}
+#amGps6320 .amg-staff[aria-selected="true"]{background:#e5f2ff}
+#amGps6320 .amg-staff .amg-person-content small{margin-top:2px}
+#amGps6320 .amg-empty{padding:18px;text-align:center;color:#627c93;font-size:12px}
+#amGps6320 .amg-detail .amg-detail-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:11px}
+#amGps6320 .amg-datum{background:#f4f8fc;border-radius:9px;padding:10px}
+#amGps6320 .amg-datum small{font-size:10px;color:#637d98;display:block}
+#amGps6320 .amg-datum strong{font-size:12px;display:block;margin-top:5px}
+#amGps6320 .amg-clear{background:transparent;border:0;color:#1466b3;font-size:11px;font-weight:750}
+#amGps6320 .amg-error{padding:9px;border-radius:8px;background:#fff0e6;color:#974e17;margin:8px 0;font-size:11px}
+}
