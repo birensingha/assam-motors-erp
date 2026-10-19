@@ -1,0 +1,94 @@
+name: Read-only Ratna versus All Staff GPS Uploads October 19
+on:
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/diag-ratna-vs-all-staff-gps-20261019.yml"]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Check staging SSH and protected GPS route
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/am-gps-diag
+            chmod 600 ~/.ssh/am-gps-diag
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -i ~/.ssh/am-gps-diag -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          test -f "$ROOT/artisan" && test -f "$SITE/latest.json"
+          cd "$ROOT"
+          echo '=== Ratna versus 4 other staff - GPS freshness, no coordinates ==='
+          TZ=Asia/Kolkata date '+SERVER_IST_NOW=%Y-%m-%d %H:%M:%S %z'
+          php -r '$m=json_decode(file_get_contents(getenv("HOME")."/domains/assammotors.com/public_html/staging/staff-app/latest.json"),true); echo "LATEST_ANDROID_UPDATE_VERSION=".($m["version_name"]??"unknown").PHP_EOL;'
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::class;
+          $settings=$db::table('staff_location_settings')->where('id',1)->first();
+          echo 'GPS_REPORTING_THRESHOLD_M='.($settings->max_accuracy_m??'missing').PHP_EOL;
+          echo 'GPS_CHECKIN_THRESHOLD_M='.($settings->checkin_max_accuracy_m??'missing').PHP_EOL;
+          $now=\Carbon\CarbonImmutable::now('Asia/Kolkata');
+          foreach(['AM8435','AM5077','AM7887','AM9472','AM4985'] as $code){
+            $staff=$db::table('staff')->where('staff_code',$code)->first();
+            if(!$staff){echo "CHECK_STAFF_CODE=$code NOT_IN_MASTER\n";continue;}
+            echo "CHECK_STAFF_CODE=$code\n";
+            $last=$db::table('staff_location_logs')->where('staff_id',$staff->id)->orderByDesc('received_at')->orderByDesc('id')->limit(32)->get(['id','recorded_at','received_at','accuracy_m','quality','provider','source','app_version']);
+            echo 'SAMPLE_COUNT='.count($last).PHP_EOL;
+            $latest=$last->first();
+            if($latest){$lrec=\Carbon\CarbonImmutable::parse((string)$latest->received_at,'Asia/Kolkata');$lf=\Carbon\CarbonImmutable::parse((string)$latest->recorded_at,'Asia/Kolkata');echo 'LATEST_UPLOAD_IST='.$lrec->format('Y-m-d H:i:s').' LATEST_FIX_IST='.$lf->format('Y-m-d H:i:s').' UPLOAD_AGE_SECONDS='.(int)abs($now->diffInSeconds($lrec,false)).' FIX_AGE_SECONDS='.(int)abs($now->diffInSeconds($lf,false)).' CURRENT_APP='.(string)$latest->app_version.PHP_EOL;}
+            $prev=null;
+            foreach($last as $l){
+              $received=\Carbon\CarbonImmutable::parse((string)$l->received_at,'Asia/Kolkata');
+              $recorded=\Carbon\CarbonImmutable::parse((string)$l->recorded_at,'Asia/Kolkata');
+              $age=(int)abs($now->diffInSeconds($recorded,false));
+              $serverAge=(int)abs($now->diffInSeconds($received,false));
+              $gap=$prev===null?0:(int)abs($received->diffInSeconds($prev,false));
+              echo 'SAMPLE recv_ist='.$received->format('H:i:s'). ' date='.$received->format('Y-m-d').
+                 ' rec_age_s='.$age.' recv_age_s='.$serverAge.' gap_s='.$gap.
+                 ' app='.(string)$l->app_version.
+                 ' accuracy_m='.(string)$l->accuracy_m.
+                 ' stored_quality='.(string)$l->quality.
+                 ' provider='.(string)$l->provider.
+                 ' source='.(string)$l->source.PHP_EOL;
+              $prev=$received;
+            }
+          }
+          echo 'RATNA_ALL_STAFF_LOCATION_READ_ONLY_DIAGNOSTIC=PASS'.PHP_EOL;
+          PHP
+          REMOTE
+      - name: Check unauthenticated GPS API protections
+        run: |
+          set -euo pipefail
+          for path in /api/v1/staff/location /api/v1/admin/mobile/staff-locations; do
+            status="$(curl --silent --show-error --max-time 20 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path" || true)"
+            echo "PATH=$path HTTP=$status (unauthenticated; GET-only)"
+          done
+      - if: always()
+        run: rm -f ~/.ssh/am-gps-diag
