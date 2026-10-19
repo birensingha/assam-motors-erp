@@ -24,6 +24,8 @@ jobs:
           grep -n "function " app/Services/RotWorkflowService.php
           echo "=== ROT WORKFLOW 1-325 ==="
           sed -n '1,325p' app/Services/RotWorkflowService.php
+          echo "=== ROT CONCURRENCY AND CHECK IN GUARDS ==="
+          sed -n '385,459p' app/Services/RotWorkflowService.php
           echo "=== REVERSAL UI HEAD ==="
           sed -n '1,120p' resources/views/job-cards/unwind.blade.php
           echo "=== REOPEN CLOSED ==="
