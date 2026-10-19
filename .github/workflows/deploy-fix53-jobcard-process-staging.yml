@@ -1,4 +1,5 @@
 name: FIX53 Job Card Process Stage1 - Staging
+# Retry: preserve legacy template bytes with surrogateescape
 on:
   push:
     branches: [main]
