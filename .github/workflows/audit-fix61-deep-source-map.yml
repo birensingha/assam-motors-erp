@@ -56,6 +56,18 @@ jobs:
              chunk('app/Http/Controllers/Web/'+f.name,i+1,i+110)
           chunk('app/Http/Controllers/Web/JobCardRotAlterationController.php',143,263)
           chunk('resources/views/job-cards/rot-alteration.blade.php',123,164)
+          controller=(root/'app/Http/Controllers/Web/JobCardRotAlterationController.php').read_text()
+          view=(root/'resources/views/job-cards/rot-alteration.blade.php').read_text()
+          for name,src,term in [
+            ('PHP_ADMIN_NOTE',controller,"'admin_note'=>['required','string','min:3','max:1000']"),
+            ('PHP_BEFORE',controller,'$before=(array)$line;'),
+            ('PHP_HOURS',controller,"$hours=round((float)$data['standard_hours'],3);"),
+            ('PHP_RATE',controller,"$rate=round((float)$data['labour_rate'],2);"),
+            ('PHP_DISC',controller,"$discount=round((float)$data['discount_percent'],2);"),
+            ('BLADE_OTHER',view,'<option>Other</option>'),
+            ('BLADE_JS_UNLOCK',view,'fields.forEach(el=>{el.disabled=false;});'),
+          ]:print('FIX61A_ANCHOR',name,src.count(term))
+          print('FIX61A_VIEW_OTHER_INDENT',repr(view.splitlines()[114:121]))
           print('FIX61_TARGET_MAP_PASS_NO_WRITES')
           PY
       - name: Cleanup
