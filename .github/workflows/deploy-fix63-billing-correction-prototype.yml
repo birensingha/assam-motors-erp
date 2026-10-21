@@ -1,0 +1,108 @@
+name: FIX63 Prototype Billing Correction STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-fix63-billing-correction-prototype.yml'
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - name: Source, modal and finance block QA (offline)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/FIX63_BILLING_CORRECTION_PROTOTYPE/deploy.py
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          view=Path('deployment/live-fixes/FIX63_BILLING_CORRECTION_PROTOTYPE/credit-correction.blade.php').read_text()
+          js=re.findall(r'<script id="AM63_RETURN_MODAL">(.*?)</script>',view,re.DOTALL)
+          assert len(js)==1
+          assert view.count("route('erp.job-cards.return-to-jc.unpaid'")==1
+          assert "@if($am63CanReturn)" in view and "FINANCE HOLD" in view
+          assert "name=\"confirmed_finance\"" in view and 'name="credit_date"' in view
+          assert 'id="am63-return-modal"' in view and 'Credit Note & Correction History' in view
+          assert 'Labour / ROT Correction' in view
+          Path('/tmp/fix63-modal.js').write_text(js[0])
+          print('FIX63_SOURCE_FINANCE_QA_PASS')
+          PY
+          node --check /tmp/fix63-modal.js
+          npm install --no-save --ignore-scripts --no-audit --no-fund jsdom@26
+          node deployment/live-fixes/FIX63_BILLING_CORRECTION_PROTOTYPE/modal-test.mjs /tmp/fix63-modal.js
+      - name: Configure staging SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          for attempt in 1 2;do
+            if ssh-keyscan -T 20 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Guarded STAGING view only deploy with backup and rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT")
+            SCP=(sshpass -e scp -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          PKG=deployment/live-fixes/FIX63_BILLING_CORRECTION_PROTOTYPE
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX63_BILLING_CORRECTION_PROTOTYPE"'
+          "${SCP[@]}" "$PKG/deploy.py" "$PKG/credit-correction.blade.php" "$REMOTE:~/FIX63_BILLING_CORRECTION_PROTOTYPE/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"
+          PKG="$HOME/FIX63_BILLING_CORRECTION_PROTOTYPE"
+          cd "$APP"
+          test -f artisan && test -d vendor
+          python3 "$PKG/deploy.py" check "$APP"
+          STAMP="$(date +%Y%m%d_%H%M%S)"
+          BACKUP="storage/app/FIX63_BILLING_UI_BACKUP_$STAMP"
+          mkdir -p "$BACKUP"
+          cp -p resources/views/job-cards/credit-correction.blade.php "$BACKUP/credit-correction.blade.php"
+          rollback(){
+            echo 'FIX63_ROLLBACK_STAGING_BILLING_UI'
+            cp -p "$BACKUP/credit-correction.blade.php" resources/views/job-cards/credit-correction.blade.php
+            php artisan view:clear >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          python3 "$PKG/deploy.py" apply "$APP"
+          php artisan view:clear
+          php artisan view:cache
+          grep -q 'AM63_BILLING_PROTOTYPE_V1' resources/views/job-cards/credit-correction.blade.php
+          for path in /erp/login /staff/login;do
+            code="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")"
+            echo "FIX63_HEALTH_$path=$code"
+            test "$code" = 200
+          done
+          trap - ERR
+          echo "FIX63_BILLING_CORRECTION_STAGING_DEPLOY_OK BACKUP=$BACKUP NO_RECORD_WRITES"
+          REMOTE
+      - name: Clean up SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519 /tmp/fix63-modal.js
