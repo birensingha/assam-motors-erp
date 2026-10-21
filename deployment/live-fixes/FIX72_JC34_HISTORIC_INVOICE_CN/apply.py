@@ -44,7 +44,7 @@ newGuard="""            // FIX72_JC34_ORIGINAL_INVOICE_AMOUNT_ONLY:
             // Permit only THIS verified STAGING test invoice, NEVER blanket-bypass GST.
             $am72Mismatch=abs($expected['grand_total']-(float)$inv->grand_total)>0.02 ||
                           abs($expected['gst_total']-(float)$inv->gst_total)>0.02;
-            $am72Cents=static fn($value):(int)=>(int)round((float)$value*100);
+            $am72Cents=static fn($value): int => (int)round((float)$value*100);
             $am72HistoricException=$am72Mismatch
                 && $job===34 && $invoice===20
                 && (string)$card->job_no==='JC-20261014-00034'
@@ -64,7 +64,7 @@ newGuard="""            // FIX72_JC34_ORIGINAL_INVOICE_AMOUNT_ONLY:
                 && $am72Cents($expected['labour_total'])===45000
                 && $am72Cents($expected['gst_total'])===23940
                 && $am72Cents($expected['grand_total'])===156900
-                && preg_match('/\\\\b(?:gst|tax)\\\\b/i',(string)$data['reason'])===1;
+                && preg_match('/\\b(?:gst|tax)\\b/i',(string)$data['reason'])===1;
             if($am72Mismatch && !$am72HistoricException)
                 throw ValidationException::withMessages(['invoice'=>'Invoice and Job Card lines differ. Finance reconciliation required before credit note. Historical JC-34 exception requires unchanged invoice values and reason mentioning GST or TAX.']);"""
 code=exactly(code,oldGuard,newGuard,'scoped_gst_gate')
