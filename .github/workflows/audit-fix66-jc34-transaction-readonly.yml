@@ -1,0 +1,69 @@
+name: FIX66 JC34 Execution Readonly Deep Preflight
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/audit-fix66-jc34-transaction-readonly.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for x in 1 2;do
+            if ssh-keyscan -T 18 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then break; fi
+            sleep 4
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -y -qq sshpass;fi
+      - name: Read only current controller, auth and GST computation safeguards
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT");fi
+          "${SSH[@]}" "$USERNAME@$HOST" "python3 - '$ROOT'" <<'PY'
+          from pathlib import Path
+          import re,sys,hashlib
+          root=Path(sys.argv[1]);assert (root/'artisan').is_file()
+          for rel in [
+           'app/Http/Controllers/Web/AdminReturnToJobCardController.php',
+           'app/Http/Controllers/Web/AdminInvoiceCreditNoteController.php',
+           'app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php',
+           'app/Models/ErpAuthUser.php',
+           'app/Services/JobCardTaxTotals.php',
+          ]:
+           p=root/rel
+           if not p.is_file():print('FIX66_MISSING',rel);continue
+           s=p.read_text(errors='replace');lines=s.splitlines()
+           print('FIX66_FILE',rel,'COUNT',len(lines),'SHA',hashlib.sha256(p.read_bytes()).hexdigest())
+           if rel.endswith('AdminJobCardLifecyclePageController.php'):
+            hits=[i for i,l in enumerate(lines) if re.search(r'function\s+reopenClosed\s*\(',l)]
+            for a in hits:
+             print('FIX66_REOPEN_METHOD_LINE',a+1)
+             for i in range(a,min(a+94,len(lines))):print('FIX66_CODE',rel,i+1,lines[i][:260])
+           elif rel.endswith('ErpAuthUser.php'):
+            for i,l in enumerate(lines):
+             if re.search(r'function\s+(isAdmin|getAuthIdentifier|scope|find)',l,re.I):
+              for j in range(i,min(i+14,len(lines))):print('FIX66_CODE',rel,j+1,lines[j][:260])
+           else:
+            for i,l in enumerate(lines):
+             if re.search(r'password|secret|token|API_KEY|DB_',l,re.I):continue
+             print('FIX66_CODE',rel,i+1,l[:260])
+          print('FIX66_SOURCE_READONLY_COMPLETE')
+          PY
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
