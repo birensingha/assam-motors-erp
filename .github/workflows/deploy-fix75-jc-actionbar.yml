@@ -77,7 +77,7 @@ jobs:
           php artisan view:cache
           python3 - <<'PY'
           from pathlib import Path
-          s=Path('resources/views/job-cards/show.blade.php').read_text()
+          s=Path('resources/views/job-cards/show.blade.php').read_bytes().decode('utf-8', errors='surrogateescape')
           hdr=s.index("<nav class=\"am75-quick-actions\"")
           end=s.index("</nav>",hdr)
           bar=s[hdr:end]
