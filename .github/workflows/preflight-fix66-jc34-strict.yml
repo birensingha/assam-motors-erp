@@ -43,7 +43,7 @@ jobs:
           REMOTE="$USERNAME@$HOST"
           "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX66_JC34_AUTHORIZED_UAT"'
           "${SCP[@]}" deployment/live-fixes/FIX66_JC34_AUTHORIZED_UAT/preflight.php "$REMOTE:~/FIX66_JC34_AUTHORIZED_UAT/"
-          "${SSH[@]}" "$REMOTE" "php '$HOME/FIX66_JC34_AUTHORIZED_UAT/preflight.php' '$ROOT'"
+          "${SSH[@]}" "$REMOTE" "cd ~ && php FIX66_JC34_AUTHORIZED_UAT/preflight.php '$ROOT'"
       - name: Remove SSH key
         if: always()
         run: rm -f ~/.ssh/id_ed25519
