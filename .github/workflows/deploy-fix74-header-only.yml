@@ -1,0 +1,75 @@
+name: FIX74 Clean Blue ERP Topbar UI Only
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/deploy-fix74-header-only.yml']
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check
+        run: python3 -m py_compile deployment/live-fixes/FIX74_INVOICE_HISTORY_TOPBAR/apply.py
+      - name: Connect securely
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for i in 1 2;do
+            if ssh-keyscan -T 18 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Replace shared header with backup
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT");SCP=(sshpass -e scp -P "$PORT");fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX74_INVOICE_HISTORY_TOPBAR"'
+          "${SCP[@]}" deployment/live-fixes/FIX74_INVOICE_HISTORY_TOPBAR/apply.py "$REMOTE:~/FIX74_INVOICE_HISTORY_TOPBAR/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"; cd "$APP"
+          TOOL="$HOME/FIX74_INVOICE_HISTORY_TOPBAR/apply.py"
+          python3 "$TOOL" check "$APP"
+          BACKUP="storage/app/FIX74_HEADER_BACKUP_$(date +%Y%m%d_%H%M%S)"
+          mkdir -p "$BACKUP"
+          cp -p resources/views/layouts/erp.blade.php "$BACKUP/erp.blade.php"
+          rollback(){
+            cp -p "$BACKUP/erp.blade.php" resources/views/layouts/erp.blade.php
+            php artisan view:clear >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          python3 "$TOOL" apply "$APP"
+          php artisan view:clear
+          php artisan view:cache
+          grep -Fq 'FIX74_CLEAN_BLUE_ERP_TOPBAR' resources/views/layouts/erp.blade.php
+          if grep -Fq 'class="am50-top-shortcuts"' resources/views/layouts/erp.blade.php;then exit 7;fi
+          for path in /erp/login /staff/login;do
+            code="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")"
+            echo "FIX74_HEADER_HEALTH_$path=$code"
+            test "$code" = 200
+          done
+          trap - ERR
+          echo "FIX74_BLUE_HEADER_STAGING_SUCCESS BACKUP=$BACKUP"
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
