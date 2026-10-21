@@ -1,0 +1,128 @@
+name: FIX76 SAC/HSN Labour ROT Master STAGING
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/deploy-fix76-rot-sac.yml']
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch syntax + migration checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          P=deployment/live-fixes/FIX76_ROT_SAC_MASTER
+          python3 -m py_compile "$P/patch.py" "$P/patch_legacy.py"
+          php -l "$P/backfill.php"
+          php -l "$P/2026_10_21_203000_add_sac_code_to_labour_master.php"
+      - name: Configure STAGING SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          for n in 1 2;do
+            if ssh-keyscan -T 18 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Exact-source preflight, legacy popup/API, native master and all 205 SAC rows
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT");SCP=(sshpass -e scp -P "$PORT");fi
+          REMOTE="$USERNAME@$HOST"
+          P=deployment/live-fixes/FIX76_ROT_SAC_MASTER
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX76_ROT_SAC_MASTER"'
+          "${SCP[@]}" "$P/patch.py" "$P/patch_legacy.py" "$P/backfill.php" "$P/2026_10_21_203000_add_sac_code_to_labour_master.php" "$REMOTE:~/FIX76_ROT_SAC_MASTER/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1";PKG="$HOME/FIX76_ROT_SAC_MASTER";cd "$APP"
+          test -f artisan && test -d vendor
+          # No mutation until both separate source packages validate.
+          python3 "$PKG/patch.py" check "$APP"
+          python3 "$PKG/patch_legacy.py" check "$APP"
+          STAMP="$(date +%Y%m%d_%H%M%S)"
+          BACKUP="storage/app/FIX76_ROT_SAC_MASTER_BACKUP_$STAMP"
+          mkdir -p "$BACKUP"
+          chmod 700 "$BACKUP"
+          cp -p resources/views/admin/native/labour.blade.php "$BACKUP/native-labour.blade.php"
+          cp -p app/Http/Controllers/Web/AdminNativeModuleController.php "$BACKUP/AdminNativeModuleController.php"
+          cp -p public/legacy/workshop/labour-master.html "$BACKUP/labour-master.html"
+          cp -p public/legacy/api/labour-crud.php "$BACKUP/labour-crud.php"
+          rollback(){
+            echo "FIX76_UI_API_ROLLBACK"
+            cp -p "$BACKUP/native-labour.blade.php" resources/views/admin/native/labour.blade.php
+            cp -p "$BACKUP/AdminNativeModuleController.php" app/Http/Controllers/Web/AdminNativeModuleController.php
+            cp -p "$BACKUP/labour-master.html" public/legacy/workshop/labour-master.html
+            cp -p "$BACKUP/labour-crud.php" public/legacy/api/labour-crud.php
+            php artisan view:clear >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          php -r '
+          require "vendor/autoload.php";$app=require "bootstrap/app.php";
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::class;
+          $schema=\Illuminate\Support\Facades\Schema::class;
+          if($db::table("labour_master")->count()!==205 ||
+             $schema::hasColumn("labour_master","sac_code")){
+              throw new \RuntimeException("FIX76 master changed, manual review");
+          }
+          echo "FIX76_PREMIGRATION_205_ROWS_NO_SAC_PASS\n";'
+          MIG="database/migrations/2026_10_21_203000_add_sac_code_to_labour_master.php"
+          if [ -f "$MIG" ];then
+            cmp "$MIG" "$PKG/2026_10_21_203000_add_sac_code_to_labour_master.php"
+          else
+            cp "$PKG/2026_10_21_203000_add_sac_code_to_labour_master.php" "$MIG"
+          fi
+          php artisan migrate --path="$MIG" --force --no-interaction
+          python3 "$PKG/patch.py" apply "$APP"
+          python3 "$PKG/patch_legacy.py" apply "$APP"
+          php -l app/Http/Controllers/Web/AdminNativeModuleController.php
+          php -l public/legacy/api/labour-crud.php
+          php artisan view:clear
+          php artisan view:cache
+          grep -q 'FIX76_SAC_MODAL_API' public/legacy/workshop/labour-master.html
+          grep -q 'lfSacCode' public/legacy/workshop/labour-master.html
+          grep -q "sac_code" public/legacy/api/labour-crud.php
+          grep -q 'FIX76_ROT_SAC_EDITABLE_MASTER' resources/views/admin/native/labour.blade.php
+          php "$PKG/backfill.php" "$APP" "$BACKUP/labour-master-before-sac.json"
+          php -r '
+          require "vendor/autoload.php";$app=require "bootstrap/app.php";
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::class;
+          $total=$db::table("labour_master")->count();
+          $matching=$db::table("labour_master")->where("sac_code","998714")->count();
+          if($total!==205||$matching!==205)throw new \RuntimeException("FIX76 SAC mismatch");
+          $rows=$db::table("labour_master")->orderBy("rot_code")->get();
+          $page=view("admin.native.labour",["rows"=>$rows,"q"=>""])->render();
+          foreach(["SAC / HSN","998714","name=\"sac_code\""] as $tag)
+            if(!str_contains($page,$tag))throw new \RuntimeException("FIX76 native form rendering missing ".$tag);
+          echo "FIX76_STAGING_205_SAC_NATIVE_RENDER_PASS\n";'
+          for url in /erp/login /staff/login;do
+            code="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$url")"
+            echo "FIX76_HEALTH_$url=$code";test "$code" = 200
+          done
+          trap - ERR
+          echo "FIX76_ROT_SAC_STAGING_SUCCESS BACKUP=$BACKUP EXISTING_FINANCIAL_RECORDS_UNMODIFIED"
+          REMOTE
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
