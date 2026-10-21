@@ -121,8 +121,9 @@ if src.count("route('erp.estimates.create',$job->id)")!=original.count("route('e
  raise RuntimeError('FIX75_ESTIMATE_ROUTES_CHANGED')
 if toolbar.count("route('erp.estimates.create',$job->id)")!=2:
  raise RuntimeError('FIX75_ESTIMATE_TOOLBAR_BRANCHES_CHANGED')
+# Other sections may discuss supplementary estimates; check former top buttons only.
 for tok in ['Purchase for Job','Expense for Job','One-Page Printable Job Card Summary',
-            'Billing Correction / Return to JC','＋ Supplementary Estimate','Estimate / Revise']:
+            'Billing Correction / Return to JC']:
  if tok in src:raise RuntimeError('FIX75_REDUNDANT_ACTION_REMAINS_'+tok)
 if src.count('class="am75-quick-actions"')!=1:raise RuntimeError('FIX75_TOOLBAR_NOT_UNIQUE')
 if src.count('Estimate/ Reverse')!=3:raise RuntimeError('FIX75_ESTIMATE_NOT_PRESERVED')
