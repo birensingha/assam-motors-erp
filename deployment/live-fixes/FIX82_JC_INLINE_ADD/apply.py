@@ -316,7 +316,7 @@ for token in ['class="jc-direct-entry"','Direct Job Card Entry',
  if token in s:raise SystemExit('FIX82_SEPARATE_PANEL_STILL_PRESENT_'+token)
 if s.count('FIX82_JC_SINGLE_ENTRY_PANEL')<4 or c.count('FIX82_JC_SINGLE_ENTRY_PANEL')!=1:
  raise SystemExit('FIX82_MARKER_INCOMPLETE')
-if s.count('name="part_master_id"')!=1 or s.count('name="labour_master_id"')!=1:
+if s.count('<select name="part_master_id" required>')!=1 or s.count('<select id="am82-rot-select" name="labour_master_id" required>')!=1:
  raise SystemExit('FIX82_DUPLICATE_PART_LABOUR_FORM')
 if s.count('am82-finance-form')<3:
  raise SystemExit('FIX82_INLINE_EDIT_FORM_MISSING')
