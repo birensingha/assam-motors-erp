@@ -4,6 +4,8 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/deploy-fix65-customer-labour-panel.yml'
+      - 'deployment/live-fixes/FIX65_CUSTOMER_LABOUR_PANEL/deploy.py'
+      - 'deployment/live-fixes/FIX65_CUSTOMER_LABOUR_PANEL/customer-labour.blade.php'
 permissions: {contents: read}
 concurrency:
   group: assam-motors-staging-control
