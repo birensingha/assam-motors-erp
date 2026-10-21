@@ -1,0 +1,148 @@
+name: FIX72 JC34 Historic GST Original Invoice CN - STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-fix72-jc34-original-cn.yml'
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Scope and syntax check offline
+        shell: bash
+        run: |
+          set -euo pipefail
+          SCRIPT=deployment/live-fixes/FIX72_JC34_HISTORIC_INVOICE_CN/apply.py
+          python3 -m py_compile "$SCRIPT"
+          grep -q 'FIX72_JC34_ORIGINAL_INVOICE_AMOUNT_ONLY' "$SCRIPT"
+          grep -q 'invoice===20' "$SCRIPT"
+          grep -q 'job===34' "$SCRIPT"
+          grep -q 'CURRENT_JC_LINES_NOT_VERIFIED_AS_ORIGINAL' "$SCRIPT"
+      - name: Configure secure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          for i in 1 2;do
+            if ssh-keyscan -T 18 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -y -qq sshpass;fi
+      - name: Verify frozen JC34 snapshot; apply PHP/CN print and rollback on failure
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT")
+            SCP=(sshpass -e scp -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX72_JC34_HISTORIC_INVOICE_CN"'
+          "${SCP[@]}" deployment/live-fixes/FIX72_JC34_HISTORIC_INVOICE_CN/apply.py "$REMOTE:~/FIX72_JC34_HISTORIC_INVOICE_CN/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1";PKG="$HOME/FIX72_JC34_HISTORIC_INVOICE_CN";cd "$APP"
+          test -f artisan && test -d vendor
+          python3 "$PKG/apply.py" check "$APP"
+          # Exact live DB guard, read only — do not post CN during deployment.
+          php -r '
+          require "vendor/autoload.php";
+          $app=require "bootstrap/app.php";
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::class;
+          $db::connection()->statement("START TRANSACTION READ ONLY");
+          try {
+            $j=$db::table("job_cards")->where("id",34)->first();
+            $i=$db::table("invoices")->where("id",20)->first();
+            $v=static fn($x)=>(int)round((float)$x*100);
+            if (!$j||!$i||$j->job_no!=="JC-20261014-00034"||
+                $i->invoice_no!=="INV-2026-00020"||
+                (int)$i->job_card_id!==34||(int)$j->invoice_id!==20||
+                strtolower((string)$j->status)!=="invoiced"||
+                strtolower((string)$i->status)!=="issued"||
+                $v($i->grand_total)!==133000||$v($i->gst_total)!==0||
+                $v($i->subtotal)!==133000||$v($j->grand_total)!==133000||
+                $v($i->paid_amount)!==0||$v($i->paid_total)!==0||
+                $v($i->balance_due)!==133000)
+                throw new \RuntimeException("FIX72 invoice 20 or JC34 not eligible");
+            foreach(["customer_payments","customer_payment_allocations","invoice_credit_notes"] as $t)
+              if($db::table($t)->where("invoice_id",20)->exists())
+                throw new \RuntimeException("FIX72 references changed: ".$t);
+            $ledger=$db::table("customer_ledger")->where("invoice_id",20)->get();
+            if($ledger->count()!==1||strtoupper((string)$ledger[0]->entry_type)!=="DEBIT"||
+               $v($ledger[0]->debit)!==133000||$v($ledger[0]->credit)!==0)
+               throw new \RuntimeException("FIX72 ledger changed");
+            $tax=\App\Services\JobCardTaxTotals::forJob(34);
+            if($v($tax["grand_total"])!==156900||$v($tax["gst_total"])!==23940)
+               throw new \RuntimeException("FIX72 JC taxable changed");
+            echo "FIX72_JC34_PRE_DEPLOY_READONLY_PASS\n";
+          } finally { $db::connection()->rollBack(); }
+          '
+          STAMP="$(date +%Y%m%d_%H%M%S)"
+          BACKUP="storage/app/FIX72_ORIGINAL_INVOICE_CN_BACKUP_$STAMP"
+          mkdir -p "$BACKUP"
+          cp -p app/Http/Controllers/Web/AdminInvoiceCreditNoteController.php "$BACKUP/AdminInvoiceCreditNoteController.php"
+          cp -p resources/views/invoices/credit-note.blade.php "$BACKUP/credit-note.blade.php"
+          cp -p resources/views/job-cards/credit-correction.blade.php "$BACKUP/credit-correction.blade.php"
+          rollback(){
+            echo 'FIX72_ROLLBACK_ALL_THREE_SOURCE_FILES'
+            cp -p "$BACKUP/AdminInvoiceCreditNoteController.php" app/Http/Controllers/Web/AdminInvoiceCreditNoteController.php
+            cp -p "$BACKUP/credit-note.blade.php" resources/views/invoices/credit-note.blade.php
+            cp -p "$BACKUP/credit-correction.blade.php" resources/views/job-cards/credit-correction.blade.php
+            php artisan view:clear >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          python3 "$PKG/apply.py" apply "$APP"
+          php -l app/Http/Controllers/Web/AdminInvoiceCreditNoteController.php
+          php artisan view:clear
+          php artisan view:cache
+          php -r '
+            require "vendor/autoload.php";
+            $app=require "bootstrap/app.php";
+            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $db=\Illuminate\Support\Facades\DB::class;
+            $i=$db::table("invoices")->where("id",20)->first();
+            $j=$db::table("job_cards")->where("id",34)->first();
+            $cn=(object)["credit_note_no"=>"PREVIEW-ONLY","credit_date"=>date("Y-m-d"),
+                  "taxable_amount"=>1330,"gst_amount"=>0,"credit_amount"=>1330,
+                  "reason"=>"GST missing on original invoice, preview only"];
+            $snapshot=["invoice"=>(array)$i,"job"=>(array)$j,
+                  "parts"=>[],"labour"=>[],
+                  "historical_invoice_amount_exception"=>true];
+            $render=view("invoices.credit-note",compact("cn","snapshot"))->render();
+            foreach(["HISTORICAL INVOICE GST EXCEPTION","1,330.00","0.00","PREVIEW-ONLY"] as $term)
+              if(!str_contains($render,$term))throw new \RuntimeException("FIX72 print preview missing term");
+            if(str_contains($render,"239.40")||str_contains($render,"1569.00"))
+              throw new \RuntimeException("FIX72 leaked current JC GST into historical CN");
+            echo "FIX72_HISTORICAL_CN_ORIGINAL_VALUES_RENDER_PASS\n";
+          '
+          for url in /erp/login /staff/login;do
+            code="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$url")"
+            echo "FIX72_HEALTH_$url=$code";test "$code" = 200
+          done
+          trap - ERR
+          echo "FIX72_STAGING_SCOPED_EXCEPTION_DEPLOY_SUCCESS BACKUP=$BACKUP NO_CREDIT_NOTE_POSTED"
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
