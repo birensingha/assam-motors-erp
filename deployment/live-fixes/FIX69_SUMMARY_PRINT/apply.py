@@ -46,7 +46,7 @@ pos1=old.index(opening);pos2=old.index(closing,pos1)
 deleted=old[pos1:pos2]
 if 'Advanced Reversal Centre' not in deleted or 'Simple Billing Correction' not in deleted:
  raise SystemExit('FIX69_WRONG_BLOCK_REFUSE')
-old=old[:pos1]+"""{{-- FIX69: Advanced Reversal Centre removed from customer Job Card Summary.
+old=old[:pos1]+"""{{-- FIX69: legacy finance navigation removed from customer Job Card Summary.
      Existing audited finance/reversal backend records and routes are unchanged. --}}
 """+old[pos2:]
 fn="    public function show(Request $request, int $job, JobCardService $service): View"
