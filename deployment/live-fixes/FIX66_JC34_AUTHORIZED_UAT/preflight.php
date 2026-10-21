@@ -43,5 +43,5 @@ $assert=(int)$job->invoice_id===20
 &&(int)$ledger[0]->customer_id===(int)$inv->customer_id
 &&$admins>0;
 foreach($count as $c)$assert=$assert&&$c===0;
-if(!$assert)throw new RuntimeException('FIX66_EXECUTION_BLOCKED_RECONCILIATION_FAILED');
+if(!$assert){fwrite(STDERR,"FIX66_EXECUTION_BLOCKED_RECONCILIATION_FAILED\n");exit(2);}
 echo 'FIX66_JC34_STRICT_PRE_TRANSACTION_PASS_NO_WRITES'."\n";
