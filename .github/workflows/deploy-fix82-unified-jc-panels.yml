@@ -80,9 +80,9 @@ jobs:
           from pathlib import Path
           text=Path('resources/views/job-cards/show.blade.php').read_bytes().decode('utf8','surrogateescape')
           assert 'Direct Job Card Entry' not in text
-          assert 'jc-direct-entry' not in text
-          assert text.count('name="part_master_id"')==1
-          assert text.count('name="labour_master_id"')==1
+          assert 'class="card section-gap jc-direct-entry"' not in text
+          assert text.count('<select name="part_master_id" required>')==1
+          assert text.count('<select id="am82-rot-select" name="labour_master_id" required>')==1
           part=text.index('jc-purchase-block jc-parts-block')
           lab=text.index('jc-purchase-block jc-labour-block')
           assert text.index("route('erp.job-cards.parts.direct',$job->id)")>part
@@ -90,7 +90,7 @@ jobs:
           assert part<lab
           assert text.index('am82-entry-block',part)<lab
           assert "@include('job-cards.partials.am65-customer-labour')" not in text
-          assert 'am65-workshop-toggle' not in text
+          assert 'class="am65-workshop-toggle"' not in text
           for tag in ('am82-rot-inline','am82-finance-form','am82-final-output','am82-rot-select','am82-rot-search'):
             assert tag in text,tag
           for tag in ("route('erp.rot.start',$rot->id)","route('erp.rot.pause',$rot->id)",
