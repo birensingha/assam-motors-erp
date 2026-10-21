@@ -68,6 +68,15 @@ jobs:
             ('BLADE_JS_UNLOCK',view,'fields.forEach(el=>{el.disabled=false;});'),
           ]:print('FIX61A_ANCHOR',name,src.count(term))
           print('FIX61A_VIEW_OTHER_INDENT',repr(view.splitlines()[114:121]))
+          chunk('resources/views/job-cards/show.blade.php',1,54)
+          chunk('routes/web.php',116,139)
+          chunk('app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php',1,18)
+          for r in ['app/Http/Controllers/Web/AdminJobCardBillingCorrectionPageController.php','app/Http/Controllers/Web/AdminInvoiceCreditNoteController.php']:
+            f=root/r
+            if f.exists():
+              a=f.read_text(errors='replace').splitlines()
+              print('FIX61B_SOURCE_FILE',r,'LINES',len(a))
+          print('FIX61B_STAGING_TARGETS_READY')
           print('FIX61_TARGET_MAP_PASS_NO_WRITES')
           PY
       - name: Cleanup
