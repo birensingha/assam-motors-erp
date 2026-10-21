@@ -17,7 +17,6 @@ assert(input.getAttribute('role')==='combobox');
 let changes=0;select.addEventListener('change',()=>changes++);
 input.focus();input.value='bire';input.dispatchEvent(new w.Event('input',{bubbles:true}));
 assert.equal(select.value,'','typing nonselected text clears previous reference');
-console.log('FIX60_DIAGNOSTIC',JSON.stringify({input:input.value,select:select.value,all:d.querySelectorAll('.am60-list').length,list:d.querySelector('.am60-list')?.outerHTML.slice(0,1400),focused:d.activeElement?.className,searchReady:!!w.__AM_SELECT_V1}));
 assert.equal(d.querySelectorAll('.am60-option').length,2,'search should filter case insensitively');
 input.dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true,cancelable:true}));
 input.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
