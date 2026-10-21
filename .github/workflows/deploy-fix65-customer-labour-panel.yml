@@ -1,0 +1,129 @@
+name: FIX65 Customer Labour Billing Prototype STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-fix65-customer-labour-panel.yml'
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Source QA before staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/FIX65_CUSTOMER_LABOUR_PANEL/deploy.py
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          s=Path('deployment/live-fixes/FIX65_CUSTOMER_LABOUR_PANEL/customer-labour.blade.php').read_text()
+          for name in ['AM65_CUSTOMER_LABOUR_PROTOTYPE','am65-customer-labour','Customer Total','INCLUDED','NOT BILLED','customer-labour','Edit Labour Rate','rotByLabour','am65-search','am65-table']:
+            assert name in s,name
+          assert s.count("@forelse($labour as $line)")==1
+          assert "route('erp.job-cards.credit-correction'" in s
+          scr=re.findall(r'<script id="AM65_SEARCH_LABOUR">(.*?)</script>',s,re.DOTALL)
+          assert len(scr)==1
+          Path('/tmp/fix65-labour.js').write_text(scr[0])
+          print('FIX65_SOURCE_AND_BILLING_QA_PASS')
+          PY
+          node --check /tmp/fix65-labour.js
+      - name: SSH setup
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          for attempt in 1 2;do
+            if ssh-keyscan -T 18 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -y -qq sshpass;fi
+      - name: Fail-closed apply + PHP render check + rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT");SCP=(sshpass -e scp -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          PKG=deployment/live-fixes/FIX65_CUSTOMER_LABOUR_PANEL
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX65_CUSTOMER_LABOUR_PANEL"'
+          "${SCP[@]}" "$PKG/deploy.py" "$PKG/customer-labour.blade.php" "$REMOTE:~/FIX65_CUSTOMER_LABOUR_PANEL/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1";PKG="$HOME/FIX65_CUSTOMER_LABOUR_PANEL";cd "$APP"
+          test -f artisan && test -d vendor
+          python3 "$PKG/deploy.py" check "$APP"
+          STAMP="$(date +%Y%m%d_%H%M%S)"
+          BACKUP="storage/app/FIX65_CUSTOMER_LABOUR_BACKUP_$STAMP"
+          mkdir -p "$BACKUP"
+          cp -p resources/views/job-cards/show.blade.php "$BACKUP/show.blade.php"
+          if [ -f resources/views/job-cards/partials/am65-customer-labour.blade.php ];then
+            cp -p resources/views/job-cards/partials/am65-customer-labour.blade.php "$BACKUP/am65-customer-labour.blade.php"
+          fi
+          rollback(){
+            echo "FIX65_ROLLBACK_SOURCE"
+            cp -p "$BACKUP/show.blade.php" resources/views/job-cards/show.blade.php
+            if [ -f "$BACKUP/am65-customer-labour.blade.php" ];then
+              cp -p "$BACKUP/am65-customer-labour.blade.php" resources/views/job-cards/partials/am65-customer-labour.blade.php
+            else
+              rm -f resources/views/job-cards/partials/am65-customer-labour.blade.php
+            fi
+            php artisan view:clear >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          python3 "$PKG/deploy.py" apply "$APP"
+          php artisan view:clear
+          php artisan view:cache
+          php artisan route:list --name=erp.job-cards.edit
+          grep -q 'id="am65-customer-labour"' resources/views/job-cards/partials/am65-customer-labour.blade.php
+          grep -q "job-cards.partials.am65-customer-labour" resources/views/job-cards/show.blade.php
+          php -r '
+          require "vendor/autoload.php";
+          $app=require "bootstrap/app.php";
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          \Illuminate\Support\Facades\DB::connection()->statement("START TRANSACTION READ ONLY");
+          try {
+            $svc=app(\App\Services\JobCardService::class);
+            $data=$svc->detail(34);
+            app("view")->share("errors",new \Illuminate\Support\ViewErrorBag);
+            $render=view("job-cards.partials.am65-customer-labour",$data)->render();
+            if (!str_contains($render,"Customer Billing") ||
+                !str_contains($render,"450.00") ||
+                !str_contains($render,"am65-table"))throw new \RuntimeException("FIX65 JC34 rendered billing fail");
+            echo "FIX65_JC34_READONLY_CUSTOMER_LABOUR_450_RENDER_PASS\n";
+            $inv=\Illuminate\Support\Facades\DB::table("invoices")->where("id",20)->first();
+            if (!$inv || (float)$inv->grand_total!==1330.0 || (float)$inv->paid_amount!==0.0)
+              throw new \RuntimeException("JC34 invoice unexpected change");
+            echo "FIX65_JC34_INVOICE20_1330_UNPAID_UNMODIFIED\n";
+          } finally {\Illuminate\Support\Facades\DB::rollBack();}
+          '
+          for path in /erp/login /staff/login;do
+            code="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")"
+            echo "FIX65_HEALTH_$path=$code"
+            test "$code" = 200
+          done
+          trap - ERR
+          echo "FIX65_STAGING_DEPLOY_SUCCESS BACKUP=$BACKUP NO_DATABASE_WRITES"
+          REMOTE
+      - name: Cleanup key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519 /tmp/fix65-labour.js
