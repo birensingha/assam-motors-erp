@@ -2,7 +2,9 @@ name: FIX68 Print OSL GST Reversal Readonly Audit
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/audit-fix68-print-osl-reversal.yml']
+    paths:
+      - '.github/workflows/audit-fix68-print-osl-reversal.yml'
+      - 'deployment/live-fixes/FIX68_PRINT_OSL_REVERSAL/audit-detail.py'
 permissions: {contents: read}
 jobs:
   audit:
