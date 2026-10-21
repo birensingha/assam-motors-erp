@@ -1,0 +1,63 @@
+name: FIX63 Billing Correction Live UI Preflight
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/audit-fix63-billing-correction-ui.yml']
+permissions: {contents: read}
+jobs:
+  read_only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - name: SSH safely
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for attempt in 1 2;do
+            if ssh-keyscan -T 18 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else sudo apt-get update -qq;sudo apt-get install -y -qq sshpass;fi
+      - name: Current file and route contracts only (no database access)
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT");fi
+          "${SSH[@]}" "$USERNAME@$HOST" "python3 - '$ROOT'" <<'PY'
+          from pathlib import Path
+          import hashlib,sys,re
+          root=Path(sys.argv[1]);assert (root/'artisan').is_file()
+          f=root/'resources/views/job-cards/credit-correction.blade.php'
+          s=f.read_text(encoding='utf8')
+          print('FIX63_CURRENT_VIEW_LENGTH',len(s),'SHA256',hashlib.sha256(s.encode()).hexdigest())
+          tokens=[
+           "route('erp.job-cards.return-to-jc.unpaid'",
+           "route('erp.job-cards.lifecycle.reopen'",
+           "route('erp.job-cards.show'",
+           "route('erp.invoices.show'",
+           "route('erp.money-receipts.index'",
+           "@foreach($notes as $cn)",
+           "@foreach($sessions as $rot)",
+           "Payment linked",
+           "RETURN TO JOB CARD",
+           "am56-wrap"
+          ]
+          for token in tokens:
+           print('FIX63_VIEW_CONTRACT',token,s.count(token))
+          routes=(root/'routes/web.php').read_text()
+          for name in ['erp.job-cards.return-to-jc.unpaid','erp.job-cards.return-to-jc','erp.job-cards.credit-correction','erp.money-receipts.index','erp.invoices.show']:
+           print('FIX63_ROUTE_NAME',name,routes.count("name('"+name+"')"))
+          print('FIX63_READ_ONLY_COMPLETE')
+          PY
+      - name: Cleanup key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
