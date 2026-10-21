@@ -20,7 +20,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Audit Python syntax
-        run: php -l deployment/live-fixes/FIX73_INVOICE_500_TOPBAR/inspect.php
+        run: |
+          php -l deployment/live-fixes/FIX73_INVOICE_500_TOPBAR/inspect.php
           python3 -m py_compile deployment/live-fixes/FIX73_INVOICE_500_TOPBAR/audit.py
       - name: Configure SSH
         shell: bash
@@ -49,7 +50,7 @@ jobs:
           REMOTE="$USERNAME@$HOST"
           "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX73_INVOICE_500_TOPBAR"'
           "${SCP[@]}" deployment/live-fixes/FIX73_INVOICE_500_TOPBAR/inspect.php deployment/live-fixes/FIX73_INVOICE_500_TOPBAR/audit.py "$REMOTE:~/FIX73_INVOICE_500_TOPBAR/"
-          "${SSH[@]}" "$REMOTE" "php ~/FIX73_INVOICE_500_TOPBAR/inspect.php '$ROOT'"
+          "${SSH[@]}" "$REMOTE" "php ~/FIX73_INVOICE_500_TOPBAR/inspect.php '$ROOT' && python3 ~/FIX73_INVOICE_500_TOPBAR/audit.py '$ROOT'"
       - name: Cleanup
         if: always()
         run: rm -f ~/.ssh/id_ed25519
