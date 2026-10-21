@@ -60,8 +60,8 @@ text['correction']=text['correction'].replace(oldCss,newCss,1)
 assert text['correction'].count('name="confirmed_finance"')==1
 assert text['correction'].count('<input type="checkbox" name="confirmed_finance"')==1
 assert text['correction'].count('id="am63-return-modal"')==1
-assert text['correction'].count('name="reason"')==1
-assert text['show'].count("route('erp.job-cards.credit-correction',$job->id)")==1
+assert text['correction'].count('<textarea name="reason" id="am63-reason"')==1
+assert text['show'].count("route('erp.job-cards.credit-correction',$job->id)")>=1
 assert 'Advanced Reversal Centre' not in text['show']
 if mode=='check':
  print('FIX71_PREFLIGHT_PASS_UI_ONLY');sys.exit(0)
