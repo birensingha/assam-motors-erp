@@ -1,0 +1,99 @@
+name: FIX62 Prototype-Matched Job Card Register STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-fix62-jobcard-prototype-match.yml'
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Offline source syntax / JS validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/FIX62_MATCH_ADMIN_PROTOTYPE/apply.py
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          blade=Path('deployment/live-fixes/FIX62_MATCH_ADMIN_PROTOTYPE/job-cards-index.blade.php').read_text()
+          scripts=re.findall(r'<script id="AM62_SELECT_ROW">(.*?)</script>',blade,re.S)
+          assert len(scripts)==1
+          Path('/tmp/fix62-index.js').write_text(scripts[0])
+          for marker in ['Finance Status','Original Invoice','data-am62-row','am62-return','am62-top-return']:
+              assert marker in blade,marker
+          print('FIX62_OFFLINE_SCREEN_QA=PASS')
+          PY
+          node --check /tmp/fix62-index.js
+      - name: Configure staging SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -y -qq sshpass;fi
+      - name: Exact preflight, backup, install, smoke checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT");SCP=(sshpass -e scp -P "$PORT");fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX62_MATCH_ADMIN_PROTOTYPE"'
+          "${SCP[@]}" deployment/live-fixes/FIX62_MATCH_ADMIN_PROTOTYPE/apply.py deployment/live-fixes/FIX62_MATCH_ADMIN_PROTOTYPE/job-cards-index.blade.php "$REMOTE:~/FIX62_MATCH_ADMIN_PROTOTYPE/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"; PKG="$HOME/FIX62_MATCH_ADMIN_PROTOTYPE";cd "$APP"
+          test -f artisan && test -d vendor
+          python3 "$PKG/apply.py" check "$APP"
+          STAMP="$(date +%Y%m%d_%H%M%S)"
+          BACKUP="storage/app/FIX62_PROTOTYPE_MATCH_BACKUP_$STAMP"
+          mkdir -p "$BACKUP"
+          cp -p app/Http/Controllers/Web/AdminJobCardPageController.php "$BACKUP/AdminJobCardPageController.php"
+          cp -p resources/views/job-cards/index.blade.php "$BACKUP/index.blade.php"
+          cp -p resources/views/job-cards/credit-correction.blade.php "$BACKUP/credit-correction.blade.php"
+          cp -p routes/web.php "$BACKUP/web.php"
+          rollback(){
+            echo 'FIX62_ROLLBACK_SOURCE'
+            cp -p "$BACKUP/AdminJobCardPageController.php" app/Http/Controllers/Web/AdminJobCardPageController.php
+            cp -p "$BACKUP/index.blade.php" resources/views/job-cards/index.blade.php
+            cp -p "$BACKUP/credit-correction.blade.php" resources/views/job-cards/credit-correction.blade.php
+            cp -p "$BACKUP/web.php" routes/web.php
+            php artisan optimize:clear >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          python3 "$PKG/apply.py" apply "$APP"
+          php -l app/Http/Controllers/Web/AdminJobCardPageController.php
+          php -l routes/web.php
+          php artisan optimize:clear
+          php artisan view:cache
+          php artisan route:list --name=erp.job-cards.return-to-jc
+          grep -q 'AM62_PROTOTYPE_MATCH' resources/views/job-cards/index.blade.php
+          test "$(grep -Fc "name('erp.job-cards.return-to-jc');" routes/web.php)" -eq 1
+          test "$(grep -Fc "name('erp.job-cards.return-to-jc.unpaid');" routes/web.php)" -eq 1
+          for path in /erp/login /staff/login;do
+            code="$(curl -sSL --max-time 20 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")"
+            echo "FIX62_HEALTH_$path=$code"
+            test "$code" = 200
+          done
+          trap - ERR
+          echo "FIX62_STAGING_DEPLOY_OK BACKUP=$BACKUP NO_DATABASE_WRITES"
+          REMOTE
+      - name: Cleanup SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
