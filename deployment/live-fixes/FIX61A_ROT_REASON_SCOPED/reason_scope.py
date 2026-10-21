@@ -63,7 +63,7 @@ for field,old,new in [
 ('discount',"$discount=round((float)$data['discount_percent'],2);","$discount=round((float)($data['discount_percent']??$line->discount_percent),2);")]:
     ctl=replace(ctl,old,new,'fallback_'+field)
 blade=old_view
-extra="""              <label data-p55-target-wrap hidden>For Other: Which field? *
+extra="""              <label data-p55-target-wrap hidden style="display:none">For Other: Which field? *
                 <select name="alteration_target" data-p55-target>
                   <option value="">— Select One Field —</option>
                   <option value="rot_code">ROT Master</option>
@@ -104,7 +104,7 @@ hook="""  // Changing Reason or Other target immediately re-locks the row.
     if(unlock)unlock.disabled=false;card.classList.remove('is-unlocked');
     const ok=card.querySelector('[data-p55-success]');if(ok)ok.hidden=true;}
   if(reasonSelect)reasonSelect.addEventListener('change',function(){
-    relock();if(targetWrap)targetWrap.hidden=reasonSelect.value!=='Other';
+    relock();if(targetWrap){targetWrap.hidden=reasonSelect.value!=='Other';targetWrap.style.display=reasonSelect.value==='Other'?'block':'none';}
     if(targetSelect&&reasonSelect.value!=='Other')targetSelect.value='';
   });
   if(targetSelect)targetSelect.addEventListener('change',relock);
