@@ -27,4 +27,10 @@ for p,start,end in [
 ('app/Http/Controllers/Web/AdminJobCardPageController.php',330,420),
 ]:
  dump(p,start,end)
+dump('resources/views/invoices/print.blade.php',145,220)
+dump('app/Http/Controllers/Web/AdminJobCardPageController.php',235,330)
+dump('app/Services/PurchaseService.php',845,877)
+dump('resources/views/purchases/osl-create.blade.php',1,42)
+dump('resources/views/purchases/osl-create.blade.php',77,100)
+dump('app/Http/Controllers/Web/AdminWorkshopControlPageController.php',271,380)
 print("FIX68_TARGETED_READONLY_COMPLETE")
