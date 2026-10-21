@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/audit-fix76-rot-sac.yml'
+      - 'deployment/live-fixes/FIX76_ROT_SAC_MASTER/audit.py'
 permissions: {contents: read}
 jobs:
   audit:
