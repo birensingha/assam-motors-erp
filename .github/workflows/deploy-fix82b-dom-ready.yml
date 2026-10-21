@@ -1,0 +1,77 @@
+name: FIX82B DOM Ready for JC Parts Labour Controls
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-fix82b-dom-ready.yml'
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check DOM binding script syntax
+        run: python3 -m py_compile deployment/live-fixes/FIX82_JC_INLINE_ADD/dom_ready.py
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for i in 1 2 3;do
+            if ssh-keyscan -T 16 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Deploy JS binding and compile Blade
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT");SCP=(sshpass -e scp -P "$PORT");fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX82_JC_INLINE_ADD"'
+          "${SCP[@]}" deployment/live-fixes/FIX82_JC_INLINE_ADD/dom_ready.py "$REMOTE:~/FIX82_JC_INLINE_ADD/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1";cd "$APP";test -f artisan
+          TOOL="$HOME/FIX82_JC_INLINE_ADD/dom_ready.py"
+          python3 "$TOOL" check "$APP"
+          BACKUP="storage/app/FIX82B_JS_BACKUP_$(date +%Y%m%d_%H%M%S)"
+          mkdir -p "$BACKUP"
+          cp -p resources/views/job-cards/show.blade.php "$BACKUP/show.blade.php"
+          rollback(){
+            echo 'FIX82B_ROLLBACK_UI'
+            cp -p "$BACKUP/show.blade.php" resources/views/job-cards/show.blade.php
+            php artisan view:clear >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          python3 "$TOOL" apply "$APP"
+          php artisan view:clear
+          php artisan view:cache
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('resources/views/job-cards/show.blade.php').read_bytes().decode('utf8','surrogateescape')
+          assert s.count('FIX82B_DOM_READY_SEARCH_GST')==1
+          assert 'document.addEventListener(\'DOMContentLoaded\',am82Ready,{once:true})' in s
+          assert 'class="card section-gap jc-direct-entry"' not in s
+          assert 'am82-finance-form' in s
+          print('FIX82B_STAGING_SCRIPT_VALIDATION_PASS')
+          PY
+          trap - ERR
+          echo "FIX82B_STAGING_DOM_READY_DEPLOY_SUCCESS BACKUP=$BACKUP NO_DB_WRITES"
+          REMOTE
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
