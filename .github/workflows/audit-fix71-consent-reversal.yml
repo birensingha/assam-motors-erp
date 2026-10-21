@@ -19,6 +19,8 @@ jobs:
       ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
     steps:
       - uses: actions/checkout@v4
+      - name: Audit Python syntax
+        run: python3 -m py_compile deployment/live-fixes/FIX71_RETURN_CHECKBOX_REVERSAL/audit.py
       - name: Configure SSH
         shell: bash
         run: |
