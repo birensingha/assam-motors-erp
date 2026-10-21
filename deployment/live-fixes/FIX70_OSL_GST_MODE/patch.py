@@ -66,14 +66,17 @@ newcalc='''       const basis=row.querySelector('.gst-mode')?.value||'EXTRA';
        const t = basis==='INCLUDED' && actualGst>0 ? r2(net/(1+actualGst/100)) : net;
        const ga = basis==='INCLUDED' ? r2(net-t) : (basis==='EXTRA'?r2(t*actualGst/100):0);
        const total = r2(t+ga);'''
-form=one(form,oldcalc,newcalc,'preview_calculator')
+pattern=re.compile(r'(?m)^[ \t]*const g = qty \* rate;\n[ \t]*const d = g \* disc / 100;\n[ \t]*const t = g - d;\n[ \t]*const ga = t \* gst / 100;\n[ \t]*const total = t \+ ga;')
+form,count=pattern.subn(lambda m:newcalc,form)
+print('FIX70_ANCHOR preview_calculator',count)
+if count!=1:raise SystemExit('FIX70_ANCHOR_MISMATCH_preview_calculator')
 form=one(form,"     set('.gst', data.gst_percent ?? 0);", "     set('.gst', data.gst_percent ?? 0);", 'noopcheck') if False else form
 form=one(form,"set('.gst', data.gst_percent ?? 0); set('.customer-rate'",
          "set('.gst-mode', data.gst_mode ?? 'EXTRA'); set('.gst', data.gst_percent ?? 0); set('.customer-rate'",'old_lines_mode')
 form=one(form,
 "  <th>#</th><th>Job Card / Vehicle *</th>",
 "  <th>#</th><th>Job Card / Vehicle *</th>",'noop') if False else form
-form=one(form,"</div>\n\n<div class=\"osl-toolbar\">",
+form=one(form,"</div>\n<div class=\"osl-toolbar\">",
 '''</div>
 <div class="osl-help" style="border-left:4px solid #178356">
 <strong>Supplier GST Mode, per line:</strong> <b>Extra</b> = GST added to taxable; <b>Included</b> = entered Vendor Rate already includes GST; <b>Not Applicable</b> = 0 GST.
