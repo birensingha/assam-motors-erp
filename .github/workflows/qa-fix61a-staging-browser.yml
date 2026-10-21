@@ -1,0 +1,59 @@
+name: FIX61A STAGING Browser Behavior QA
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/qa-fix61a-staging-browser.yml'
+permissions: {contents: read}
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Configure read-only SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Read STAGING Blade/Controller and extract actual browser script
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$PASSWORD";SCP=(sshpass -e scp -P "$PORT");fi
+          "${SCP[@]}" "$USERNAME@$HOST:$ROOT/resources/views/job-cards/rot-alteration.blade.php" /tmp/fix61a-live-view.blade.php
+          "${SCP[@]}" "$USERNAME@$HOST:$ROOT/app/Http/Controllers/Web/JobCardRotAlterationController.php" /tmp/fix61a-live-controller.php
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          blade=Path('/tmp/fix61a-live-view.blade.php').read_text(encoding='utf8')
+          ctl=Path('/tmp/fix61a-live-controller.php').read_text(encoding='utf8')
+          assert 'FIX61A_ROT_REASON_SCOPED_V1' in blade and 'FIX61A_ROT_REASON_SCOPED_V1' in ctl
+          assert "Reason does not authorise field:" in ctl and 'array_key_exists($am61Field,$data)' in ctl
+          js=re.findall(r'<script id="p55-rot-editor-interaction">(.*?)</script>',blade,re.DOTALL)
+          assert len(js)==1,"ROT interaction script missing/duplicated"
+          Path('/tmp/fix61a-live-browser.js').write_text(js[0],encoding='utf8')
+          print('FIX61A_LIVE_SCRIPT_EXTRACT_PASS')
+          PY
+          node --check /tmp/fix61a-live-browser.js
+      - name: Install headless test runner
+        run: npm install --no-save --ignore-scripts --no-audit --no-fund jsdom@26
+      - name: Test reason-scoped editing against actual STAGING script
+        run: node deployment/live-fixes/FIX61A_ROT_REASON_SCOPED/verify-browser.mjs /tmp/fix61a-live-browser.js
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519 /tmp/fix61a-live-browser.js /tmp/fix61a-live-controller.php /tmp/fix61a-live-view.blade.php
