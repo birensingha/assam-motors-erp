@@ -1,0 +1,94 @@
+name: FIX69 JC One-Page Print and Remove Bottom Reversal Card STAGING
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/deploy-fix69-jc-one-page-print.yml']
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Offline PHP and patch syntax checks
+        run: |
+          python3 -m py_compile deployment/live-fixes/FIX69_SUMMARY_PRINT/apply.py
+          grep -q 'NOT A TAX INVOICE' deployment/live-fixes/FIX69_SUMMARY_PRINT/summary-print.blade.php
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for a in 1 2;do
+            if ssh-keyscan -T 18 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -y -qq sshpass;fi
+      - name: Exact source preflight, backup, apply, Blade and read-only render checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT");SCP=(sshpass -e scp -P "$PORT");fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX69_SUMMARY_PRINT"'
+          "${SCP[@]}" deployment/live-fixes/FIX69_SUMMARY_PRINT/apply.py deployment/live-fixes/FIX69_SUMMARY_PRINT/summary-print.blade.php "$REMOTE:~/FIX69_SUMMARY_PRINT/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1";PKG="$HOME/FIX69_SUMMARY_PRINT";cd "$APP"
+          test -f artisan && test -d vendor
+          python3 "$PKG/apply.py" check "$APP"
+          STAMP="$(date +%Y%m%d_%H%M%S)"
+          BACKUP="storage/app/FIX69_SUMMARY_PRINT_BACKUP_$STAMP"
+          mkdir -p "$BACKUP"
+          cp -p routes/web.php "$BACKUP/web.php"
+          cp -p resources/views/job-cards/show.blade.php "$BACKUP/show.blade.php"
+          cp -p app/Http/Controllers/Web/AdminJobCardPageController.php "$BACKUP/AdminJobCardPageController.php"
+          rollback(){
+            echo "FIX69_ROLLBACK"
+            cp -p "$BACKUP/web.php" routes/web.php
+            cp -p "$BACKUP/show.blade.php" resources/views/job-cards/show.blade.php
+            cp -p "$BACKUP/AdminJobCardPageController.php" app/Http/Controllers/Web/AdminJobCardPageController.php
+            rm -f resources/views/job-cards/summary-print.blade.php
+            php artisan view:clear >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          python3 "$PKG/apply.py" apply "$APP"
+          php -l app/Http/Controllers/Web/AdminJobCardPageController.php
+          php -l routes/web.php
+          php artisan view:clear
+          php artisan view:cache
+          php artisan route:list --name=erp.job-cards.summary-print
+          if grep -q 'Advanced Reversal Centre' resources/views/job-cards/show.blade.php;then echo 'FIX69_REVERSAL_UI_NOT_REMOVED';exit 6;fi
+          php -r '
+          require "vendor/autoload.php";$app=require "bootstrap/app.php";
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $data=app(\App\Services\JobCardService::class)->detail(34);
+          $render=view("job-cards.summary-print",$data)->render();
+          foreach(["ASSAM MOTORS","Job Card Summary","NOT A TAX INVOICE","JC-20261014-00034","1,330.00"] as $str)
+           if(!str_contains($render,$str))throw new \RuntimeException("FIX69 missing summary content ".$str);
+          echo "FIX69_JC34_PRINT_HTML_RENDER_PASS\n";'
+          for path in /erp/login /staff/login;do
+            status="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")"
+            echo "FIX69_HEALTH_$path=$status"
+            test "$status" = 200
+          done
+          trap - ERR
+          echo "FIX69_STAGING_DEPLOY_SUCCESS BACKUP=$BACKUP NO_FINANCE_WRITES"
+          REMOTE
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
