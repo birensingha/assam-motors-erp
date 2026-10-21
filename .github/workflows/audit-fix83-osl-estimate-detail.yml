@@ -22,7 +22,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Audit Python syntax
         run: |
-                    python3 -m py_compile deployment/live-fixes/FIX83_SINGLE_LABOUR_OSL/detail.py
+          python3 -m py_compile deployment/live-fixes/FIX83_SINGLE_LABOUR_OSL/detail.py
           php -l deployment/live-fixes/FIX83_SINGLE_LABOUR_OSL/inspect.php
       - name: Configure SSH
         shell: bash
