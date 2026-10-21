@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/deploy-fix70-osl-gst-mode.yml'
+      - 'deployment/live-fixes/FIX70_OSL_GST_MODE/patch.py'
 permissions: {contents: read}
 concurrency:
   group: assam-motors-staging-control
