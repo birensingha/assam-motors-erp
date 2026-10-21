@@ -107,8 +107,8 @@ hook="""  // Changing Reason or Other target immediately re-locks the row.
   });
   if(targetSelect)targetSelect.addEventListener('change',relock);
 """
-blade=replace(blade,"  if(lock&&panel)lock.addEventListener('click',function(){",
-hook+"  if(lock&&panel)lock.addEventListener('click',function(){",'js_relock')
+blade=replace(blade,"if(lock&&panel)lock.addEventListener('click',function(){",
+hook+"if(lock&&panel)lock.addEventListener('click',function(){",'js_relock')
 if mode=='check':
     print('FIX61A_CHECK_PASS_CONTROLLER_AND_BLADE_ONLY')
     sys.exit(0)
