@@ -79,8 +79,8 @@ blade=replace(blade,"            </select>\n          </label>\n          <label
 """            </select>
           </label>
 """+extra+"""          <label>Admin Note *""",'insert_other_target')
-oldjs="""     fields.forEach(el=>{el.disabled=false;});"""
-newjs="""     // FIX61A_ROT_REASON_SCOPED_V1: unlock only reason-authorised fields.
+oldjs="""fields.forEach(el=>{el.disabled=false;});"""
+newjs="""// FIX61A_ROT_REASON_SCOPED_V1: unlock only reason-authorised fields.
      const targets={
        'Wrong ROT selected':['rot_code'],
        'Wrong mechanic selected':['mechanic_id'],
