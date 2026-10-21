@@ -1,0 +1,81 @@
+name: FIX74 STAGING Invoice History Index Migration
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/migrate-fix74-invoice-history.yml']
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check read-only verification and migration PHP
+        run: |
+          php -l deployment/live-fixes/FIX74_INVOICE_HISTORY_TOPBAR/verify.php
+          php -l deployment/live-fixes/FIX74_INVOICE_HISTORY_TOPBAR/2026_10_21_200000_active_invoice_history_unique.php
+      - name: Configure staging SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for attempt in 1 2;do
+            if ssh-keyscan -T 18 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Owner-approved guarded schema migration on STAGING only
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT")
+            SCP=(sshpass -e scp -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          SRC=deployment/live-fixes/FIX74_INVOICE_HISTORY_TOPBAR
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX74_INVOICE_HISTORY_MIGRATION"'
+          "${SCP[@]}" "$SRC/verify.php" "$SRC/2026_10_21_200000_active_invoice_history_unique.php" "$REMOTE:~/FIX74_INVOICE_HISTORY_MIGRATION/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"
+          PKG="$HOME/FIX74_INVOICE_HISTORY_MIGRATION"
+          cd "$APP"
+          test -f artisan && test -d vendor
+          test -f resources/views/layouts/erp.blade.php
+          STAMP="$(date +%Y%m%d_%H%M%S)"
+          BACKUP="storage/app/FIX74_INVOICE_INDEX_BACKUP_$STAMP"
+          mkdir -p "$BACKUP"
+          chmod 700 "$BACKUP"
+          php -r 'require "vendor/autoload.php";$app=require "bootstrap/app.php";$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();$x=\Illuminate\Support\Facades\DB::selectOne("SHOW CREATE TABLE invoices");file_put_contents($argv[1],$x->{"Create Table"}."\n");' "$BACKUP/invoices_ddl_before.sql"
+          chmod 600 "$BACKUP/invoices_ddl_before.sql"
+          php "$PKG/verify.php" "$APP" before "$BACKUP/finance_snapshot.json"
+          MIG="database/migrations/2026_10_21_200000_active_invoice_history_unique.php"
+          if [ -e "$MIG" ];then
+            cmp "$MIG" "$PKG/2026_10_21_200000_active_invoice_history_unique.php"
+          else
+            cp "$PKG/2026_10_21_200000_active_invoice_history_unique.php" "$MIG"
+          fi
+          php artisan migrate --path="$MIG" --force --no-interaction
+          php "$PKG/verify.php" "$APP" after "$BACKUP/finance_snapshot.json"
+          echo "FIX74_INVOICE_HISTORY_INDEX_MIGRATION_SUCCESS BACKUP=$BACKUP NO_INVOICE_POSTED"
+          REMOTE
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
