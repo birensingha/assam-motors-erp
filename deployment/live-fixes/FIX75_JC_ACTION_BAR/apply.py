@@ -109,9 +109,11 @@ once(anchor,'@endphp\n'+toolbar+'<div class="page-head">','toolbar_immediately_b
 once('<style id="FIX37_JOB_CARD_CORE_UI">',css+'<style id="FIX37_JOB_CARD_CORE_UI">','responsive_toolbar_style')
 # Confirm preexisting action routes and all other JC elements untouched.
 for tok in ["route('erp.job-cards.summary-print',$job->id)",
-            "route('erp.job-cards.credit-correction',$job->id)",
-            "route('erp.estimates.create',$job->id)"]:
+            "route('erp.job-cards.credit-correction',$job->id)"]:
  if src.count(tok)!=1:raise RuntimeError('FIX75_DUPLICATE_MISSING_ACTION_'+tok)
+# Two exclusive branches share the estimate route; only one renders.
+if src.count("route('erp.estimates.create',$job->id)")!=2:
+ raise RuntimeError('FIX75_ESTIMATE_BRANCHES_CHANGED')
 for tok in ['Purchase for Job','Expense for Job','One-Page Printable Job Card Summary',
             'Billing Correction / Return to JC','＋ Supplementary Estimate','Estimate / Revise']:
  if tok in src:raise RuntimeError('FIX75_REDUNDANT_ACTION_REMAINS_'+tok)
