@@ -78,6 +78,12 @@ jobs:
               a=f.read_text(errors='replace').splitlines()
               print('FIX61B_SOURCE_FILE',r,'LINES',len(a))
           print('FIX61B_STAGING_TARGETS_READY')
+          for rel in ['resources/views/job-cards/show.blade.php','resources/views/job-cards/lifecycle-panel.blade.php','resources/views/job-cards/credit-correction.blade.php']:
+           f=root/rel
+           if not f.exists():continue
+           for i,line in enumerate(f.read_text(errors='replace').splitlines(),1):
+            if any(t in line.lower() for t in ['billing correction','credit-correction','simple billing','return to job card','return-to-jc','reversal centre']):
+             print('FIX61B_BUTTON_LOCATION',rel,i,line[:240].strip())
           print('FIX61_TARGET_MAP_PASS_NO_WRITES')
           PY
       - name: Cleanup
