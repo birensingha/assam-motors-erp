@@ -2,7 +2,9 @@ name: FIX71 Compact Return to JC Checkbox & Remove Reversal Comment STAGING
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/deploy-fix71-checkbox-reversal.yml']
+    paths:
+      - '.github/workflows/deploy-fix71-checkbox-reversal.yml'
+      - 'deployment/live-fixes/FIX71_RETURN_CHECKBOX_REVERSAL/apply.py'
 permissions: {contents: read}
 concurrency:
   group: assam-motors-staging-control
