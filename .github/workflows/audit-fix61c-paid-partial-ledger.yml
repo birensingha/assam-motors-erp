@@ -1,0 +1,64 @@
+name: FIX61C Paid Partial Receipt Schema Audit
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/audit-fix61c-paid-partial-ledger.yml']
+permissions: {contents: read}
+jobs:
+  finance-readonly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - name: Configure read-only SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Inspect finance table metadata and receipt controller methods only
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT");fi
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          cd "$1"
+          php -r '
+          require "vendor/autoload.php";
+          $app=require "bootstrap/app.php";
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          foreach(["invoices","job_cards","invoice_credit_notes","customer_payments","customer_payment_allocations","customer_ledger","customer_advance_transfers","job_card_change_audits"] as $table) {
+            if(!\Illuminate\Support\Facades\Schema::hasTable($table)){echo "FIX61C_MISSING_TABLE ".$table."\n";continue;}
+            $columns=\Illuminate\Support\Facades\Schema::getColumnListing($table);
+            echo "FIX61C_TABLE ".$table." ".implode(",", $columns)."\n";
+          }
+          echo "FIX61C_SCHEMA_READ_ONLY_PASS\n";
+          '
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          targets=['app/Http/Controllers/Web/AdminMoneyReceiptController.php','app/Services/PaidInvoiceAdvanceService.php','app/Services/JobCardTaxTotals.php']
+          for name in targets:
+           p=Path(name)
+           if not p.is_file():print('FIX61C_ABSENT_SOURCE',name);continue
+           text=p.read_text(errors='replace')
+           methods=[m.group(1) for m in re.finditer(r'function\s+([A-Za-z_][A-Za-z_0-9]*)\s*\(',text)]
+           print('FIX61C_METHODS',name,','.join(methods))
+           for key in ['customer_payment_allocations','customer_advance_transfers','paid_amount','paid_total','balance_due','status']:
+            print('FIX61C_SOURCE_REFERENCES',name,key,text.count(key))
+          print('FIX61C_CODE_READ_ONLY_PASS')
+          PY
+          REMOTE
+      - name: Remove runner credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
