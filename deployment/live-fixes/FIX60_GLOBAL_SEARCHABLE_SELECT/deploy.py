@@ -16,7 +16,7 @@ partial=root/"resources/views/partials/am-global-selector.blade.php"
 js=(pkg/"am-select.js").read_text(encoding="utf8")
 css=(pkg/"am-select.css").read_text(encoding="utf8")
 marker="AM_FIX60_GLOBAL_SELECT_V1"
-target=f"{{-- {marker} --}}\n<style>\n{css}\n</style>\n<script>\n{js}\n</script>\n"
+target="{{-- "+marker+" --}}\n<style>\n"+css+"\n</style>\n<script>\n"+js+"\n</script>\n"
 assert "</script>" not in js.lower(),"Unsafe end script token"
 assert marker in target and len(js)>4000 and len(css)>400
 raw=layout.read_text(encoding="utf8")
