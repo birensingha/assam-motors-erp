@@ -1,0 +1,110 @@
+name: FIX83 One Labour ROT Panel and OSL STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-fix83-single-labour-osl.yml'
+      - 'deployment/live-fixes/FIX83_SINGLE_LABOUR_OSL/apply.py'
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Offline patch syntax and scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/FIX83_SINGLE_LABOUR_OSL/apply.py
+          grep -Fq 'FIX83_SINGLE_LABOUR_OSL_WORKSPACE' deployment/live-fixes/FIX83_SINGLE_LABOUR_OSL/apply.py
+          grep -Fq 'source_estimate_item_id' deployment/live-fixes/FIX83_SINGLE_LABOUR_OSL/apply.py
+      - name: Configure STAGING SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for i in 1 2 3 4;do
+            if ssh-keyscan -T 14 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -y -qq sshpass;fi
+      - name: Backup, deploy and verify one Labour + embedded OSL panel
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT");SCP=(sshpass -e scp -P "$PORT");fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX83_SINGLE_LABOUR_OSL"'
+          "${SCP[@]}" deployment/live-fixes/FIX83_SINGLE_LABOUR_OSL/apply.py "$REMOTE:~/FIX83_SINGLE_LABOUR_OSL/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1";cd "$APP";test -f artisan && test -d vendor
+          TOOL="$HOME/FIX83_SINGLE_LABOUR_OSL/apply.py"
+          python3 "$TOOL" check "$APP"
+          BACKUP="storage/app/FIX83_ONE_LABOUR_OSL_BACKUP_$(date +%Y%m%d_%H%M%S)"
+          mkdir -p "$BACKUP";chmod 700 "$BACKUP"
+          cp -p resources/views/job-cards/show.blade.php "$BACKUP/show.blade.php"
+          cp -p app/Http/Controllers/Web/AdminJobCardPageController.php "$BACKUP/AdminJobCardPageController.php"
+          rollback(){
+            echo 'FIX83_ROLLBACK_VIEWS_ONLY'
+            cp -p "$BACKUP/show.blade.php" resources/views/job-cards/show.blade.php
+            cp -p "$BACKUP/AdminJobCardPageController.php" app/Http/Controllers/Web/AdminJobCardPageController.php
+            php artisan view:clear >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          python3 "$TOOL" apply "$APP"
+          php -l app/Http/Controllers/Web/AdminJobCardPageController.php
+          php artisan view:clear
+          php artisan view:cache
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('resources/views/job-cards/show.blade.php').read_bytes().decode('utf8','surrogateescape')
+          c=Path('app/Http/Controllers/Web/AdminJobCardPageController.php').read_bytes().decode('utf8','surrogateescape')
+          assert s.count('<h2 class="section-title">Labour Item Selection</h2>')==1
+          assert s.count('id="am82-rot-search"')==1
+          assert s.count('id="am82-rot-select"')==1
+          assert s.count('class="am83-inline-add"')==1
+          assert s.count('class="am83-workspace"')==0 or 'am82-rot-inline am83-workspace' in s
+          assert s.count('id="jc-osl"')==1
+          assert 'source_estimate_item_id' in s
+          assert '@forelse($am83RotLabour as $line)' in s
+          assert 'am83OslLabour' in s
+          assert 'OSL Jobs / Outside Services' in s
+          assert "route('erp.purchases.osl.create')" in s
+          assert "route('erp.estimates.send-to-job',$latestEstimate->id)" in s
+          assert "route('erp.job-cards.labour.direct',$job->id)" in s
+          assert 'class="am82-entry-block" aria-label="Add ROT' not in s
+          for x in ("route('erp.rot.start',$rot->id)","route('erp.rot.pause',$rot->id)",
+                    "route('erp.rot.resume',$rot->id)","route('erp.rot.complete',$rot->id)",
+                    "route('erp.job-cards.labour.assign',[$job->id,$line->id])",
+                    "route('erp.fix48.job-line',[$job->id,'labour',$line->id])"):
+            assert x in s,x
+          assert 'FIX83_SINGLE_LABOUR_OSL_WORKSPACE' in c
+          assert "->where('job_card_id',$job)" in c
+          print('FIX83_ONE_LABOUR_OSL_ESTIMATE_AND_ROT_CONTROLS_PASS')
+          PY
+          for path in /erp/login /staff/login;do
+            code="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")"
+            echo "FIX83_HEALTH_$path=$code";test "$code" = 200
+          done
+          trap - ERR
+          echo "FIX83_ONE_PANEL_STAGING_DEPLOY_SUCCESS BACKUP=$BACKUP NO_FINANCIAL_WRITES"
+          REMOTE
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
