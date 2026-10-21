@@ -84,6 +84,18 @@ jobs:
            for i,line in enumerate(f.read_text(errors='replace').splitlines(),1):
             if any(t in line.lower() for t in ['billing correction','credit-correction','simple billing','return to job card','return-to-jc','reversal centre']):
              print('FIX61B_BUTTON_LOCATION',rel,i,line[:240].strip())
+          chunk('resources/views/job-cards/index.blade.php',1,200)
+          chunk('app/Http/Controllers/Web/AdminJobCardPageController.php',1,110)
+          chunk('resources/views/job-cards/show.blade.php',624,660)
+          chunk('routes/web.php',68,110)
+          for rel in ['resources/views/layouts/erp.blade.php','resources/views/job-cards/return-to-jc.blade.php']:
+           f=root/rel
+           if f.exists():
+            a=f.read_text(errors='replace').splitlines()
+            print('DESIGN_FILE',rel,'LINES',len(a))
+            for i,line in enumerate(a):
+             if any(t in line.lower() for t in ['sidebar','@yield','@section','main-content','content-wrapper','return to jc','return-to-jc','job-cards.index','<main']):
+              print('DESIGN_DETAIL',rel,i+1,line[:180])
           print('FIX61_TARGET_MAP_PASS_NO_WRITES')
           PY
       - name: Cleanup
