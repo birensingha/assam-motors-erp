@@ -17,7 +17,7 @@ marker='FIX74_CLEAN_BLUE_ERP_TOPBAR'
 if marker in text:
  print('FIX74_HEADER_ALREADY_APPLIED');sys.exit(0)
 if hashlib.sha256(raw).hexdigest()!=expected:raise SystemExit('FIX74_HEADER_SOURCE_CHANGED_ABORT')
-topStart='    <div class="topbar-title">@yield(\\'topbar_title\\',\\'ASSAM MOTORS\\')</div>'
+topStart="    <div class=\"topbar-title\">@yield('topbar_title','ASSAM MOTORS')</div>"
 navStart='    <nav class="am50-top-shortcuts" aria-label="Workshop finance shortcuts">'
 navEnd='    </nav>'
 if text.count(topStart)!=1 or text.count(navStart)!=1:raise SystemExit('FIX74_HEADER_ANCHOR_MISSING')
