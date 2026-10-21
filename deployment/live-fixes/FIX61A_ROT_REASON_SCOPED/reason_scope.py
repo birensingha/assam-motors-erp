@@ -79,8 +79,7 @@ blade=replace(blade,"            </select>\n          </label>\n          <label
 """            </select>
           </label>
 """+extra+"""          <label>Admin Note *""",'insert_other_target')
-oldjs="""     fields.forEach(el=>{el.disabled=false;});
-     card.classList.add('is-unlocked');"""
+oldjs="""     fields.forEach(el=>{el.disabled=false;});"""
 newjs="""     // FIX61A_ROT_REASON_SCOPED_V1: unlock only reason-authorised fields.
      const targets={
        'Wrong ROT selected':['rot_code'],
@@ -92,8 +91,7 @@ newjs="""     // FIX61A_ROT_REASON_SCOPED_V1: unlock only reason-authorised fiel
      const other=form.querySelector('[data-p55-target]');
      const allowed=reason.value==='Other'?(other&&other.value?[other.value]:[]):(targets[reason.value]||[]);
      if(!allowed.length){if(other){other.setCustomValidity('Select a target field.');other.reportValidity();other.setCustomValidity('');}return;}
-     fields.forEach(el=>{el.disabled=!allowed.includes(el.name);});
-     card.classList.add('is-unlocked');"""
+     fields.forEach(el=>{el.disabled=!allowed.includes(el.name);});"""
 blade=replace(blade,oldjs,newjs,'js_scope')
 hook="""  // Changing Reason or Other target immediately re-locks the row.
   // Prevents editing a second field with the first reason's authorisation.
