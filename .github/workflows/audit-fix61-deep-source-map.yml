@@ -46,6 +46,7 @@ jobs:
           chunk('routes/web.php',139,164)
           chunk('app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php',310,343)
           chunk('resources/views/job-cards/credit-correction.blade.php',64,109)
+          chunk('resources/views/job-cards/show.blade.php',1,54)
           chunk('resources/views/job-cards/show.blade.php',55,130)
           chunk('resources/views/job-cards/rot-alteration.blade.php',45,125)
           for f in (root/'app/Http/Controllers/Web').glob('*Rot*Alter*.php'):
