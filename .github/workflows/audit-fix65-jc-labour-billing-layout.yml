@@ -1,0 +1,67 @@
+name: FIX65 Job Card Labour Billing Layout Readonly Audit
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/audit-fix65-jc-labour-billing-layout.yml']
+permissions: {contents: read}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 13
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          if ! ssh-keyscan -T 18 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then
+            sleep 3
+            ssh-keyscan -T 18 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          fi
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Inspect Job Card show Blade blocks, routes and labour schema only
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT");fi
+          "${SSH[@]}" "$USERNAME@$HOST" "python3 - '$ROOT'" <<'PY'
+          from pathlib import Path
+          import sys,re,hashlib
+          root=Path(sys.argv[1]).resolve()
+          assert (root/'artisan').is_file()
+          p=root/'resources/views/job-cards/show.blade.php'
+          s=p.read_text(errors='replace')
+          lines=s.splitlines()
+          print('FIX65_SHOW_SHA256',hashlib.sha256(s.encode()).hexdigest(),'TOTAL_LINES',len(lines))
+          for i,l in enumerate(lines,1):
+           if re.search('labour|customer.*cost|rot|billing.?included|taxable|grand total|parts',l,re.I) and (re.search('section|id=|<h[123]|<table|<thead|<tbody|@foreach|@forelse|@include|@php|@endphp|total|labour',l,re.I)):
+            print('FIX65_ANCHOR',i,l[:235].strip())
+          for lo,hi in [(355,565),(565,735)]:
+           print('FIX65_SHOW_SOURCE_BEGIN',lo,hi)
+           for i in range(lo-1,min(hi,len(lines))):
+            l=lines[i]
+            if re.search(r'password|secret|token|private_key',l,re.I):continue
+            print('SHOWLINE',i+1,l[:280])
+          ctrl=root/'app/Http/Controllers/Web/AdminJobCardPageController.php'
+          a=ctrl.read_text(errors='replace').splitlines()
+          hits=[i for i,l in enumerate(a) if re.search(r'function\s+show\s*\(',l)]
+          for h in hits:
+           print('FIX65_CONTROLLER_SHOW_FROM',h+1)
+           for i in range(h,min(h+145,len(a))):
+            if re.search(r'password|secret|token|private_key',a[i],re.I):continue
+            print('CTRL',i+1,a[i][:235])
+          print('FIX65_READONLY_AUDIT_COMPLETE')
+          PY
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
