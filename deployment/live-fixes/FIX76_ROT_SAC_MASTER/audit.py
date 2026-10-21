@@ -21,4 +21,12 @@ for rel,a,b in ranges:
  for n in range(a,min(b,len(ls))+1):
   if re.search(r'password|secret|token|API_KEY',ls[n-1],re.I):continue
   print('FIX76_CODE',rel,n,ls[n-1][:330].encode('utf8','backslashreplace').decode('utf8'))
+view=(root/'resources/views/admin/native/labour.blade.php').read_bytes().decode('utf8','surrogateescape').splitlines()
+for n in [13,18,20,21,23,26]:
+ if len(view)>=n:print('FIX76_FULL_VIEW',n,view[n-1].encode('utf8','backslashreplace').decode('utf8'))
+c=(root/'app/Http/Controllers/Web/AdminNativeModuleController.php').read_bytes().decode('utf8','surrogateescape').splitlines()
+for n in [785,790,791,792,798,799,800,801,802,803,804]:
+ print('FIX76_FULL_CTRL',n,c[n-1])
+for n,l in enumerate((root/'routes/web.php').read_bytes().decode('utf8','replace').splitlines(),1):
+ if 'masters.labour' in l:print('FIX76_MASTER_ROUTE',n,l)
 print('FIX76_TARGET_AUDIT_COMPLETE')
