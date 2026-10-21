@@ -1,0 +1,86 @@
+name: Phase1 Universal Selection Readonly Audit
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/phase1-search-readonly-audit-20261021.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-staging-readonly-search
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq && sudo apt-get install -qq -y sshpass
+          fi
+      - name: Readonly selector and layout inventory
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$PASSWORD"; SSH=(sshpass -e ssh -p "$PORT"); fi
+          "${SSH[@]}" "$USERNAME@$HOST" "python3 - '$ROOT'" <<'PY'
+          from pathlib import Path
+          import sys,re,collections,hashlib
+          root=Path(sys.argv[1]).resolve()
+          assert (root/'artisan').is_file() and (root/'routes/web.php').is_file()
+          print('PHASE1_AUDIT_START=SAFE_READ_ONLY')
+          checks=['resources/views/layouts/erp.blade.php','resources/views/layouts/app.blade.php','resources/views/job-cards/show.blade.php','resources/views/job-cards/credit-correction.blade.php','resources/views/admin/native/dashboard.blade.php','resources/views/admin/native/customers.blade.php','resources/views/job-cards/create.blade.php']
+          for rel in checks:
+            f=root/rel
+            if f.is_file():
+              s=f.read_text(errors='replace')
+              names=re.findall(r'<select\b[^>]*>',s,re.I|re.S)
+              print('FILE',rel,'lines',s.count(chr(10))+1,'selects',len(names),'body_close',s.lower().count('</body>'),'scripts',len(re.findall(r'<script\b',s,re.I)),'forms',len(re.findall(r'<form\b',s,re.I)))
+              if 'layouts/' in rel:
+                print('LAYOUT_TAIL_TAGS',rel,[x for x in ['@stack(\'scripts\')','@yield(\'scripts\')','@livewireScripts','</body>','@vite','@csrf'] if x in s])
+          views=root/'resources/views'
+          ranking=[]
+          for f in views.rglob('*.blade.php'):
+            if not f.is_file() or f.stat().st_size>400000: continue
+            s=f.read_text(errors='replace')
+            count=len(re.findall(r'<select\b',s,re.I))
+            if count:ranking.append((count,f.relative_to(root).as_posix()))
+          for c,path in sorted(ranking,reverse=True)[:45]:print('SELECT_COUNT',c,path)
+          for rel in ['resources/js/app.js','public/js/app.js','public/js/erp.js','resources/views/layouts/erp.blade.php','routes/web.php']:
+            f=root/rel
+            if not f.is_file():continue
+            s=f.read_text(errors='replace')
+            hits=[(k,len(re.findall(re.escape(k),s,re.I))) for k in ['select2','tom-select','choices.js','jquery','@push','@stack','search','Alpine','livewire','<select','</body>'] if k.lower() in s.lower()]
+            print('FEATURES',rel,hits)
+          for p in [root/'resources/views/layouts/erp.blade.php',root/'resources/views/layouts/app.blade.php']:
+            if p.is_file():
+              s=p.read_text(errors='replace')
+              for match in list(re.finditer(r'</body>',s,re.I))[:2]:
+                area=s[max(0,match.start()-450):match.start()+30]
+                area=re.sub(r'[^\x20-\x7E\n]','?',area)
+                for idx,line in enumerate(area.splitlines()[-15:]):
+                  print('LAYOUT_END',p.name,idx,line[:240])
+          print('PHASE1_AUDIT_PASS_NO_CHANGES')
+          PY
+      - name: Cleanup key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
