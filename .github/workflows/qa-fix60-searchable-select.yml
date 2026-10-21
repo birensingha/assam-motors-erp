@@ -1,0 +1,23 @@
+name: FIX60 Selector Keyboard QA
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/qa-fix60-searchable-select.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - name: Install jsdom test dependency
+        run: npm install --no-save --ignore-scripts --no-audit --no-fund jsdom@26
+      - name: Static and behavioral tests
+        run: |
+          node --check deployment/live-fixes/FIX60_GLOBAL_SEARCHABLE_SELECT/am-select.js
+          node deployment/live-fixes/FIX60_GLOBAL_SEARCHABLE_SELECT/test.mjs
