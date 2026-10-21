@@ -1,0 +1,94 @@
+name: FIX62 In-Register Return Modal STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-fix62-return-modal.yml'
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: '22'}
+      - name: Offline safety and modal interaction tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/FIX62_MATCH_ADMIN_PROTOTYPE/apply_modal.py
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          s=Path('deployment/live-fixes/FIX62_MATCH_ADMIN_PROTOTYPE/job-cards-index.blade.php').read_text()
+          match=re.findall(r'<script id="AM62_SELECT_ROW">(.*?)</script>',s,re.S)
+          assert len(match)==1 and 'am62-modal' in s and 'am62-return-form' in s
+          Path('/tmp/fix62-modal.js').write_text(match[0])
+          print('FIX62_MODAL_VIEW_SOURCE_PASS')
+          PY
+          node --check /tmp/fix62-modal.js
+          npm install --no-save --ignore-scripts --no-audit --no-fund jsdom@26
+          node deployment/live-fixes/FIX62_MATCH_ADMIN_PROTOTYPE/modal-test.mjs /tmp/fix62-modal.js
+      - name: Setup staging SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          if ! ssh-keyscan -T 20 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then
+            sleep 4
+            ssh-keyscan -T 20 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          fi
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Guarded index-only modal update
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT");SCP=(sshpass -e scp -P "$PORT");fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX62_MATCH_ADMIN_PROTOTYPE"'
+          "${SCP[@]}" deployment/live-fixes/FIX62_MATCH_ADMIN_PROTOTYPE/apply_modal.py deployment/live-fixes/FIX62_MATCH_ADMIN_PROTOTYPE/job-cards-index.blade.php "$REMOTE:~/FIX62_MATCH_ADMIN_PROTOTYPE/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1";PKG="$HOME/FIX62_MATCH_ADMIN_PROTOTYPE";cd "$APP"
+          test -f artisan && test -d vendor
+          python3 "$PKG/apply_modal.py" check "$APP"
+          STAMP="$(date +%Y%m%d_%H%M%S)"
+          BACKUP="storage/app/FIX62_RETURN_MODAL_BACKUP_$STAMP"
+          mkdir -p "$BACKUP"
+          cp -p resources/views/job-cards/index.blade.php "$BACKUP/index.blade.php"
+          rollback(){
+            echo 'FIX62_MODAL_ROLLBACK_SOURCE'
+            cp -p "$BACKUP/index.blade.php" resources/views/job-cards/index.blade.php
+            php artisan view:clear >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          python3 "$PKG/apply_modal.py" apply "$APP"
+          php artisan view:clear
+          php artisan view:cache
+          grep -q 'id="am62-modal"' resources/views/job-cards/index.blade.php
+          for path in /erp/login /staff/login; do
+            code="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")"
+            echo "FIX62_MODAL_HEALTH_$path=$code"
+            test "$code" = 200
+          done
+          trap - ERR
+          echo "FIX62_MODAL_STAGING_DEPLOY_OK BACKUP=$BACKUP NO_FINANCIAL_WRITES"
+          REMOTE
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
