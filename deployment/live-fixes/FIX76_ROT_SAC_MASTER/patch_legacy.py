@@ -106,8 +106,8 @@ apiSource=one(apiSource,
     }""",
  'api_validation')
 apiSource=one(apiSource,
- "        'rot_code' => $rot_code,",
- "        'rot_code' => $rot_code,\n        'sac_code' => $sac_code,",
+ "    $values = [\n        'rot_code' => $rot_code,\n        'rot_description' => $rot_description,",
+ "    $values = [\n        'rot_code' => $rot_code,\n        'sac_code' => $sac_code,\n        'rot_description' => $rot_description,",
  'save_sac')
 apiSource=one(apiSource,
  '(rot_code, rot_description, category, standard_hours, labour_rate, gst_percent, active)',
