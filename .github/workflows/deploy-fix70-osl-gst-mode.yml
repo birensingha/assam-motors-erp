@@ -1,0 +1,139 @@
+name: FIX70 OSL GST Mode STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-fix70-osl-gst-mode.yml'
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Offline patch, calculation and schema syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          P=deployment/live-fixes/FIX70_OSL_GST_MODE
+          python3 -m py_compile "$P/patch.py"
+          php -l "$P/OslPurchaseTax.php"
+          php -l "$P/2026_10_21_190100_add_gst_mode_to_workshop_purchases.php"
+          php -r '
+            require "deployment/live-fixes/FIX70_OSL_GST_MODE/OslPurchaseTax.php";
+            $q=\App\Services\OslPurchaseTax::class;
+            foreach ([
+              ["EXTRA",118.0,21.24,139.24],
+              ["INCLUDED",100.0,18.0,118.0],
+              ["NONE",118.0,0.0,118.0]
+            ] as [$mode,$taxable,$gst,$total]) {
+              $r=$q::quote(1,118,0,$mode==="NONE"?0:18,$mode);
+              if(abs($r["taxable"]-$taxable)>0.001 || abs($r["gst"]-$gst)>0.001 || abs($r["total"]-$total)>0.001)
+                  throw new \RuntimeException("FIX70 quote mismatch ".$mode);
+              echo "FIX70_QUOTE_".$mode."=PASS\n";
+            }
+            $d=$q::quote(1,118,10,18,"INCLUDED");
+            if(abs($d["taxable"]-90)>0.001 || abs($d["gst"]-16.2)>0.001 || abs($d["total"]-106.2)>0.001)
+              throw new \RuntimeException("FIX70 discount-inclusive math mismatch");
+            echo "FIX70_DISCOUNT_INCLUDED=PASS\n";
+          '
+      - name: Configure staging SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          for a in 1 2;do
+            if ssh-keyscan -T 18 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Exact source check, schema migration, guarded UI/backend patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT");SCP=(sshpass -e scp -P "$PORT");fi
+          REMOTE="$USERNAME@$HOST"
+          P=deployment/live-fixes/FIX70_OSL_GST_MODE
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX70_OSL_GST_MODE"'
+          "${SCP[@]}" "$P/patch.py" "$P/OslPurchaseTax.php" "$P/2026_10_21_190100_add_gst_mode_to_workshop_purchases.php" "$REMOTE:~/FIX70_OSL_GST_MODE/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1";PKG="$HOME/FIX70_OSL_GST_MODE";cd "$APP"
+          test -f artisan && test -d vendor
+          python3 "$PKG/patch.py" check "$APP"
+          NOW="$(date +%Y%m%d_%H%M%S)"
+          BACKUP="storage/app/FIX70_OSL_GST_MODE_BACKUP_$NOW"
+          mkdir -p "$BACKUP"
+          cp -p resources/views/purchases/osl-create.blade.php "$BACKUP/osl-create.blade.php"
+          cp -p app/Http/Controllers/Web/AdminPurchasePageController.php "$BACKUP/AdminPurchasePageController.php"
+          cp -p app/Services/PurchaseService.php "$BACKUP/PurchaseService.php"
+          cp -p app/Http/Controllers/Web/AdminWorkshopControlPageController.php "$BACKUP/AdminWorkshopControlPageController.php"
+          MIG=database/migrations/2026_10_21_190100_add_gst_mode_to_workshop_purchases.php
+          SCHEMA_NEW=0
+          if [ ! -f "$MIG" ];then
+            cp "$PKG/2026_10_21_190100_add_gst_mode_to_workshop_purchases.php" "$MIG"
+            SCHEMA_NEW=1
+          else
+            cmp "$MIG" "$PKG/2026_10_21_190100_add_gst_mode_to_workshop_purchases.php"
+          fi
+          rollback(){
+            echo 'FIX70_ROLLBACK_SOURCE_ONLY'
+            cp -p "$BACKUP/osl-create.blade.php" resources/views/purchases/osl-create.blade.php
+            cp -p "$BACKUP/AdminPurchasePageController.php" app/Http/Controllers/Web/AdminPurchasePageController.php
+            cp -p "$BACKUP/PurchaseService.php" app/Services/PurchaseService.php
+            cp -p "$BACKUP/AdminWorkshopControlPageController.php" app/Http/Controllers/Web/AdminWorkshopControlPageController.php
+            rm -f app/Services/OslPurchaseTax.php
+            php artisan view:clear >/dev/null 2>&1 || true
+            echo 'FIX70_SCHEMA_COLUMN_LEFT_IN_PLACE_IF_MIGRATED (harmless and preserves future history)'
+          }
+          trap rollback ERR
+          php artisan migrate --path="$MIG" --force --no-interaction
+          php -r '
+            require "vendor/autoload.php";$app=require "bootstrap/app.php";
+            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            if(!\Illuminate\Support\Facades\Schema::hasColumn("workshop_purchases","gst_mode"))
+              throw new \RuntimeException("FIX70 schema not created");
+            echo "FIX70_GST_MODE_COLUMN_PASS\n";'
+          python3 "$PKG/patch.py" apply "$APP"
+          php -l app/Services/OslPurchaseTax.php
+          php -l app/Services/PurchaseService.php
+          php -l app/Http/Controllers/Web/AdminPurchasePageController.php
+          php -l app/Http/Controllers/Web/AdminWorkshopControlPageController.php
+          php artisan view:clear
+          php artisan view:cache
+          php -r '
+            require "vendor/autoload.php";$app=require "bootstrap/app.php";
+            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $q=\App\Services\OslPurchaseTax::class;
+            $included=$q::quote(1,118,0,18,"INCLUDED");
+            $extra=$q::quote(1,118,0,18,"EXTRA");
+            $none=$q::quote(1,118,0,0,"NONE");
+            if(abs($included["total"]-118)>0.001||abs($included["gst"]-18)>0.001||
+                abs($extra["total"]-139.24)>0.001||abs($none["gst"])>0.001)
+                throw new \RuntimeException("FIX70 quote regression");
+            echo "FIX70_STAGING_BACKEND_CALC_PASS\n";'
+          for path in /erp/login /staff/login;do
+            response="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")"
+            echo "FIX70_HEALTH_$path=$response";test "$response" = 200
+          done
+          trap - ERR
+          echo "FIX70_OSL_GST_STAGING_DEPLOY_SUCCESS BACKUP=$BACKUP NO_EXISTING_PURCHASE_AMOUNT_CHANGES"
+          REMOTE
+      - name: Clean credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
