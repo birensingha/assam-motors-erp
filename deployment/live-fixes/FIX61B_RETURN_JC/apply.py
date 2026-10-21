@@ -25,8 +25,8 @@ route_line="""    // FIX61B_ONE_BUTTON_RETURN_JC_V1: single audited unpaid invoi
         ->whereNumber('job')->name('erp.job-cards.return-to-jc');
 """
 view_line="{{-- FIX61B_ONE_BUTTON_RETURN_JC_V1 --}}\n@include('job-cards.return-to-jc')\n"
-old_routes=routes.read_text(encoding='utf8')
-old_show=show.read_text(encoding='utf8')
+old_routes=routes.read_text(encoding='utf8',errors='surrogateescape')
+old_show=show.read_text(encoding='utf8',errors='surrogateescape')
 if (marker in old_routes or marker in old_show or any(f.exists() for f in need.values())):
     if (marker in old_routes and marker in old_show and
         all(f.is_file() and f.read_text(encoding='utf8')==(pkg/name).read_text(encoding='utf8')
@@ -46,7 +46,7 @@ if mode=='check':
 def atomic(path,content,mode):
     fd,tmp=tempfile.mkstemp(prefix='.fix61b-',dir=path.parent)
     try:
-        with os.fdopen(fd,'w',encoding='utf8') as fp:fp.write(content)
+        with os.fdopen(fd,'w',encoding='utf8',errors='surrogateescape') as fp:fp.write(content)
         os.chmod(tmp,mode)
         os.replace(tmp,path)
     finally:
