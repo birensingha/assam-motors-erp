@@ -50,7 +50,7 @@ gate="""            // FIX61A_ROT_REASON_SCOPED_V1 - never rely on a browser's d
             if(!$am61Allowed)$this->block('Unsupported ROT alteration reason.','alteration_reason');
             foreach(['rot_code','mechanic_id','rot_start','rot_end',
                       'standard_hours','labour_rate','discount_percent'] as $am61Field){
-                if(!in_array($am61Field,$am61Allowed,true) && $request->exists($am61Field)){
+                if(!in_array($am61Field,$am61Allowed,true) && array_key_exists($am61Field,$data)){
                     $this->block('Reason does not authorise field: '.$am61Field.'. Select appropriate reason.',$am61Field);
                 }
             }
