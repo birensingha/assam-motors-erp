@@ -1,0 +1,61 @@
+name: FIX61 JC Return Deep Readonly Source Map
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/audit-fix61-deep-source-map.yml']
+permissions: {contents: read}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - name: SSH configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ -n "$KEY" ]; then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Bounded current source slices and metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT");fi
+          "${SSH[@]}" "$USERNAME@$HOST" "python3 - '$ROOT'" <<'PY'
+          from pathlib import Path
+          import sys,re
+          root=Path(sys.argv[1]).resolve()
+          assert (root/'artisan').is_file()
+          def chunk(path,start,end):
+           f=root/path
+           if not f.is_file():print('MISSING',path);return
+           lines=f.read_text(errors='replace').splitlines()
+           print('== SOURCE',path,'LINES',start,end,'OF',len(lines),'==')
+           for i in range(start-1,min(end,len(lines))):
+            if re.search(r'password|secret|private_key|api_key|bearer|token',lines[i],re.I):continue
+            print(str(i+1)+':',lines[i][:220])
+          chunk('routes/web.php',139,164)
+          chunk('app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php',310,343)
+          chunk('resources/views/job-cards/credit-correction.blade.php',64,109)
+          chunk('resources/views/job-cards/show.blade.php',55,130)
+          chunk('resources/views/job-cards/rot-alteration.blade.php',45,125)
+          for f in (root/'app/Http/Controllers/Web').glob('*Rot*Alter*.php'):
+           print('ROT_ALTER_CONTROLLER',f.name)
+           lines=f.read_text(errors='replace').splitlines()
+           for i,line in enumerate(lines):
+            if re.search(r'function\s+(?:update|save|edit|unlock|alter)',line,re.I):
+             chunk('app/Http/Controllers/Web/'+f.name,i+1,i+110)
+          print('FIX61_TARGET_MAP_PASS_NO_WRITES')
+          PY
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
