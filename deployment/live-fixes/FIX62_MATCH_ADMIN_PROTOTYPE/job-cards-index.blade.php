@@ -50,6 +50,19 @@
 .am62-filters{display:flex;flex-wrap:wrap;gap:9px;align-items:center;margin:9px 0}
 .am62-filters select{min-width:120px;max-width:200px;border:1px solid #c7d9ed;border-radius:7px;background:white;padding:8px}
 .am62-footnote{font-size:11px;color:#6a7a90;margin-top:7px}
+
+.am62-overlay{position:fixed;inset:0;z-index:2147482000;background:rgba(11,29,58,.66);display:flex;align-items:center;justify-content:center;padding:14px}
+.am62-overlay[hidden]{display:none!important}
+.am62-dialog{background:white;border-radius:15px;padding:21px;width:min(580px,100%);max-height:94vh;overflow:auto;box-shadow:0 22px 90px rgba(8,28,61,.27)}
+.am62-dialog-head{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.am62-dialog h2{margin:0 0 4px;color:#153154;font-size:19px}
+.am62-close{border:1px solid #dae2ee;background:#f4f7fc;border-radius:7px;padding:5px 10px;font-size:21px;cursor:pointer}
+.am62-dialog p{font-size:12px;line-height:1.55;color:#60768f}
+.am62-dialog .am62-summary{padding:12px;background:#f3f7fd;border:1px solid #dce7f8;border-radius:10px;font-size:12px;color:#193b65;margin:12px 0}
+.am62-dialog textarea{width:100%;border:1px solid #bacbe5;border-radius:9px;padding:11px;resize:vertical;min-height:90px;font:inherit;font-size:13px}
+.am62-dialog textarea:focus{outline:2px solid #3b82f6}
+.am62-dialog .am62-ack{display:flex;gap:9px;margin:12px 0;align-items:flex-start;font-size:12px;line-height:1.45}
+.am62-dialog .am62-ack input{margin-top:4px}
 @media(max-width:820px){.am62-topline{align-items:flex-start;flex-wrap:wrap}.am62-profile{grid-template-columns:1fr 1fr}.am62-existing{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:530px){.am62-topline h1{font-size:19px}.am62-profile{grid-template-columns:1fr}.am62-topline .am62-danger{width:100%}.am62-searchbar input{max-width:none}.am62-profileactions .am62-danger{width:100%}}
 </style>
@@ -67,7 +80,7 @@
    </div>
    <div class="am62-actions">
      <a class="am62-white" href="{{ route('erp.job-cards.create') }}">＋ Create Job Card</a>
-     <a class="am62-danger" id="am62-top-return" href="{{ $am62Invoiced ? route('erp.job-cards.credit-correction',$am62Invoiced->id) : '#' }}" @if(!$am62Invoiced) aria-disabled="true" @endif>↩ RETURN TO JC</a>
+     <a class="am62-danger" data-am62-launch id="am62-top-return" href="{{ $am62Invoiced ? route('erp.job-cards.credit-correction',$am62Invoiced->id) : '#' }}" @if(!$am62Invoiced) aria-disabled="true" @endif>↩ RETURN TO JC</a>
    </div>
  </div>
 
@@ -96,6 +109,7 @@
           data-grand="{{ $am62Inv ? number_format((float)$am62Inv->grand_total,2) : '' }}"
           data-finance="{{ $r->am62_finance_text??'NO INVOICE' }}"
           data-review="{{ $am62CanReview ? route('erp.job-cards.credit-correction',$r->id) : '' }}"
+          data-post="{{ $am62CanReview && !($r->am62_payment_linked??false) && strtolower((string)$am62Inv->status)==='issued' ? route('erp.job-cards.return-to-jc.unpaid',[$r->id,$am62Inv->id]) : '' }}"
           data-show="{{ route('erp.job-cards.show',$r->id) }}"
           data-invoicelink="{{ $am62Inv ? route('erp.invoices.show',$am62Inv->id) : '' }}"
           data-search="{{ strtolower($r->job_no.' '.$r->customer_name.' '.$r->customer_phone.' '.$r->vehicle_reg_no.' '.($am62Inv->invoice_no??'')) }}"
@@ -109,7 +123,7 @@
         <td>
           <div class="am62-btncell">
             @if($am62CanReview)
-              <a class="am62-danger" href="{{ route('erp.job-cards.credit-correction',$r->id) }}">↩ Return to JC</a>
+              <a class="am62-danger" data-am62-launch href="{{ route('erp.job-cards.credit-correction',$r->id) }}">↩ Return to JC</a>
             @endif
             <a class="am62-white" href="{{ route('erp.job-cards.show',$r->id) }}">Open JC</a>
             @if($am62Inv)<a class="am62-white" href="{{ route('erp.invoices.show',$am62Inv->id) }}">Invoice</a>@endif
@@ -136,7 +150,7 @@
    <div class="am62-profileactions">
      <a class="am62-white" id="am62-open" href="{{ $am62Initial ? route('erp.job-cards.show',$am62Initial->id) : '#' }}">▣ Open Job Card</a>
      <a class="am62-white" id="am62-viewinvoice" href="{{ $am62InitialInv ? route('erp.invoices.show',$am62InitialInv->id) : '#' }}" @if(!$am62InitialInv) aria-disabled="true" @endif>▣ View Original Invoice</a>
-     <a class="am62-danger" id="am62-return" href="{{ $am62Invoiced ? route('erp.job-cards.credit-correction',$am62Invoiced->id) : '#' }}" @if(!$am62Invoiced) aria-disabled="true" @endif>↩ RETURN TO JC</a>
+     <a class="am62-danger" data-am62-launch id="am62-return" href="{{ $am62Invoiced ? route('erp.job-cards.credit-correction',$am62Invoiced->id) : '#' }}" @if(!$am62Invoiced) aria-disabled="true" @endif>↩ RETURN TO JC</a>
      <a class="am62-white" href="{{ route('erp.money-receipts.index') }}">Money Receipts</a>
    </div>
    <div class="am62-notice" id="am62-finance-msg" @if(!$am62Initial||!$am62Initial->am62_payment_linked) hidden @endif>
@@ -164,6 +178,33 @@
   </form>
  </details>
 </div>
+
+<div class="am62-overlay" id="am62-modal" hidden>
+ <section class="am62-dialog" role="dialog" aria-modal="true" aria-labelledby="am62-dialog-title">
+   <div class="am62-dialog-head">
+     <h2 id="am62-dialog-title">↩ RETURN TO JC</h2>
+     <button class="am62-close" type="button" id="am62-dialog-close" aria-label="Close">×</button>
+   </div>
+   <p>Same Job Card number rahega. Original invoice aur Money Receipt history preserve hogi.</p>
+   <div class="am62-summary"><b id="am62-dialog-jc">—</b> · <span id="am62-dialog-invoice">—</span> · <span id="am62-dialog-finance">—</span></div>
+   <form method="post" id="am62-return-form" action="" hidden>
+      @csrf
+      <input type="hidden" name="credit_date" value="{{ now('Asia/Kolkata')->toDateString() }}">
+      <label style="display:block;font-size:12px;font-weight:850;margin:10px 0 6px">Reason for Return to JC *</label>
+      <textarea name="reason" minlength="10" maxlength="1000" required placeholder="Example: Wrong labour discount / parts correction."></textarea>
+      <label class="am62-ack"><input type="checkbox" name="confirmed_finance" required value="1"><span>I have verified the original invoice/payment status and understand that this will issue a Full Credit Note. Required GST/e-Invoice reporting will be handled separately.</span></label>
+      <button class="am62-danger" type="submit">CONFIRM &amp; RETURN TO JC</button>
+   </form>
+   <div id="am62-return-blocked" hidden>
+      <div class="am62-notice" style="display:block">
+       <strong>FINANCE REVIEW REQUIRED</strong>
+       <p id="am62-block-reason" style="margin-bottom:0">Payment-linked invoice cannot be automatically reversed until Money Receipt allocation reconciliation is supported.</p>
+      </div>
+      <a class="am62-white" id="am62-review-link" href="#">View Billing / Credit History</a>
+      <a class="am62-white" href="{{ route('erp.money-receipts.index') }}">Money Receipt Register</a>
+   </div>
+ </section>
+</div>
 <script id="AM62_SELECT_ROW">
 (function(){
  const root=document.getElementById('am62-admin-job-cards');if(!root)return;
@@ -187,6 +228,42 @@
   row.addEventListener('keydown',event=>{if(event.key==='Enter'&&event.target===row){event.preventDefault();select(row);}});
  });
  if(first)select(first);
+
+ const dialog=document.getElementById('am62-modal');
+ const dialogForm=document.getElementById('am62-return-form');
+ const blocked=document.getElementById('am62-return-blocked');
+ function launch(row){
+  if(!row || !dialog)return;
+  select(row);
+  const a=row.dataset;
+  document.getElementById('am62-dialog-jc').textContent=a.jc;
+  document.getElementById('am62-dialog-invoice').textContent=(a.invoice||'No invoice')+(a.grand?' · ₹'+a.grand:'');
+  document.getElementById('am62-dialog-finance').textContent=a.finance;
+  const eligible=!!a.post;
+  dialogForm.hidden=!eligible;blocked.hidden=eligible;
+  dialogForm.action=a.post||'';
+  dialogForm.reset();
+  document.getElementById('am62-review-link').href=a.review||a.show;
+  document.getElementById('am62-block-reason').textContent=a.review?
+    'Payment or Finance restriction detected. The original Money Receipt must be reconciled before any reversal. No invoice or customer ledger changes will be made from this screen.':
+    'Only a Job Card with a linked ISSUED invoice can be returned.';
+  dialog.hidden=false;
+  const field=dialogForm.querySelector('textarea');
+  if(eligible && field)field.focus();
+  else document.getElementById('am62-dialog-close').focus();
+ }
+ root.querySelectorAll('[data-am62-launch]').forEach(link=>{
+   link.addEventListener('click',event=>{
+     event.preventDefault();
+     const row=link.closest('[data-am62-row]') || root.querySelector('[data-am62-row].am62-picked');
+     launch(row);
+   });
+ });
+ function closeDialog(){dialog.hidden=true;}
+ document.getElementById('am62-dialog-close').addEventListener('click',closeDialog);
+ dialog.addEventListener('click',event=>{if(event.target===dialog)closeDialog();});
+ document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!dialog.hidden)closeDialog();});
+
  const search=get('search'),count=get('count');
  if(search)search.addEventListener('input',()=>{
   const query=search.value.trim().toLowerCase(),words=query.split(/\s+/).filter(Boolean);
