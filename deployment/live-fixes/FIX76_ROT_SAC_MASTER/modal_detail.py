@@ -4,6 +4,7 @@ import hashlib,sys,re
 root=Path(sys.argv[1]);assert (root/'artisan').is_file()
 for rel,spans in {
  'public/legacy/workshop/labour-master.html':[(1,154),(167,288),(300,374)],
+ 'public/legacy/api/labour-crud.php':[(1,270)],
  'public/legacy/api/labour-master.php':[(1,240)],
  'public/legacy/api/labour.php':[(1,160)],
  'public/legacy/api/labours.php':[(1,120)],
