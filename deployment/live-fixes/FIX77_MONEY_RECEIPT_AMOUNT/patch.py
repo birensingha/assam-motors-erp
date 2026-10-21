@@ -119,7 +119,7 @@ for t in ['FIX77_RECEIPT_AMOUNT_GUIDANCE','Use Invoice Outstanding','p77-amount-
  if t not in s:raise RuntimeError('FIX77_CONTRACT_MISSING_'+t)
 # Original amount fields, server endpoint and posting policy are unchanged.
 for t in ['name="cash_amount"','name="online_amount"',"route('erp.money-receipts.store')",
-          'name="request_key"',"<button id=\\"p58-submit\\" type=\\"submit\\""]:
+          'name="request_key"', '<button id="p58-submit" type="submit"']:
  if t not in s:raise RuntimeError('FIX77_FORM_CONTRACT_CHANGED_'+t)
 if mode=='check':
  print('FIX77_PREFLIGHT_PASS_NO_DB_OR_CONTROLLER_CHANGES');sys.exit(0)
