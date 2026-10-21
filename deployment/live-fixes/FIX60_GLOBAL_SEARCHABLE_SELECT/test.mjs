@@ -6,6 +6,7 @@ const html='<!doctype html><html><body><form id="f"><select name="vendor" id="ve
 const dom=new JSDOM(html,{runScripts:'dangerously',url:'https://example.test',pretendToBeVisual:true});
 const {window:w}=dom,{document:d}=w;
 w.HTMLElement.prototype.getClientRects=function(){return [{width:200,height:35,left:10,right:210,top:10,bottom:45}]};
+w.HTMLElement.prototype.getBoundingClientRect=function(){return {width:200,height:35,left:10,right:210,top:10,bottom:45}};
 w.HTMLElement.prototype.scrollIntoView=function(){};
 w.eval(source);
 await new Promise(r=>setTimeout(r,90));
