@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/qa-fix60-searchable-select.yml'
+      - 'deployment/live-fixes/FIX60_GLOBAL_SEARCHABLE_SELECT/test.mjs'
   workflow_dispatch:
 permissions:
   contents: read
