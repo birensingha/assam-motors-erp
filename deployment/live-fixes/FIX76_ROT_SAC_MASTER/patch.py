@@ -46,7 +46,7 @@ v=one(v,
  'master_heading')
 v=one(v,
  '<td>{{ $r->rot_description }}</td><td>{{ $r->category ?:',
- '''<td>{{ $r->rot_description }}</td><td><strong>{{ $r->sac_code ?: 'NOT SET' }}</strong></td><td>{{ $r->category ?:''',
+ "<td>{{ $r->rot_description }}</td><td><strong>{{ $r->sac_code ?: 'NOT SET' }}</strong></td><td>{{ $r->category ?:",
  'table_sac_value')
 v=one(v,
  '<td colspan="8">','<td colspan="9">','inline_edit_colspan')
