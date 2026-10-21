@@ -80,7 +80,7 @@ v=one(v,
 '''+add+'''
     <div class="am83-grid-header"><span>LABOUR / WORK + SOURCE</span><span>MECHANIC · ROT STATUS · ACTUAL TIME</span><span>STD HRS (LOCKED)</span><span>RATE / DISC / GST / CUSTOMER TOTAL</span></div>''',
  'inline_add_no_separate_box')
-v=one(v,'   @forelse($labour as $line)','   @forelse($am83RotLabour as $line)','regular_rot_only')
+v=one(v,'  @forelse($labour as $line)','  @forelse($am83RotLabour as $line)','regular_rot_only')
 v=one(v,
  '<div><div class="rot-code">{{ $line->rot_code ?: \'LABOUR\' }}</div><h3>{{ $line->description }}</h3>',
  '''<div><div class="rot-code">{{ $line->rot_code ?: 'LABOUR' }}
