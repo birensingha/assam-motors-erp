@@ -358,7 +358,7 @@
  cancel.addEventListener('click',close);
  modal.addEventListener('click',e=>{if(e.target===modal)close();});
  document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!modal.hidden)close();});
- form.addEventListener('submit',()=>{submit.disabled=true;submit.textContent='PROCESSING — DO NOT REPEAT';});
+ form.addEventListener('submit',()=>{setTimeout(()=>{submit.disabled=true;submit.textContent='PROCESSING — DO NOT REPEAT';},0);});
 })();
 </script>
 @endif
