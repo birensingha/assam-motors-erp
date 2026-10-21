@@ -90,12 +90,13 @@ function init(sel){
  input.addEventListener('click',()=>{if(active!==state)draw(state,'',true);});
  input.addEventListener('input',()=>{
   // The previous canonical selection must not silently survive unmatched text.
+  const typed=input.value;
   if(sel.selectedIndex>=0&&sel.options[sel.selectedIndex]?.value){
    sel.selectedIndex=sel.querySelector('option[value=""]')?.index??-1;
    sel.dispatchEvent(new Event('change',{bubbles:true}));
   }
-  input.setCustomValidity('');
-  draw(state,input.value);
+  input.value=typed;input.setCustomValidity('');
+  draw(state,typed);
  });
  input.addEventListener('keydown',e=>{
   if(e.key==='ArrowDown'||e.key==='ArrowUp'){
