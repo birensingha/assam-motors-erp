@@ -24,7 +24,7 @@ route_line="""    // FIX61B_ONE_BUTTON_RETURN_JC_V1: single audited unpaid invoi
         [\\App\\Http\\Controllers\\Web\\AdminJobCardReturnController::class,'store'])
         ->whereNumber('job')->name('erp.job-cards.return-to-jc');
 """
-view_line="{{-- FIX61B_ONE_BUTTON_RETURN_JC_V1 --}}\\n@include('job-cards.return-to-jc')\\n"
+view_line="{{-- FIX61B_ONE_BUTTON_RETURN_JC_V1 --}}\n@include('job-cards.return-to-jc')\n"
 old_routes=routes.read_text(encoding='utf8')
 old_show=show.read_text(encoding='utf8')
 if (marker in old_routes or marker in old_show or any(f.exists() for f in need.values())):
