@@ -16,6 +16,7 @@ jobs:
       PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
       ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
     steps:
+      - uses: actions/checkout@v4
       - name: Configure SSH
         shell: bash
         run: |
