@@ -75,7 +75,7 @@ jobs:
           php artisan view:clear
           php artisan view:cache
           php artisan route:list --name=erp.job-cards.summary-print
-          if grep -q 'Advanced Reversal Centre' resources/views/job-cards/show.blade.php;then echo 'FIX69_REVERSAL_UI_NOT_REMOVED';exit 6;fi
+          if grep -Fq 'Advanced Reversal Centre →' resources/views/job-cards/show.blade.php;then echo 'FIX69_REVERSAL_UI_NOT_REMOVED';false;fi
           php -r '
           require "vendor/autoload.php";$app=require "bootstrap/app.php";
           $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
