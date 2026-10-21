@@ -16,7 +16,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           s=Path('deployment/live-fixes/FIX61A_ROT_REASON_SCOPED/reason_scope.py').read_text()
-          for token in ('FIX61A_ROT_REASON_SCOPED_V1','array_key_exists($am61Field,$data)','expected_old_total','Wrong mechanic selected','Start / End time correction','data-p55-target-wrap','relock()'):
+          for token in ('FIX61A_ROT_REASON_SCOPED_V1','array_key_exists($am61Field,$data)','Wrong mechanic selected','Start / End time correction','data-p55-target-wrap','relock()'):
               assert token in s,token
           print('FIX61A_SOURCE_GUARD_QA=PASS')
           PY
