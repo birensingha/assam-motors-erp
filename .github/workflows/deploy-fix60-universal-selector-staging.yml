@@ -1,0 +1,103 @@
+name: FIX60 Shared Searchable Select STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-fix60-universal-selector-staging.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Offline JavaScript and patch syntax QA
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --check deployment/live-fixes/FIX60_GLOBAL_SEARCHABLE_SELECT/am-select.js
+          python3 -m py_compile deployment/live-fixes/FIX60_GLOBAL_SEARCHABLE_SELECT/deploy.py
+          echo "FIX60_SOURCE_SYNTAX=PASS"
+      - name: Configure staging SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq && sudo apt-get install -qq -y sshpass
+          fi
+      - name: Deploy with backup, compile check and automatic rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT")
+            SCP=(sshpass -e scp -P "$PORT")
+          fi
+          PKG=deployment/live-fixes/FIX60_GLOBAL_SEARCHABLE_SELECT
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX60_GLOBAL_SEARCHABLE_SELECT"'
+          "${SCP[@]}" "$PKG/am-select.js" "$PKG/am-select.css" "$PKG/deploy.py" "$REMOTE:~/FIX60_GLOBAL_SEARCHABLE_SELECT/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          PKG="$HOME/FIX60_GLOBAL_SEARCHABLE_SELECT"
+          cd "$ROOT"
+          test -f artisan && test -d vendor && test -f resources/views/layouts/erp.blade.php
+          python3 "$PKG/deploy.py" check "$ROOT" "$PKG"
+          STAMP="$(date +%Y%m%d_%H%M%S)"
+          BACKUP="storage/app/FIX60_GLOBAL_SELECT_BACKUP_$STAMP"
+          mkdir -p "$BACKUP"
+          cp -p resources/views/layouts/erp.blade.php "$BACKUP/erp.blade.php"
+          if [ -f resources/views/partials/am-global-selector.blade.php ]; then
+            cp -p resources/views/partials/am-global-selector.blade.php "$BACKUP/am-global-selector.blade.php"
+          fi
+          rollback(){
+            echo 'FIX60_ROLLING_BACK_STAGING'
+            cp -p "$BACKUP/erp.blade.php" resources/views/layouts/erp.blade.php
+            if [ -f "$BACKUP/am-global-selector.blade.php" ]; then
+              cp -p "$BACKUP/am-global-selector.blade.php" resources/views/partials/am-global-selector.blade.php
+            else
+              rm -f resources/views/partials/am-global-selector.blade.php
+            fi
+            php artisan view:clear >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          python3 "$PKG/deploy.py" apply "$ROOT" "$PKG"
+          php artisan view:clear
+          php artisan view:cache
+          test "$(grep -Fc "@include('partials.am-global-selector')" resources/views/layouts/erp.blade.php)" = 1
+          test "$(grep -Fc 'AM_FIX60_GLOBAL_SELECT_V1' resources/views/partials/am-global-selector.blade.php)" = 1
+          for path in /erp/login /staff/login; do
+            code="$(curl -k -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")"
+            echo "FIX60_HEALTH_$path=$code"
+            test "$code" = 200
+          done
+          trap - ERR
+          echo "FIX60_STAGING_APPLIED_NO_DATABASE_WRITES BACKUP=$BACKUP"
+          REMOTE
+      - name: Remove runner SSH credential
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
