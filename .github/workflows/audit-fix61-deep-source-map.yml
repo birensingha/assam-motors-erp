@@ -96,6 +96,14 @@ jobs:
             for i,line in enumerate(a):
              if any(t in line.lower() for t in ['sidebar','@yield','@section','main-content','content-wrapper','return to jc','return-to-jc','job-cards.index','<main']):
               print('DESIGN_DETAIL',rel,i+1,line[:180])
+          chunk('resources/views/job-cards/return-to-jc.blade.php',1,70)
+          chunk('resources/views/layouts/erp.blade.php',1,20)
+          chunk('resources/views/layouts/erp.blade.php',65,120)
+          chunk('routes/web.php',148,178)
+          for rel in ['routes/web.php','resources/views/job-cards/show.blade.php']:
+           f=root/rel
+           for i,line in enumerate(f.read_text(errors='replace').splitlines(),1):
+            if 'return-to-jc' in line: print('CURRENT_RETURN_REF',rel,i,line[:225])
           print('FIX61_TARGET_MAP_PASS_NO_WRITES')
           PY
       - name: Cleanup
