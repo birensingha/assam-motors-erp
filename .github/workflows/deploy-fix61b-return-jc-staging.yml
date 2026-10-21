@@ -1,0 +1,136 @@
+name: FIX61B One Button Return to JC STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-fix61b-return-jc-staging.yml'
+      - 'deployment/live-fixes/FIX61B_RETURN_JC/**'
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Offline syntax and fail-closed patch tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG=deployment/live-fixes/FIX61B_RETURN_JC
+          python3 -m py_compile "$PKG/apply.py"
+          php -l "$PKG/AdminJobCardReturnController.php"
+          python3 - <<'PY'
+          from pathlib import Path
+          import tempfile,subprocess
+          pkg=Path('deployment/live-fixes/FIX61B_RETURN_JC').resolve()
+          src=(pkg/'AdminJobCardReturnController.php').read_text()
+          for guard in ["DB::transaction(","where('invoice_id', $invoiceId)","'confirm_return'","AdminInvoiceCreditNoteController::class","AdminJobCardLifecyclePageController::class","'invoice' => 'Linked invoice is not ISSUED"]:
+            assert guard in src,guard
+          with tempfile.TemporaryDirectory() as d:
+            root=Path(d)
+            (root/'artisan').write_text('Laravel test fixture')
+            routes=root/'routes/web.php'
+            routes.parent.mkdir(parents=True)
+            routes.write_text("<?php\n    // FIX56: protected billing correction page, credit note and original print.\n")
+            view=root/'resources/views/job-cards/show.blade.php'
+            view.parent.mkdir(parents=True)
+            view.write_text('<div class="summary-grid job-summary">\n')
+            (root/'app/Http/Controllers/Web').mkdir(parents=True)
+            script=pkg/'apply.py'
+            for command in ('check','apply','check'):
+              result=subprocess.run(['python3',str(script),command,str(root),str(pkg)],capture_output=True,text=True)
+              assert result.returncode==0,(command,result.stdout,result.stderr)
+              print('FIX61B_FIXTURE',command,result.stdout.strip())
+            assert 'return-to-jc' in routes.read_text()
+            assert "@include('job-cards.return-to-jc')" in view.read_text()
+            assert (root/'app/Http/Controllers/Web/AdminJobCardReturnController.php').exists()
+          print('FIX61B_OFFLINE_QA_PASS')
+          PY
+  deploy:
+    needs: qa
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure staging SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ -n "$KEY" ];then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq && sudo apt-get install -qq -y sshpass
+          fi
+      - name: Deploy guarded route/controller/Blade with rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT")
+            SCP=(sshpass -e scp -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          PKG=deployment/live-fixes/FIX61B_RETURN_JC
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX61B_RETURN_JC"'
+          "${SCP[@]}" "$PKG/apply.py" "$PKG/AdminJobCardReturnController.php" "$PKG/return-to-jc.blade.php" "$REMOTE:~/FIX61B_RETURN_JC/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"
+          PKG="$HOME/FIX61B_RETURN_JC"
+          cd "$APP"
+          test -f artisan && test -d vendor
+          python3 "$PKG/apply.py" check "$APP" "$PKG"
+          STAMP="$(date +%Y%m%d_%H%M%S)"
+          BACKUP="storage/app/FIX61B_RETURN_JC_BACKUP_$STAMP"
+          mkdir -p "$BACKUP"
+          cp -p routes/web.php "$BACKUP/web.php"
+          cp -p resources/views/job-cards/show.blade.php "$BACKUP/show.blade.php"
+          rollback(){
+            echo FIX61B_ROLLBACK_START
+            cp -p "$BACKUP/web.php" routes/web.php
+            cp -p "$BACKUP/show.blade.php" resources/views/job-cards/show.blade.php
+            rm -f app/Http/Controllers/Web/AdminJobCardReturnController.php
+            rm -f resources/views/job-cards/return-to-jc.blade.php
+            php artisan route:clear >/dev/null 2>&1 || true
+            php artisan view:clear >/dev/null 2>&1 || true
+            echo FIX61B_ROLLBACK_DONE
+          }
+          trap rollback ERR
+          python3 "$PKG/apply.py" apply "$APP" "$PKG"
+          php -l app/Http/Controllers/Web/AdminJobCardReturnController.php
+          php artisan route:clear
+          php artisan view:clear
+          php artisan view:cache
+          php artisan route:list --name=erp.job-cards.return-to-jc | grep -F 'erp.job-cards.return-to-jc'
+          grep -q "FIX61B_ONE_BUTTON_RETURN_JC_V1" routes/web.php
+          grep -q "FIX61B_ONE_BUTTON_RETURN_JC_V1" resources/views/job-cards/show.blade.php
+          for path in /erp/login /staff/login;do
+            code="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")"
+            echo "FIX61B_HEALTH_$path=$code"
+            test "$code" = 200
+          done
+          trap - ERR
+          echo "FIX61B_STAGING_DEPLOYED_UNPAID_ONLY BACKUP=$BACKUP NO_DATABASE_WRITES"
+          REMOTE
+      - name: Cleanup runner key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
