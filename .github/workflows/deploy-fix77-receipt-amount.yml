@@ -1,0 +1,93 @@
+name: FIX77 Money Receipt Amount Entry Guidance STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-fix77-receipt-amount.yml'
+      - 'deployment/live-fixes/FIX77_MONEY_RECEIPT_AMOUNT/patch.py'
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Offline form patch syntax
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/FIX77_MONEY_RECEIPT_AMOUNT/patch.py
+          grep -Fq 'FIX77_RECEIPT_AMOUNT_GUIDANCE' deployment/live-fixes/FIX77_MONEY_RECEIPT_AMOUNT/patch.py
+      - name: Secure STAGING SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          for n in 1 2;do
+            if ssh-keyscan -T 18 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Patch view only, compile, JS syntax and financial-safety smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT");SCP=(sshpass -e scp -P "$PORT");fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX77_MONEY_RECEIPT_AMOUNT"'
+          "${SCP[@]}" deployment/live-fixes/FIX77_MONEY_RECEIPT_AMOUNT/patch.py "$REMOTE:~/FIX77_MONEY_RECEIPT_AMOUNT/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1";PKG="$HOME/FIX77_MONEY_RECEIPT_AMOUNT";cd "$APP"
+          test -f artisan && test -d vendor
+          python3 "$PKG/patch.py" check "$APP"
+          BACKUP="storage/app/FIX77_RECEIPT_AMOUNT_VIEW_BACKUP_$(date +%Y%m%d_%H%M%S)"
+          mkdir -p "$BACKUP"
+          cp -p resources/views/money-receipts/create.blade.php "$BACKUP/create.blade.php"
+          rollback(){
+            echo 'FIX77_UI_ROLLBACK'
+            cp -p "$BACKUP/create.blade.php" resources/views/money-receipts/create.blade.php
+            php artisan view:clear >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          python3 "$PKG/patch.py" apply "$APP"
+          php artisan view:clear
+          php artisan view:cache
+          python3 - <<'PY'
+          from pathlib import Path
+          from html.parser import HTMLParser
+          s=Path('resources/views/money-receipts/create.blade.php').read_bytes().decode('utf8','surrogateescape')
+          assert s.count('FIX77_RECEIPT_AMOUNT_GUIDANCE')==1
+          assert s.count('id="p77-fill-due"')==1
+          assert s.count('id="p77-amount-error"')==1
+          assert s.count('id="p58-submit"')==1
+          assert s.count('name="request_key"')==1
+          assert "alert('Positive receipt amount required.')" not in s
+          assert 'form.addEventListener(\'submit\'' in s
+          assert 'amountError.hidden=true' in s
+          print('FIX77_AMOUNT_INPUTS_BLADE_AND_POST_CONTRACT_PASS')
+          PY
+          for path in /erp/login /staff/login;do
+            code="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")"
+            echo "FIX77_HEALTH_$path=$code";test "$code" = 200
+          done
+          trap - ERR
+          echo "FIX77_STAGING_UI_SUCCESS BACKUP=$BACKUP NO_FINANCIAL_WRITES"
+          REMOTE
+      - name: Remove SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
