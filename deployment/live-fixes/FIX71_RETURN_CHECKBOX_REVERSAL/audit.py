@@ -8,7 +8,7 @@ for name in ["resources/views/job-cards/show.blade.php","resources/views/job-car
  if not p.exists():print("FIX71_NOT_FOUND",name);continue
  raw=p.read_bytes();txt=raw.decode('utf8',errors='replace');lines=txt.splitlines()
  print("FIX71_FILE",name,"sha256",hashlib.sha256(raw).hexdigest(),"lines",len(lines))
- q=re.compile(r'Advance.{0,32}Reversal|Advanced.{0,32}Reversal|Reversal.{0,32}Centre|Job Card Reversal|am63-consent|confirmed_finance|return-modal|FIX69|FIX63|P19_JOBCARD_ADMIN_PANELS_BOTTOM|type=["\\']checkbox|form.*input|input\[type',re.I)
+ q=re.compile(r'Advance.{0,32}Reversal|Advanced.{0,32}Reversal|Reversal.{0,32}Centre|Job Card Reversal|am63-consent|confirmed_finance|return-modal|FIX69|FIX63|P19_JOBCARD_ADMIN_PANELS_BOTTOM|checkbox|form.*input|input\[type',re.I)
  hits=[i for i,l in enumerate(lines) if q.search(l)]
  for i in hits[:65]:
   st=max(0,i-2);en=min(len(lines),i+3)
