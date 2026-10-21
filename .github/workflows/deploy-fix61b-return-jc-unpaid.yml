@@ -1,0 +1,85 @@
+name: FIX61B Single Step Unpaid Return to JC STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-fix61b-return-jc-unpaid.yml'
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Offline syntax
+        run: |
+          set -e
+          python3 -m py_compile deployment/live-fixes/FIX61B_RETURN_TO_JC_UNPAID/install.py
+          php -l deployment/live-fixes/FIX61B_RETURN_TO_JC_UNPAID/AdminReturnToJobCardController.php
+      - name: Configure staging SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Backup, exact preflight, guarded install and health test
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT");SCP=(sshpass -e scp -P "$PORT");fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX61B_RETURN_TO_JC_UNPAID"'
+          "${SCP[@]}" deployment/live-fixes/FIX61B_RETURN_TO_JC_UNPAID/install.py deployment/live-fixes/FIX61B_RETURN_TO_JC_UNPAID/AdminReturnToJobCardController.php "$REMOTE:~/FIX61B_RETURN_TO_JC_UNPAID/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"
+          PKG="$HOME/FIX61B_RETURN_TO_JC_UNPAID"
+          cd "$APP"
+          test -f artisan && test -d vendor
+          python3 "$PKG/install.py" check "$APP"
+          STAMP="$(date +%Y%m%d_%H%M%S)"
+          BACKUP="storage/app/FIX61B_UNPAID_BACKUP_$STAMP"
+          mkdir -p "$BACKUP"
+          cp -p routes/web.php "$BACKUP/web.php"
+          cp -p resources/views/job-cards/credit-correction.blade.php "$BACKUP/credit-correction.blade.php"
+          rollback(){
+            echo 'FIX61B_ROLLBACK_SOURCE'
+            cp -p "$BACKUP/web.php" routes/web.php
+            cp -p "$BACKUP/credit-correction.blade.php" resources/views/job-cards/credit-correction.blade.php
+            rm -f app/Http/Controllers/Web/AdminReturnToJobCardController.php
+            php artisan optimize:clear >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          python3 "$PKG/install.py" apply "$APP"
+          php -l app/Http/Controllers/Web/AdminReturnToJobCardController.php
+          php -l routes/web.php
+          php artisan optimize:clear
+          php artisan view:cache
+          php artisan route:list --name=erp.job-cards.return-to-jc --path=job-cards --compact 2>/dev/null ||
+            php artisan route:list --name=erp.job-cards.return-to-jc
+          grep -q 'FIX61B_RETURN_TO_JC_UNPAID' routes/web.php
+          for path in /erp/login /staff/login;do
+            code="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")"
+            echo "FIX61B_HEALTH_$path=$code"
+            test "$code" = 200
+          done
+          trap - ERR
+          echo "FIX61B_STAGING_DEPLOY_OK BACKUP=$BACKUP NO_DATABASE_WRITES"
+          REMOTE
+      - name: Cleanup credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
