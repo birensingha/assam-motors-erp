@@ -1,0 +1,70 @@
+name: FIX61 Return to JC and ROT Source Audit
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/audit-fix61-return-jc-rot-20261021.yml']
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq && sudo apt-get install -qq -y sshpass
+          fi
+      - name: Readonly source mapping
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$PASSWORD"; SSH=(sshpass -e ssh -p "$PORT"); fi
+          "${SSH[@]}" "$USERNAME@$HOST" "python3 - '$ROOT'" <<'PY'
+          from pathlib import Path
+          import re,sys
+          root=Path(sys.argv[1]).resolve()
+          assert (root/'artisan').is_file()
+          print("FIX61_START_READONLY")
+          paths=["routes/web.php","app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php","app/Http/Controllers/Web/AdminJobCardUnwindController.php","app/Http/Controllers/Web/AdminJobCardPageController.php","app/Http/Controllers/Web/AdminInvoiceCreditNoteController.php","app/Http/Controllers/Web/AdminPaidInvoiceAdvancePageController.php","app/Services/PaidInvoiceAdvanceService.php","app/Http/Controllers/Web/AdminWorkshopControlPageController.php","resources/views/job-cards/show.blade.php","resources/views/job-cards/lifecycle-panel.blade.php","resources/views/job-cards/credit-correction.blade.php","resources/views/job-cards/rot-alteration.blade.php","resources/views/job-cards/unwind.blade.php"]
+          pat=re.compile(r'reopen|reversal|unwind|credit.?note|return.?to.?jc|billing.?correction|rot[._-]alter|money.?receipt',re.I)
+          for rel in paths:
+            f=root/rel
+            if not f.is_file():print("ABSENT",rel);continue
+            lines=f.read_text(errors='replace').splitlines()
+            print("FILE",rel,"LINES",len(lines))
+            if rel.startswith("routes/"):
+              for i,line in [(i,line) for i,line in enumerate(lines) if pat.search(line)][:95]:print("ROUTE",i+1,line[:230].strip())
+            elif rel.endswith(".php"):
+              methods=[(i+1,m.group(1)) for i,line in enumerate(lines) if (m:=re.search(r'function\s+([A-Za-z0-9_]+)\s*\(',line))]
+              print("METHODS",rel,methods[:85])
+              hits=[i for i,line in enumerate(lines) if re.search(r'function\s+(?:reopen|returnToJobCard|returnToJc|reverseInvoice|post|createInvoice|updateJobLine|alter|updateRot|releaseInvoice|reconcile|save)\s*\(',line,re.I)]
+              for start in hits[:5]:
+                end=min(len(lines),start+68)
+                print("SNIPPET",rel,"LINES",start+1,end)
+                for j in range(start,end):
+                  if re.search(r'(password|secret|token|private_key|api_key)',lines[j],re.I):continue
+                  print(str(j+1)+":",lines[j][:220])
+            else:
+              for i,line in [(i,line) for i,line in enumerate(lines) if pat.search(line)][:35]:print("VIEW",rel,i+1,line[:180].strip())
+          print("FIX61_READONLY_AUDIT_PASS")
+          PY
+      - name: Cleanup key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
