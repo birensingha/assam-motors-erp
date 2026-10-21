@@ -1,0 +1,91 @@
+name: FIX71 Compact Return to JC Checkbox & Remove Reversal Comment STAGING
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/deploy-fix71-checkbox-reversal.yml']
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check patch syntax and strictly limited UI changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/FIX71_RETURN_CHECKBOX_REVERSAL/apply.py
+          grep -q 'FIX71_COMPACT_CONSENT_CHECKBOX' deployment/live-fixes/FIX71_RETURN_CHECKBOX_REVERSAL/apply.py
+          grep -q 'FIX71_REMOVED_REVERSAL_COMMENT' deployment/live-fixes/FIX71_RETURN_CHECKBOX_REVERSAL/apply.py
+      - name: Connect STAGING SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          for i in 1 2;do
+            if ssh-keyscan -T 18 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Backup, apply, compile and check both screens
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT");SCP=(sshpass -e scp -P "$PORT");fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX71_RETURN_CHECKBOX_REVERSAL"'
+          "${SCP[@]}" deployment/live-fixes/FIX71_RETURN_CHECKBOX_REVERSAL/apply.py "$REMOTE:~/FIX71_RETURN_CHECKBOX_REVERSAL/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1";PKG="$HOME/FIX71_RETURN_CHECKBOX_REVERSAL";cd "$APP"
+          test -f artisan && test -d vendor
+          python3 "$PKG/apply.py" check "$APP"
+          STAMP="$(date +%Y%m%d_%H%M%S)"
+          BACKUP="storage/app/FIX71_UI_BACKUP_$STAMP"
+          mkdir -p "$BACKUP"
+          cp -p resources/views/job-cards/show.blade.php "$BACKUP/show.blade.php"
+          cp -p resources/views/job-cards/credit-correction.blade.php "$BACKUP/credit-correction.blade.php"
+          rollback(){
+            echo "FIX71_ROLLBACK_UI"
+            cp -p "$BACKUP/show.blade.php" resources/views/job-cards/show.blade.php
+            cp -p "$BACKUP/credit-correction.blade.php" resources/views/job-cards/credit-correction.blade.php
+            php artisan view:clear >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          python3 "$PKG/apply.py" apply "$APP"
+          php artisan view:clear
+          php artisan view:cache
+          grep -Fq 'FIX71_COMPACT_CONSENT_CHECKBOX' resources/views/job-cards/credit-correction.blade.php
+          grep -Fq 'input[type="checkbox"]' resources/views/job-cards/credit-correction.blade.php
+          grep -Fq 'width:17px!important;height:17px!important' resources/views/job-cards/credit-correction.blade.php
+          grep -Fq 'FIX71_REMOVED_REVERSAL_COMMENT' resources/views/job-cards/show.blade.php
+          if grep -Eiq 'Advanced Reversal Centre|Job Card Reversal / Cancel Centre' resources/views/job-cards/show.blade.php;then
+            echo 'FIX71_REVERSAL_VISIBLE_OR_COMMENT_REMNANT';false
+          fi
+          grep -Fq 'One-Page Printable Job Card Summary' resources/views/job-cards/show.blade.php
+          grep -Fq 'Billing Correction / Return to JC' resources/views/job-cards/show.blade.php
+          for page in /erp/login /staff/login;do
+            code="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$page")"
+            echo "FIX71_HEALTH_$page=$code";test "$code" = 200
+          done
+          trap - ERR
+          echo "FIX71_STAGING_UI_SUCCESS BACKUP=$BACKUP NO_FINANCIAL_WRITES"
+          REMOTE
+      - name: Cleanup credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
