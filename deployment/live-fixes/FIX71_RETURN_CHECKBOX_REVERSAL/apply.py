@@ -58,7 +58,7 @@ newCss="""/* FIX71_COMPACT_CONSENT_CHECKBOX: override ERP-wide full-width input 
 if text['correction'].count(oldCss)!=1:raise SystemExit('FIX71_CHECKBOX_CSS_NOT_UNIQUE')
 text['correction']=text['correction'].replace(oldCss,newCss,1)
 assert text['correction'].count('name="confirmed_finance"')==1
-assert text['correction'].count('type="checkbox"')==1
+assert text['correction'].count('<input type="checkbox" name="confirmed_finance"')==1
 assert text['correction'].count('id="am63-return-modal"')==1
 assert text['correction'].count('name="reason"')==1
 assert text['show'].count("route('erp.job-cards.credit-correction',$job->id)")==1
