@@ -12,7 +12,8 @@ assert (root/'artisan').is_file() and (root/'routes/web.php').is_file()
 target=root/'resources/views/job-cards/show.blade.php'
 part=root/'resources/views/job-cards/partials/am65-customer-labour.blade.php'
 local=Path(__file__).resolve().parent/'customer-labour.blade.php'
-original=target.read_text(encoding='utf8')
+original_raw=target.read_bytes()
+original=original_raw.decode('utf8',errors='surrogateescape')
 newpart=local.read_text(encoding='utf8')
 marker="AM65_CUSTOMER_LABOUR_PROTOTYPE"
 sha="2d007280d2a0d9d4a5817aebfe89f4b8cb2f47b7329a46c3407a760f6ab85434"
@@ -22,7 +23,7 @@ if marker in original or part.exists():
         print('FIX65_ALREADY_APPLIED')
         sys.exit(0)
     raise SystemExit('FIX65_CONFLICT_OR_PARTIAL_INSTALL_ABORT')
-current=hashlib.sha256(original.encode()).hexdigest()
+current=hashlib.sha256(original_raw.decode('utf8',errors='replace').encode('utf8')).hexdigest()
 print('FIX65_LIVE_SOURCE_SHA',current)
 if current!=sha:raise SystemExit('FIX65_SOURCE_CHANGED_REQUIRES_REAUDIT')
 startAnchor='  {{-- AM_JC_ITEMWISE_BILLING_READONLY_V1'
@@ -69,7 +70,7 @@ part.parent.mkdir(parents=True,exist_ok=True)
 def replace_atomic(p,content,perm):
     fd,tmp=tempfile.mkstemp(prefix='.fix65_',dir=p.parent)
     try:
-        with os.fdopen(fd,'w',encoding='utf8') as f:f.write(content)
+        with os.fdopen(fd,'w',encoding='utf8',errors='surrogateescape') as f:f.write(content)
         os.chmod(tmp,perm)
         os.replace(tmp,p)
     finally:
