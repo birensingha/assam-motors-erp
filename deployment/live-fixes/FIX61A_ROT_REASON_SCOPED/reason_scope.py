@@ -75,10 +75,10 @@ extra="""              <label data-p55-target-wrap hidden>For Other: Which field
               </label>
 """
 blade=replace(blade,"              <option>Other</option>\n", "              <option>Other</option>\n",'other_anchor_check')
-blade=replace(blade,"            </select>\n           </label>\n           <label>Admin Note *",
+blade=replace(blade,"            </select>\n          </label>\n          <label>Admin Note *",
 """            </select>
-           </label>
-"""+extra+"""           <label>Admin Note *""",'insert_other_target')
+          </label>
+"""+extra+"""          <label>Admin Note *""",'insert_other_target')
 oldjs="""     fields.forEach(el=>{el.disabled=false;});
      card.classList.add('is-unlocked');"""
 newjs="""     // FIX61A_ROT_REASON_SCOPED_V1: unlock only reason-authorised fields.
