@@ -1,0 +1,114 @@
+name: FIX82 Unified JC Parts and Labour Panels STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-fix82-unified-jc-panels.yml'
+      - 'deployment/live-fixes/FIX82_JC_INLINE_ADD/apply.py'
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 17
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax check and required contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/FIX82_JC_INLINE_ADD/apply.py
+          grep -Fq 'FIX82_JC_SINGLE_ENTRY_PANEL' deployment/live-fixes/FIX82_JC_INLINE_ADD/apply.py
+          grep -Fq 'return_to_jc' deployment/live-fixes/FIX82_JC_INLINE_ADD/apply.py
+      - name: Connect Hostinger STAGING
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for i in 1 2 3;do
+            if ssh-keyscan -T 16 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Preflight, backup, patch and verify existing forms/ROT controls
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT")
+            SCP=(sshpass -e scp -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX82_JC_INLINE_ADD"'
+          "${SCP[@]}" deployment/live-fixes/FIX82_JC_INLINE_ADD/apply.py "$REMOTE:~/FIX82_JC_INLINE_ADD/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1";PKG="$HOME/FIX82_JC_INLINE_ADD";cd "$APP"
+          test -f artisan && test -d vendor
+          python3 "$PKG/apply.py" check "$APP"
+          BACKUP="storage/app/FIX82_UNIFIED_JC_BACKUP_$(date +%Y%m%d_%H%M%S)"
+          mkdir -p "$BACKUP";chmod 700 "$BACKUP"
+          cp -p resources/views/job-cards/show.blade.php "$BACKUP/show.blade.php"
+          cp -p app/Http/Controllers/Web/AdminWorkshopControlPageController.php "$BACKUP/AdminWorkshopControlPageController.php"
+          rollback(){
+            echo "FIX82_ROLLBACK_BLADE_AND_CONTROLLER"
+            cp -p "$BACKUP/show.blade.php" resources/views/job-cards/show.blade.php
+            cp -p "$BACKUP/AdminWorkshopControlPageController.php" app/Http/Controllers/Web/AdminWorkshopControlPageController.php
+            php artisan view:clear >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          python3 "$PKG/apply.py" apply "$APP"
+          php -l app/Http/Controllers/Web/AdminWorkshopControlPageController.php
+          php artisan view:clear
+          php artisan view:cache
+          python3 - <<'PY'
+          from pathlib import Path
+          text=Path('resources/views/job-cards/show.blade.php').read_bytes().decode('utf8','surrogateescape')
+          assert 'Direct Job Card Entry' not in text
+          assert 'jc-direct-entry' not in text
+          assert text.count('name="part_master_id"')==1
+          assert text.count('name="labour_master_id"')==1
+          part=text.index('jc-purchase-block jc-parts-block')
+          lab=text.index('jc-purchase-block jc-labour-block')
+          assert text.index("route('erp.job-cards.parts.direct',$job->id)")>part
+          assert text.index("route('erp.job-cards.labour.direct',$job->id)")>lab
+          assert part<lab
+          assert text.index('am82-entry-block',part)<lab
+          assert "@include('job-cards.partials.am65-customer-labour')" not in text
+          assert 'am65-workshop-toggle' not in text
+          for tag in ('am82-rot-inline','am82-finance-form','am82-final-output','am82-rot-select','am82-rot-search'):
+            assert tag in text,tag
+          for tag in ("route('erp.rot.start',$rot->id)","route('erp.rot.pause',$rot->id)",
+                      "route('erp.rot.resume',$rot->id)","route('erp.rot.complete',$rot->id)",
+                      "route('erp.job-cards.labour.assign',[$job->id,$line->id])"):
+            assert tag in text,tag
+          control=Path('app/Http/Controllers/Web/AdminWorkshopControlPageController.php').read_text()
+          assert 'FIX82_JC_SINGLE_ENTRY_PANEL' in control
+          assert 'Tax-basis reconciliation must be completed' in control
+          print('FIX82_PANELS_FORMS_ROUTES_HISTORY_AND_GST_SAFETY_PASS')
+          PY
+          for path in /erp/login /staff/login;do
+            http="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")"
+            echo "FIX82_HEALTH_$path=$http";test "$http" = 200
+          done
+          trap - ERR
+          echo "FIX82_STAGING_DEPLOY_SUCCESS BACKUP=$BACKUP NO_FINANCIAL_POSTINGS"
+          REMOTE
+      - name: Remove SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
