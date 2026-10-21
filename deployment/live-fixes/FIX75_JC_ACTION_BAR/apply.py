@@ -58,7 +58,12 @@ once('    <a class="btn" href="{{ route(\'erp.expenses.create\',[\'job\'=>$job->
 # Estimate control remains gated; supplementary estimate uses same destination.
 segment=segment.replace('＋ Supplementary Estimate','Estimate/ Reverse')
 segment=segment.replace('Estimate / Revise','Estimate/ Reverse')
-if segment.count('Estimate/ Reverse')!=2:raise RuntimeError('FIX75_ESTIMATE_LABEL_COUNT')
+# Same third button text even while Diagnosis permission is pending; do not
+# enable its route before diagnosis approval.
+segment=segment.replace(
+ '<a class="btn warning-btn" href="#diagnosis-panel">Complete Diagnosis First</a>',
+ '<span class="am75-action am75-warning" aria-disabled="true" title="Complete Diagnosis First">Estimate/ Reverse</span>')
+if segment.count('Estimate/ Reverse')!=3:raise RuntimeError('FIX75_ESTIMATE_LABEL_COUNT')
 segment=segment.replace('class="btn primary"','class="am75-action"',2)
 segment=segment.replace('class="btn warning-btn"','class="am75-action am75-warning"')
 # The only markup physically above the Job Card header content.
@@ -112,13 +117,15 @@ for tok in ["route('erp.job-cards.summary-print',$job->id)",
             "route('erp.job-cards.credit-correction',$job->id)"]:
  if src.count(tok)!=1:raise RuntimeError('FIX75_DUPLICATE_MISSING_ACTION_'+tok)
 # Two exclusive branches share the estimate route; only one renders.
-if src.count("route('erp.estimates.create',$job->id)")!=2:
- raise RuntimeError('FIX75_ESTIMATE_BRANCHES_CHANGED')
+if src.count("route('erp.estimates.create',$job->id)")!=original.count("route('erp.estimates.create',$job->id)"):
+ raise RuntimeError('FIX75_ESTIMATE_ROUTES_CHANGED')
+if toolbar.count("route('erp.estimates.create',$job->id)")!=2:
+ raise RuntimeError('FIX75_ESTIMATE_TOOLBAR_BRANCHES_CHANGED')
 for tok in ['Purchase for Job','Expense for Job','One-Page Printable Job Card Summary',
             'Billing Correction / Return to JC','＋ Supplementary Estimate','Estimate / Revise']:
  if tok in src:raise RuntimeError('FIX75_REDUNDANT_ACTION_REMAINS_'+tok)
 if src.count('class="am75-quick-actions"')!=1:raise RuntimeError('FIX75_TOOLBAR_NOT_UNIQUE')
-if src.count('Estimate/ Reverse')!=2:raise RuntimeError('FIX75_ESTIMATE_NOT_PRESERVED')
+if src.count('Estimate/ Reverse')!=3:raise RuntimeError('FIX75_ESTIMATE_NOT_PRESERVED')
 if original.count("route('erp.job-cards.edit',$job->id)")!=src.count("route('erp.job-cards.edit',$job->id)"):
  raise RuntimeError('FIX75_EDIT_ROUTE_CHANGED')
 if src.count("@include('job-cards.lifecycle-panel')")!=1:raise RuntimeError('FIX75_WORKFLOW_CHANGED')
