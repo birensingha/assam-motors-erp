@@ -54,6 +54,8 @@ jobs:
            for i,line in enumerate(lines):
             if re.search(r'function\s+(?:update|save|edit|unlock|alter)',line,re.I):
              chunk('app/Http/Controllers/Web/'+f.name,i+1,i+110)
+          chunk('app/Http/Controllers/Web/JobCardRotAlterationController.php',143,263)
+          chunk('resources/views/job-cards/rot-alteration.blade.php',123,164)
           print('FIX61_TARGET_MAP_PASS_NO_WRITES')
           PY
       - name: Cleanup
