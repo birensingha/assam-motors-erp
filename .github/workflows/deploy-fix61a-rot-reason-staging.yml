@@ -2,7 +2,9 @@ name: FIX61A ROT Reason Scoped STAGING Apply
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/deploy-fix61a-rot-reason-staging.yml']
+    paths:
+      - '.github/workflows/deploy-fix61a-rot-reason-staging.yml'
+      - 'deployment/live-fixes/FIX61A_ROT_REASON_SCOPED/reason_scope.py'
 permissions: {contents: read}
 concurrency:
   group: assam-motors-staging-control
