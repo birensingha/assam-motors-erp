@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - '.github/workflows/audit-fix76-rot-modal-detail.yml'
+      - 'deployment/live-fixes/FIX76_ROT_SAC_MASTER/modal_detail.py'
       - 'deployment/live-fixes/FIX76_ROT_SAC_MASTER/audit.py'
 permissions: {contents: read}
 jobs:
