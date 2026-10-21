@@ -1,0 +1,78 @@
+name: FIX61A ROT Reason Scoped STAGING Apply
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/deploy-fix61a-rot-reason-staging.yml']
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Source syntax
+        run: python3 -m py_compile deployment/live-fixes/FIX61A_ROT_REASON_SCOPED/reason_scope.py
+      - name: Setup SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ -n "$KEY" ]; then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Exact anchor check, backup, safe deploy and rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT");SCP=(sshpass -e scp -P "$PORT");fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX61A_ROT_REASON_SCOPED"'
+          "${SCP[@]}" deployment/live-fixes/FIX61A_ROT_REASON_SCOPED/reason_scope.py "$REMOTE:~/FIX61A_ROT_REASON_SCOPED/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"
+          PKG="$HOME/FIX61A_ROT_REASON_SCOPED"
+          cd "$APP"
+          test -f artisan && test -d vendor
+          python3 "$PKG/reason_scope.py" check "$APP"
+          NOW="$(date +%Y%m%d_%H%M%S)"
+          BACKUP="storage/app/FIX61A_ROT_BACKUP_$NOW"
+          mkdir -p "$BACKUP"
+          cp -p app/Http/Controllers/Web/JobCardRotAlterationController.php "$BACKUP/JobCardRotAlterationController.php"
+          cp -p resources/views/job-cards/rot-alteration.blade.php "$BACKUP/rot-alteration.blade.php"
+          rollback(){
+            echo "FIX61A_ROLLBACK_SOURCE"
+            cp -p "$BACKUP/JobCardRotAlterationController.php" app/Http/Controllers/Web/JobCardRotAlterationController.php
+            cp -p "$BACKUP/rot-alteration.blade.php" resources/views/job-cards/rot-alteration.blade.php
+            php artisan view:clear >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          python3 "$PKG/reason_scope.py" apply "$APP"
+          php -l app/Http/Controllers/Web/JobCardRotAlterationController.php
+          php artisan view:clear
+          php artisan view:cache
+          grep -q "FIX61A_ROT_REASON_SCOPED_V1" app/Http/Controllers/Web/JobCardRotAlterationController.php
+          grep -q "FIX61A_ROT_REASON_SCOPED_V1" resources/views/job-cards/rot-alteration.blade.php
+          for path in /erp/login /staff/login; do
+            code="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")"
+            echo "FIX61A_HEALTH_$path=$code"
+            test "$code" = 200
+          done
+          trap - ERR
+          echo "FIX61A_STAGING_DEPLOY_OK BACKUP=$BACKUP NO_DATABASE_WRITES"
+          REMOTE
+      - name: Cleanup credential
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
