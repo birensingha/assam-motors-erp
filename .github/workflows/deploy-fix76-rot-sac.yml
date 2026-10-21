@@ -2,7 +2,10 @@ name: FIX76 SAC/HSN Labour ROT Master STAGING
 on:
   push:
     branches: [main]
-    paths: ['.github/workflows/deploy-fix76-rot-sac.yml']
+    paths:
+      - '.github/workflows/deploy-fix76-rot-sac.yml'
+      - 'deployment/live-fixes/FIX76_ROT_SAC_MASTER/patch.py'
+      - 'deployment/live-fixes/FIX76_ROT_SAC_MASTER/patch_legacy.py'
 permissions: {contents: read}
 concurrency:
   group: assam-motors-staging-control
