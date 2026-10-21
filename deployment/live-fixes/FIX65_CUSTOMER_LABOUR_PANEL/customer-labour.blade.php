@@ -120,7 +120,7 @@
          <span class="am65-meta"><b>Mechanic:</b> {{ $am65Rot->staff_name??($line->mechanic_name?:'Not assigned') }}
            · <b>ROT:</b> {{ $am65Rot->status??($line->execution_status??'Planned') }}</span>
          @if($am65Rot)
-           <span class="am65-meta"><b>Actual productive:</b> {{ $fmtSeconds($am65Rot->total_seconds) }}</span>
+           <span class="am65-meta"><b>Actual productive:</b> {{ sprintf('%02d:%02d:%02d', intdiv(max(0,(int)($am65Rot->total_seconds??0)),3600), intdiv(max(0,(int)($am65Rot->total_seconds??0))%3600,60), max(0,(int)($am65Rot->total_seconds??0))%60) }}</span>
          @endif
          @if(trim((string)($line->note??''))!=='')
            <span class="am65-meta"><b>Note:</b> {{ $line->note }}</span>
