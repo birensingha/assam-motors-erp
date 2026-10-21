@@ -57,10 +57,17 @@ for name,sha in paths.items():
   actual=hashlib.sha256(raw).hexdigest()
   print('FIX78_SOURCE',name,actual)
   if actual!=sha:raise SystemExit('FIX78_LIVE_SOURCE_CHANGED_STOP_'+name)
-  if t.count('<style')<1 or t.count('</style>')<1:raise SystemExit('FIX78_STYLE_BLOCK_NOT_FOUND_'+name)
-  idx=t.index('</style>')
-  if '<style' not in t[:idx]:raise SystemExit('FIX78_CSS_STYLE_SCOPE_BAD_'+name)
-  updated=t[:idx]+css+t[idx:]
+  if t.count('<style')>=1 and t.count('</style>')>=1:
+   idx=t.index('</style>')
+   if '<style' not in t[:idx]:raise SystemExit('FIX78_CSS_STYLE_SCOPE_BAD_'+name)
+   updated=t[:idx]+css+t[idx:]
+  elif name=='resources/views/job-cards/inspection-report.blade.php' and t.count("@section('content')")==1:
+   # The inspection report extends layouts.erp and owns no stylesheet.
+   # Local style in content is print-only; does not change shared header.
+   start="@section('content')"
+   updated=t.replace(start,start+"\n<style>"+css+"</style>",1)
+  else:
+   raise SystemExit('FIX78_STYLE_BLOCK_NOT_FOUND_'+name)
   if updated.count(marker)!=1:raise SystemExit('FIX78_INJECTION_BAD_'+name)
   if updated.count('www.assammotors.com')<1:raise SystemExit('FIX78_MISSING_SITE_'+name)
   results.append((p,updated))
