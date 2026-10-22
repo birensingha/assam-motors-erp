@@ -7,11 +7,12 @@ v=root/'routes/web.php';lines=v.read_text().splitlines()
 for i,line in enumerate(lines):
  if 'reversal/labour' in line:
   print('FIX92_REV_ROUTE',i+1,' '.join(lines[max(0,i-2):i+3])[:900])
-for p in (root/'app/Http/Controllers/Web').glob('*Reversal*'):
+for p in list((root/'app/Http/Controllers/Web').glob('*Reversal*')) + [root/'app/Http/Controllers/Web/AdminJobCardUnwindController.php']:
+ if not p.is_file():continue
  print('FIX92_REV_FILE',p.name)
  lines=p.read_text(errors='replace').splitlines()
  for i,s in enumerate(lines):
-  if re.search(r'function .*labour|function .*Labour|rot_sessions|labour_line_id|billing_included|job_card_labour|audit|delete\(',s,re.I):
+  if re.search(r'function .*labour|function .*Labour|rot_sessions|labour_line_id|billing_included|job_card_labour|audit|delete\(|private function admin|actor|reason|isAdmin\(',s,re.I):
    for j in range(max(0,i-3),min(i+6,len(lines))):
     line=lines[j]
     print('FIX92_REV_CODE',p.name,j+1,line[:420].encode('ascii','backslashreplace').decode('ascii'))
