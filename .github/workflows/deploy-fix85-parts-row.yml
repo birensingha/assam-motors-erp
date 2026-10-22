@@ -1,0 +1,117 @@
+name: FIX85 Compact Single Search Parts Table STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-fix85-parts-row.yml'
+      - 'deployment/live-fixes/FIX85_COMPACT_PARTS_ROW/apply.py'
+      - 'deployment/live-fixes/FIX85_COMPACT_PARTS_ROW/render.php'
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify patch syntax and browser JavaScript parse
+        shell: bash
+        run: |
+          set -euo pipefail
+          P=deployment/live-fixes/FIX85_COMPACT_PARTS_ROW
+          python3 -m py_compile "$P/apply.py"
+          php -l "$P/render.php"
+          python3 - <<'PY'
+          import ast
+          from pathlib import Path
+          p=Path('deployment/live-fixes/FIX85_COMPACT_PARTS_ROW/apply.py')
+          tree=ast.parse(p.read_text())
+          sources=[n.value.value for n in ast.walk(tree) if isinstance(n,ast.Assign)
+                   and any(isinstance(t,ast.Name) and t.id=='js' for t in n.targets)
+                   and isinstance(n.value,ast.Constant) and isinstance(n.value.value,str)]
+          assert len(sources)==1 and 'am85-part-search' in sources[0]
+          text=sources[0]
+          assert text.startswith('<script>') and text.strip().endswith('</script>')
+          Path('/tmp/fix85-inline.js').write_text(text.replace('<script>','').replace('</script>',''),encoding='utf8')
+          print('FIX85_INLINE_JS_EXTRACTED')
+          PY
+          node --check /tmp/fix85-inline.js
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for i in 1 2 3 4;do
+            if ssh-keyscan -T 14 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -y -qq sshpass;fi
+      - name: Source hash gate, backup, deploy Parts view, render JC37/JC34
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT")
+            SCP=(sshpass -e scp -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX85_COMPACT_PARTS_ROW"'
+          "${SCP[@]}" deployment/live-fixes/FIX85_COMPACT_PARTS_ROW/apply.py deployment/live-fixes/FIX85_COMPACT_PARTS_ROW/render.php "$REMOTE:~/FIX85_COMPACT_PARTS_ROW/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1";cd "$APP";test -f artisan && test -d vendor
+          P="$HOME/FIX85_COMPACT_PARTS_ROW"
+          python3 "$P/apply.py" check "$APP"
+          BACKUP="storage/app/FIX85_PARTS_TABLE_BACKUP_$(date +%Y%m%d_%H%M%S)"
+          mkdir -p "$BACKUP";chmod 700 "$BACKUP"
+          cp -p resources/views/job-cards/show.blade.php "$BACKUP/show.blade.php"
+          rollback(){
+            echo "FIX85_ROLLBACK_PARTS_VIEW"
+            cp -p "$BACKUP/show.blade.php" resources/views/job-cards/show.blade.php
+            php artisan view:clear >/dev/null 2>&1 || true
+            php artisan view:cache >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          python3 "$P/apply.py" apply "$APP"
+          php artisan view:clear
+          php artisan view:cache
+          php "$P/render.php" "$APP"
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('resources/views/job-cards/show.blade.php').read_bytes().decode('utf8','surrogateescape')
+          assert s.count('id="am85-part-form"')==1
+          assert s.count('id="am85-part-search"')==1
+          assert s.count('id="am85-part-id"')==1
+          assert s.count('class="am85-part-add-row"')==1
+          assert s.count('form="am85-part-form" name="discount_percent"')==1
+          assert s.count('<select name="part_master_id"')==0
+          assert 'Add New Part' not in s
+          for x in ("route('erp.job-cards.parts.direct',$job->id)",
+                    "route('erp.job-cards.parts.update',[$job->id,$p->id])",
+                    "route('erp.job-cards.parts.delete',[$job->id,$p->id])"):
+            assert x in s,x
+          print('FIX85_SINGLE_COMBO_ROW_DISCOUNT_EDIT_DELETE_PRESERVED_PASS')
+          PY
+          for path in /erp/login /staff/login;do
+            status="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")"
+            echo "FIX85_HEALTH_$path=$status";test "$status" = 200
+          done
+          trap - ERR
+          echo "FIX85_STAGING_PARTS_ROW_DEPLOY_SUCCESS BACKUP=$BACKUP NO_FINANCIAL_WRITES"
+          REMOTE
+      - name: Cleanup SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
