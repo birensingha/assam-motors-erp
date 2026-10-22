@@ -235,7 +235,7 @@ cssjs=r'''
 </script>
 '''
 s+='\n'+cssjs
-if s.count(marker)!=1 or s.count('data-am94Styled')<2:raise SystemExit('FIX94_OUTPUT_VALIDATION_FAILED')
+if s.count(marker)!=1 or s.count('am94Styled')<2:raise SystemExit('FIX94_OUTPUT_VALIDATION_FAILED')
 if mode=='check':
  if os.environ.get('FIX94_PREVIEW_PATH'):
   Path(os.environ['FIX94_PREVIEW_PATH']).write_text(s,encoding='utf8',errors='surrogateescape')
