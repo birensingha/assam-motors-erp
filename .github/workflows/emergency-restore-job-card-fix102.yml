@@ -1,0 +1,118 @@
+name: Emergency Restore Job Card After FIX102 Rollback
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/emergency-restore-job-card-fix102.yml'
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  restore:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate FIX100 recovery input
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/FIX100_SINGLE_PART_SEARCH/apply.py
+          grep -q FIX100_SINGLE_PART_SEARCH_AND_ARROW deployment/live-fixes/FIX100_SINGLE_PART_SEARCH/apply.py
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for attempt in 1 2 3; do
+            if ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Restore valid Job Card view from FIX100 backup and verify
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT")
+            SCP=(sshpass -e scp -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX102_EMERGENCY_RECOVERY"'
+          "${SCP[@]}" deployment/live-fixes/FIX100_SINGLE_PART_SEARCH/apply.py "$REMOTE:~/FIX102_EMERGENCY_RECOVERY/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"
+          cd "$APP"
+          test -f artisan && test -d vendor
+          JC="resources/views/job-cards/show.blade.php"
+          echo "FIX102_RECOVERY_CURRENT_JC_SHA=$(sha256sum "$JC" | cut -d' ' -f1)"
+          if grep -q 'id="FIX100_SINGLE_PART_SEARCH_AND_ARROW"' "$JC" && grep -q 'id="FIX95_ROT_ONE_ROW_NO_BILLING_BOX"' "$JC";then
+            echo FIX102_RECOVERY_JC_ALREADY_HEALTHY
+            exit 0
+          fi
+          # Only proceed when the corrupted view is demonstrably Estimate,
+          # not an unrelated live Job Card version.
+          if ! grep -Fq "@section('title',$estimate->estimate_no" "$JC";then
+            echo FIX102_RECOVERY_UNKNOWN_JC_STATE_STOP
+            exit 1
+          fi
+          mapfile -t backups < <(find storage/app -path '*/FIX100_PART_COMBO_BACKUP_*/show.blade.php' -type f | sort)
+          if [ "${#backups[@]}" -eq 0 ];then
+            echo FIX102_RECOVERY_NO_APPROVED_BACKUP_STOP
+            exit 1
+          fi
+          BACKUP="${backups[${#backups[@]}-1]}"
+          echo "FIX102_RECOVERY_BACKUP=$BACKUP"
+          TMP="$(mktemp -d)"
+          trap 'rm -rf "$TMP"' EXIT
+          mkdir -p "$TMP/resources/views/job-cards"
+          touch "$TMP/artisan"
+          cp -p "$BACKUP" "$TMP/resources/views/job-cards/show.blade.php"
+          PATCH="$HOME/FIX102_EMERGENCY_RECOVERY/apply.py"
+          # SHA + critical anchors inside original FIX100 patch prevent
+          # replaying a wrong backup.
+          python3 "$PATCH" check "$TMP"
+          python3 "$PATCH" apply "$TMP"
+          CANDIDATE="$TMP/resources/views/job-cards/show.blade.php"
+          grep -Fq 'id="FIX100_SINGLE_PART_SEARCH_AND_ARROW"' "$CANDIDATE"
+          grep -Fq 'id="FIX98_ONE_SEARCHABLE_ROT_ONLY"' "$CANDIDATE"
+          grep -Fq 'id="FIX95_ROT_ONE_ROW_NO_BILLING_BOX"' "$CANDIDATE"
+          php -r '
+            require "vendor/autoload.php";
+            $app=require "bootstrap/app.php";
+            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            file_put_contents($argv[2],\Illuminate\Support\Facades\Blade::compileString(file_get_contents($argv[1])));
+          ' "$CANDIDATE" "$TMP/compiled.php"
+          php -l "$TMP/compiled.php"
+          RECOVERY="storage/app/FIX102_EMERGENCY_RECOVERY_$(date +%Y%m%d_%H%M%S)"
+          mkdir -p "$RECOVERY"
+          cp -p "$JC" "$RECOVERY/damaged-job-card-view.blade.php"
+          cp -p "$CANDIDATE" "$JC"
+          php artisan view:clear
+          php artisan view:cache
+          grep -Fq 'id="FIX100_SINGLE_PART_SEARCH_AND_ARROW"' "$JC"
+          grep -Fq 'id="FIX95_ROT_ONE_ROW_NO_BILLING_BOX"' "$JC"
+          echo "FIX102_JOB_CARD_RESTORED_SUCCESS_SHA=$(sha256sum "$JC" | cut -d' ' -f1)"
+          REMOTE
+      - name: Delete ephemeral credential
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
