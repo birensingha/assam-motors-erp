@@ -1,0 +1,133 @@
+name: FIX89 Searchable Parts Dropdown and Reset STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-fix89-searchable-part-select.yml'
+      - 'deployment/live-fixes/FIX89_SEARCHABLE_PART_SELECT/apply.py'
+      - 'deployment/live-fixes/FIX89_SEARCHABLE_PART_SELECT/render.php'
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate patch and browser JavaScript
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/FIX89_SEARCHABLE_PART_SELECT/apply.py
+          php -l deployment/live-fixes/FIX89_SEARCHABLE_PART_SELECT/render.php
+          python3 - <<'PY'
+          from pathlib import Path
+          import ast,re
+          s=Path('deployment/live-fixes/FIX89_SEARCHABLE_PART_SELECT/apply.py').read_text()
+          a=ast.parse(s)
+          found=[n.value.value for n in ast.walk(a) if isinstance(n,ast.Assign)
+                 and any(isinstance(t,ast.Name) and t.id=='addon' for t in n.targets)
+                 and isinstance(n.value,ast.Constant) and isinstance(n.value.value,str)]
+          assert len(found)==1
+          js=re.findall(r'<script>(.*?)</script>',found[0],re.S)
+          assert len(js)==1 and 'am89-reset' in js[0] and 'am89-query' in js[0] and "amount.value=''" in js[0]
+          Path('/tmp/fix89.js').write_text(js[0],encoding='utf8')
+          print('FIX89_JS_EXTRACTED')
+          PY
+          node --check /tmp/fix89.js
+      - name: Configure remote SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for attempt in 1 2 3 4; do
+            if ssh-keyscan -T 14 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then break; fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Backup deploy and verify with auto rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT")
+            SCP=(sshpass -e scp -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX89_SEARCHABLE_PART_SELECT"'
+          "${SCP[@]}" deployment/live-fixes/FIX89_SEARCHABLE_PART_SELECT/apply.py deployment/live-fixes/FIX89_SEARCHABLE_PART_SELECT/render.php "$REMOTE:~/FIX89_SEARCHABLE_PART_SELECT/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"; cd "$APP"; test -f artisan && test -d vendor
+          PATCH="$HOME/FIX89_SEARCHABLE_PART_SELECT"
+          python3 "$PATCH/apply.py" check "$APP"
+          BACKUP="storage/app/FIX89_PARTS_UI_BACKUP_$(date +%Y%m%d_%H%M%S)"
+          mkdir -p "$BACKUP"; chmod 700 "$BACKUP"
+          cp -p resources/views/job-cards/show.blade.php "$BACKUP/show.blade.php"
+          rollback(){
+            echo FIX89_ROLLBACK_BEGIN
+            cp -p "$BACKUP/show.blade.php" resources/views/job-cards/show.blade.php
+            php artisan view:clear >/dev/null 2>&1 || true
+            php artisan view:cache >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          python3 "$PATCH/apply.py" apply "$APP"
+          php artisan view:clear
+          php artisan view:cache
+          php "$PATCH/render.php" "$APP"
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('resources/views/job-cards/show.blade.php').read_text(errors='replace')
+          for token in ('id="FIX89_ARROW_TYPE_PARTS_DROPDOWN"','id="am85-part-search"',
+                        'id="am85-discount"','id="am85-part-id"',
+                        'class="am85-part-add-row"',
+                        "route('erp.job-cards.parts.direct',$job->id)",
+                        "route('erp.job-cards.parts.update',[$job->id,$p->id])",
+                        "route('erp.job-cards.parts.delete',[$job->id,$p->id])",
+                        "route('erp.job-cards.labour.direct',$job->id)"):
+            assert token in s,token
+          assert '<datalist id="am85-part-options"' not in s
+          assert s.count('id="FIX89_ARROW_TYPE_PARTS_DROPDOWN"')==1
+          assert s.count('id="am85-part-search"')==1
+          assert 'Add New Part' not in s
+          assert 'Search or add Parts directly. Qty / Rate / Discount / GST / Delete editable until Job Card Close.' not in s
+          assert s.count('class="am88-amount-input"')==4
+          assert 'id="FIX88_COMPACT_EDITABLE_AMOUNTS"' in s
+          assert '<select id="am85-part-search"' in s
+          assert 'id="FIX87_NATIVE_PARTS_NO_SCROLL_AJAX"' in s
+          assert 'am87-page-table' in s
+          assert 'am89-reset' in s
+          assert 'class="am89-combo"' in s
+          assert 'font-size:10.5px!important;line-height:1.25px!important' in s
+          print('FIX89_ARROW_SEARCH_FILTER_AND_RESET_PASS')
+          PY
+          for path in /erp/login /staff/login; do
+            status="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")"
+            echo "FIX89_HEALTH_$path=$status"
+            test "$status" = 200
+          done
+          trap - ERR
+          echo "FIX89_STAGING_DEPLOY_SUCCESS BACKUP=$BACKUP VIEW_ONLY_NO_FINANCIAL_WRITES"
+          REMOTE
+      - name: Cleanup SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
