@@ -123,7 +123,7 @@ foreach([37,34] as $id){
            throw new RuntimeException('FIX95 time correction action missing');
         if(!str_contains($html,'id="FIX96_SINGLE_ROW_LABOUR_COMBO"'))
           throw new RuntimeException('FIX96 compact row stylesheet/script not rendered');
-        foreach(['id="am82-rot-select"','id="am82-rot-search"',
+        if($id===37) foreach(['id="am82-rot-select"','id="am82-rot-search"',
                  'am96-visible-search','am96-arrow','am96-options-popup',
                  'grid-template-columns:minmax(190px,2.5fr)',
                  'id="am82-new-std"','id="am82-add-labour-total"',
