@@ -85,13 +85,15 @@ foreach([37,34] as $id){
         foreach(['id="FIX93_OSL_MODAL_TOOLS"', 'id="am93-osl-tools-template"',
                  'data-am93-use-osl','OSL Jobs / Outside Services',
                  'Select Linked OSL / Supplier Purchase Options',
-                 'New OSL Purchase','OSL Register'] as $needle){
+                 'OSL Register'] as $needle){
            if(!str_contains($html,$needle))
              throw new RuntimeException('FIX93 OSL unified tools or purchase link missing: '.$needle);
         }
         if(str_contains($html,'<div class="am83-osl" id="jc-osl">') &&
            !str_contains($html,'<template id="am93-osl-tools-template">'))
           throw new RuntimeException('FIX93 old OSL panel still visible outside template');
+        if($id===37 && !str_contains($html,'New OSL Purchase'))
+          throw new RuntimeException('WIP Job Card missing supplier OSL Purchase shortcut');
         if(str_contains($html,'Direct Job Card Entry') || str_contains($html,'+ Add New Part'))
             throw new RuntimeException('Duplicate direct entry panel found');
         echo 'FIX93_JC_RENDER_PASS id='.$id.' chars='.strlen($html)."\n";
