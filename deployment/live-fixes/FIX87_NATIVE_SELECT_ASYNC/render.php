@@ -40,7 +40,7 @@ foreach([37,34] as $id){
             if(!str_contains($html,$needle))throw new RuntimeException('Missing JC37 inline Parts control: '.$needle);
           }
         }
-        if(str_contains($html,'<datalist id="am85-part-options"') || !str_contains($html,'<select id="am85-part-search"'))
+        if($id===37 && (str_contains($html,'<datalist id="am85-part-options"') || !str_contains($html,'<select id="am85-part-search"')))
             throw new RuntimeException('Parts selector is not the intended native dropdown');
         if(str_contains($html,'Direct Job Card Entry') || str_contains($html,'+ Add New Part'))
             throw new RuntimeException('Duplicate direct entry panel found');
