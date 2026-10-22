@@ -45,7 +45,7 @@ foreach([37,34] as $id){
         if(str_contains($html,'Search or add Parts directly. Qty / Rate / Discount / GST / Delete editable until Job Card Close.'))
             throw new RuntimeException('Verbose Parts header should be removed');
         if($id===37){
-          foreach(['id="FIX89_COMPACT_EDITABLE_AMOUNTS"','id="am85-discount-rs" class="am88-amount-input"',
+          foreach(['id="FIX88_COMPACT_EDITABLE_AMOUNTS"','id="am85-discount-rs" class="am88-amount-input"',
                    'id="am85-taxable" class="am88-amount-input"',
                    'id="am85-gst-rs" class="am88-amount-input"',
                    'id="am85-grand" class="am88-amount-input"'] as $needle){
