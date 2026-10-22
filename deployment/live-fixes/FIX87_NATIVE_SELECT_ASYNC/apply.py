@@ -295,7 +295,7 @@ function boot(){
     var scrollY=window.scrollY;
     var isAdd=submitted.id==='am85-part-form'||
       (zone==='labour'&&submitted.matches('form.jc-entry-form'));
-    var before=zone==='parts'?document.querySelectorAll('.jc-parts-block tbody tr:not(.am85-part-add-row)').length:
+    var before=zone==='parts'?document.querySelectorAll('.jc-parts-block tbody tr:has(details.action-pop)').length:
       document.querySelectorAll('.jc-labour-block .rot-list .rot-card').length;
     try{
       var response=await fetch(submitted.action,{
@@ -317,7 +317,7 @@ function boot(){
       if(error&&error.textContent.trim()){
         throw new Error(error.textContent.trim().slice(0,240));
       }
-      var after=zone==='parts'?doc.querySelectorAll('.jc-parts-block tbody tr:not(.am85-part-add-row)').length:
+      var after=zone==='parts'?doc.querySelectorAll('.jc-parts-block tbody tr:has(details.action-pop)').length:
         doc.querySelectorAll('.jc-labour-block .rot-list .rot-card').length;
       if(isAdd&&after<=before)
         throw new Error('New item not confirmed in Job Card; inspect the section before retrying.');
