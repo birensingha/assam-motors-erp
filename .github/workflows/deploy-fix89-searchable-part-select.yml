@@ -117,7 +117,7 @@ jobs:
           assert 'am87-page-table' in s
           assert 'am89-reset' in s
           assert "wrap.className='am89-combo'" in s
-          assert 'font-size:10.5px!important;line-height:1.25px!important' in s
+          assert 'font-size:10.5px!important;line-height:1.25!important' in s
           print('FIX89_ARROW_SEARCH_FILTER_AND_RESET_PASS')
           PY
           for path in /erp/login /staff/login; do
