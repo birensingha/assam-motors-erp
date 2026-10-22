@@ -95,7 +95,7 @@ foreach([37,34] as $id){
         if($id===37 && !str_contains($html,'New OSL Purchase'))
           throw new RuntimeException('WIP Job Card missing supplier OSL Purchase shortcut');
         // FIX95 screenshot layout must retain one server-truth live timer per ROT.
-        foreach(['id="FIX95_COMPACT_MECHANIC_ROT_CARD"','am94-clock-foot',
+        foreach(['id="FIX94_COMPACT_MECHANIC_ROT_CARD"','am94-clock-foot',
                  'am94Styled','rot-status-block','rot-main',
                  'rot-meta','rot-actions'] as $needle){
           if(!str_contains($html,$needle))
