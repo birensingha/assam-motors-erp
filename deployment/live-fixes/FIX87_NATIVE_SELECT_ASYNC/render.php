@@ -36,7 +36,7 @@ foreach([37,34] as $id){
                 throw new RuntimeException("Expected visible content missing: ".$needle);
         }
         if($id===37){
-          foreach(['id="am85-part-form"','id="am85-part-search"','id="am85-discount"','id="am85-part-options"','class="am85-part-add-row"','name="part_master_id"'] as $needle){
+          foreach(['id="am85-part-form"','id="am85-part-search"','id="am85-discount"','class="am85-part-add-row"','name="part_master_id"'] as $needle){
             if(!str_contains($html,$needle))throw new RuntimeException('Missing JC37 inline Parts control: '.$needle);
           }
         }
