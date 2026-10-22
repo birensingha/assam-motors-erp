@@ -90,9 +90,19 @@ jobs:
             $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
             file_put_contents($argv[2],\Illuminate\Support\Facades\Blade::compileString(file_get_contents($argv[1])));
           ' "$TMPB" "$TMPC"
-          if ! php -l "$TMPC"; then
+          set +e
+          PHP_LINT="$(php -d display_errors=1 -d log_errors=0 -l "$TMPC" 2>&1)"
+          LINT_CODE=$?
+          set -e
+          if [ "$LINT_CODE" -ne 0 ]; then
             echo FIX93_COMPILED_BLADE_SYNTAX_FAIL
-            tail -n 55 "$TMPC" | cut -c1-340
+            printf '%s\n' "$PHP_LINT"
+            LINE="$(printf '%s\n' "$PHP_LINT" | sed -n 's/.*on line \([0-9][0-9]*\).*/\1/p' | tail -1)"
+            if [ -n "$LINE" ]; then
+              A=$((LINE>18?LINE-18:1))
+              B=$((LINE+18))
+              sed -n "${A},${B}p" "$TMPC" | head -n 40 | cut -c1-320
+            fi
             rm -f "$TMPB" "$TMPC"
             exit 1
           fi
