@@ -53,9 +53,9 @@ jobs:
         run: |
           set -euo pipefail
           install -d -m 700 ~/.ssh
-          for retry in 1 2 3;do
-            if timeout 12 ssh-keyscan -T 5 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
-            echo FIX110_SSH_RETRY_$retry;sleep 2
+          for retry in 1 2 3 4 5 6;do
+            if timeout 20 ssh-keyscan -T 14 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            echo FIX110_SSH_RETRY_$retry;sleep 3
           done
           test -s ~/.ssh/known_hosts || { echo FIX110_SSH_UNAVAILABLE_NO_FILES_CHANGED;exit 1; }
           if [ -n "$KEY" ];then
