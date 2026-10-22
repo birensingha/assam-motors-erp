@@ -43,7 +43,7 @@ jobs:
                         'attEditStatus','present','absent','leave','off',
                         'document.body.appendChild(menu);',
                         'wrap.appendChild(menu);',
-                        'form.addEventListener']:
+          for key in ['name="staff_id"', "form.addEventListener('submit'",
             assert token in src,token
           print('FIX110_SOURCE_JS_AND_STATUS_PREFLIGHT_PASS')
           PY
