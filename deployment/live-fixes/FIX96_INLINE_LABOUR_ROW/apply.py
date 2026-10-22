@@ -16,7 +16,7 @@ print('FIX96_SOURCE_SHA256',sha)
 marker='id="FIX96_SINGLE_ROW_LABOUR_COMBO"'
 s=raw.decode('utf8','surrogateescape')
 if marker in s:
- if s.count(marker)==1 and 'am96-rot-combo' in s:
+ if s.count(marker)==1 and 'am96-visible-search' in s:
   print('FIX96_ALREADY_APPLIED');sys.exit(0)
  raise SystemExit('FIX96_PARTIAL_PATCH_ABORT')
 expected='a45f18c398c1af50977e926290198837e47bd087ea0b85d009003c8a5880f96f'
