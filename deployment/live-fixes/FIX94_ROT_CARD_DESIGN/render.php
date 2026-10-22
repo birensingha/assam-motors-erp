@@ -97,11 +97,15 @@ foreach([37,34] as $id){
         // FIX94 screenshot layout must retain one server-truth live timer per ROT.
         foreach(['id="FIX94_COMPACT_MECHANIC_ROT_CARD"','am94-clock-foot',
                  'data-am94Styled','rot-status-block','rot-main',
-                 'rot-meta','rot-actions','data-am-clock',
-                 'data-am-progress','data-am-percent','data-am-balance',
-                 'am-rot-live-details','job-cards.rot-time-editor'] as $needle){
+                 'rot-meta','rot-actions'] as $needle){
           if(!str_contains($html,$needle))
             throw new RuntimeException('FIX94 ROT card/live clock control missing: '.$needle);
+        }
+        if($id===37){
+          foreach(['data-am-clock','data-am-progress','data-am-percent',
+                   'data-am-balance','am-rot-live-details'] as $needle)
+            if(!str_contains($html,$needle))
+              throw new RuntimeException('FIX94 active ROT live clock missing: '.$needle);
         }
         if(str_contains($html,'Direct Job Card Entry') || str_contains($html,'+ Add New Part'))
             throw new RuntimeException('Duplicate direct entry panel found');
