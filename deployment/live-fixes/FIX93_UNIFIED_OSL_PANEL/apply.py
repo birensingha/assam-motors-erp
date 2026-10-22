@@ -29,15 +29,8 @@ def once(old,new,label):
     if n!=1:raise SystemExit('FIX93_ANCHOR_MISMATCH_'+label)
     s=s.replace(old,new,1)
 
-# Sort customer billed Labour first and customer billed OSL next.
-# These are the same DB rows, no duplicate totals or additional billing.
-once('          @forelse($labour as $line)', '''          @php
-            $am93SortedLabour=$labour->sortBy(static function($row){
-                return (strtoupper(trim((string)($row->mechanic_name??'')))==='OSL'
-                   || strtoupper(trim((string)($row->rot_code??'')))==='OSL')?1:0;
-            })->values();
-          @endphp
-          @forelse($am93SortedLabour as $line)''','labour_before_osl_sort')
+# Keep the original verified Blade @forelse($labour as $line) loop intact.
+# Reorder rendered rows client-side; no billing numbers are changed.
 
 # Only pending supplier purchases get a REFERENCE row (never billed twice).
 # Billed OSL already appears above as a real job_card_labour record.
@@ -145,6 +138,11 @@ once('''   inner.appendChild(note);
    'purchase_selection_into_add_dialog')
 # Note: form is lexical 'var' and available when click fires after modal setup.
 
+# FIX91 AJAX OSL save rehydrates billing rows; regroup Labour then OSL once.
+once("        body.replaceChildren.apply(body,Array.from(fresh.children).map(function(node){return document.importNode(node,true);}));",
+     "        body.replaceChildren.apply(body,Array.from(fresh.children).map(function(node){return document.importNode(node,true);}));\n        document.dispatchEvent(new Event('am93-osl-billing-updated'));",
+     'regroup_after_osl_ajax_save')
+
 # JS re-render ROT cards shouldn't discard server-rendered pending purchases.
 once("    var oslRows=Array.from(body.querySelectorAll('tr[data-am91-osl-id]'));",
      "    var oslRows=Array.from(body.querySelectorAll('tr[data-am91-osl-id],tr[data-am93-purchase-id]'));",
@@ -210,10 +208,36 @@ ui=r'''
 '''
 # UI CSS has no independent fetch/save operations.
 s+='\n'+ui
+s+=r'''
+<script id="am93-osl-row-sort">
+(function(){
+  'use strict';
+  function group(){
+    var body=document.getElementById('am90-table-body');if(!body)return;
+    var rows=Array.from(body.children);
+    var customer=rows.filter(function(row){
+      return !row.hasAttribute('data-am91-osl-id') &&
+             !row.hasAttribute('data-am93-purchase-id');
+    });
+    var osl=rows.filter(function(row){
+      return row.hasAttribute('data-am91-osl-id') ||
+             row.hasAttribute('data-am93-purchase-id');
+    });
+    customer.concat(osl).forEach(function(row){body.appendChild(row);});
+    Array.from(body.querySelectorAll('tr[data-am90-row]')).forEach(function(row,i){
+      if(row.cells.length)row.cells[0].textContent=String(i+1);
+    });
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',group,{once:true});
+  else group();
+  document.addEventListener('am93-osl-billing-updated',group);
+})();
+</script>
+'''
 
 must=['id="FIX93_OSL_MODAL_TOOLS"','id="am93-osl-tools-template"',
       'data-am93-use-osl','data-am93-purchase-id',
-      '@forelse($am93SortedLabour as $line)','id="am91-add-osl"',
+      '@forelse($labour as $line)','id="am91-add-osl"',
       'OSL Jobs / Outside Services','route(\'erp.purchases.osl.create\')',
       'route(\'erp.fix48.osl-index\')','id="am90-table-body"']
 for k in must:
