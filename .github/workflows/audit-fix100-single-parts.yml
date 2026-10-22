@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
       - name: Audit Python syntax
         run: |
-          python3 -m py_compile deployment/live-fixes/FIX100_SINGLE_PART_SEARCH/audit_view.py
+          python3 -m py_compile deployment/live-fixes/FIX100_SINGLE_PART_SEARCH/audit.py
       - name: Configure SSH
         shell: bash
         run: |
@@ -49,8 +49,8 @@ jobs:
           fi
           REMOTE="$USERNAME@$HOST"
           "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX100_SINGLE_PART_SEARCH"'
-          "${SCP[@]}" deployment/live-fixes/FIX100_SINGLE_PART_SEARCH/audit_view.py "$REMOTE:~/FIX100_SINGLE_PART_SEARCH/"
-          "${SSH[@]}" "$REMOTE" "python3 ~/FIX100_SINGLE_PART_SEARCH/audit_view.py '$ROOT'"
+          "${SCP[@]}" deployment/live-fixes/FIX100_SINGLE_PART_SEARCH/audit.py "$REMOTE:~/FIX100_SINGLE_PART_SEARCH/"
+          "${SSH[@]}" "$REMOTE" "python3 ~/FIX100_SINGLE_PART_SEARCH/audit.py '$ROOT'"
       - name: Cleanup
         if: always()
         run: rm -f ~/.ssh/id_ed25519
