@@ -39,7 +39,7 @@ jobs:
           js=re.findall(r'<script>(.*?)</script>',css[0],re.S)
           assert len(js)==1
           for t in ['MutationObserver','data-am94Styled','am94-clock-foot','am-rot-live-metrics',
-                    'data-am-progress','details','data-am-balance']:
+                    'rot-actions','am-rot-live-track','data-am-balance']:
             assert t in css[0],t
           assert "route('erp.rot.pause'" in s
           assert "route('erp.rot.complete'" in s
@@ -151,7 +151,6 @@ jobs:
                         "job-cards.rot-time-editor"):
             assert token in s,token
           assert s.count('id="FIX94_COMPACT_MECHANIC_ROT_CARD"')==1
-          assert 'AMROTDesktopClockV639' not in s or True  # imported partial unchanged
           assert 'am94-clock-foot' in s
           print('FIX94_COMPACT_ROT_RUNNING_PAUSED_COMPLETED_ACTIONS_PRESERVED_PASS')
           PY
