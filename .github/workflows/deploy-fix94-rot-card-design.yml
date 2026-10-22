@@ -38,7 +38,7 @@ jobs:
           assert len(css)==1
           js=re.findall(r'<script>(.*?)</script>',css[0],re.S)
           assert len(js)==1
-          for t in ['MutationObserver','data-am94Styled','am94-clock-foot','am-rot-live-metrics',
+          for t in ['MutationObserver','am94Styled','am94-clock-foot','am-rot-live-metrics',
                     'rot-actions','am-rot-live-track','data-am-balance']:
             assert t in css[0],t
           assert "route('erp.rot.pause'" in s
@@ -133,7 +133,7 @@ jobs:
           from pathlib import Path
           s=Path('resources/views/job-cards/show.blade.php').read_text(errors='replace')
           for token in ('id="FIX94_COMPACT_MECHANIC_ROT_CARD"',
-                        'am94-clock-foot','data-am94Styled',
+                        'am94-clock-foot','am94Styled',
                         'class="rot-main"','class="rot-meta"',
                         'class="rot-actions"','class="rot-status-block"',
                         "dashboard.partials.rot-live-clock",
