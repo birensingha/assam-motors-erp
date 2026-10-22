@@ -75,12 +75,11 @@ jobs:
             echo FIX102_RECOVERY_UNKNOWN_JC_STATE_STOP
             exit 1
           fi
-          mapfile -t backups < <(find storage/app -path '*/FIX100_PART_COMBO_BACKUP_*/show.blade.php' -type f | sort)
-          if [ "${#backups[@]}" -eq 0 ];then
+          BACKUP="$(find storage/app -path '*/FIX100_PART_COMBO_BACKUP_*/show.blade.php' -type f | sort | tail -n 1)"
+          if [ -z "$BACKUP" ] || [ ! -f "$BACKUP" ];then
             echo FIX102_RECOVERY_NO_APPROVED_BACKUP_STOP
             exit 1
           fi
-          BACKUP="${backups[${#backups[@]}-1]}"
           echo "FIX102_RECOVERY_BACKUP=$BACKUP"
           TMP="$(mktemp -d)"
           trap 'rm -rf "$TMP"' EXIT
