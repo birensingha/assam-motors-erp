@@ -35,7 +35,7 @@ jobs:
           s=Path('deployment/live-fixes/FIX92_LABOUR_ADMIN_DELETE/apply.py').read_text()
           a=ast.parse(s)
           found=[n.value.value for n in ast.walk(a) if isinstance(n,ast.Assign)
-                 and any(isinstance(t,ast.Name) and t.id=='ui' for t in n.targets)
+                 and any(isinstance(t,ast.Name) and t.id=='addon' for t in n.targets)
                  and isinstance(n.value,ast.Constant) and isinstance(n.value.value,str)]
           assert len(found)==1
           js=re.findall(r'<script>(.*?)</script>',found[0],re.S)
