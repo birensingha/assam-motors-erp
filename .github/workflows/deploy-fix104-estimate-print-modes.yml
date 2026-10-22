@@ -111,7 +111,7 @@ jobs:
           assert 'Print With GST' in b and 'Print Without GST' in b
           assert j.count('FIX104_ESTIMATE_DUAL_PRINT_AND_12_COLUMNS')==1
           segment=j.split('function rowHtml(i, r={})',1)[1].split('function add(r=',1)[0]
-          assert len(re.findall(r'<td(?:\\s|>)',segment))==12
+          assert len(re.findall(r'<td(?:\s|>)',segment))==12
           assert 'class="e-disc-amt"' in segment and 'class="e-gst-amt"' in segment
           assert 'line_note' in segment and 'type="hidden"' in segment
           assert 'NOT A TAX INVOICE' not in p
@@ -198,7 +198,7 @@ jobs:
           const fs=require('fs');
           const s=fs.readFileSync('/tmp/estimate-entry-fix104.js','utf8');
           const segment=s.split('function rowHtml(i, r={})')[1].split('function add(r=')[0];
-          if((segment.match(/<td(?:\\s|>)/g)||[]).length!==12)throw Error('Missing 12 columns');
+          if((segment.match(/<td(?:\s|>)/g)||[]).length!==12)throw Error('Missing 12 columns');
           for(const x of ['e-disc-amt','e-gst-amt','e-total','line_note','discountAmount','gstAmount']){
             if(!s.includes(x))throw Error('Missing '+x);
           }
