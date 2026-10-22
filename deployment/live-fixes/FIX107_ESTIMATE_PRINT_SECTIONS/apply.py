@@ -87,7 +87,7 @@ change('</style></head>',
        'print_css')
 assert s.count(mark)==1
 assert s.count('@foreach($am107Groups as $am107Group)')==1
-assert s.count('@forelse($am107Group[\\'lines\\'] as $i)')==1
+assert s.count("@forelse($am107Group['lines'] as $i)")==1
 assert s.count('@endforeach')>=1
 assert s.count('am103-estimate-lines')>=2
 assert 'number_format((float)$i->line_total,2)' in s
