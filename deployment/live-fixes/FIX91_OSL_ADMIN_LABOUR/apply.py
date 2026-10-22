@@ -38,10 +38,10 @@ one('<div class="card section-gap jc-purchase-block jc-labour-block">',
 ''','role_before_entry')
 one('    @php($am90CanEdit=in_array(strtolower(trim((string)$job->status)),[\'wip\',\'in progress\',\'in-progress\',\'work in progress\'],true) && empty($job->invoice_id))',
     '    @php($am90CanEdit=$am91CanWrite && $am91Admin)','admin_gate_table')
-one('  <p class="muted">Approved Estimate se transferred ROTs niche dikhenge. Extra ROT ke liye yahi search use karein; Add ke baad isi row mein mechanic assign aur work Start/Pause/Complete karein.</p>',
-    '  <p class="muted">Approved Estimate se transferred ROTs niche hain. Extra ROT aur OSL isi workspace se add karein.</p>',
+one('Approved Estimate se transferred ROTs niche dikhenge. Extra ROT ke liye yahi search use karein; Add ke baad isi row mein mechanic assign aur work Start/Pause/Complete karein.',
+    'Approved Estimate se transferred ROTs niche hain. Extra ROT aur OSL isi workspace se add karein.',
     'shorten_entry_note')
-one('        <div class="actions"><button class="btn primary">＋ Add Labour / ROT</button></div>',
+one('<div class="actions"><button class="btn primary">＋ Add Labour / ROT</button></div>',
     '''        <div class="actions am91-add-actions">
            <button class="btn primary">＋ Add Labour / ROT</button>
            @if($am91Admin)
