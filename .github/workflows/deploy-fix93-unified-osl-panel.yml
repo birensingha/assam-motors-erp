@@ -97,6 +97,8 @@ jobs:
           if [ "$LINT_CODE" -ne 0 ]; then
             echo FIX93_COMPILED_BLADE_SYNTAX_FAIL
             printf '%s\n' "$PHP_LINT"
+            echo FIX93_FOREACH_STACK_DEBUG
+            grep -nE '__currentLoopData|__empty_|foreach|endforeach' "$TMPC" | head -75 | cut -c1-340 || true
             LINE="$(printf '%s\n' "$PHP_LINT" | sed -n 's/.*on line \([0-9][0-9]*\).*/\1/p' | tail -1)"
             if [ -n "$LINE" ]; then
               A=$((LINE>18?LINE-18:1))
