@@ -1,0 +1,169 @@
+name: FIX109 Multiple Planned ROT and Search Mechanic STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-fix109-multi-assignment-search.yml'
+      - 'deployment/live-fixes/FIX109_ROT_MULTI_ASSIGN_MECHANIC_SEARCH/apply.py'
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preflight source/JavaScript syntax and guard policy
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/FIX109_ROT_MULTI_ASSIGN_MECHANIC_SEARCH/apply.py
+          python3 - <<'PY'
+          from pathlib import Path
+          import ast,re
+          source=Path('deployment/live-fixes/FIX109_ROT_MULTI_ASSIGN_MECHANIC_SEARCH/apply.py').read_text()
+          tree=ast.parse(source)
+          widgets=[n.value.value for n in ast.walk(tree)
+                   if isinstance(n,ast.Assign)
+                   and any(isinstance(t,ast.Name) and t.id=='widget' for t in n.targets)
+                   and isinstance(n.value,ast.Constant) and isinstance(n.value.value,str)]
+          assert len(widgets)==1
+          scripts=re.findall(r'<script>(.*?)</script>',widgets[0],flags=re.S)
+          assert len(scripts)==1
+          Path('/tmp/fix109-combo.js').write_text(scripts[0])
+          for s in ["$busy = false;",
+                    "->where('status', 'Running')",
+                    "private function assertNoOtherRunningRot(",
+                    "function enhance(select)",
+                    "select.required=false",
+                    "form.addEventListener('submit'"]:
+            assert s in source,s
+          assert "->whereIn('status', ['Assigned','Running'])->lockForUpdate()->exists();" in source
+          print('FIX109_SOURCE_JS_AND_ASSIGNMENT_PREFLIGHT_PASS')
+          PY
+          node --check /tmp/fix109-combo.js
+      - name: Fast-fail SSH connectivity and configured credential
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          for i in 1 2 3;do
+            if timeout 12 ssh-keyscan -T 5 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then
+              break
+            fi
+            echo FIX109_SSH_CONNECTIVITY_RETRY_$i
+            sleep 2
+          done
+          test -s ~/.ssh/known_hosts || { echo FIX109_SSH_UNREACHABLE_NO_FILES_CHANGED;exit 1; }
+          if [ -n "$KEY" ];then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Dry run, backup, deploy, verify and rollback on error
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=12 -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -o ConnectTimeout=12 -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=12 -p "$PORT")
+            SCP=(sshpass -e scp -o ConnectTimeout=12 -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX109_ROT_MULTI_ASSIGN"'
+          "${SCP[@]}" deployment/live-fixes/FIX109_ROT_MULTI_ASSIGN_MECHANIC_SEARCH/apply.py "$REMOTE:~/FIX109_ROT_MULTI_ASSIGN/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1";cd "$APP";test -f artisan && test -d vendor
+          PATCH="$HOME/FIX109_ROT_MULTI_ASSIGN/apply.py"
+          ASSIGN="app/Services/RotAssignmentService.php"
+          WORK="app/Services/RotWorkflowService.php"
+          VIEW="resources/views/job-cards/show.blade.php"
+          for f in "$ASSIGN" "$WORK" "$VIEW";do test -s "$f";done
+          FIX109_AUDIT="$(date +%Y%m%d_%H%M%S)"
+          TMP="$(mktemp -d "$APP/storage/app/fix109_candidate_XXXXXX")"
+          trap 'rm -rf "$TMP"' EXIT
+          FIX109_PREVIEW_ASSIGN="$TMP/RotAssignmentService.php" \
+          FIX109_PREVIEW_WORK="$TMP/RotWorkflowService.php" \
+          FIX109_PREVIEW_VIEW="$TMP/show.blade.php" \
+            python3 "$PATCH" check "$APP"
+          php -l "$TMP/RotAssignmentService.php"
+          php -l "$TMP/RotWorkflowService.php"
+          php -r '
+            require "vendor/autoload.php";
+            $app=require "bootstrap/app.php";
+            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            file_put_contents($argv[2],\Illuminate\Support\Facades\Blade::compileString(file_get_contents($argv[1])));
+          ' "$TMP/show.blade.php" "$TMP/show.php"
+          php -l "$TMP/show.php"
+          python3 - "$TMP" <<'PY'
+          from pathlib import Path
+          import sys
+          p=Path(sys.argv[1]);a=(p/'RotAssignmentService.php').read_text()
+          w=(p/'RotWorkflowService.php').read_text()
+          v=(p/'show.blade.php').read_text()
+          assert "$busy = false;" in a
+          assert a.count("FIX109_MULTI_PLANNED_ROT_AND_SEARCH_MECHANIC")==1
+          assert w.count("FIX109_MULTI_PLANNED_ROT_AND_SEARCH_MECHANIC")==1
+          assert w.count("->where('status', 'Running')")>=3
+          assert 'if (!$trustedAutoCheckout)' in w
+          assert v.count("FIX109_MULTI_PLANNED_ROT_AND_SEARCH_MECHANIC")==1
+          for key in ["form[action*=\\"change-mechanic\\"]",
+                      "Search mechanic name / Staff Code",
+                      "select.dispatchEvent(new Event('change'",
+                      "form.addEventListener('submit'"]:
+            assert key in v,key
+          for key in ["route('erp.rot.change-mechanic'",
+                      "route('erp.rot.start'","route('erp.rot.resume'"]:
+            assert key in v,key
+          print('FIX109_MULTI_ASSIGN_START_GUARD_AND_COMBO_CANDIDATE_VALID')
+          PY
+          BACKUP="storage/app/FIX109_MECHANIC_ASSIGN_BACKUP_$FIX109_AUDIT"
+          mkdir -p "$BACKUP";chmod 700 "$BACKUP"
+          cp -p "$ASSIGN" "$BACKUP/RotAssignmentService.php"
+          cp -p "$WORK" "$BACKUP/RotWorkflowService.php"
+          cp -p "$VIEW" "$BACKUP/show.blade.php"
+          rollback(){
+            echo FIX109_ROLLBACK_BEGIN
+            cp -p "$BACKUP/RotAssignmentService.php" "$ASSIGN"
+            cp -p "$BACKUP/RotWorkflowService.php" "$WORK"
+            cp -p "$BACKUP/show.blade.php" "$VIEW"
+            php artisan view:clear >/dev/null 2>&1 || true
+            php artisan view:cache >/dev/null 2>&1 || true
+            echo FIX109_ROLLBACK_THREE_FILES_DONE
+          }
+          trap rollback ERR
+          python3 "$PATCH" apply "$APP"
+          php -l "$ASSIGN"
+          php -l "$WORK"
+          php artisan view:clear
+          php artisan view:cache
+          grep -q "FIX109_MULTI_PLANNED_ROT_AND_SEARCH_MECHANIC" "$ASSIGN"
+          grep -q "FIX109_MECHANIC_COMBO" "$VIEW"
+          echo FIX109_STAGING_MECHANIC_POLICY_FILES_VERIFIED
+          for endpoint in /erp/login /staff/login;do
+            status="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$endpoint")"
+            echo "FIX109_HEALTH_$endpoint=$status"
+            test "$status" = 200
+          done
+          trap - ERR
+          echo "FIX109_STAGING_DEPLOY_SUCCESS BACKUP=$BACKUP NO_DATABASE_WRITES"
+          REMOTE
+      - name: Clean ephemeral SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
