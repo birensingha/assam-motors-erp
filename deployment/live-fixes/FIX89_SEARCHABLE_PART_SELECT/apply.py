@@ -64,6 +64,16 @@ addon=r'''
   background:#f8fbff!important;color:#1e527d!important;cursor:pointer!important;
   border-radius:0 4px 4px 0!important;font-size:13px!important
 }
+/* Only saved Parts rows: slightly smaller than the entry controls. */
+.jc-parts-block .am87-page-table .jc-itemised-billing tbody tr:not(.am85-part-add-row)>td{
+  font-size:10.5px!important;line-height:1.25!important
+}
+.jc-parts-block .am87-page-table .jc-itemised-billing tbody tr:not(.am85-part-add-row)>td strong{
+  font-size:10.5px!important;font-weight:700!important
+}
+.jc-parts-block .am87-page-table .jc-itemised-billing tbody tr:not(.am85-part-add-row)>td .muted{
+  font-size:9.5px!important;line-height:1.25!important
+}
 .am89-dropdown{
   display:none;position:fixed;box-sizing:border-box;z-index:2147483000;
   background:#fff;color:#1b3855;border:1px solid #9db6d4;
@@ -219,7 +229,14 @@ function init(){
     if(opt&&opt.value){search.value=label(opt);search.setCustomValidity('');}
   });
   native.addEventListener('am89-reset',function(){
+    // FIX88's four editable input values must be cleared explicitly.
+    // FIX87 only writes textContent on legacy <output>; that does not reset
+    // input.value, so a prior Part's amounts otherwise remain visible.
     search.value='';search.setCustomValidity('');close();
+    ['am85-discount-rs','am85-taxable','am85-gst-rs','am85-grand'].forEach(function(k){
+      var amount=document.getElementById(k);
+      if(amount){amount.value='';amount.setCustomValidity('');}
+    });
     search.focus({preventScroll:true});
   });
   native.addEventListener('invalid',function(e){
