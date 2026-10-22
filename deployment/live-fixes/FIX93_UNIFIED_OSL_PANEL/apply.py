@@ -139,8 +139,8 @@ once('''   inner.appendChild(note);
 # Note: form is lexical 'var' and available when click fires after modal setup.
 
 # FIX91 AJAX OSL save rehydrates billing rows; regroup Labour then OSL once.
-once("        body.replaceChildren.apply(body,Array.from(fresh.children).map(function(node){return document.importNode(node,true);}));",
-     "        body.replaceChildren.apply(body,Array.from(fresh.children).map(function(node){return document.importNode(node,true);}));\n        document.dispatchEvent(new Event('am93-osl-billing-updated'));",
+once("body.replaceChildren.apply(body,Array.from(fresh.children).map(function(node){return document.importNode(node,true);}));",
+     "body.replaceChildren.apply(body,Array.from(fresh.children).map(function(node){return document.importNode(node,true);}));\n        document.dispatchEvent(new Event('am93-osl-billing-updated'));",
      'regroup_after_osl_ajax_save')
 
 # JS re-render ROT cards shouldn't discard server-rendered pending purchases.
