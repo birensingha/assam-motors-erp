@@ -137,7 +137,7 @@ jobs:
                         'id="FIX95_ROT_ONE_ROW_NO_BILLING_BOX"',
                         'id="FIX94_COMPACT_MECHANIC_ROT_CARD"',
                         'id="FIX93_OSL_MODAL_TOOLS"',
-                        "route('erp.job-cards.labour.direct',$job->id)"]:
+                        "route('erp.job-cards.labour.direct',$job->id)"):
             assert token in s,token
           assert s.count('id="FIX97_ONE_VISIBLE_ROT_COMBO"')==1
           assert s.count('id="am82-rot-select"')==1
