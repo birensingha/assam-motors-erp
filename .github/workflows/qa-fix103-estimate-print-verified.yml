@@ -1,0 +1,107 @@
+name: FIX103 Read Only Estimate Print and JS QA
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/qa-fix103-estimate-print-verified.yml'
+  workflow_dispatch:
+permissions: {contents: read}
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for attempt in 1 2 3; do
+            if ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Download deployed JS, syntax check and simulate read-only print
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT")
+            SCP=(sshpass -e scp -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SCP[@]}" "$REMOTE:$ROOT/public/js/estimate-entry.js" "/tmp/estimate-entry-live-fix103.js"
+          node --check /tmp/estimate-entry-live-fix103.js
+          node - <<'JS'
+          const fs=require('fs'),s=fs.readFileSync('/tmp/estimate-entry-live-fix103.js','utf8');
+          for(const marker of ['FIX103_ESTIMATE_TABLE_GST_INVOICE_STYLE',
+           'class="e-disc-amt"','class="e-gst-amt"',
+           'type="hidden"','line_note','const discountAmount = ',
+           'const gstAmount = ','.e-total']){
+            if(!s.includes(marker))throw Error('Missing '+marker);
+          }
+          console.log('FIX103_NODE_JS_SYNTAX_AND_CALCULATED_FIELDS_PASS');
+          JS
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1";cd "$APP"
+          php -r '
+          require "vendor/autoload.php";
+          $app=require "bootstrap/app.php";
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $estimate=(object)[
+           "estimate_no"=>"AM/EST/QA-TEST",
+           "estimate_date"=>\Carbon\Carbon::parse("2026-10-22"),
+           "status"=>"DRAFT",
+           "taxable_total"=>150.00,
+           "cgst_total"=>13.50,
+           "sgst_total"=>13.50,
+           "round_off"=>0.00,
+           "grand_total"=>177.00,
+           "customer_note"=>""
+          ];
+          $job=(object)[
+           "job_no"=>"JC-QA-TEST",
+           "customer_name"=>"Test",
+           "customer_phone"=>"000",
+           "vehicle_reg_no"=>"AS-QA",
+           "vehicle_make"=>"Example",
+           "vehicle_model"=>"Model"
+          ];
+          $items=collect([
+           (object)["line_no"=>1,"item_type"=>"PART","item_code"=>"QA-P",
+             "description"=>"Part sample","line_note"=>null,
+             "qty"=>1,"unit"=>"PCS","rate"=>100,"discount_percent"=>0,
+             "tax_percent"=>18,"line_total"=>118],
+           (object)["line_no"=>2,"item_type"=>"ROT","item_code"=>"QA-R",
+             "description"=>"Labour sample","line_note"=>null,
+             "qty"=>1,"unit"=>"HRS","rate"=>50,"discount_percent"=>0,
+             "tax_percent"=>18,"line_total"=>59]
+          ]);
+          $html=view("estimates.print",compact("estimate","job","items"))->render();
+          foreach(["Final Amt (Incl. Tax)","NOT A TAX INVOICE",
+                   "Workshop Estimate","Bank Details","118.00","59.00","177.00"] as $needle){
+            if(strpos($html,$needle)===false)throw new Exception("Missing print text: ".$needle);
+          }
+          echo "FIX103_DUMMY_ESTIMATE_INVOICE_STYLE_PRINT_RENDER_PASS".PHP_EOL;
+          '
+          test -f resources/views/job-cards/show.blade.php
+          echo FIX103_READ_ONLY_QA_FINISHED
+          REMOTE
+      - name: Clear temporary SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
