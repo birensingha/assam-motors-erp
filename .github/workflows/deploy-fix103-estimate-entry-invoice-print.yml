@@ -1,0 +1,149 @@
+name: FIX103 Estimate Table and Invoice Print STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-fix103-estimate-entry-invoice-print.yml'
+      - 'deployment/live-fixes/FIX103_ESTIMATE_TABLE_PRINT/apply.py'
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preflight patch source
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/FIX103_ESTIMATE_TABLE_PRINT/apply.py
+          grep -q FIX103_ESTIMATE_TABLE_GST_INVOICE_STYLE deployment/live-fixes/FIX103_ESTIMATE_TABLE_PRINT/apply.py
+          ! grep -q job-cards/show.blade.php deployment/live-fixes/FIX103_ESTIMATE_TABLE_PRINT/apply.py
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for i in 1 2 3 4;do
+            if ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            echo "FIX103_SSH_RETRY_$i";sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass
+          fi
+      - name: Precompile and safely apply Estimate-only patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT")
+            SCP=(sshpass -e scp -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX103_ESTIMATE_TABLE_PRINT"'
+          "${SCP[@]}" deployment/live-fixes/FIX103_ESTIMATE_TABLE_PRINT/apply.py "$REMOTE:~/FIX103_ESTIMATE_TABLE_PRINT/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1";cd "$APP"
+          test -f artisan && test -d vendor
+          PATCH="$HOME/FIX103_ESTIMATE_TABLE_PRINT/apply.py"
+          ENTRY="resources/views/estimates/create.blade.php"
+          JS="public/js/estimate-entry.js"
+          PRINT="resources/views/estimates/print.blade.php"
+          JC="resources/views/job-cards/show.blade.php"
+          JC_BEFORE="$(sha256sum "$JC" | cut -d' ' -f1)"
+          python3 "$PATCH" check "$APP"
+          TMP="$(mktemp -d "$APP/storage/app/fix103_proposed_XXXXXX")"
+          trap 'rm -rf "$TMP"' EXIT
+          FIX103_PREVIEW_ENTRY="$TMP/create.blade.php" FIX103_PREVIEW_JS="$TMP/estimate-entry.js" FIX103_PREVIEW_PRINT="$TMP/print.blade.php" \
+            python3 "$PATCH" check "$APP"
+          php -r '
+            require "vendor/autoload.php";
+            $app=require "bootstrap/app.php";
+            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            file_put_contents($argv[3],\Illuminate\Support\Facades\Blade::compileString(file_get_contents($argv[1])));
+            file_put_contents($argv[4],\Illuminate\Support\Facades\Blade::compileString(file_get_contents($argv[2])));
+          ' "$TMP/create.blade.php" "$TMP/print.blade.php" "$TMP/create.php" "$TMP/print.php"
+          php -l "$TMP/create.php"
+          php -l "$TMP/print.php"
+          if command -v node >/dev/null 2>&1;then
+            node --check "$TMP/estimate-entry.js"
+            echo FIX103_JS_SYNTAX_PASS
+          else
+            echo FIX103_REMOTE_NODE_UNAVAILABLE_SOURCE_REVIEW_ONLY
+          fi
+          python3 - "$TMP" <<'PY'
+          from pathlib import Path
+          import sys
+          d=Path(sys.argv[1]);entry=(d/'create.blade.php').read_text()
+          js=(d/'estimate-entry.js').read_text();pr=(d/'print.blade.php').read_text()
+          for x in ['Discount ₹','GST ₹','Final Amt (Incl. Tax)',
+                    'id="estimate-lines"','id="estimate-preview-total"',
+                    'FIX103_ESTIMATE_TABLE_COMPACT_CSS']:
+            assert x in entry,x
+          for x in ['e-disc-amt','e-gst-amt','discountAmount','gstAmount',
+                    'type="hidden"','line_note','estimate-ref-menu']:
+            assert x in js,x
+          for x in ['FIX103_ESTIMATE_TABLE_GST_INVOICE_STYLE','Workshop Estimate',
+                    'NOT A TAX INVOICE','Bank Details','line_total',
+                    'Estimate Terms and Conditions']:
+            assert x in pr,x
+          assert pr.count('number_format((float)$i->line_total,2)')==1
+          print('FIX103_ALL_CANDIDATES_VALIDATED_BEFORE_WRITES')
+          PY
+          BACKUP="storage/app/FIX103_ESTIMATE_TABLE_PRINT_BACKUP_$(date +%Y%m%d_%H%M%S)"
+          mkdir -p "$BACKUP";chmod 700 "$BACKUP"
+          cp -p "$ENTRY" "$BACKUP/create.blade.php"
+          cp -p "$JS" "$BACKUP/estimate-entry.js"
+          cp -p "$PRINT" "$BACKUP/print.blade.php"
+          rollback(){
+            echo FIX103_ROLLBACK_BEGIN
+            cp -p "$BACKUP/create.blade.php" "$ENTRY"
+            cp -p "$BACKUP/estimate-entry.js" "$JS"
+            cp -p "$BACKUP/print.blade.php" "$PRINT"
+            php artisan view:clear >/dev/null 2>&1 || true
+            php artisan view:cache >/dev/null 2>&1 || true
+            echo FIX103_ESTIMATE_ONLY_ROLLBACK_DONE
+          }
+          trap rollback ERR
+          python3 "$PATCH" apply "$APP"
+          php artisan view:clear
+          php artisan view:cache
+          if command -v node >/dev/null 2>&1;then node --check "$JS";fi
+          test "$JC_BEFORE" = "$(sha256sum "$JC" | cut -d' ' -f1)"
+          echo FIX103_JOB_CARD_SHA_UNCHANGED_PASS
+          python3 - <<'PY'
+          from pathlib import Path
+          e=Path('resources/views/estimates/create.blade.php').read_text()
+          j=Path('public/js/estimate-entry.js').read_text()
+          p=Path('resources/views/estimates/print.blade.php').read_text()
+          assert e.count('id="FIX103_ESTIMATE_TABLE_COMPACT_CSS"')==1
+          assert j.count('FIX103_ESTIMATE_TABLE_GST_INVOICE_STYLE')==1
+          assert p.count('FIX103_ESTIMATE_TABLE_GST_INVOICE_STYLE')==1
+          assert 'number_format((float)$i->line_total,2)' in p
+          print('FIX103_ESTIMATE_FORM_PRINT_SAVED_TOTALS_PASS')
+          PY
+          for path in /erp/login /staff/login;do
+            st="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")"
+            echo "FIX103_HEALTH_$path=$st";test "$st" = 200
+          done
+          trap - ERR
+          echo "FIX103_STAGING_DEPLOY_SUCCESS BACKUP=$BACKUP NO_FINANCIAL_WRITES"
+          REMOTE
+      - name: Remove ephemeral credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
