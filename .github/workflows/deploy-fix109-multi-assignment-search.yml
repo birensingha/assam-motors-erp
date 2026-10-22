@@ -114,9 +114,9 @@ jobs:
           python3 - "$TMP" <<'PY'
           from pathlib import Path
           import sys
-          p=Path(sys.argv[1]);a=(p/'RotAssignmentService.php').read_text()
-          w=(p/'RotWorkflowService.php').read_text()
-          v=(p/'show.blade.php').read_text()
+          p=Path(sys.argv[1]);a=(p/'RotAssignmentService.php').read_text(errors="surrogateescape")
+          w=(p/'RotWorkflowService.php').read_text(errors="surrogateescape")
+          v=(p/'show.blade.php').read_text(errors="surrogateescape")
           assert "$busy = false;" in a
           assert a.count("FIX109_MULTI_PLANNED_ROT_AND_SEARCH_MECHANIC")==1
           assert w.count("FIX109_MULTI_PLANNED_ROT_AND_SEARCH_MECHANIC")==1
