@@ -221,6 +221,9 @@ for k in must:
 if s.count('id="jc-osl"')!=1 or s.count(marker)!=1:
     raise SystemExit('FIX93_DUPLICATE_OSL_PANEL_OR_STYLE')
 if mode=='check':
+    if os.environ.get('FIX93_PREVIEW_PATH'):
+        Path(os.environ['FIX93_PREVIEW_PATH']).write_text(s,encoding='utf8',errors='surrogateescape')
+        print('FIX93_PREVIEW_WRITTEN_NOT_LIVE')
     print('FIX93_OSL_UNIFIED_PREFLIGHT_PASS_NO_WRITES');sys.exit(0)
 fd,tmp=tempfile.mkstemp(dir=view.parent,prefix='.fix93_')
 try:
