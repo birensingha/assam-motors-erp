@@ -1,0 +1,186 @@
+name: FIX110 Attendance and Mechanic Dropdown Visibility STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-fix110-attendance-mechanic-dropdown.yml'
+      - 'deployment/live-fixes/FIX110_ATTENDANCE_MECHANIC_SELECT/apply.py'
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-fix110-dropdowns, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preflight Python and browser JavaScript
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/FIX110_ATTENDANCE_MECHANIC_SELECT/apply.py
+          python3 - <<'PY'
+          from pathlib import Path
+          import ast,re
+          src=Path('deployment/live-fixes/FIX110_ATTENDANCE_MECHANIC_SELECT/apply.py').read_text()
+          t=ast.parse(src)
+          strings=[]
+          for a in ast.walk(t):
+            if isinstance(a,ast.Assign) and isinstance(a.value,ast.Constant) and isinstance(a.value.value,str):
+              if any(isinstance(n,ast.Name) and n.id=='att_script' for n in a.targets):
+                strings.append(a.value.value)
+          assert len(strings)==1
+          scripts=re.findall(r'<script>(.*?)</script>',strings[0],flags=re.S)
+          assert len(scripts)==1
+          Path('/tmp/fix110-attendance.js').write_text(scripts[0])
+          for token in ['FIX110_VISIBLE_ATTENDANCE_AND_MECHANIC_DROPDOWNS',
+                        'attEditStatus','present','absent','leave','off',
+                        'document.body.appendChild(menu);',
+                        'wrap.appendChild(menu);',
+                        'form.addEventListener']:
+            assert token in src,token
+          print('FIX110_SOURCE_JS_AND_STATUS_PREFLIGHT_PASS')
+          PY
+          node --check /tmp/fix110-attendance.js
+      - name: Secure staging SSH connectivity
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3;do
+            if timeout 12 ssh-keyscan -T 5 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            echo FIX110_SSH_RETRY_$retry;sleep 2
+          done
+          test -s ~/.ssh/known_hosts || { echo FIX110_SSH_UNAVAILABLE_NO_FILES_CHANGED;exit 1; }
+          if [ -n "$KEY" ];then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Guarded two-view deploy with candidate compile and rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=12 -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -o ConnectTimeout=12 -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=12 -p "$PORT")
+            SCP=(sshpass -e scp -o ConnectTimeout=12 -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX110_ATTENDANCE_MECHANIC_SELECT"'
+          "${SCP[@]}" deployment/live-fixes/FIX110_ATTENDANCE_MECHANIC_SELECT/apply.py "$REMOTE:~/FIX110_ATTENDANCE_MECHANIC_SELECT/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1";cd "$APP";test -f artisan && test -d vendor
+          PATCH="$HOME/FIX110_ATTENDANCE_MECHANIC_SELECT/apply.py"
+          ATT="resources/views/admin/native/attendance.blade.php"
+          MECH="resources/views/job-cards/show.blade.php"
+          ASSIGN_SHA="$(sha256sum app/Services/RotAssignmentService.php|cut -d' ' -f1)"
+          WORK_SHA="$(sha256sum app/Services/RotWorkflowService.php|cut -d' ' -f1)"
+          python3 "$PATCH" check "$APP"
+          TMP="$(mktemp -d "$APP/storage/app/fix110_candidate_XXXXXX")"
+          trap 'rm -rf "$TMP"' EXIT
+          FIX110_PREVIEW_ATTENDANCE="$TMP/attendance.blade.php" \
+          FIX110_PREVIEW_MECHANIC="$TMP/show.blade.php" \
+             python3 "$PATCH" check "$APP"
+          php -r '
+            require "vendor/autoload.php";
+            $app=require "bootstrap/app.php";
+            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            foreach(["attendance","show"] as $name){
+              file_put_contents($argv[1]."/".$name.".php",
+                \Illuminate\Support\Facades\Blade::compileString(file_get_contents($argv[1]."/".$name.".blade.php")));
+            }
+          ' "$TMP"
+          php -l "$TMP/attendance.php"
+          php -l "$TMP/show.php"
+          python3 - "$TMP" <<'PY'
+          from pathlib import Path
+          import sys,re
+          p=Path(sys.argv[1])
+          att=(p/'attendance.blade.php').read_text(errors='surrogateescape')
+          mech=(p/'show.blade.php').read_text(errors='surrogateescape')
+          assert att.count('id="FIX110_ATTENDANCE_STATUS_MENU_STYLE"')==1
+          assert '<select name="status"' in att and 'id="attEditStatus"' in att
+          for option in ['present','absent','leave','off']:
+            assert ('<option value="'+option+'">') in att
+          assert mech.count('FIX110_VISIBLE_ATTENDANCE_AND_MECHANIC_DROPDOWNS')==1
+          assert 'wrap.appendChild(menu);' in mech
+          assert 'document.body.appendChild(menu);' not in mech[mech.index('id="FIX109_MECHANIC_COMBO"'):]
+          for key in ['name="staff_id"','form.addEventListener(\\'submit\\'',
+                      "route('erp.rot.change-mechanic'"]:
+            assert key in mech,key
+          assert 'position:absolute;top:36px;left:0' in mech
+          scripts=re.findall(r'<script>(.*?)</script>',att,flags=re.S)
+          stat=[t for t in scripts if "am110-att-list" in t and "attEditStatus" in t]
+          assert len(stat)==1
+          (p/'att-status.js').write_text(stat[0])
+          scripts2=re.findall(r'<script>(.*?)</script>',mech,flags=re.S)
+          s109=[t for t in scripts2 if "function enhance(select)" in t and "am109-mechanic-picker" in t]
+          assert len(s109)==1
+          (p/'mechanic.js').write_text(s109[0])
+          print('FIX110_SELECT_OPTIONS_SAME_DATA_BLADE_CANDIDATE_PASS')
+          PY
+          # Node not installed on Hostinger: JS check runs on GitHub runner
+          # below, before and after protected view replacement.
+          BACKUP="storage/app/FIX110_DROPDOWN_BACKUP_$(date +%Y%m%d_%H%M%S)"
+          mkdir -p "$BACKUP";chmod 700 "$BACKUP"
+          cp -p "$ATT" "$BACKUP/attendance.blade.php"
+          cp -p "$MECH" "$BACKUP/show.blade.php"
+          rollback(){
+            echo FIX110_ROLLBACK_BEGIN
+            cp -p "$BACKUP/attendance.blade.php" "$ATT"
+            cp -p "$BACKUP/show.blade.php" "$MECH"
+            php artisan view:clear >/dev/null 2>&1 || true
+            php artisan view:cache >/dev/null 2>&1 || true
+            echo FIX110_BACKUP_RESTORED
+          }
+          trap rollback ERR
+          python3 "$PATCH" apply "$APP"
+          php artisan view:clear
+          php artisan view:cache
+          grep -q 'FIX110_ATTENDANCE_STATUS_MENU_STYLE' "$ATT"
+          grep -q 'FIX110_VISIBLE_ATTENDANCE_AND_MECHANIC_DROPDOWNS' "$MECH"
+          test "$ASSIGN_SHA" = "$(sha256sum app/Services/RotAssignmentService.php|cut -d' ' -f1)"
+          test "$WORK_SHA" = "$(sha256sum app/Services/RotWorkflowService.php|cut -d' ' -f1)"
+          echo FIX110_ROT_ASSIGNMENT_AND_RUNNING_GUARDS_UNCHANGED
+          for endpoint in /erp/login /staff/login;do
+            code="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$endpoint")"
+            echo "FIX110_HEALTH_$endpoint=$code"
+            test "$code" = 200
+          done
+          trap - ERR
+          echo "FIX110_STAGING_DEPLOY_SUCCESS BACKUP=$BACKUP NO_DATA_WRITES"
+          REMOTE
+          mkdir -p /tmp/fix110-tests
+          "${SCP[@]}" "$REMOTE:$ROOT/resources/views/admin/native/attendance.blade.php" /tmp/fix110-tests/attendance.blade.php
+          "${SCP[@]}" "$REMOTE:$ROOT/resources/views/job-cards/show.blade.php" /tmp/fix110-tests/show.blade.php
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
+          a=Path('/tmp/fix110-tests/attendance.blade.php').read_text(errors='surrogateescape')
+          m=Path('/tmp/fix110-tests/show.blade.php').read_text(errors='surrogateescape')
+          ajs=[s for s in re.findall(r'<script>(.*?)</script>',a,re.S) if "am110-att-list" in s]
+          mjs=[s for s in re.findall(r'<script>(.*?)</script>',m,re.S) if "function enhance(select)" in s and "am109-mechanic-picker" in s]
+          assert len(ajs)==1 and len(mjs)==1
+          Path('/tmp/fix110-tests/attendance.js').write_text(ajs[0])
+          Path('/tmp/fix110-tests/mechanic.js').write_text(mjs[0])
+          PY
+          node --check /tmp/fix110-tests/attendance.js
+          node --check /tmp/fix110-tests/mechanic.js
+          echo FIX110_BOTH_LIVE_DROPDOWN_SCRIPTS_NODE_SYNTAX_PASS
+      - name: Remove transient credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
