@@ -1,0 +1,141 @@
+name: FIX93 Unified Labour and OSL Popup STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-fix93-unified-osl-panel.yml'
+      - 'deployment/live-fixes/FIX93_UNIFIED_OSL_PANEL/apply.py'
+      - 'deployment/live-fixes/FIX93_UNIFIED_OSL_PANEL/render.php'
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate patch and browser JavaScript
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/FIX93_UNIFIED_OSL_PANEL/apply.py
+          php -l deployment/live-fixes/FIX93_UNIFIED_OSL_PANEL/render.php
+          python3 - <<'PY'
+          from pathlib import Path
+          import ast
+          source=Path('deployment/live-fixes/FIX93_UNIFIED_OSL_PANEL/apply.py').read_text()
+          tree=ast.parse(source)
+          snippets=[n.args[1].value for n in ast.walk(tree) if isinstance(n,ast.Call)
+            and isinstance(n.func,ast.Name) and n.func.id=='once' and len(n.args)==3
+            and isinstance(n.args[2],ast.Constant) and n.args[2].value=='purchase_selection_into_add_dialog'
+            and isinstance(n.args[1],ast.Constant)]
+          assert len(snippets)==1
+          assert "form.elements.namedItem('description')" in snippets[0]
+          Path('/tmp/fix93.js').write_text("(function(){var inner,editing,form,document;"+snippets[0]+"})();")
+          print('FIX93_LINKED_OSL_SELECTOR_JS_EXTRACTED')
+          PY
+          node --check /tmp/fix93.js
+      - name: Configure remote SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for attempt in 1 2 3 4; do
+            if ssh-keyscan -T 14 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then break; fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Backup deploy and verify with auto rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT")
+            SCP=(sshpass -e scp -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX93_UNIFIED_OSL_PANEL"'
+          "${SCP[@]}" deployment/live-fixes/FIX93_UNIFIED_OSL_PANEL/apply.py deployment/live-fixes/FIX93_UNIFIED_OSL_PANEL/render.php "$REMOTE:~/FIX93_UNIFIED_OSL_PANEL/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"; cd "$APP"; test -f artisan && test -d vendor
+          PATCH="$HOME/FIX93_UNIFIED_OSL_PANEL"
+          python3 "$PATCH/apply.py" check "$APP"
+          BACKUP="storage/app/FIX93_OSL_PANEL_BACKUP_$(date +%Y%m%d_%H%M%S)"
+          mkdir -p "$BACKUP"; chmod 700 "$BACKUP"
+          cp -p resources/views/job-cards/show.blade.php "$BACKUP/show.blade.php"
+          rollback(){
+            echo FIX93_ROLLBACK_BEGIN
+            cp -p "$BACKUP/show.blade.php" resources/views/job-cards/show.blade.php
+            php artisan view:clear >/dev/null 2>&1 || true
+            php artisan view:cache >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          python3 "$PATCH/apply.py" apply "$APP"
+          php artisan view:clear
+          php artisan view:cache
+          php "$PATCH/render.php" "$APP"
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('resources/views/job-cards/show.blade.php').read_text(errors='replace')
+          for token in ('id="FIX93_OSL_MODAL_TOOLS"','id="am85-part-search"',
+                        'id="am85-discount"','id="am85-part-id"',
+                        'class="am85-part-add-row"',
+                        "route('erp.job-cards.parts.direct',$job->id)",
+                        "route('erp.job-cards.parts.update',[$job->id,$p->id])",
+                        "route('erp.job-cards.parts.delete',[$job->id,$p->id])",
+                        "route('erp.job-cards.labour.direct',$job->id)"):
+            assert token in s,token
+          assert '<datalist id="am85-part-options"' not in s
+          assert s.count('id="FIX93_OSL_MODAL_TOOLS"')==1
+          assert s.count('id="am93-osl-tools-template"')==1
+          assert s.count('id="jc-osl"')==1
+          a=s.index('<template id="am93-osl-tools-template">')
+          b=s.index('</template>',a)
+          assert '<div class="am83-osl" id="jc-osl">' in s[a:b]
+          assert 'OSL Jobs / Outside Services' not in s[:a]
+          assert '@forelse($am93SortedLabour as $line)' in s
+          assert 'data-am93-purchase-id' in s
+          assert 'data-am93-use-osl' in s
+          assert 'Pending JC customer billing' in s
+          assert "route('erp.purchases.osl.create')" in s
+          assert "route('erp.fix48.osl-index')" in s
+          assert 'id="FIX92_LABOUR_MECHANICS_DELETE_DIALOG"' in s
+          assert 'id="FIX91_UNIFIED_OSL_ADMIN"' in s
+          assert 'id="am91-add-osl"' in s
+          assert 'id="am90-table-body"' in s
+          assert 'data-am91-osl-id' in s
+          assert 'class="am85-part-add-row"' in s
+          print('FIX93_ONE_REGISTER_OSL_SELECTION_MODAL_NO_DOUBLE_BILL_PASS')
+
+          PY
+          for path in /erp/login /staff/login; do
+            status="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")"
+            echo "FIX93_HEALTH_$path=$status"
+            test "$status" = 200
+          done
+          trap - ERR
+          echo "FIX93_STAGING_DEPLOY_SUCCESS BACKUP=$BACKUP VIEW_ONLY_NO_FINANCIAL_WRITES"
+          REMOTE
+      - name: Cleanup SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
