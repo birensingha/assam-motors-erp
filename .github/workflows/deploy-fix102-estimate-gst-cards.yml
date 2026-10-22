@@ -117,7 +117,7 @@ jobs:
           cp -p resources/views/estimates/show.blade.php "$BACKUP/show.blade.php"
           rollback(){
             echo FIX102_ROLLBACK_BEGIN
-            cp -p "$BACKUP/show.blade.php" resources/views/job-cards/show.blade.php
+            cp -p "$BACKUP/show.blade.php" resources/views/estimates/show.blade.php
             php artisan view:clear >/dev/null 2>&1 || true
             php artisan view:cache >/dev/null 2>&1 || true
           }
@@ -141,7 +141,6 @@ jobs:
           assert 'number_format((float)$estimate->parts_total,2)' not in s
           assert 'number_format((float)$estimate->labour_total,2)' not in s
           print('FIX102_SUMMARY_TAX_INCLUDED_WITH_EXISTING_GRAND_TOTAL_AND_PRINT_PASS')
-          PY
           PY
           for path in /erp/login /staff/login; do
             status="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")"
