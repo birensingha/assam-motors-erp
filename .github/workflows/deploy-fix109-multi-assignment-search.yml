@@ -123,7 +123,7 @@ jobs:
           assert w.count("->where('status', 'Running')")>=3
           assert 'if (!$trustedAutoCheckout)' in w
           assert v.count("FIX109_MULTI_PLANNED_ROT_AND_SEARCH_MECHANIC")==1
-          for key in ["form[action*=\\"change-mechanic\\"]",
+          for key in ['form[action*="change-mechanic"]',
                       "Search mechanic name / Staff Code",
                       "select.dispatchEvent(new Event('change'",
                       "form.addEventListener('submit'"]:
