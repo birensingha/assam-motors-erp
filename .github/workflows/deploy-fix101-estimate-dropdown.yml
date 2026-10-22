@@ -1,0 +1,133 @@
+name: FIX101 Estimate Parts ROT Dropdown Visible STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-fix101-estimate-dropdown.yml'
+      - 'deployment/live-fixes/FIX101_ESTIMATE_DROPDOWN/apply.py'
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate patch syntax and non-destructive scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/FIX101_ESTIMATE_DROPDOWN/apply.py
+          grep -q FIX101_ESTIMATE_VISIBLE_ITEM_DROPDOWN deployment/live-fixes/FIX101_ESTIMATE_DROPDOWN/apply.py
+      - name: Configure remote SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for attempt in 1 2 3 4; do
+            if ssh-keyscan -T 14 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then break; fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Backup deploy and verify with auto rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT")
+            SCP=(sshpass -e scp -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX101_ESTIMATE_DROPDOWN"'
+          "${SCP[@]}" deployment/live-fixes/FIX101_ESTIMATE_DROPDOWN/apply.py "$REMOTE:~/FIX101_ESTIMATE_DROPDOWN/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"; cd "$APP"; test -f artisan && test -d vendor
+          PATCH="$HOME/FIX101_ESTIMATE_DROPDOWN"
+          python3 "$PATCH/apply.py" check "$APP"
+          # Compile proposed source BEFORE touching the live Blade file.
+          TMPB="$(mktemp "$APP/storage/app/.fix101_proposed_XXXXXX.blade.php")"
+          TMPC="$(mktemp "$APP/storage/app/.fix101_compiled_XXXXXX.php")"
+          FIX101_PREVIEW_PATH="$TMPB" python3 "$PATCH/apply.py" check "$APP"
+          php -r '
+            require "vendor/autoload.php";
+            $app=require "bootstrap/app.php";
+            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            file_put_contents($argv[2],\Illuminate\Support\Facades\Blade::compileString(file_get_contents($argv[1])));
+          ' "$TMPB" "$TMPC"
+          set +e
+          PHP_LINT="$(php -d display_errors=1 -d log_errors=0 -l "$TMPC" 2>&1)"
+          LINT_CODE=$?
+          set -e
+          if [ "$LINT_CODE" -ne 0 ]; then
+            echo FIX101_COMPILED_BLADE_SYNTAX_FAIL
+            printf '%s\n' "$PHP_LINT"
+            echo FIX101_FOREACH_STACK_DEBUG
+            grep -nE '__currentLoopData|__empty_|foreach|endforeach' "$TMPC" | head -75 | cut -c1-340 || true
+            LINE="$(printf '%s\n' "$PHP_LINT" | sed -n 's/.*on line \([0-9][0-9]*\).*/\1/p' | tail -1)"
+            if [ -n "$LINE" ]; then
+              A=$((LINE>18?LINE-18:1))
+              B=$((LINE+18))
+              sed -n "${A},${B}p" "$TMPC" | head -n 40 | cut -c1-320
+            fi
+            rm -f "$TMPB" "$TMPC"
+            exit 1
+          fi
+          rm -f "$TMPB" "$TMPC"
+          echo FIX101_PROPOSED_BLADE_COMPILES_CLEAN
+          BACKUP="storage/app/FIX101_ESTIMATE_SCROLL_BACKUP_$(date +%Y%m%d_%H%M%S)"
+          mkdir -p "$BACKUP"; chmod 700 "$BACKUP"
+          cp -p resources/views/estimates/create.blade.php "$BACKUP/create.blade.php"
+          rollback(){
+            echo FIX101_ROLLBACK_BEGIN
+            cp -p "$BACKUP/show.blade.php" resources/views/job-cards/show.blade.php
+            php artisan view:clear >/dev/null 2>&1 || true
+            php artisan view:cache >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          python3 "$PATCH/apply.py" apply "$APP"
+          php artisan view:clear
+          php artisan view:cache
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('resources/views/estimates/create.blade.php').read_text(errors='replace')
+          for key in ['id="FIX101_ESTIMATE_VISIBLE_ITEM_DROPDOWN"',
+                      'overflow:visible!important','max-height:none!important',
+                      'id="estimate-lines"','id="add-estimate-line"',
+                      'AM_ESTIMATE_DATA','id="estimate-preview-total"',
+                      "route('erp.estimates.store',$jobCard->id)"]:
+            assert key in s,key
+          assert s.count('id="FIX101_ESTIMATE_VISIBLE_ITEM_DROPDOWN"')==1
+          assert s.count('class="line-scroll estimate-lines-area"')==1
+          print('FIX101_ESTIMATE_DROPDOWN_UI_ONLY_AND_SAVE_PRESERVED_PASS')
+          PY
+          for path in /erp/login /staff/login; do
+            status="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")"
+            echo "FIX101_HEALTH_$path=$status"
+            test "$status" = 200
+          done
+          trap - ERR
+          echo "FIX101_STAGING_DEPLOY_SUCCESS BACKUP=$BACKUP VIEW_ONLY_NO_FINANCIAL_WRITES"
+          REMOTE
+      - name: Cleanup SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
