@@ -38,7 +38,7 @@ jobs:
                    and isinstance(n.value,ast.Constant) and isinstance(n.value.value,str)]
           assert len(sources)==1 and 'am85-part-search' in sources[0]
           text=sources[0]
-          assert text.startswith('<script>') and text.strip().endswith('</script>')
+          assert text.strip().startswith('<script>') and text.strip().endswith('</script>')
           Path('/tmp/fix85-inline.js').write_text(text.replace('<script>','').replace('</script>',''),encoding='utf8')
           print('FIX85_INLINE_JS_EXTRACTED')
           PY
