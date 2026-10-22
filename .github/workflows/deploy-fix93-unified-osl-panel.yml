@@ -143,7 +143,7 @@ jobs:
           b=s.index('</template>',a)
           assert '<div class="am83-osl" id="jc-osl">' in s[a:b]
           assert 'OSL Jobs / Outside Services' not in s[:a]
-          assert '@forelse($am93SortedLabour as $line)' in s
+          assert '@forelse($labour as $line)' in s
           assert 'data-am93-purchase-id' in s
           assert 'data-am93-use-osl' in s
           assert 'Pending JC customer billing' in s
