@@ -3,9 +3,8 @@ on:
   push:
     branches: [main]
     paths:
-      - '.github/workflows/audit-fix85-parts-row.yml'
+      - '.github/workflows/audit-fix87-layout.yml'
       - 'deployment/live-fixes/FIX87_NATIVE_SELECT_ASYNC/audit.py'
-      - 'deployment/live-fixes/FIX87_NATIVE_SELECT_ASYNC/schema.php'
 permissions: {contents: read}
 jobs:
   audit:
@@ -23,7 +22,7 @@ jobs:
       - name: Audit Python syntax
         run: |
           python3 -m py_compile deployment/live-fixes/FIX87_NATIVE_SELECT_ASYNC/audit.py
-          php -l       - name: Configure SSH
+      - name: Configure SSH
         shell: bash
         run: |
           set -euo pipefail
