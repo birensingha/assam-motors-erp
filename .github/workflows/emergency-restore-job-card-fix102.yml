@@ -71,7 +71,7 @@ jobs:
           fi
           # Only proceed when the corrupted view is demonstrably Estimate,
           # not an unrelated live Job Card version.
-          if ! grep -Fq "@section('title',$estimate->estimate_no" "$JC";then
+          if ! grep -Fq 'estimate->estimate_no' "$JC";then
             echo FIX102_RECOVERY_UNKNOWN_JC_STATE_STOP
             exit 1
           fi
