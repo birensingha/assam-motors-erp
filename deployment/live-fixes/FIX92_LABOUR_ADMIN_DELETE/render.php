@@ -78,8 +78,7 @@ foreach([37,34] as $id){
         foreach(['id="FIX92_LABOUR_MECHANICS_DELETE_DIALOG"',
                  'data-am92-mechanic','data-am92-first-start',
                  'data-am92-productive','am92-audit-section',
-                 'route(\'erp.job-cards.labour.delete-admin\'',
-                 'route(\'erp.job-cards.labour.review-admin\''] as $needle){
+                 'data-am92-delete-url','data-am92-review-url'] as $needle){
            if(!str_contains($html,$needle))
              throw new RuntimeException('FIX92 mechanical details or audit action missing: '.$needle);
         }
