@@ -7,7 +7,7 @@ on:
       - 'deployment/live-fixes/FIX109_ROT_MULTI_ASSIGN_MECHANIC_SEARCH/apply.py'
   workflow_dispatch:
 permissions: {contents: read}
-concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+concurrency: {group: assam-motors-staging-fix109-service-view, cancel-in-progress: false}
 jobs:
   deploy:
     runs-on: ubuntu-latest
