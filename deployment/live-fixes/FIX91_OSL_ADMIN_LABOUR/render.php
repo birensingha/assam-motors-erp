@@ -68,11 +68,13 @@ foreach([37,34] as $id){
                 throw new RuntimeException('FIX91 missing Labour grid or work controls: '.$needle);
         }
         foreach(['id="FIX91_UNIFIED_OSL_ADMIN"', 'id="am90-table-body"', 'data-am91-osl-edit',
-                 'am91-add-actions', 'id="am91-add-osl"',
+                 'am91-add-actions',
                  'erp/job-cards/' /* route path presence */] as $needle){
             if(!str_contains($html,$needle))
                 throw new RuntimeException('FIX91 unified OSL grid or Admin control missing: '.$needle);
         }
+        if($id===37 && !str_contains($html,'id="am91-add-osl"'))
+            throw new RuntimeException('WIP Job Card missing Add OSL button');
         if(str_contains($html,'Direct Job Card Entry') || str_contains($html,'+ Add New Part'))
             throw new RuntimeException('Duplicate direct entry panel found');
         echo 'FIX91_JC_RENDER_PASS id='.$id.' chars='.strlen($html)."\n";
