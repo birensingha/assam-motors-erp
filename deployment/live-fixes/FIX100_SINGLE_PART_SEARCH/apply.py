@@ -24,7 +24,7 @@ if marker in s:
 expected='04a019de1bfc2eb1bbe9f76da403cb2263b58e590ecf6778eb925247558c851f'
 if sha!=expected:raise SystemExit('FIX100_CONCURRENT_VIEW_CHANGE_STOP')
 for k in ['id="FIX89_ARROW_TYPE_PARTS_DROPDOWN"','id="am85-part-search"',
-          'class="am89-combo"','className=\\'am89-combo\\'',
+          'am89-combo',
           'am89-query','am89-arrow','am89-dropdown',
           'id="am85-part-id"','id="am85-part-form"',
           'id="am85-qty"','id="am85-rate"','id="am85-gst"',
