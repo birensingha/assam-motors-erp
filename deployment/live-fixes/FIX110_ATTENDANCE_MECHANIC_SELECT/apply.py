@@ -214,8 +214,7 @@ old="""   function position(){
      }
    }"""
 new="""   function position(){
-     // FIX110_VISIBLE_ATTENDANCE_AND_MECHANIC_DROPDOWNS:
-     // Stay inside the Change Mechanic modal's stacking context.
+     // FIX110: Stay inside the Change Mechanic modal's stacking context.
      if(!open)return;
      menu.style.position='absolute';
      menu.style.top='36px';menu.style.bottom='auto';
