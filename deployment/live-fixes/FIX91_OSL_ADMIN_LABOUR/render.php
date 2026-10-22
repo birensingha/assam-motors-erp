@@ -17,7 +17,7 @@ use Illuminate\Support\Facades\View;
 use Illuminate\Http\Request;
 use Illuminate\Support\ViewErrorBag;
 $admin=\App\Models\ErpAuthUser::query()->where('active',true)->get()
-    ->first(static fn($u)=>(bool)$u->isAdmin());
+    ->first(static fn($u)=>strtolower(trim((string)$u->role))==='admin');
 if(!$admin){fwrite(STDERR,"FIX91_NO_ACTIVE_ADMIN_FOR_RENDER_SMOKE\n");exit(3);}
 Auth::guard()->setUser($admin);
 View::share('errors',new ViewErrorBag());
