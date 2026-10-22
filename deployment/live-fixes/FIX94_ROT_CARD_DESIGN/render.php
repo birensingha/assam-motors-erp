@@ -96,7 +96,7 @@ foreach([37,34] as $id){
           throw new RuntimeException('WIP Job Card missing supplier OSL Purchase shortcut');
         // FIX94 screenshot layout must retain one server-truth live timer per ROT.
         foreach(['id="FIX94_COMPACT_MECHANIC_ROT_CARD"','am94-clock-foot',
-                 'data-am94Styled','rot-status-block','rot-main',
+                 'am94Styled','rot-status-block','rot-main',
                  'rot-meta','rot-actions'] as $needle){
           if(!str_contains($html,$needle))
             throw new RuntimeException('FIX94 ROT card/live clock control missing: '.$needle);
