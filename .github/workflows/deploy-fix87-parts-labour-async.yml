@@ -3,7 +3,7 @@ on:
   push:
     branches: [main]
     paths:
-      - '.github/workflows/deploy-fix87-sap-part-combo.yml'
+      - '.github/workflows/deploy-fix87-parts-labour-async.yml'
       - 'deployment/live-fixes/FIX87_NATIVE_SELECT_ASYNC/apply.py'
       - 'deployment/live-fixes/FIX87_NATIVE_SELECT_ASYNC/render.php'
 permissions: {contents: read}
@@ -97,7 +97,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           s=Path('resources/views/job-cards/show.blade.php').read_text(errors='replace')
-          for token in ('id="FIX87_NATIVE_SELECT_ASYNC"','id="am85-part-search"',
+          for token in ('id="FIX87_NATIVE_PARTS_NO_SCROLL_AJAX"','id="am85-part-search"',
                         'id="am85-discount"','id="am85-part-id"',
                         'class="am85-part-add-row"',
                         "route('erp.job-cards.parts.direct',$job->id)",
@@ -106,7 +106,7 @@ jobs:
                         "route('erp.job-cards.labour.direct',$job->id)"):
             assert token in s,token
           assert '<datalist id="am85-part-options"' not in s
-          assert s.count('id="FIX87_NATIVE_SELECT_ASYNC"')==1
+          assert s.count('id="FIX87_NATIVE_PARTS_NO_SCROLL_AJAX"')==1
           assert s.count('id="am85-part-search"')==1
           assert 'Add New Part' not in s
           assert '<select id="am85-part-search"' in s
