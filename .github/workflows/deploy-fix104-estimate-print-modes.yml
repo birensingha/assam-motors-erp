@@ -171,7 +171,9 @@ jobs:
             if(!isset($m[1]))throw new Exception("Missing estimate table");
             preg_match("/<thead>(.*?)<\\/thead>/s",$m[1],$h);
             if(substr_count($h[1],"<th")!==$ncols)throw new Exception("Wrong column count ".$gst);
-            preg_match_all("/<tr>(.*?)<\\/tr>/s",$m[1],$rows);
+            preg_match("/<tbody>(.*?)<\\/tbody>/s",$m[1],$tbody);
+            if(!isset($tbody[1]))throw new Exception("Missing estimate item rows");
+            preg_match_all("/<tr>(.*?)<\\/tr>/s",$tbody[1],$rows);
             foreach($rows[1] as $row){
               if(substr_count($row,"<td")!==$ncols)throw new Exception("Row/heading misalignment ".$gst);
             }
@@ -179,9 +181,9 @@ jobs:
               if(strpos($html,$needle)===false)throw new Exception("Missing amount ".$needle);
             }
             if(strpos($html,"NOT A TAX INVOICE")!==false)throw new Exception("Forbidden tagline");
-            if($gst==="0"&&(strpos($html,">CGST<")!==false||strpos($html,">SGST<")!==false||
+            if((string)$gst==="0"&&(strpos($html,">CGST<")!==false||strpos($html,">SGST<")!==false||
                strpos($html,">GST%<")!==false))throw new Exception("GST visible in without variant");
-            if($gst==="1"&&strpos($html,">CGST<")===false)throw new Exception("GST variant lost breakup");
+            if((string)$gst==="1"&&strpos($html,">CGST<")===false)throw new Exception("GST variant lost breakup");
             echo "FIX104_PRINT_VARIANT_".$gst."_". $ncols."_COLS_AND_TOTAL_177_PASS".PHP_EOL;
           }
           '
