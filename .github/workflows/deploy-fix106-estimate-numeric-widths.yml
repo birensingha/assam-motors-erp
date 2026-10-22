@@ -1,0 +1,138 @@
+name: FIX106 Compact Estimate Input Columns STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-fix106-estimate-numeric-widths.yml'
+      - 'deployment/live-fixes/FIX106_ESTIMATE_NUMERIC_WIDTHS/apply.py'
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Source syntax, width arithmetic and scope guards
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/FIX106_ESTIMATE_NUMERIC_WIDTHS/apply.py
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('deployment/live-fixes/FIX106_ESTIMATE_NUMERIC_WIDTHS/apply.py').read_text()
+          widths=[6,18,20,6.5,5,8,5.5,6.5,5.5,6.5,9.5,3]
+          assert len(widths)==12 and sum(widths)==100
+          assert "FIX106_COMPACT_ESTIMATE_INPUT_COLUMNS" in s
+          assert "estimate-lines" in s and "e-total" in s
+          assert "resources/views/estimates/create.blade.php" in s
+          for x in ['resources/views/job-cards','resources/views/invoices','DB::','grand_total=']:
+            assert x not in s
+          print('FIX106_12_COLUMNS_100_PERCENT_VIEW_ONLY_PREFLIGHT_PASS')
+          PY
+      - name: SSH with pinned host
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for n in 1 2 3 4;do
+            if ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            echo "FIX106_SSH_SCAN_RETRY_$n"
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Candidate Blade compile, single-file backup and staging deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT")
+            SCP=(sshpass -e scp -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX106_ESTIMATE_NUMERIC_WIDTHS"'
+          "${SCP[@]}" deployment/live-fixes/FIX106_ESTIMATE_NUMERIC_WIDTHS/apply.py "$REMOTE:~/FIX106_ESTIMATE_NUMERIC_WIDTHS/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1";cd "$APP"
+          test -f artisan && test -d vendor
+          PATCH="$HOME/FIX106_ESTIMATE_NUMERIC_WIDTHS/apply.py"
+          VIEW="resources/views/estimates/create.blade.php"
+          JC_SHA="$(sha256sum resources/views/job-cards/show.blade.php | cut -d' ' -f1)"
+          PRINT_SHA="$(sha256sum resources/views/estimates/print.blade.php | cut -d' ' -f1)"
+          JS_SHA="$(sha256sum public/js/estimate-entry.js | cut -d' ' -f1)"
+          python3 "$PATCH" check "$APP"
+          TEMP="$(mktemp -d "$APP/storage/app/fix106_candidate_XXXXXX")"
+          trap 'rm -rf "$TEMP"' EXIT
+          FIX106_PREVIEW_PATH="$TEMP/create.blade.php" python3 "$PATCH" check "$APP"
+          php -r '
+            require "vendor/autoload.php";
+            $app=require "bootstrap/app.php";
+            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            file_put_contents($argv[2],\Illuminate\Support\Facades\Blade::compileString(file_get_contents($argv[1])));
+          ' "$TEMP/create.blade.php" "$TEMP/create.php"
+          php -l "$TEMP/create.php"
+          python3 - "$TEMP/create.blade.php" <<'PY'
+          from pathlib import Path
+          import sys,re
+          s=Path(sys.argv[1]).read_text()
+          assert s.count('id="FIX106_COMPACT_ESTIMATE_INPUT_COLUMNS"')==1
+          widths=[float(x) for x in re.findall(r'thead th:nth-child\(\d+\)\{width:([\d.]+)%!important;\}',s[s.index('id="FIX106_COMPACT_ESTIMATE_INPUT_COLUMNS"'):s.index('</style>',s.index('id="FIX106_COMPACT_ESTIMATE_INPUT_COLUMNS"'))])]
+          assert len(widths)==12 and abs(sum(widths)-100)<1e-9, widths
+          for term in ['FIX105_EDITOR_LOAD_TAB_AND_WO_GST_RATE',
+                       'id="estimate-lines"','id="estimate-preview-total"',
+                       "file_get_contents(public_path('js/estimate-entry.js'))",
+                       'Discount ₹','GST ₹','Final Amt (Incl. Tax)',
+                       'id="FIX104_12COL_LAYOUT"']:
+            assert term in s,term
+          print('FIX106_BLADE_AND_12_COLUMN_PREVIEW_PASS')
+          PY
+          BACKUP="storage/app/FIX106_ESTIMATE_WIDTHS_BACKUP_$(date +%Y%m%d_%H%M%S)"
+          mkdir -p "$BACKUP";chmod 700 "$BACKUP"
+          cp -p "$VIEW" "$BACKUP/create.blade.php"
+          rollback(){
+            echo FIX106_ROLLBACK_BEGIN
+            cp -p "$BACKUP/create.blade.php" "$VIEW"
+            php artisan view:clear >/dev/null 2>&1 || true
+            php artisan view:cache >/dev/null 2>&1 || true
+            echo FIX106_ONLY_ESTIMATE_VIEW_RESTORED
+          }
+          trap rollback ERR
+          python3 "$PATCH" apply "$APP"
+          php artisan view:clear
+          php artisan view:cache
+          grep -q 'FIX106_COMPACT_ESTIMATE_INPUT_COLUMNS' "$VIEW"
+          test "$JC_SHA" = "$(sha256sum resources/views/job-cards/show.blade.php | cut -d' ' -f1)"
+          test "$PRINT_SHA" = "$(sha256sum resources/views/estimates/print.blade.php | cut -d' ' -f1)"
+          test "$JS_SHA" = "$(sha256sum public/js/estimate-entry.js | cut -d' ' -f1)"
+          echo FIX106_JC_PRINT_AND_JS_UNCHANGED_PASS
+          for url in /erp/login /staff/login;do
+            HTTP="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$url")"
+            echo "FIX106_HEALTH_$url=$HTTP"
+            test "$HTTP" = 200
+          done
+          trap - ERR
+          echo "FIX106_STAGING_DEPLOY_SUCCESS BACKUP=$BACKUP CSS_ONLY_NO_DB_WRITES"
+          REMOTE
+      - name: Cleanup ephemeral credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
