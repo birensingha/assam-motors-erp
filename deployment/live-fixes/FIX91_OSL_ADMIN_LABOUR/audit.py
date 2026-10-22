@@ -36,4 +36,29 @@ for rel in ['routes/web.php','app/Http/Controllers/Web/AdminJobCardOslLineContro
   for i,line in enumerate(lines):
    if ('function ' in line and any(z in line.lower() for z in ['labour','admin'])) or 'isAdmin()' in line:
     print('FIX91_JC_CTRL',i+1,line[:300])
+# Additional strict financial controls / OSL schema checks.
+p=root/'app/Http/Controllers/Web/AdminWorkshopControlPageController.php'
+if p.exists():
+ lines=p.read_text(errors='replace').splitlines()
+ for i,v in enumerate(lines):
+  if 'function updateJobLine' in v:
+   print('FIX91_FIN_EDITOR_LINES',i+1)
+   for j in range(max(0,i-3),min(i+115,len(lines))):
+    print('FIX91_FIN',j+1,lines[j][:450].encode('ascii','backslashreplace').decode('ascii'))
+p=root/'routes/web.php'
+if p.exists():
+ lines=p.read_text(errors='replace').splitlines()
+ for a,b in [(16,53),(176,210)]:
+  for j in range(a-1,min(b,len(lines))):
+   print('FIX91_ROUTE_CONTEXT',j+1,lines[j][:350])
+for rel in ['app/Services/JobCardTaxTotals.php',
+            'app/Http/Controllers/Web/JobCardRotAlterationController.php']:
+ p=root/rel
+ print('FIX91_FILE_EXISTS',rel,p.exists())
+if (root/'app/Services/JobCardTaxTotals.php').exists():
+ p=root/'app/Services/JobCardTaxTotals.php'
+ lines=p.read_text(errors='replace').splitlines()
+ for j,line in enumerate(lines):
+  if 'function forJob' in line:
+   for i in range(j,min(j+35,len(lines))):print('FIX91_TAX',i+1,lines[i][:330])
 print('FIX91_AUDIT_PASS')
