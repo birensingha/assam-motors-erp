@@ -217,10 +217,8 @@ else init();
 </script>
 '''
 if marker in cssjs: pass
-if s.count('@endsection')==1:
- s=s.replace('@endsection',cssjs+'\n@endsection',1)
-else:
- s+='\n'+cssjs
+# Append after FIX87's scripts so event handlers run after native selection updates.
+s+='\n'+cssjs
 if s.count('class="am88-amount-input"')!=4 or s.count(marker)!=1:
  raise SystemExit('FIX88_FINAL_VALIDATION_FAILED')
 for endpoint in ["route('erp.job-cards.parts.direct',$job->id)",
