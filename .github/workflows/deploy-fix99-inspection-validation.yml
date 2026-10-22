@@ -1,0 +1,142 @@
+name: FIX99 Inspection Validation and Visible Submit Errors STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-fix99-inspection-validation.yml'
+      - 'deployment/live-fixes/FIX99_INSPECTION_COMPLETE/apply.py'
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate patch and browser JavaScript
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/FIX99_INSPECTION_COMPLETE/apply.py
+          python3 - <<'PY'
+          from pathlib import Path
+          import ast,re
+          src=Path('deployment/live-fixes/FIX99_INSPECTION_COMPLETE/apply.py').read_text()
+          tree=ast.parse(src)
+          candidates=[n.value.value for n in ast.walk(tree) if isinstance(n,ast.Assign)
+            and any(isinstance(t,ast.Name) and t.id=='js' for t in n.targets)
+            and isinstance(n.value,ast.Constant) and isinstance(n.value.value,str)]
+          assert len(candidates)==1
+          scripts=re.findall(r'<script>(.*?)</script>',candidates[0],re.S)
+          assert len(scripts)==1
+          Path('/tmp/fix99.js').write_text(scripts[0],encoding='utf8')
+          assert 'missingRemarks' in src
+          assert 'am99-validation-alert' in src
+          print('FIX99_CLIENT_VALIDATION_API_AND_FEEDBACK_SOURCE_OK')
+          PY
+          node --check /tmp/fix99.js
+      - name: Configure remote SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for attempt in 1 2 3 4; do
+            if ssh-keyscan -T 14 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then break; fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Backup deploy and verify with auto rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT")
+            SCP=(sshpass -e scp -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX99_INSPECTION_COMPLETE"'
+          "${SCP[@]}" deployment/live-fixes/FIX99_INSPECTION_COMPLETE/apply.py "$REMOTE:~/FIX99_INSPECTION_COMPLETE/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"; cd "$APP"; test -f artisan && test -d vendor
+          PATCH="$HOME/FIX99_INSPECTION_COMPLETE"
+          python3 "$PATCH/apply.py" check "$APP"
+          # Candidate lint and Blade compile BEFORE modifying live source.
+          TEMP_API="$(mktemp "$APP/storage/app/.fix99_candidate_XXXXXX.php")"
+          TEMP_VIEW="$(mktemp "$APP/storage/app/.fix99_candidate_XXXXXX.blade.php")"
+          TEMP_COMPILED="$(mktemp "$APP/storage/app/.fix99_compiled_XXXXXX.php")"
+          FIX99_PREVIEW_BACKEND="$TEMP_API" FIX99_PREVIEW_VIEW="$TEMP_VIEW" python3 "$PATCH/apply.py" check "$APP"
+          php -l "$TEMP_API"
+          php -r '
+            require "vendor/autoload.php";
+            $app=require "bootstrap/app.php";
+            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            file_put_contents($argv[2],\Illuminate\Support\Facades\Blade::compileString(file_get_contents($argv[1])));
+          ' "$TEMP_VIEW" "$TEMP_COMPILED"
+          php -l "$TEMP_COMPILED"
+          rm -f "$TEMP_API" "$TEMP_VIEW" "$TEMP_COMPILED"
+          echo FIX99_PHP_BLADE_CANDIDATE_COMPILE_PASS
+          BACKUP="storage/app/FIX99_INSPECTION_VALIDATION_BACKUP_$(date +%Y%m%d_%H%M%S)"
+          mkdir -p "$BACKUP";chmod 700 "$BACKUP"
+          cp -p app/Http/Controllers/Api/V1/StaffExtraController.php "$BACKUP/StaffExtraController.php"
+          cp -p resources/views/staff/assigned-inspection.blade.php "$BACKUP/assigned-inspection.blade.php"
+          rollback(){
+            echo FIX99_ROLLBACK_BEGIN
+            cp -p "$BACKUP/StaffExtraController.php" app/Http/Controllers/Api/V1/StaffExtraController.php
+            cp -p "$BACKUP/assigned-inspection.blade.php" resources/views/staff/assigned-inspection.blade.php
+            php artisan view:clear >/dev/null 2>&1 || true
+            php artisan view:cache >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          python3 "$PATCH/apply.py" apply "$APP"
+          php -l app/Http/Controllers/Api/V1/StaffExtraController.php
+          php artisan view:clear
+          php artisan view:cache
+          python3 - <<'PY'
+          from pathlib import Path
+          b=Path('app/Http/Controllers/Api/V1/StaffExtraController.php').read_text()
+          v=Path('resources/views/staff/assigned-inspection.blade.php').read_text()
+          for k in ['FIX99_INSPECTION_REMARKS_AND_SUBMIT_FEEDBACK','missingRemarks',
+                    'ValidationException::withMessages','VehicleInspectionChecklist::valid',
+                    'DB::transaction',"'inspection_status'=>'completed'"]:
+            assert k in b,k
+          for k in ['FIX99_INSPECTION_REMARKS_AND_SUBMIT_FEEDBACK',
+                    'id="am99-inspection-form"','id="am99-complete-button"',
+                    'id="am99-validation-alert"','aria-live="assertive"',
+                    'Inspection not completed','route(']:
+            assert k in v,k
+          assert v.count('id="am99-inspection-form"')==1
+          assert v.count('id="am99-complete-button"')==1
+          print('FIX99_STAFF_WEB_AND_API_VALIDATION_CHECK_PASS')
+          PY
+          php artisan route:list --path=api/v1/staff/inspections --json | python3 -c "import sys,json; routes=json.load(sys.stdin); assert any('POST' in r['method'] and '/staff/inspections/' in r['uri'] for r in routes); print('FIX99_API_ROUTE_PRESERVED')"
+          for path in /erp/login /staff/login; do
+            status="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")"
+            echo "FIX99_HEALTH_$path=$status"
+            test "$status" = 200
+          done
+          trap - ERR
+          echo "FIX99_STAGING_DEPLOY_SUCCESS BACKUP=$BACKUP NO_INSPECTION_DATA_WRITES"
+          REMOTE
+      - name: Cleanup SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
