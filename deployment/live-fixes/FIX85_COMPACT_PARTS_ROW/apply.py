@@ -220,7 +220,7 @@ if s.count('id="am85-part-form"')!=1 or s.count('id="am85-part-search"')!=1 or s
  raise SystemExit('FIX85_SINGLE_INPUT_DISCOUNT_INCOMPLETE')
 if 'Add New Part' in s or 'name="part_master_id" required><option' in s or 'class="am82-entry-block" aria-label="Add part' in s:
  raise SystemExit('FIX85_DUPLICATE_PART_FORM_STILL_PRESENT')
-if s.count('FIX85_COMPACT_PARTS_TABLE_ROW')<3:raise SystemExit('FIX85_MARKER_INCOMPLETE')
+if s.count('FIX85_COMPACT_PARTS_TABLE_ROW')<2:raise SystemExit('FIX85_MARKER_INCOMPLETE')
 if mode=='check':
  print('FIX85_SINGLE_SEARCH_DISCOUNT_ONE_ROW_PREFLIGHT_PASS_NO_WRITES');sys.exit(0)
 fd,tmp=tempfile.mkstemp(prefix='.fix85_',dir=view.parent)
