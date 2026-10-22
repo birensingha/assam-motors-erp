@@ -43,7 +43,7 @@ jobs:
                         'attEditStatus','present','absent','leave','off',
                         'document.body.appendChild(menu);',
                         'wrap.appendChild(menu);',
-          for key in ['name="staff_id"', "form.addEventListener('submit'",
+                        'form.addEventListener']:
             assert token in src,token
           print('FIX110_SOURCE_JS_AND_STATUS_PREFLIGHT_PASS')
           PY
@@ -119,7 +119,7 @@ jobs:
           assert mech.count('FIX110_VISIBLE_ATTENDANCE_AND_MECHANIC_DROPDOWNS')==1
           assert 'wrap.appendChild(menu);' in mech
           assert 'document.body.appendChild(menu);' not in mech[mech.index('id="FIX109_MECHANIC_COMBO"'):]
-          for key in ['name="staff_id"','form.addEventListener(\\'submit\\'',
+          for key in ['name="staff_id"', "form.addEventListener('submit'",
                       "route('erp.rot.change-mechanic'"]:
             assert key in mech,key
           assert 'position:absolute;top:36px;left:0' in mech
