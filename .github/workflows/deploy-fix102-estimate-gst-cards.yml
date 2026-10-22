@@ -1,0 +1,156 @@
+name: FIX102 Estimate Summary Parts and Labour Incl GST STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-fix102-estimate-gst-cards.yml'
+      - 'deployment/live-fixes/FIX102_ESTIMATE_GST_CARDS/apply.py'
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate patch and expected GST inclusive calculations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/FIX102_ESTIMATE_GST_CARDS/apply.py
+          python3 - <<'PY'
+          from pathlib import Path
+          from decimal import Decimal
+          x=Path('deployment/live-fixes/FIX102_ESTIMATE_GST_CARDS/apply.py').read_text()
+          for key in ['FIX102_GST_INCLUDED_ESTIMATE_SUMMARY',
+                      'am102PartsGrossPaise','am102LabourGrossPaise',
+                      'Parts (Incl. GST)','Labour / ROT / OSL (Incl. GST)',
+                      'grand_total']:
+            assert key in x,key
+          parts=[Decimal('4499.99'),Decimal('130.98')]
+          labour=[Decimal('1499.78'),Decimal('619.50'),Decimal('619.50'),
+                  Decimal('1180.00'),Decimal('1003.00'),Decimal('472.00')]
+          p=sum(parts);l=sum(labour)
+          assert p==Decimal('4630.97')
+          assert l==Decimal('5393.78')
+          assert p+l==Decimal('10024.75')
+          assert p+l+Decimal('0.25')==Decimal('10025.00')
+          print('FIX102_AM_EST_2026_0012_GST_INCLUDED_MATH_PASS',p,l,p+l)
+          PY
+      - name: Configure remote SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for attempt in 1 2 3 4; do
+            if ssh-keyscan -T 14 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then break; fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Backup deploy and verify with auto rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT")
+            SCP=(sshpass -e scp -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX102_ESTIMATE_GST_CARDS"'
+          "${SCP[@]}" deployment/live-fixes/FIX102_ESTIMATE_GST_CARDS/apply.py "$REMOTE:~/FIX102_ESTIMATE_GST_CARDS/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"; cd "$APP"; test -f artisan && test -d vendor
+          PATCH="$HOME/FIX102_ESTIMATE_GST_CARDS"
+          python3 "$PATCH/apply.py" check "$APP"
+          # Compile proposed source BEFORE touching the live Blade file.
+          TMPB="$(mktemp "$APP/storage/app/.fix102_proposed_XXXXXX.blade.php")"
+          TMPC="$(mktemp "$APP/storage/app/.fix102_compiled_XXXXXX.php")"
+          FIX102_PREVIEW_PATH="$TMPB" python3 "$PATCH/apply.py" check "$APP"
+          php -r '
+            require "vendor/autoload.php";
+            $app=require "bootstrap/app.php";
+            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            file_put_contents($argv[2],\Illuminate\Support\Facades\Blade::compileString(file_get_contents($argv[1])));
+          ' "$TMPB" "$TMPC"
+          set +e
+          PHP_LINT="$(php -d display_errors=1 -d log_errors=0 -l "$TMPC" 2>&1)"
+          LINT_CODE=$?
+          set -e
+          if [ "$LINT_CODE" -ne 0 ]; then
+            echo FIX102_COMPILED_BLADE_SYNTAX_FAIL
+            printf '%s\n' "$PHP_LINT"
+            echo FIX102_FOREACH_STACK_DEBUG
+            grep -nE '__currentLoopData|__empty_|foreach|endforeach' "$TMPC" | head -75 | cut -c1-340 || true
+            LINE="$(printf '%s\n' "$PHP_LINT" | sed -n 's/.*on line \([0-9][0-9]*\).*/\1/p' | tail -1)"
+            if [ -n "$LINE" ]; then
+              A=$((LINE>18?LINE-18:1))
+              B=$((LINE+18))
+              sed -n "${A},${B}p" "$TMPC" | head -n 40 | cut -c1-320
+            fi
+            rm -f "$TMPB" "$TMPC"
+            exit 1
+          fi
+          rm -f "$TMPB" "$TMPC"
+          echo FIX102_PROPOSED_BLADE_COMPILES_CLEAN
+          BACKUP="storage/app/FIX102_ESTIMATE_GST_SUMMARY_BACKUP_$(date +%Y%m%d_%H%M%S)"
+          mkdir -p "$BACKUP"; chmod 700 "$BACKUP"
+          cp -p resources/views/estimates/show.blade.php "$BACKUP/show.blade.php"
+          rollback(){
+            echo FIX102_ROLLBACK_BEGIN
+            cp -p "$BACKUP/show.blade.php" resources/views/job-cards/show.blade.php
+            php artisan view:clear >/dev/null 2>&1 || true
+            php artisan view:cache >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          python3 "$PATCH/apply.py" apply "$APP"
+          php artisan view:clear
+          php artisan view:cache
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('resources/views/estimates/show.blade.php').read_text(errors='replace')
+          for key in ['FIX102_GST_INCLUDED_ESTIMATE_SUMMARY',
+                      'Parts (Incl. GST)','Labour / ROT / OSL (Incl. GST)',
+                      'am102PartsGrossPaise','am102LabourGrossPaise',
+                      'number_format((float)$estimate->grand_total,2)',
+                      'number_format((float)$i->line_total,2)',
+                      "route('erp.estimates.print',$estimate->id)"]:
+            assert key in s,key
+          assert s.count('FIX102_GST_INCLUDED_ESTIMATE_SUMMARY')==1
+          assert s.count('Parts (Incl. GST)')==1
+          assert s.count('Labour / ROT / OSL (Incl. GST)')==1
+          assert 'number_format((float)$estimate->parts_total,2)' not in s
+          assert 'number_format((float)$estimate->labour_total,2)' not in s
+          print('FIX102_SUMMARY_TAX_INCLUDED_WITH_EXISTING_GRAND_TOTAL_AND_PRINT_PASS')
+          PY
+          PY
+          for path in /erp/login /staff/login; do
+            status="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")"
+            echo "FIX102_HEALTH_$path=$status"
+            test "$status" = 200
+          done
+          trap - ERR
+          echo "FIX102_STAGING_DEPLOY_SUCCESS BACKUP=$BACKUP VIEW_ONLY_NO_DB_FINANCIAL_WRITES"
+          REMOTE
+      - name: Cleanup SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
