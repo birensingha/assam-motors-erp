@@ -80,6 +80,24 @@ jobs:
           APP="$1"; cd "$APP"; test -f artisan && test -d vendor
           PATCH="$HOME/FIX93_UNIFIED_OSL_PANEL"
           python3 "$PATCH/apply.py" check "$APP"
+          # Compile proposed source BEFORE touching the live Blade file.
+          TMPB="$(mktemp "$APP/storage/app/.fix93_proposed_XXXXXX.blade.php")"
+          TMPC="$(mktemp "$APP/storage/app/.fix93_compiled_XXXXXX.php")"
+          FIX93_PREVIEW_PATH="$TMPB" python3 "$PATCH/apply.py" check "$APP"
+          php -r '
+            require "vendor/autoload.php";
+            $app=require "bootstrap/app.php";
+            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            file_put_contents($argv[2],\Illuminate\Support\Facades\Blade::compileString(file_get_contents($argv[1])));
+          ' "$TMPB" "$TMPC"
+          if ! php -l "$TMPC"; then
+            echo FIX93_COMPILED_BLADE_SYNTAX_FAIL
+            tail -n 55 "$TMPC" | cut -c1-340
+            rm -f "$TMPB" "$TMPC"
+            exit 1
+          fi
+          rm -f "$TMPB" "$TMPC"
+          echo FIX93_PROPOSED_BLADE_COMPILES_CLEAN
           BACKUP="storage/app/FIX93_OSL_PANEL_BACKUP_$(date +%Y%m%d_%H%M%S)"
           mkdir -p "$BACKUP"; chmod 700 "$BACKUP"
           cp -p resources/views/job-cards/show.blade.php "$BACKUP/show.blade.php"
