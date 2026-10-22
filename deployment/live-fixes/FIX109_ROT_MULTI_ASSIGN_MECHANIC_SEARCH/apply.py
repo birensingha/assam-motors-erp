@@ -68,7 +68,7 @@ for begin,finish,label in methods:
     w=w[:start]+part+w[end:]
 w=replace_once(w,
     "class RotWorkflowService",
-    "// FIX109_MULTI_PLANNED_ROT_AND_SEARCH_MECHANIC: only Running ROT conflicts at Start/Resume.\\nclass RotWorkflowService",
+    "// FIX109_MULTI_PLANNED_ROT_AND_SEARCH_MECHANIC: only Running ROT conflicts at Start/Resume.\nclass RotWorkflowService",
     "workflow_marker")
 # We purposely DO NOT alter Start / Resume's check-in enforcement or clock.
 for code,txt in [("assign",a),("work",w)]:
