@@ -42,8 +42,8 @@ s=s.replace(needle, 'autocomplete="off" spellcheck="false"', 1)
 enhancement = r'''
 {{-- FIX86_SAP_PART_COMBO: Fiori-inspired visual picker for existing FIX85 row. --}}
 <style id="FIX86_SAP_PART_COMBO">
-.jc-parts-block .am85-part-add-row>td{padding:3px 3px!important}
-.jc-parts-block .am85-part-add-row input{height:29px!important;min-height:29px!important;padding:4px 5px!important}
+.jc-parts-block .jc-itemised-billing .am85-part-add-row>td{padding:3px 3px!important}
+.jc-parts-block .jc-itemised-billing .am85-part-add-row input{height:29px!important;min-height:29px!important;padding:4px 5px!important}
 .jc-parts-block .am85-part-add-row #am85-part-search{
   padding-right:52px!important;background:#fff!important;border-color:#95acc5!important;
   font-size:11px!important;
