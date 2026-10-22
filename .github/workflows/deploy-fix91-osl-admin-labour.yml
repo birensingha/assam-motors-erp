@@ -1,0 +1,165 @@
+name: FIX91 Unified Labour OSL Admin Only STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-fix91-osl-admin-labour.yml'
+      - 'deployment/live-fixes/FIX91_OSL_ADMIN_LABOUR/apply.py'
+      - 'deployment/live-fixes/FIX91_OSL_ADMIN_LABOUR/render.php'
+      - 'deployment/live-fixes/FIX91_OSL_ADMIN_LABOUR/AdminJobCardOslLineController.php'
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate patch and browser JavaScript
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/FIX91_OSL_ADMIN_LABOUR/apply.py
+          php -l deployment/live-fixes/FIX91_OSL_ADMIN_LABOUR/render.php
+          php -l deployment/live-fixes/FIX91_OSL_ADMIN_LABOUR/AdminJobCardOslLineController.php
+          python3 - <<'PY'
+          from pathlib import Path
+          import ast,re
+          s=Path('deployment/live-fixes/FIX91_OSL_ADMIN_LABOUR/apply.py').read_text()
+          a=ast.parse(s)
+          found=[n.value.value for n in ast.walk(a) if isinstance(n,ast.Assign)
+                 and any(isinstance(t,ast.Name) and t.id=='ui' for t in n.targets)
+                 and isinstance(n.value,ast.Constant) and isinstance(n.value.value,str)]
+          assert len(found)==1
+          js=re.findall(r'<script>(.*?)</script>',found[0],re.S)
+          assert len(js)==1 and 'am91-add-osl' in js[0] and 'am91-osl-dialog' in js[0] and "deleteTemplate" in js[0]
+          # Replace server-rendered Blade expressions with JSON string values for parse-only JS check.
+          js_text=re.sub(r'@json\([^;\n]+\)', '"staging-placeholder"', js[0])
+          Path('/tmp/fix91.js').write_text(js_text,encoding='utf8')
+          print('FIX91_JS_EXTRACTED')
+          PY
+          node --check /tmp/fix91.js
+      - name: Configure remote SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for attempt in 1 2 3 4; do
+            if ssh-keyscan -T 14 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then break; fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Backup deploy and verify with auto rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT")
+            SCP=(sshpass -e scp -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX91_OSL_ADMIN_LABOUR"'
+          "${SCP[@]}" deployment/live-fixes/FIX91_OSL_ADMIN_LABOUR/apply.py deployment/live-fixes/FIX91_OSL_ADMIN_LABOUR/render.php deployment/live-fixes/FIX91_OSL_ADMIN_LABOUR/AdminJobCardOslLineController.php "$REMOTE:~/FIX91_OSL_ADMIN_LABOUR/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"; cd "$APP"; test -f artisan && test -d vendor
+          PATCH="$HOME/FIX91_OSL_ADMIN_LABOUR"
+          python3 "$PATCH/apply.py" check "$APP"
+          BACKUP="storage/app/FIX91_ADMIN_OSL_BACKUP_$(date +%Y%m%d_%H%M%S)"
+          mkdir -p "$BACKUP"; chmod 700 "$BACKUP"
+          cp -p resources/views/job-cards/show.blade.php "$BACKUP/show.blade.php"
+          cp -p routes/web.php "$BACKUP/web.php"
+          cp -p app/Http/Controllers/Web/AdminWorkshopControlPageController.php "$BACKUP/finance.php"
+          test ! -e app/Http/Controllers/Web/AdminJobCardOslLineController.php
+          rollback(){
+            echo FIX91_ROLLBACK_BEGIN
+            cp -p "$BACKUP/show.blade.php" resources/views/job-cards/show.blade.php
+            cp -p "$BACKUP/web.php" routes/web.php
+            cp -p "$BACKUP/finance.php" app/Http/Controllers/Web/AdminWorkshopControlPageController.php
+            rm -f app/Http/Controllers/Web/AdminJobCardOslLineController.php
+            php artisan route:clear >/dev/null 2>&1 || true
+            php artisan view:clear >/dev/null 2>&1 || true
+            php artisan view:cache >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          python3 "$PATCH/apply.py" apply "$APP"
+          php -l routes/web.php
+          php -l app/Http/Controllers/Web/AdminWorkshopControlPageController.php
+          php -l app/Http/Controllers/Web/AdminJobCardOslLineController.php
+          php artisan route:clear
+          php artisan route:cache
+          php artisan view:clear
+          php artisan view:cache
+          php "$PATCH/render.php" "$APP"
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('resources/views/job-cards/show.blade.php').read_text(errors='replace')
+          for token in ('id="FIX91_UNIFIED_OSL_ADMIN"','id="am85-part-search"',
+                        'id="am85-discount"','id="am85-part-id"',
+                        'class="am85-part-add-row"',
+                        "route('erp.job-cards.parts.direct',$job->id)",
+                        "route('erp.job-cards.parts.update',[$job->id,$p->id])",
+                        "route('erp.job-cards.parts.delete',[$job->id,$p->id])",
+                        "route('erp.job-cards.labour.direct',$job->id)"):
+            assert token in s,token
+          assert '<datalist id="am85-part-options"' not in s
+          assert s.count('id="FIX91_UNIFIED_OSL_ADMIN"')==1
+          assert 'data-am91-osl-id' in s
+          assert 'id="am91-add-osl"' in s
+          assert 'if(false && $am83OslLabour->isNotEmpty())' in s
+          assert "@forelse($labour as $line)" in s
+          assert 'Admin Permission' in s
+          routes=Path('routes/web.php').read_text(errors='replace')
+          controller=Path('app/Http/Controllers/Web/AdminJobCardOslLineController.php').read_text(errors='replace')
+          finance=Path('app/Http/Controllers/Web/AdminWorkshopControlPageController.php').read_text(errors='replace')
+          for name in ['erp.job-cards.osl.admin-save','erp.job-cards.osl.admin-update','erp.job-cards.osl.admin-delete']:
+            assert name in routes,name
+          assert "OSL_DELETE_FIX91" in controller
+          assert "FIX91_ADMIN_ONLY_FINANCE" in finance
+          assert s.count('id="am85-part-search"')==1
+          assert 'Add New Part' not in s
+          assert 'Search or add Parts directly. Qty / Rate / Discount / GST / Delete editable until Job Card Close.' not in s
+          assert s.count('class="am88-amount-input"')==4
+          assert 'id="FIX88_COMPACT_EDITABLE_AMOUNTS"' in s
+          assert '<select id="am85-part-search"' in s
+          assert 'id="FIX87_NATIVE_PARTS_NO_SCROLL_AJAX"' in s
+          assert 'am87-page-table' in s
+          assert 'id="am90-table-body"' in s
+          assert 'data-am90-labour-id' in s
+          assert 'data-am90-edit' in s
+          assert 'am82-finance-form' in s
+          assert 'OSL Jobs / Outside Services' in s
+          assert 'Mechanic &amp; ROT Work Controls' in s
+          assert 'id="FIX89_ARROW_TYPE_PARTS_DROPDOWN"' in s
+          print('FIX91_OSL_IN_LABOUR_ADMIN_AUTHORIZATION_PASS')
+          PY
+          for path in /erp/login /staff/login; do
+            status="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")"
+            echo "FIX91_HEALTH_$path=$status"
+            test "$status" = 200
+          done
+          trap - ERR
+          echo "FIX91_STAGING_DEPLOY_SUCCESS BACKUP=$BACKUP NO_TEST_FINANCIAL_WRITES"
+          REMOTE
+      - name: Cleanup SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
