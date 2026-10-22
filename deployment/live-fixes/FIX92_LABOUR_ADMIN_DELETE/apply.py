@@ -174,11 +174,9 @@ function init(){
   // Finance correction reason and mirror its current value into audit action.
   var section=make('section','am92-audit-section');
   var reasonInput=form.querySelector('[name=reason]');
-  var label=make('label',null,'Delete / Reversal Reason (required for audit)');
-  var reason=make('textarea');reason.required=true;reason.minLength=12;reason.maxLength=500;
-  reason.placeholder='Explain why this Labour/ROT must be deleted or reversed (12+ characters)';
-  reason.value=reasonInput?reasonInput.value:'';
-  section.appendChild(label);section.appendChild(reason);
+  section.appendChild(make('p','am92-audit-hint',
+     'Use the Correction Reason field above for Edit, Delete or Reversal. Deletion/reversal requires at least 12 characters.'));
+  if(reasonInput)reasonInput.placeholder='Reason for billing edit, Labour deletion or ROT reversal';
   var locked=d.am92Locked==='1';
   section.appendChild(make('p','am92-audit-hint',locked?
    'This ROT is assigned, executed or estimate-linked. Its timing and mechanic history cannot be erased. Submit an audited reversal request instead.':
@@ -193,14 +191,11 @@ function init(){
   actions.appendChild(del);actions.appendChild(review);
   section.appendChild(error);section.appendChild(actions);
   box.appendChild(section);
-  if(reasonInput){
-   reason.addEventListener('input',function(){reasonInput.value=reason.value;});
-   reasonInput.addEventListener('input',function(){reason.value=reasonInput.value;});
-  }
   function auditReason(){
-   var value=reason.value.trim()||(reasonInput?reasonInput.value.trim():'');
+   var value=reasonInput?reasonInput.value.trim():'';
    if(value.length<12||value.length>500){
-    showError(error,'Write an audit reason of 12–500 characters first.');reason.focus();return null;
+    showError(error,'Write a Correction Reason of 12–500 characters first.');
+    if(reasonInput)reasonInput.focus();return null;
    }
    return value;
   }
