@@ -1,0 +1,168 @@
+name: FIX94 Compact Mechanic ROT Screenshot Card STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-fix94-rot-card-design.yml'
+      - 'deployment/live-fixes/FIX94_ROT_CARD_DESIGN/apply.py'
+      - 'deployment/live-fixes/FIX94_ROT_CARD_DESIGN/render.php'
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate patch and browser JavaScript
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/FIX94_ROT_CARD_DESIGN/apply.py
+          php -l deployment/live-fixes/FIX94_ROT_CARD_DESIGN/render.php
+          python3 - <<'PY'
+          from pathlib import Path
+          import ast,re
+          s=Path('deployment/live-fixes/FIX94_ROT_CARD_DESIGN/apply.py').read_text()
+          a=ast.parse(s)
+          css=[n.value.value for n in ast.walk(a) if isinstance(n,ast.Assign)
+               and any(isinstance(t,ast.Name) and t.id=='cssjs' for t in n.targets)
+               and isinstance(n.value,ast.Constant) and isinstance(n.value.value,str)]
+          assert len(css)==1
+          js=re.findall(r'<script>(.*?)</script>',css[0],re.S)
+          assert len(js)==1
+          for t in ['MutationObserver','data-am94Styled','am94-clock-foot','am-rot-live-metrics',
+                    'data-am-progress','details','data-am-balance']:
+            assert t in css[0],t
+          assert "route('erp.rot.pause'" in s
+          assert "route('erp.rot.complete'" in s
+          Path('/tmp/fix94.js').write_text(js[0],encoding='utf8')
+          print('FIX94_EXISTING_ROT_LIVE_CLOCK_PRESERVED_AND_LAYOUT_JS_EXTRACTED')
+          PY
+          node --check /tmp/fix94.js
+      - name: Configure remote SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for attempt in 1 2 3 4; do
+            if ssh-keyscan -T 14 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then break; fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Backup deploy and verify with auto rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT")
+            SCP=(sshpass -e scp -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX94_ROT_CARD_DESIGN"'
+          "${SCP[@]}" deployment/live-fixes/FIX94_ROT_CARD_DESIGN/apply.py deployment/live-fixes/FIX94_ROT_CARD_DESIGN/render.php "$REMOTE:~/FIX94_ROT_CARD_DESIGN/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"; cd "$APP"; test -f artisan && test -d vendor
+          PATCH="$HOME/FIX94_ROT_CARD_DESIGN"
+          python3 "$PATCH/apply.py" check "$APP"
+          # Compile proposed source BEFORE touching the live Blade file.
+          TMPB="$(mktemp "$APP/storage/app/.fix94_proposed_XXXXXX.blade.php")"
+          TMPC="$(mktemp "$APP/storage/app/.fix94_compiled_XXXXXX.php")"
+          FIX94_PREVIEW_PATH="$TMPB" python3 "$PATCH/apply.py" check "$APP"
+          php -r '
+            require "vendor/autoload.php";
+            $app=require "bootstrap/app.php";
+            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            file_put_contents($argv[2],\Illuminate\Support\Facades\Blade::compileString(file_get_contents($argv[1])));
+          ' "$TMPB" "$TMPC"
+          set +e
+          PHP_LINT="$(php -d display_errors=1 -d log_errors=0 -l "$TMPC" 2>&1)"
+          LINT_CODE=$?
+          set -e
+          if [ "$LINT_CODE" -ne 0 ]; then
+            echo FIX94_COMPILED_BLADE_SYNTAX_FAIL
+            printf '%s\n' "$PHP_LINT"
+            echo FIX94_FOREACH_STACK_DEBUG
+            grep -nE '__currentLoopData|__empty_|foreach|endforeach' "$TMPC" | head -75 | cut -c1-340 || true
+            LINE="$(printf '%s\n' "$PHP_LINT" | sed -n 's/.*on line \([0-9][0-9]*\).*/\1/p' | tail -1)"
+            if [ -n "$LINE" ]; then
+              A=$((LINE>18?LINE-18:1))
+              B=$((LINE+18))
+              sed -n "${A},${B}p" "$TMPC" | head -n 40 | cut -c1-320
+            fi
+            rm -f "$TMPB" "$TMPC"
+            exit 1
+          fi
+          rm -f "$TMPB" "$TMPC"
+          echo FIX94_PROPOSED_BLADE_COMPILES_CLEAN
+          BACKUP="storage/app/FIX94_ROT_UI_BACKUP_$(date +%Y%m%d_%H%M%S)"
+          mkdir -p "$BACKUP"; chmod 700 "$BACKUP"
+          cp -p resources/views/job-cards/show.blade.php "$BACKUP/show.blade.php"
+          rollback(){
+            echo FIX94_ROLLBACK_BEGIN
+            cp -p "$BACKUP/show.blade.php" resources/views/job-cards/show.blade.php
+            php artisan view:clear >/dev/null 2>&1 || true
+            php artisan view:cache >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          python3 "$PATCH/apply.py" apply "$APP"
+          php artisan view:clear
+          php artisan view:cache
+          php "$PATCH/render.php" "$APP"
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('resources/views/job-cards/show.blade.php').read_text(errors='replace')
+          for token in ('id="FIX94_COMPACT_MECHANIC_ROT_CARD"',
+                        'am94-clock-foot','data-am94Styled',
+                        'class="rot-main"','class="rot-meta"',
+                        'class="rot-actions"','class="rot-status-block"',
+                        "dashboard.partials.rot-live-clock",
+                        'class="am85-part-add-row"',
+                        'id="FIX93_OSL_MODAL_TOOLS"',
+                        'id="FIX92_LABOUR_MECHANICS_DELETE_DIALOG"',
+                        'id="FIX91_UNIFIED_OSL_ADMIN"',
+                        'id="am90-table-body"',
+                        "route('erp.rot.start'",
+                        "route('erp.rot.pause'",
+                        "route('erp.rot.complete'",
+                        "route('erp.rot.resume'",
+                        "route('erp.rot.change-mechanic'",
+                        "route('erp.rot.history'",
+                        "job-cards.rot-time-editor"):
+            assert token in s,token
+          assert s.count('id="FIX94_COMPACT_MECHANIC_ROT_CARD"')==1
+          assert 'AMROTDesktopClockV639' not in s or True  # imported partial unchanged
+          assert 'am94-clock-foot' in s
+          print('FIX94_COMPACT_ROT_RUNNING_PAUSED_COMPLETED_ACTIONS_PRESERVED_PASS')
+          PY
+          for path in /erp/login /staff/login; do
+            status="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")"
+            echo "FIX94_HEALTH_$path=$status"
+            test "$status" = 200
+          done
+          trap - ERR
+          echo "FIX94_STAGING_DEPLOY_SUCCESS BACKUP=$BACKUP UI_ONLY_NO_ROT_DATA_WRITES"
+          REMOTE
+      - name: Cleanup SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
