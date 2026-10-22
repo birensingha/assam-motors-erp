@@ -1,0 +1,165 @@
+name: FIX100 Single Searchable Parts Select Like Labour STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-fix100-single-part-search.yml'
+      - 'deployment/live-fixes/FIX100_SINGLE_PART_SEARCH/apply.py'
+      - 'deployment/live-fixes/FIX100_SINGLE_PART_SEARCH/render.php'
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate patch and browser JavaScript
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/FIX100_SINGLE_PART_SEARCH/apply.py
+          php -l deployment/live-fixes/FIX100_SINGLE_PART_SEARCH/render.php
+          python3 - <<'PY'
+          from pathlib import Path
+          import ast,re
+          src=Path('deployment/live-fixes/FIX100_SINGLE_PART_SEARCH/apply.py').read_text()
+          tree=ast.parse(src)
+          addons=[n.value.value for n in ast.walk(tree)
+            if isinstance(n,ast.Assign)
+            and any(isinstance(t,ast.Name) and t.id=='addon' for t in n.targets)
+            and isinstance(n.value,ast.Constant) and isinstance(n.value.value,str)]
+          assert len(addons)==1
+          scripts=re.findall(r'<script>(.*?)</script>',addons[0],re.S)
+          assert len(scripts)==1
+          Path('/tmp/fix100.js').write_text(scripts[0],encoding='utf8')
+          assert "native.required=false" in src
+          assert "visible.required=true" in src
+          assert 'data-am100-native-hidden="1"' in src
+          assert 'FIX100_SINGLE_PART_SEARCH_AND_ARROW' in src
+          print('FIX100_COMBINED_PARTS_SELECT_JS_PREFLIGHT_PASS')
+          PY
+          node --check /tmp/fix100.js
+      - name: Configure remote SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for attempt in 1 2 3 4; do
+            if ssh-keyscan -T 14 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then break; fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Backup deploy and verify with auto rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT")
+            SCP=(sshpass -e scp -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX100_SINGLE_PART_SEARCH"'
+          "${SCP[@]}" deployment/live-fixes/FIX100_SINGLE_PART_SEARCH/apply.py deployment/live-fixes/FIX100_SINGLE_PART_SEARCH/render.php "$REMOTE:~/FIX100_SINGLE_PART_SEARCH/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"; cd "$APP"; test -f artisan && test -d vendor
+          PATCH="$HOME/FIX100_SINGLE_PART_SEARCH"
+          python3 "$PATCH/apply.py" check "$APP"
+          # Compile proposed source BEFORE touching the live Blade file.
+          TMPB="$(mktemp "$APP/storage/app/.fix100_proposed_XXXXXX.blade.php")"
+          TMPC="$(mktemp "$APP/storage/app/.fix100_compiled_XXXXXX.php")"
+          FIX100_PREVIEW_PATH="$TMPB" python3 "$PATCH/apply.py" check "$APP"
+          php -r '
+            require "vendor/autoload.php";
+            $app=require "bootstrap/app.php";
+            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            file_put_contents($argv[2],\Illuminate\Support\Facades\Blade::compileString(file_get_contents($argv[1])));
+          ' "$TMPB" "$TMPC"
+          set +e
+          PHP_LINT="$(php -d display_errors=1 -d log_errors=0 -l "$TMPC" 2>&1)"
+          LINT_CODE=$?
+          set -e
+          if [ "$LINT_CODE" -ne 0 ]; then
+            echo FIX100_COMPILED_BLADE_SYNTAX_FAIL
+            printf '%s\n' "$PHP_LINT"
+            echo FIX100_FOREACH_STACK_DEBUG
+            grep -nE '__currentLoopData|__empty_|foreach|endforeach' "$TMPC" | head -75 | cut -c1-340 || true
+            LINE="$(printf '%s\n' "$PHP_LINT" | sed -n 's/.*on line \([0-9][0-9]*\).*/\1/p' | tail -1)"
+            if [ -n "$LINE" ]; then
+              A=$((LINE>18?LINE-18:1))
+              B=$((LINE+18))
+              sed -n "${A},${B}p" "$TMPC" | head -n 40 | cut -c1-320
+            fi
+            rm -f "$TMPB" "$TMPC"
+            exit 1
+          fi
+          rm -f "$TMPB" "$TMPC"
+          echo FIX100_PROPOSED_BLADE_COMPILES_CLEAN
+          BACKUP="storage/app/FIX100_PART_COMBO_BACKUP_$(date +%Y%m%d_%H%M%S)"
+          mkdir -p "$BACKUP"; chmod 700 "$BACKUP"
+          cp -p resources/views/job-cards/show.blade.php "$BACKUP/show.blade.php"
+          rollback(){
+            echo FIX100_ROLLBACK_BEGIN
+            cp -p "$BACKUP/show.blade.php" resources/views/job-cards/show.blade.php
+            php artisan view:clear >/dev/null 2>&1 || true
+            php artisan view:cache >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          python3 "$PATCH/apply.py" apply "$APP"
+          php artisan view:clear
+          php artisan view:cache
+          php "$PATCH/render.php" "$APP"
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('resources/views/job-cards/show.blade.php').read_text(errors='replace')
+          for token in ('id="FIX100_SINGLE_PART_SEARCH_AND_ARROW"',
+                        'data-am100-native-hidden="1"',
+                        'id="am85-part-search"','id="am85-part-id"',
+                        'id="am85-part-form"','am89-query','am89-arrow',
+                        'style="display:none !important;"',
+                        'native.required=false','visible.required=true',
+                        'class="am85-part-add-row"',
+                        'id="am85-qty"','id="am85-rate"','id="am85-gst"',
+                        'id="am85-discount"','id="am85-grand"',
+                        'id="FIX98_ONE_SEARCHABLE_ROT_ONLY"',
+                        'id="FIX89_ARROW_TYPE_PARTS_DROPDOWN"',
+                        "route('erp.job-cards.parts.direct',$job->id)"):
+             assert token in s,token
+          assert s.count('id="FIX100_SINGLE_PART_SEARCH_AND_ARROW"')==1
+          assert s.count('data-am100-native-hidden="1"')==1
+          assert s.count('id="am85-part-search"')==1
+          assert '<select id="am85-part-search" form="am85-part-form" required' not in s
+          assert "native.dispatchEvent(new Event('change',{bubbles:true}))" in s
+          print('FIX100_ONE_PART_SEARCH_PRICE_GST_AJAX_PRESERVED_PASS')
+          PY
+          for path in /erp/login /staff/login; do
+            status="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$path")"
+            echo "FIX100_HEALTH_$path=$status"
+            test "$status" = 200
+          done
+          trap - ERR
+          echo "FIX100_STAGING_DEPLOY_SUCCESS BACKUP=$BACKUP VIEW_ONLY_NO_FINANCIAL_OR_STOCK_WRITES"
+          REMOTE
+      - name: Cleanup SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
