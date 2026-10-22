@@ -72,9 +72,9 @@ jobs:
             SCP=(sshpass -e scp -P "$PORT")
           fi
           REMOTE="$USERNAME@$HOST"
-          "${{SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX86_SAP_PART_COMBO"'
-          "${{SCP[@]}" deployment/live-fixes/FIX86_SAP_PART_COMBO/apply.py deployment/live-fixes/FIX85_COMPACT_PARTS_ROW/render.php "$REMOTE:~/FIX86_SAP_PART_COMBO/"
-          "${{SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/FIX86_SAP_PART_COMBO"'
+          "${SCP[@]}" deployment/live-fixes/FIX86_SAP_PART_COMBO/apply.py deployment/live-fixes/FIX85_COMPACT_PARTS_ROW/render.php "$REMOTE:~/FIX86_SAP_PART_COMBO/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
           set -euo pipefail
           APP="$1"; cd "$APP"; test -f artisan && test -d vendor
           PATCH="$HOME/FIX86_SAP_PART_COMBO"
