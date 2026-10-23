@@ -1,0 +1,116 @@
+name: Attendance Single Native Status STAGING
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/attendance-single-native-status.yml']
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-attendance-single-status, cancel-in-progress: false}
+jobs:
+  correct:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - name: Configure staging connection
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3; do
+            if timeout 20 ssh-keyscan -T 14 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then break; fi
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Guarded attendance-only correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          cd "$1"
+          test -f artisan
+          ATT=resources/views/admin/native/attendance.blade.php
+          TMP="$(mktemp -d "$PWD/storage/app/attendance_single_status_XXXXXX")"
+          trap 'rm -rf "$TMP"' EXIT
+          python3 - "$ATT" "$TMP/candidate.blade.php" <<'PY'
+          import sys,re,hashlib
+          from pathlib import Path
+          p=Path(sys.argv[1]);raw=p.read_bytes()
+          text=raw.decode('utf8','surrogateescape')
+          marker='AM_SINGLE_NATIVE_ATTENDANCE_STATUS_20261023'
+          if marker in text:
+              raise SystemExit('ALREADY_CORRECTED_STOP_NO_WRITES')
+          pattern=r'\{\{-- FIX110_VISIBLE_ATTENDANCE_AND_MECHANIC_DROPDOWNS: attendance status list\.[\s\S]*?</script>'
+          matches=list(re.finditer(pattern,text))
+          assert len(matches)==1,'EXPECTED_EXACTLY_ONE_FIX110_ATTENDANCE_BLOCK'
+          block=matches[0].group()
+          assert 'id="FIX110_ATTENDANCE_STATUS_MENU_STYLE"' in block
+          assert "button.className='am110-att-current'" in block
+          options=re.findall(r'<select\b[^>]*id="attEditStatus"[^>]*>[\s\S]*?</select>',text)
+          assert len(options)==1,'EXPECTED_ONE_STATUS_SELECT'
+          for status in ['present','absent','leave','off']:
+              assert 'value="'+status+'"' in options[0]
+          # Remove only the extra selector's injection. Keep original select,
+          # all options, form action, values and save listeners byte-identical.
+          replacement='<!-- '+marker+' -->'
+          out=text[:matches[0].start()]+replacement+text[matches[0].end():]
+          assert re.findall(r'<select\b[^>]*id="attEditStatus"[^>]*>[\s\S]*?</select>',out)==options
+          assert 'am110-att-current' not in out and 'am110-att-list' not in out
+          assert out.count('id="attEditStatus"')==1
+          assert 'Save Correction' in out and 'Reset Attendance' in out
+          Path(sys.argv[2]).write_bytes(out.encode('utf8','surrogateescape'))
+          print('ATTENDANCE_SINGLE_STATUS_CANDIDATE_PASS_ORIGINAL_SELECT_UNCHANGED')
+          print('ATTENDANCE_ORIGINAL_SHA256',hashlib.sha256(raw).hexdigest())
+          PY
+          php -r '
+            require "vendor/autoload.php";
+            $app=require "bootstrap/app.php";
+            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            file_put_contents($argv[2],\Illuminate\Support\Facades\Blade::compileString(file_get_contents($argv[1])));
+          ' "$TMP/candidate.blade.php" "$TMP/candidate.php"
+          php -l "$TMP/candidate.php"
+          BACKUP="storage/app/ATTENDANCE_SINGLE_STATUS_BACKUP_$(date +%Y%m%d_%H%M%S)"
+          mkdir -m 700 "$BACKUP"
+          cp -p "$ATT" "$BACKUP/attendance.blade.php"
+          rollback(){
+            cp -p "$BACKUP/attendance.blade.php" "$ATT"
+            php artisan view:clear >/dev/null 2>&1 || true
+            echo ATTENDANCE_SINGLE_STATUS_ROLLBACK_RESTORED
+          }
+          trap rollback ERR
+          cp "$TMP/candidate.blade.php" "$ATT"
+          php artisan view:clear
+          php -r '
+            require "vendor/autoload.php";
+            $app=require "bootstrap/app.php";
+            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            file_put_contents($argv[2],\Illuminate\Support\Facades\Blade::compileString(file_get_contents($argv[1])));
+          ' "$ATT" "$TMP/deployed.php"
+          php -l "$TMP/deployed.php"
+          cmp "$ATT" "$TMP/candidate.blade.php"
+          grep -q AM_SINGLE_NATIVE_ATTENDANCE_STATUS_20261023 "$ATT"
+          trap - ERR
+          echo "ATTENDANCE_SINGLE_STATUS_STAGING_DEPLOYED BACKUP=$BACKUP NO_DATABASE_WRITES"
+          REMOTE
+      - name: Clean connection material
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
