@@ -1,0 +1,63 @@
+name: Inspection Submit Mobile Readonly Audit
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/inspection-submit-mobile-audit.yml']
+permissions: {contents: read}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - name: SSH configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ -n "$KEY" ]; then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Read current inspection validation and error classes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT");fi
+          "${SSH[@]}" "$USERNAME@$HOST" "python3 - '$ROOT'" <<'PY'
+          from pathlib import Path
+          import sys,re,hashlib
+          root=Path(sys.argv[1])
+          for rel in ['app/Http/Controllers/Api/V1/StaffExtraController.php','app/Support/VehicleInspectionChecklist.php']:
+           p=root/rel
+           if not p.exists():continue
+           text=p.read_text()
+           print('SOURCE_BEGIN',rel,hashlib.sha256(p.read_bytes()).hexdigest())
+           if 'StaffExtraController' in rel:
+            m=re.search(r'    public function saveInspection\b',text)
+            if m:
+             end=re.search(r'\n    (?:public|private|protected) function ',text[m.end():])
+             print(text[m.start():m.end()+end.start() if end else len(text)])
+           else:print(text)
+           print('SOURCE_END')
+          for p in (root/'app').rglob('*InspectionChecklist*'):
+           if 'Support' not in str(p):
+            print('CHECKLIST_SOURCE',p.relative_to(root));print(p.read_text()[:18000])
+          p=root/'storage/logs/laravel.log'
+          if p.exists():
+           lines=p.read_text(errors='replace').splitlines()[-7000:]
+           hits=[l for l in lines if re.search(r'inspection',l,re.I) and re.search(r'ERROR|Exception',l)]
+           for line in hits[-8:]:
+            line=re.sub(r'\{.*',' [context omitted]',line)
+            print('INSPECTION_EXCEPTION',line[:700])
+          print('AUDIT_READ_ONLY_COMPLETE')
+          PY
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
