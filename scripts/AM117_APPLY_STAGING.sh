@@ -87,6 +87,12 @@ $partial=<<<'BLADE'
     $am117Actor=request()->user();
     $am117Admin=$am117Actor && (bool)($am117Actor->active??false) && strtolower(trim((string)($am117Actor->role??'')))==='admin';
     $am117State=strtolower(trim((string)($line->execution_status??'planned')));
+    $am117Candidate=$am117Admin && empty($linkedRot) && empty($line->rot_session_id)
+        && empty($line->mechanic_id) && empty($line->rot_start) && empty($line->rot_end)
+        && (int)($line->productive_seconds??0)===0
+        && in_array($am117State,['','planned','pending','not_started','not started'],true)
+        && strtoupper(trim((string)($line->rot_code??'')))!=='OSL'
+        && strtoupper(trim((string)($line->mechanic_name??'')))!=='OSL';
     $am117Eligible=$am117Admin && $am117Wip && empty($job->invoice_id)
         && empty($linkedRot) && empty($line->rot_session_id)
         && empty($line->mechanic_id) && empty($line->rot_start) && empty($line->rot_end)
@@ -95,7 +101,8 @@ $partial=<<<'BLADE'
         && strtoupper(trim((string)($line->rot_code??'')))!=='OSL'
         && strtoupper(trim((string)($line->mechanic_name??'')))!=='OSL';
 @endphp
-@if($am117Eligible)
+@if($am117Candidate)
+  @if($am117Eligible)
   <details class="am117-delete" style="display:inline-block;position:relative;margin:3px 5px 3px 0;padding:5px;border:1px solid #efc6c6;border-radius:6px;background:#fffafa">
     <summary style="cursor:pointer;color:#a32727;font-size:12px;font-weight:800">Delete ROT</summary>
     <form class="am117-cancel-form" method="post" action="{{ route('erp.job-cards.labour.delete-admin',[$job->id,$line->id]) }}" style="margin-top:10px" onsubmit="return confirm('Remove this unstarted ROT from the Job Card? This will be audited and update billing totals. Original approved estimate stays unchanged.');">
@@ -108,6 +115,9 @@ $partial=<<<'BLADE'
       <p style="font-size:11px;color:#6e4b4b;margin:8px 0">Approved estimate remains unchanged. ROT cancellation, Admin identity and original values are saved in Job Card audit. Assigned/worked ROTs cannot use this control.</p>
       <button type="submit" style="background:#b3262d;color:#fff;border:0;border-radius:7px;padding:9px 12px;font-weight:800;cursor:pointer">Confirm Delete ROT</button>
     </form>
+  @else
+    <p style="font-size:11px;color:#a32727;max-width:300px">Delete is available only while Job Card is WIP and has no issued invoice. Nothing has been changed.</p>
+  @endif
   </details>
 @endif
 @once
