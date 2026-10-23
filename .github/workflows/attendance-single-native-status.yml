@@ -1,4 +1,4 @@
-name: Attendance Single Native Status STAGING
+name: Attendance Working Single Status Picker STAGING
 on:
   push:
     branches: [main]
@@ -17,6 +17,122 @@ jobs:
       PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
       ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
     steps:
+      - name: Browser acceptance desktop and mobile
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/attendance-picker-test
+          cd /tmp/attendance-picker-test
+          npm install --no-audit --no-fund playwright
+          npx playwright install --with-deps chromium
+          cat > picker.js <<'JS'
+          (function(){
+           'use strict';
+           function init(){
+            var source=document.getElementById('attEditStatus');
+            if(!source || source.dataset.amStatusPicker==='1')return;
+            source.dataset.amStatusPicker='1';
+            var wrap=document.createElement('div');
+            wrap.style.cssText='position:relative;display:block;width:100%;';
+            source.parentNode.insertBefore(wrap,source);wrap.appendChild(source);
+            // Keep the original form control and values; expose exactly one picker.
+            source.hidden=true;source.tabIndex=-1;
+            source.style.setProperty('display','none','important');
+            var button=document.createElement('button');button.type='button';
+            button.id='amAttendanceStatusButton';
+            button.style.cssText='display:flex;align-items:center;justify-content:space-between;width:100%;min-height:36px;padding:7px 10px;border:1px solid #94b6df;border-radius:6px;background:#fff;color:#153c69;font:inherit;text-align:left;cursor:pointer;';
+            button.setAttribute('aria-label','Attendance status');
+            button.setAttribute('aria-haspopup','listbox');
+            button.setAttribute('aria-expanded','false');
+            button.setAttribute('aria-controls','amAttendanceStatusList');
+            var caption=document.createElement('span');var arrow=document.createElement('span');
+            arrow.textContent='▼';arrow.setAttribute('aria-hidden','true');
+            button.append(caption,arrow);wrap.appendChild(button);
+            var menu=document.createElement('div');menu.id='amAttendanceStatusList';
+            menu.setAttribute('role','listbox');menu.setAttribute('aria-label','Attendance status options');
+            menu.style.cssText='display:none;position:relative;width:100%;box-sizing:border-box;margin-top:4px;border:1px solid #94b6df;border-radius:6px;background:#fff;padding:3px;';
+            wrap.appendChild(menu);
+            function options(){return Array.from(source.options).filter(function(o){return o.value&&!o.disabled;});}
+            function sync(){
+             var selected=Array.from(source.options).find(function(o){return o.value===source.value;});
+             caption.textContent=selected?selected.textContent.trim():'Select status';
+            }
+            function close(focus){menu.style.display='none';button.setAttribute('aria-expanded','false');if(focus)button.focus();}
+            function open(){
+             menu.replaceChildren();
+             options().forEach(function(opt){
+              var item=document.createElement('button');item.type='button';item.setAttribute('role','option');
+              item.setAttribute('aria-selected',String(opt.value===source.value));
+              item.dataset.value=opt.value;item.textContent=opt.textContent.trim();
+              item.style.cssText='display:block;width:100%;min-height:34px;padding:7px 9px;border:0;border-radius:3px;text-align:left;font:inherit;cursor:pointer;color:#153c69;background:'+(opt.value===source.value?'#e6f1ff':'#fff')+';';
+              item.addEventListener('click',function(e){
+               e.preventDefault();source.value=opt.value;
+               source.dispatchEvent(new Event('input',{bubbles:true}));
+               source.dispatchEvent(new Event('change',{bubbles:true}));sync();close(true);
+              });menu.appendChild(item);
+             });
+             sync();menu.style.display='block';button.setAttribute('aria-expanded','true');
+            }
+            button.addEventListener('click',function(e){e.preventDefault();if(menu.style.display==='none')open();else close(false);});
+            button.addEventListener('keydown',function(e){
+             if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){
+              e.preventDefault();open();var items=Array.from(menu.children);
+              var active=menu.querySelector('[aria-selected="true"]');
+              (e.key==='End'?items[items.length-1]:e.key==='Home'?items[0]:active||items[0])?.focus();
+             }else if(e.key==='Escape'&&menu.style.display!=='none'){e.preventDefault();e.stopPropagation();close(true);}
+            });
+            menu.addEventListener('keydown',function(e){
+             if(e.key==='Escape'){e.preventDefault();e.stopPropagation();close(true);return;}
+             if(e.key==='Tab'){close(false);return;}
+             var items=Array.from(menu.children),index=items.indexOf(document.activeElement);
+             if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){
+              e.preventDefault();var next=e.key==='Home'?0:e.key==='End'?items.length-1:(index+(e.key==='ArrowDown'?1:items.length-1))%items.length;
+              items[next]?.focus();
+             }
+            });
+            document.addEventListener('click',function(e){if(!wrap.contains(e.target))close(false);});
+            source.addEventListener('change',sync);
+            var dialog=source.closest('dialog');
+            if(dialog){new MutationObserver(function(){sync();close(false);}).observe(dialog,{attributes:true,attributeFilter:['open']});}
+            sync();
+           }
+           if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
+          })();
+          JS
+          cat > test.cjs <<'JS'
+          const {chromium}=require('playwright');const fs=require('fs');
+          (async()=>{
+           const browser=await chromium.launch({headless:true});
+           for(const width of [1280,390]){
+            const page=await browser.newPage({viewport:{width,height:844}});
+            await page.setContent('<button id="open" onclick="document.querySelector(\'dialog\').showModal()">Edit</button><dialog style="width:90%;max-width:700px"><form><label>Status<select id="attEditStatus" name="status" required><option value="present">Present</option><option value="absent">Absent</option><option value="leave">Leave</option><option value="off">Week Off</option></select></label><input name="notes"><button>Save Correction</button></form></dialog>');
+            await page.addScriptTag({content:fs.readFileSync('picker.js','utf8')});
+            await page.click('#open');
+            for(const value of ['absent','leave','off','present']){
+             await page.click('#amAttendanceStatusButton');
+             if(!await page.locator('#amAttendanceStatusList').isVisible())throw Error('list hidden');
+             await page.click('[data-value="'+value+'"]');
+             const actual=await page.evaluate(()=>new FormData(document.querySelector('form')).get('status'));
+             if(actual!==value)throw Error('form value mismatch');
+            }
+            await page.locator('#amAttendanceStatusButton').focus();
+            await page.keyboard.press('ArrowDown');await page.keyboard.press('ArrowDown');await page.keyboard.press('Enter');
+            if(await page.locator('#attEditStatus').inputValue()!=='absent')throw Error('keyboard mismatch');
+            await page.click('#amAttendanceStatusButton');
+            await page.locator('#amAttendanceStatusList button').first().focus();
+            await page.keyboard.press('Escape');
+            if(!await page.locator('dialog').evaluate(d=>d.open))throw Error('Escape closed editor');
+            await page.evaluate(()=>{document.querySelector('dialog').close();document.querySelector('select').value='leave';document.querySelector('dialog').showModal();});
+            await page.waitForTimeout(50);
+            if(!(await page.locator('#amAttendanceStatusButton').innerText()).includes('Leave'))throw Error('reopen sync');
+            if(await page.locator('select').isVisible())throw Error('duplicate visible');
+            console.log('PASS',width,'all status clicks, form values, keyboard, Escape, reopen, one visible picker');
+            await page.close();
+           }
+           await browser.close();
+          })().catch(e=>{console.error(e);process.exit(1)});
+          JS
+          node test.cjs
       - name: Configure staging connection
         shell: bash
         run: |
@@ -56,25 +172,91 @@ jobs:
           from pathlib import Path
           p=Path(sys.argv[1]);raw=p.read_bytes()
           text=raw.decode('utf8','surrogateescape')
-          marker='AM_SINGLE_NATIVE_ATTENDANCE_STATUS_20261023'
-          if marker in text:
-              raise SystemExit('ALREADY_CORRECTED_STOP_NO_WRITES')
-          pattern=r'\{\{-- FIX110_VISIBLE_ATTENDANCE_AND_MECHANIC_DROPDOWNS: attendance status list\.[\s\S]*?</script>'
-          matches=list(re.finditer(pattern,text))
-          assert len(matches)==1,'EXPECTED_EXACTLY_ONE_FIX110_ATTENDANCE_BLOCK'
-          block=matches[0].group()
-          assert 'id="FIX110_ATTENDANCE_STATUS_MENU_STYLE"' in block
-          assert "button.className='am110-att-current'" in block
-          options=re.findall(r'<select\b[^>]*id="attEditStatus"[^>]*>[\s\S]*?</select>',text)
+          marker='AM_WORKING_ATTENDANCE_STATUS_20261023_V2'
+          assert marker not in text,'ALREADY_APPLIED_STOP'
+          anchor='<!-- AM_SINGLE_NATIVE_ATTENDANCE_STATUS_20261023 -->'
+          assert text.count(anchor)==1,'EXPECTED_SINGLE_PREVIOUS_CORRECTION'
+          options=re.findall(r'<select\\b[^>]*id="attEditStatus"[^>]*>[\\s\\S]*?</select>',text)
           assert len(options)==1,'EXPECTED_ONE_STATUS_SELECT'
           for status in ['present','absent','leave','off']:
               assert 'value="'+status+'"' in options[0]
-          # Remove only the extra selector's injection. Keep original select,
-          # all options, form action, values and save listeners byte-identical.
-          replacement='<!-- '+marker+' -->'
-          out=text[:matches[0].start()]+replacement+text[matches[0].end():]
-          assert re.findall(r'<select\b[^>]*id="attEditStatus"[^>]*>[\s\S]*?</select>',out)==options
-          assert 'am110-att-current' not in out and 'am110-att-list' not in out
+          replacement=r'''<!-- AM_WORKING_ATTENDANCE_STATUS_20261023_V2 -->
+          <script>
+          (function(){
+           'use strict';
+           function init(){
+            var source=document.getElementById('attEditStatus');
+            if(!source || source.dataset.amStatusPicker==='1')return;
+            source.dataset.amStatusPicker='1';
+            var wrap=document.createElement('div');
+            wrap.style.cssText='position:relative;display:block;width:100%;';
+            source.parentNode.insertBefore(wrap,source);wrap.appendChild(source);
+            // Keep the original form control and values; expose exactly one picker.
+            source.hidden=true;source.tabIndex=-1;
+            source.style.setProperty('display','none','important');
+            var button=document.createElement('button');button.type='button';
+            button.id='amAttendanceStatusButton';
+            button.style.cssText='display:flex;align-items:center;justify-content:space-between;width:100%;min-height:36px;padding:7px 10px;border:1px solid #94b6df;border-radius:6px;background:#fff;color:#153c69;font:inherit;text-align:left;cursor:pointer;';
+            button.setAttribute('aria-label','Attendance status');
+            button.setAttribute('aria-haspopup','listbox');
+            button.setAttribute('aria-expanded','false');
+            button.setAttribute('aria-controls','amAttendanceStatusList');
+            var caption=document.createElement('span');var arrow=document.createElement('span');
+            arrow.textContent='▼';arrow.setAttribute('aria-hidden','true');
+            button.append(caption,arrow);wrap.appendChild(button);
+            var menu=document.createElement('div');menu.id='amAttendanceStatusList';
+            menu.setAttribute('role','listbox');menu.setAttribute('aria-label','Attendance status options');
+            menu.style.cssText='display:none;position:relative;width:100%;box-sizing:border-box;margin-top:4px;border:1px solid #94b6df;border-radius:6px;background:#fff;padding:3px;';
+            wrap.appendChild(menu);
+            function options(){return Array.from(source.options).filter(function(o){return o.value&&!o.disabled;});}
+            function sync(){
+             var selected=Array.from(source.options).find(function(o){return o.value===source.value;});
+             caption.textContent=selected?selected.textContent.trim():'Select status';
+            }
+            function close(focus){menu.style.display='none';button.setAttribute('aria-expanded','false');if(focus)button.focus();}
+            function open(){
+             menu.replaceChildren();
+             options().forEach(function(opt){
+              var item=document.createElement('button');item.type='button';item.setAttribute('role','option');
+              item.setAttribute('aria-selected',String(opt.value===source.value));
+              item.dataset.value=opt.value;item.textContent=opt.textContent.trim();
+              item.style.cssText='display:block;width:100%;min-height:34px;padding:7px 9px;border:0;border-radius:3px;text-align:left;font:inherit;cursor:pointer;color:#153c69;background:'+(opt.value===source.value?'#e6f1ff':'#fff')+';';
+              item.addEventListener('click',function(e){
+               e.preventDefault();source.value=opt.value;
+               source.dispatchEvent(new Event('input',{bubbles:true}));
+               source.dispatchEvent(new Event('change',{bubbles:true}));sync();close(true);
+              });menu.appendChild(item);
+             });
+             sync();menu.style.display='block';button.setAttribute('aria-expanded','true');
+            }
+            button.addEventListener('click',function(e){e.preventDefault();if(menu.style.display==='none')open();else close(false);});
+            button.addEventListener('keydown',function(e){
+             if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){
+              e.preventDefault();open();var items=Array.from(menu.children);
+              var active=menu.querySelector('[aria-selected="true"]');
+              (e.key==='End'?items[items.length-1]:e.key==='Home'?items[0]:active||items[0])?.focus();
+             }else if(e.key==='Escape'&&menu.style.display!=='none'){e.preventDefault();e.stopPropagation();close(true);}
+            });
+            menu.addEventListener('keydown',function(e){
+             if(e.key==='Escape'){e.preventDefault();e.stopPropagation();close(true);return;}
+             if(e.key==='Tab'){close(false);return;}
+             var items=Array.from(menu.children),index=items.indexOf(document.activeElement);
+             if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){
+              e.preventDefault();var next=e.key==='Home'?0:e.key==='End'?items.length-1:(index+(e.key==='ArrowDown'?1:items.length-1))%items.length;
+              items[next]?.focus();
+             }
+            });
+            document.addEventListener('click',function(e){if(!wrap.contains(e.target))close(false);});
+            source.addEventListener('change',sync);
+            var dialog=source.closest('dialog');
+            if(dialog){new MutationObserver(function(){sync();close(false);}).observe(dialog,{attributes:true,attributeFilter:['open']});}
+            sync();
+           }
+           if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
+          })();
+          </script>'''
+          out=text.replace(anchor,replacement,1)
+          assert re.findall(r'<select\\b[^>]*id="attEditStatus"[^>]*>[\\s\\S]*?</select>',out)==options
           assert out.count('id="attEditStatus"')==1
           assert 'Save Correction' in out and 'Reset Attendance' in out
           Path(sys.argv[2]).write_bytes(out.encode('utf8','surrogateescape'))
@@ -107,7 +289,7 @@ jobs:
           ' "$ATT" "$TMP/deployed.php"
           php -l "$TMP/deployed.php"
           cmp "$ATT" "$TMP/candidate.blade.php"
-          grep -q AM_SINGLE_NATIVE_ATTENDANCE_STATUS_20261023 "$ATT"
+          grep -q AM_WORKING_ATTENDANCE_STATUS_20261023_V2 "$ATT"
           trap - ERR
           echo "ATTENDANCE_SINGLE_STATUS_STAGING_DEPLOYED BACKUP=$BACKUP NO_DATABASE_WRITES"
           REMOTE
