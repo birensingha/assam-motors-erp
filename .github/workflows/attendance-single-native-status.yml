@@ -176,7 +176,7 @@ jobs:
           assert marker not in text,'ALREADY_APPLIED_STOP'
           anchor='<!-- AM_SINGLE_NATIVE_ATTENDANCE_STATUS_20261023 -->'
           assert text.count(anchor)==1,'EXPECTED_SINGLE_PREVIOUS_CORRECTION'
-          options=re.findall(r'<select\\b[^>]*id="attEditStatus"[^>]*>[\\s\\S]*?</select>',text)
+          options=re.findall(r'<select\b[^>]*id="attEditStatus"[^>]*>[\s\S]*?</select>',text)
           assert len(options)==1,'EXPECTED_ONE_STATUS_SELECT'
           for status in ['present','absent','leave','off']:
               assert 'value="'+status+'"' in options[0]
@@ -256,7 +256,7 @@ jobs:
           })();
           </script>'''
           out=text.replace(anchor,replacement,1)
-          assert re.findall(r'<select\\b[^>]*id="attEditStatus"[^>]*>[\\s\\S]*?</select>',out)==options
+          assert re.findall(r'<select\b[^>]*id="attEditStatus"[^>]*>[\s\S]*?</select>',out)==options
           assert out.count('id="attEditStatus"')==1
           assert 'Save Correction' in out and 'Reset Attendance' in out
           Path(sys.argv[2]).write_bytes(out.encode('utf8','surrogateescape'))
