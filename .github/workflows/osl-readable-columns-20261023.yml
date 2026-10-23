@@ -1,0 +1,112 @@
+name: OSL Purchase Readable Columns 20261023
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/osl-readable-columns-20261023.yml']
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: SSH with pinned host
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for n in 1 2 3 4;do
+            if ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            echo "FIX106_SSH_SCAN_RETRY_$n"
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Back up and apply OSL column layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          cd "$1"
+          test -f artisan && test -d vendor
+          VIEW=resources/views/purchases/osl-create.blade.php
+          TEMP="$(mktemp -d "$PWD/storage/app/osl_layout_XXXXXX")"
+          trap 'rm -rf "$TEMP"' EXIT
+          python3 - "$PWD" "$TEMP/candidate.blade.php" <<'PY'
+          from pathlib import Path
+          import re, sys, os, tempfile
+          root=Path(sys.argv[1])
+          p=root/'resources/views/purchases/osl-create.blade.php'
+          s=p.read_text()
+          marker='AM_OSL_READABLE_COLUMNS_20261023'
+          assert 'id="osl-form"' in s and 'line-table' in s and 'line-scroll' in s
+          assert 'Supplier GST Basis' in s and 'customer-total' in s
+          tables=re.findall(r'<thead\b[^>]*>(.*?)</thead>',s,re.S)
+          assert len(tables)==1, 'Unexpected table structure'
+          assert len(re.findall(r'<th(?:\s|>)',tables[0]))==14, 'Expected 14 OSL columns'
+          widths=[44,300,220,260,80,120,90,220,90,130,90,140,140,64]
+          css='''\n<style id="AM_OSL_READABLE_COLUMNS_20261023">
+          #osl-form{min-width:0!important;max-width:100%!important}
+          #osl-form .line-scroll{display:block!important;width:100%!important;max-width:100%!important;min-width:0!important;overflow-x:auto!important}
+          #osl-form .line-table{table-layout:fixed!important;width:2088px!important;min-width:2088px!important;max-width:none!important;border-collapse:collapse}
+          #osl-form .line-table th,#osl-form .line-table td{box-sizing:border-box!important;padding:10px 8px!important;vertical-align:top!important}
+          #osl-form .line-table th{white-space:normal!important;overflow-wrap:break-word!important;line-height:1.35!important;font-size:13px!important;text-align:left}
+          #osl-form .line-table input,#osl-form .line-table select{box-sizing:border-box!important;width:100%!important;max-width:100%!important;min-width:0!important;font-size:14px!important;min-height:40px}
+          #osl-form.am-readable-125 .line-table input,#osl-form.am-readable-125 .line-table select{font-size:15px!important;min-height:46px}
+          #osl-form .line-table .line-total,#osl-form .line-table .customer-total{white-space:nowrap!important;font-size:14px!important;text-align:right!important;font-variant-numeric:tabular-nums}
+          #osl-form .line-table .remove-line{display:inline-flex!important;align-items:center;justify-content:center;min-width:32px!important;min-height:32px!important;margin:0!important}
+          '''
+          for i,w in enumerate(widths,1):
+           css+=f'#osl-form .line-table th:nth-child({i}),#osl-form .line-table td:nth-child({i})'+'{width:'+str(w)+'px!important;min-width:'+str(w)+'px!important;}\n'
+          css+='</style>\n'
+          if marker not in s:
+           pos=s.rfind('</style>')
+           assert pos>=0, 'Missing view style block'
+           pos+=len('</style>')
+           s=s[:pos]+css+s[pos:]
+          else:
+           assert css.strip() in s, 'Existing marker differs'
+          out=Path(sys.argv[2])
+          out.write_text(s)
+          print('OSL_CANDIDATE_READY_14_COLUMNS_CSS_ONLY')
+          
+          PY
+          php -r 'require "vendor/autoload.php"; $app=require "bootstrap/app.php"; $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap(); file_put_contents($argv[2],\Illuminate\Support\Facades\Blade::compileString(file_get_contents($argv[1])));' "$TEMP/candidate.blade.php" "$TEMP/candidate.php"
+          php -l "$TEMP/candidate.php"
+          BACKUP="storage/app/OSL_LAYOUT_BACKUP_$(date +%Y%m%d_%H%M%S)"
+          mkdir -m 700 "$BACKUP"
+          cp -p "$VIEW" "$BACKUP/osl-create.blade.php"
+          rollback(){ cp -p "$BACKUP/osl-create.blade.php" "$VIEW"; php artisan view:clear; }
+          trap rollback ERR
+          cat "$TEMP/candidate.blade.php" > "$VIEW"
+          php artisan view:clear
+          php artisan view:cache
+          grep -q AM_OSL_READABLE_COLUMNS_20261023 "$VIEW"
+          trap - ERR
+          echo "OSL_LAYOUT_STAGING_APPLIED BACKUP=$BACKUP"
+          REMOTE
+      - name: Cleanup ephemeral credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
