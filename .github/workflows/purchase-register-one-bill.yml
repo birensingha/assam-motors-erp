@@ -1,4 +1,4 @@
-name: Purchase Register One Bill Source Audit
+name: Purchase Register One Row Per Bill STAGING
 on:
   push:
     branches: [main]
@@ -24,34 +24,111 @@ jobs:
           ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
           if [ -n "$KEY" ]; then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
           else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
-      - name: Bounded current source slices and metadata
+      - name: Verify and deploy one row per purchase bill
         shell: bash
         run: |
           set -euo pipefail
           if [ -n "$KEY" ]; then SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
           else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT");fi
-          "${SSH[@]}" "$USERNAME@$HOST" "python3 - '$ROOT'" <<'PY'
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          cd "$1"
+          test -f artisan
+          TMP="$(mktemp -d "$PWD/storage/app/purchase_bill_register_XXXXXX")"
+          trap 'rm -rf "$TMP"' EXIT
+          python3 - "$PWD" "$TMP" <<'PY'
           from pathlib import Path
-          import sys,re
-          root=Path(sys.argv[1]).resolve()
-          assert (root/'artisan').is_file()
-          import hashlib
-          def show(f):
-           text=f.read_text(errors='replace')
-           print('SOURCE_BEGIN',f.relative_to(root),'SHA256',hashlib.sha256(f.read_bytes()).hexdigest())
-           print(text)
-           print('SOURCE_END')
-          for f in (root/'resources/views/purchases').glob('*.blade.php'):
-           if f.name in ['index.blade.php','show.blade.php']:show(f)
-          for f in (root/'app/Http/Controllers').rglob('*.php'):
-           txt=f.read_text(errors='replace')
-           if "view('purchases.index'" in txt or 'view("purchases.index"' in txt:
-            show(f)
-          for f in (root/'app').rglob('PurchaseService.php'):show(f)
-          for line in (root/'routes/web.php').read_text().splitlines():
-           if 'purchases' in line: print('PURCHASE_ROUTE',line)
-
+          import sys,hashlib
+          root=Path(sys.argv[1]);tmp=Path(sys.argv[2])
+          expected={"resources/views/purchases/index.blade.php":"b4893d393b8b0a4b8ba7c6f069a19ea311e56b56e9a716cf0a8a0d71fef5641d","app/Http/Controllers/Web/AdminPurchasePageController.php":"95d39f81c2bc8f8f3bfe3b6632a55efc8be9cc5ceb3ed5b250a118939a81d622","app/Services/PurchaseService.php":"a6c61f77f68d313328fabe36f0053f67155adccbe0e95139cd0716d03e9d0045"}
+          for rel,sha in expected.items():
+           assert hashlib.sha256((root/rel).read_bytes()).hexdigest()==sha,'SOURCE_CHANGED_STOP '+rel
+          method="    public function historyBills(array $filters = []): array\n    {\n        $limit = max(20, min(500, (int)($filters['limit'] ?? 200)));\n        $type = strtoupper(trim((string)($filters['type'] ?? '')));\n        $q = trim((string)($filters['q'] ?? ''));\n\n        $query = DB::table('workshop_purchases as p')\n            ->leftJoin('job_cards as jc', 'jc.id', '=', 'p.job_card_id')\n            ->leftJoin('parts_master as pm', 'pm.id', '=', 'p.part_master_id')\n            ->leftJoin('job_card_labour as jl', 'jl.id', '=', 'p.labour_line_id')\n            ->leftJoin('workshop_vendors as v', 'v.id', '=', 'p.vendor_id')\n            ->leftJoin('workshop_osl_master as om', 'om.id', '=', 'p.osl_master_id')\n            ->whereRaw(\"COALESCE(p.record_status,'ACTIVE') <> 'DELETED'\")\n            ->select([\n                'p.*', 'jc.job_no', 'jc.customer_name', 'jc.vehicle_reg_no', 'jc.vehicle_make', 'jc.vehicle_model',\n                'pm.part_code', 'pm.part_name', 'jl.description as labour_description', 'jl.standard_hours as billing_units',\n                'jl.labour_rate as billing_rate', 'jl.total as billing_line_total', 'v.vendor_code', 'v.vendor_name',\n                'om.osl_code', 'om.osl_name',\n            ]);\n\n        if (in_array($type, ['PART', 'OSL'], true)) {\n            $query->where('p.purchase_type', $type);\n        }\n        if ($q !== '') {\n            $like = '%'.$q.'%';\n            $query->where(function ($w) use ($like) {\n                $w->where('p.purchase_no', 'like', $like)\n                    ->orWhere('p.purchase_batch_no', 'like', $like)\n                    ->orWhere('p.supplier_invoice', 'like', $like)\n                    ->orWhere('p.description', 'like', $like)\n                    ->orWhere('v.vendor_name', 'like', $like)\n                    ->orWhere('v.vendor_code', 'like', $like)\n                    ->orWhere('pm.part_name', 'like', $like)\n                    ->orWhere('pm.part_code', 'like', $like)\n                    ->orWhere('om.osl_name', 'like', $like)\n                    ->orWhere('jc.job_no', 'like', $like)\n                    ->orWhere('jc.vehicle_reg_no', 'like', $like)\n                    ->orWhere('jc.customer_name', 'like', $like);\n            });\n        }\n\n        // PURCHASE_REGISTER_ONE_BILL_20261023: select whole bills before limiting.\n        // Item/JC search identifies a bill; it never truncates its totals.\n        $keySql = \"CASE WHEN COALESCE(p.purchase_batch_no,'') <> '' THEN CONCAT('B:',p.purchase_batch_no) ELSE CONCAT('P:',p.id) END\";\n        $matches = $query->select([DB::raw($keySql.' AS register_bill_key'), DB::raw('MAX(p.id) AS latest_id')])\n            ->groupByRaw($keySql)->orderByDesc('latest_id')->limit($limit)->get();\n        if ($matches->isEmpty()) return [];\n        $keys = $matches->pluck('register_bill_key')->all();\n        $allLines = $this->detailQuery()\n            ->whereRaw(\"COALESCE(p.record_status,'ACTIVE') <> 'DELETED'\")\n            ->whereIn(DB::raw($keySql), $keys)\n            ->orderBy('p.purchase_line_no')->orderBy('p.id')->get();\n        $groups = $allLines->groupBy(static fn($line) => (string)($line->purchase_batch_no ?? '') !== ''\n            ? 'B:'.$line->purchase_batch_no : 'P:'.$line->id);\n        $batchNos = $allLines->pluck('purchase_batch_no')->filter()->unique()->values()->all();\n        $headers = $batchNos ? DB::table('workshop_purchase_batches')->whereIn('batch_no',$batchNos)->get()->keyBy('batch_no') : collect();\n        $result = [];\n        foreach ($keys as $key) {\n            $lines = $groups->get($key);\n            if (!$lines || $lines->isEmpty()) continue;\n            $row = (array)$lines->first();\n            $row['item_count'] = $lines->count();\n            $row['qty'] = (float)$lines->sum('qty');\n            $header = $headers->get((string)($row['purchase_batch_no'] ?? ''));\n            $row['total_amount'] = $header && $header->grand_total !== null\n                ? (float)$header->grand_total : round((float)$lines->sum('total_amount'),2);\n            $allocations = $lines->map(static fn($line) => (string)($line->job_no ?: 'STOCK'))->unique()->values();\n            $vehicles = $lines->pluck('vehicle_reg_no')->filter()->unique()->values();\n            $row['against_summary'] = $allocations->count() === 1 ? $allocations->first() : $allocations->count().' allocations';\n            $row['vehicle_summary'] = $vehicles->count() === 1 ? $vehicles->first() : ($vehicles->count() ? $vehicles->count().' vehicles' : '');\n            $result[] = $row;\n        }\n        return $result;\n    }\n\n"
+          rel='app/Services/PurchaseService.php'
+          text=(root/rel).read_text()
+          assert text.count('    public function searchJobs(')==1
+          (tmp/'PurchaseService.php').write_text(text.replace('    public function searchJobs(',method+'    public function searchJobs(',1))
+          rel='app/Http/Controllers/Web/AdminPurchasePageController.php'
+          text=(root/rel).read_text()
+          assert text.count("'rows' => $service->history($filters)")==1
+          (tmp/'AdminPurchasePageController.php').write_text(text.replace("'rows' => $service->history($filters)","'rows' => $service->historyBills($filters)",1))
+          (tmp/'index.blade.php').write_text("@extends('layouts.erp')\n@section('title','Purchases · ASSAM MOTORS ERP')\n@section('content')\n{{-- P31_COUNTER_PARTS_INVOICE: direct Parts Sale without any Job Card. --}}\n<div style=\"display:flex;justify-content:flex-end;gap:9px;margin:10px 0 12px\">\n  <a href=\"{{ route('erp.counter-sales.create') }}\" class=\"btn primary\" style=\"background:#10835e;color:#fff;padding:11px 16px;border-radius:9px;font-weight:800\">🧾 + Direct Parts Sale Invoice</a>\n</div>\n\n{{-- P18_PURCHASE_REGISTER_ANDROID_UI · Frontend-only upgrade, historical records untouched --}}\n<style>\n.p18-purchase-register{--p18-navy:#102e59;--p18-blue:#195cab;--p18-green:#087d65;--p18-ink:#102e54;--p18-soft:#f1f6fd;--p18-border:#d6e3f0;color:var(--p18-ink)}\n.p18-purchase-register .p18-hero{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;padding:20px 22px;background:linear-gradient(120deg,#f6faff,#eef6ff);border:1px solid #d4e4f4;border-radius:20px;box-shadow:0 7px 24px #1639660d;margin:0 0 15px}\n.p18-purchase-register .p18-overline{font-size:11px;color:#31658a;font-weight:800;letter-spacing:.095em;text-transform:uppercase;margin:0 0 6px}\n.p18-purchase-register .p18-heading h1{margin:0;color:#112f57;font-size:clamp(24px,2.3vw,32px);font-weight:850;line-height:1.15}\n.p18-purchase-register .p18-heading p{margin:8px 0 0;font-size:13px;color:#5a728e;line-height:1.5}\n.p18-purchase-register .p18-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch;gap:10px;min-width:min(100%,360px)}\n.p18-purchase-register .p18-create{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-height:49px;padding:10px 15px;border-radius:14px;color:#fff;text-decoration:none;font-weight:800;font-size:13px;white-space:nowrap;border:1px solid transparent;box-shadow:0 5px 12px #15376325;transition:transform .15s ease,box-shadow .15s ease,filter .15s ease}\n.p18-purchase-register .p18-create:hover{transform:translateY(-2px);filter:brightness(1.045);box-shadow:0 7px 17px #15376335;color:#fff}\n.p18-purchase-register .p18-create:focus-visible{outline:3px solid #f0ba32;outline-offset:3px}\n.p18-purchase-register .p18-osl{background:linear-gradient(135deg,#07936f,#006b59)}\n.p18-purchase-register .p18-parts{background:linear-gradient(135deg,#2576d8,#164998)}\n.p18-purchase-register .p18-plus{display:inline-grid;place-items:center;width:24px;height:24px;flex:0 0 24px;border-radius:8px;font-size:20px;line-height:1;background:#ffffff2d}\n.p18-purchase-register .p18-filter{display:flex;align-items:stretch;gap:9px;flex-wrap:wrap;margin-bottom:16px!important;border-radius:16px!important;padding:13px!important;border:1px solid var(--p18-border)!important;background:#fff;box-shadow:0 5px 15px #0f345c0a}\n.p18-purchase-register .p18-filter input[name=\"q\"]{flex:1 1 350px;min-width:150px}\n.p18-purchase-register .p18-filter select[name=\"type\"]{flex:0 1 175px;min-width:140px}\n.p18-purchase-register .p18-filter input,.p18-purchase-register .p18-filter select{background:#f7faff;color:#123858;border:1px solid #c9daee;border-radius:11px;padding:11px 13px;min-height:46px;font-size:14px}\n.p18-purchase-register .p18-filter input:focus,.p18-purchase-register .p18-filter select:focus{outline:2px solid #81b5ea;outline-offset:1px}\n.p18-purchase-register .p18-filter .btn{border-radius:11px;min-height:46px;padding:11px 17px;font-weight:750}\n.p18-purchase-register .p18-filter button.btn{background:#173f76;color:#fff}\n.p18-purchase-register .p18-register-table{border:1px solid #d8e5f0;box-shadow:0 5px 20px #0d346110;border-radius:17px;overflow-x:auto;-webkit-overflow-scrolling:touch}\n.p18-purchase-register .p18-register-table table{width:100%;min-width:825px;border-collapse:collapse}\n.p18-purchase-register .p18-register-table thead th{padding:14px 12px;color:#fff;background:#183d73;white-space:nowrap;font-size:12px;font-weight:800;letter-spacing:.02em;text-align:left}\n.p18-purchase-register .p18-register-table thead th.num{text-align:right}\n.p18-purchase-register .p18-register-table tbody td{padding:13px 12px;border-bottom:1px solid #e4edf6;vertical-align:middle;font-size:13px}\n.p18-purchase-register .p18-register-table tbody tr:nth-child(even){background:#f8fbff}\n.p18-purchase-register .p18-register-table tbody tr:hover{background:#edf6ff}\n.p18-purchase-register .p18-register-table tbody tr:last-child td{border-bottom:0}\n.p18-purchase-register .p18-register-table .actions{display:flex;gap:7px;flex-wrap:nowrap}\n.p18-purchase-register .p18-register-table .btn.small{border-radius:9px;white-space:nowrap;padding:7px 10px}\n.p18-purchase-register .p18-register-table .badge{border-radius:8px}\n@media(min-width:700px){.p18-purchase-register .p18-hero{flex-wrap:nowrap}}\n@media(max-width:699px){.p18-purchase-register .p18-hero{padding:16px}.p18-purchase-register .p18-actions{min-width:100%;width:100%}.p18-purchase-register .p18-filter input[name=\"q\"]{flex-basis:100%}.p18-purchase-register .p18-filter select[name=\"type\"]{flex:1 1 140px}}\n@media(max-width:410px){.p18-purchase-register .p18-create{font-size:11px;padding:10px 5px;gap:5px;white-space:normal;text-align:center;line-height:1.25}.p18-purchase-register .p18-plus{width:20px;height:20px;flex-basis:20px;font-size:17px}}\n@media(prefers-reduced-motion:reduce){.p18-purchase-register .p18-create{transition:none}.p18-purchase-register .p18-create:hover{transform:none}}\n</style>\n<div class=\"p18-purchase-register\">\n <header class=\"p18-hero\">\n  <div class=\"p18-heading\">\n   <div class=\"p18-overline\">ASSAM MOTORS · WORKSHOP PURCHASES</div>\n   <h1>Purchase Register</h1>\n   <p>Parts and OSL purchases · supplier bills, workshop allocation and purchase history</p>\n  </div>\n  <nav class=\"p18-actions\" aria-label=\"Create purchase\">\n   <a class=\"p18-create p18-osl\" href=\"{{ route('erp.purchases.osl.create') }}\"><span class=\"p18-plus\" aria-hidden=\"true\">+</span>New OSL Purchase</a>\n   <a class=\"p18-create p18-parts\" href=\"{{ route('erp.purchases.create') }}\"><span class=\"p18-plus\" aria-hidden=\"true\">+</span>New Parts Purchase</a>\n  </nav>\n </header>\n<form method=\"get\" class=\"filterbar card compact p18-filter\">\n    <input name=\"q\" value=\"{{ $filters['q'] }}\" placeholder=\"Search purchase / invoice / vendor / JC / vehicle / item\">\n    <select name=\"type\"><option value=\"\">All Types</option><option value=\"PART\" @selected($filters['type']==='PART')>PART</option><option value=\"OSL\" @selected($filters['type']==='OSL')>OSL</option></select>\n    <button class=\"btn\">Search</button><a class=\"btn ghost\" href=\"{{ route('erp.purchases.index') }}\">Reset</a>\n</form>\n<div class=\"card table-card p18-register-table\">\n<table class=\"data-table\">\n<thead><tr><th>Date</th><th>Purchase</th><th>Vendor / Invoice</th><th>Items</th><th>Against</th><th class=\"num\">Qty</th><th class=\"num\">Total</th><th></th></tr></thead>\n<tbody>\n@forelse($rows as $r)\n<tr data-purchase-url=\"{{ route('erp.purchases.show',$r['id']) }}\" tabindex=\"0\" aria-label=\"Open purchase {{ $r['purchase_batch_no'] ?: $r['purchase_no'] }}\" style=\"cursor:pointer\">\n<td>{{ $r['purchase_date'] }}</td>\n<td><span class=\"badge {{ strtolower($r['purchase_type']) }}\">{{ $r['purchase_type'] }}</span><br><a href=\"{{ route('erp.purchases.show',$r['id']) }}\"><strong>{{ $r['purchase_batch_no'] ?: $r['purchase_no'] }}</strong></a></td>\n<td><strong>{{ $r['vendor_name'] ?: $r['supplier_name'] }}</strong><br><small>{{ $r['supplier_invoice'] ?: 'No supplier invoice' }}</small></td>\n<td>{{ $r['item_count'] }} {{ $r['item_count'] === 1 ? 'item' : 'items' }}</td>\n<td><strong>{{ $r['against_summary'] }}</strong>@if($r['vehicle_summary'])<br><small>{{ $r['vehicle_summary'] }}</small>@endif</td>\n<td class=\"num\">{{ number_format((float)$r['qty'],3) }}</td>\n<td class=\"num money\">₹{{ number_format((float)$r['total_amount'],2) }}</td>\n<td>\n    <div class=\"actions\">\n        <a class=\"btn small\" href=\"{{ route('erp.purchases.show',$r['id']) }}\">👁 View</a>\n        @if(strtoupper((string)$r['purchase_type']) === 'PART')\n            <a class=\"btn small primary\" href=\"{{ route('erp.purchases.edit',$r['id']) }}\">✏ Edit</a>\n        @endif\n    </div>\n</td>\n</tr>\n@empty<tr><td colspan=\"8\" class=\"empty\">No purchase entry found.</td></tr>@endforelse\n</tbody>\n</table>\n</div>\n</div>\n<!-- PURCHASE_REGISTER_ONE_BILL_20261023 -->\n<script>\n(function(){\n var table=document.querySelector('.p18-register-table');\n if(!table)return;\n table.addEventListener('click',function(e){\n  if(e.target.closest('a,button,input,select,textarea,form'))return;\n  if(window.getSelection && String(window.getSelection()))return;\n  var row=e.target.closest('tr[data-purchase-url]');\n  if(row)window.location.assign(row.dataset.purchaseUrl);\n });\n table.addEventListener('keydown',function(e){\n  if(e.key==='Enter' && e.target.matches('tr[data-purchase-url]')){\n   e.preventDefault();window.location.assign(e.target.dataset.purchaseUrl);\n  }\n });\n})();\n</script>\n@endsection\n")
+          
           PY
+          php -l "$TMP/PurchaseService.php"
+          php -l "$TMP/AdminPurchasePageController.php"
+          cat > "$TMP/verify.php" <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          require $argv[1].'/PurchaseService.php';
+          $service=new \App\Services\PurchaseService;
+          function check($condition,$message){if(!$condition)throw new \RuntimeException($message);}
+          $rows=$service->historyBills(['limit'=>20]);
+          $keys=[];
+          foreach($rows as $r){
+           $key=$r['purchase_batch_no'] ? 'B:'.$r['purchase_batch_no'] : 'P:'.$r['id'];
+           check(!isset($keys[$key]),'Duplicate bill');$keys[$key]=true;
+           $detail=$service->show((int)$r['id']);
+           check(count($detail['lines'])===$r['item_count'],'Incomplete bill');
+           $expected=$detail['batch'] ? (float)$detail['batch']['grand_total'] : (float)$detail['purchase']['total_amount'];
+           check(abs($expected-$r['total_amount'])<0.005,'Grand total mismatch');
+          }
+          foreach(['PART','OSL'] as $type){
+           foreach($service->historyBills(['type'=>$type,'limit'=>20]) as $r)check($r['purchase_type']===$type,'Type filter mismatch');
+          }
+          check($service->historyBills(['q'=>'NO_SUCH_BILL_AM_QA_20261023_983471'])===[],'Empty search');
+          if($rows){
+           $d=$service->show((int)$rows[0]['id']);$line=$d['lines'][0];
+           $term=$line['part_name'] ?: ($line['osl_name'] ?: $line['description']);
+           if($term){
+            $matches=$service->historyBills(['q'=>$term,'limit'=>500]);
+            $found=array_values(array_filter($matches,fn($r)=>(int)$r['id']===(int)$rows[0]['id']));
+            check(count($found)===1 && $found[0]['item_count']===$rows[0]['item_count'],'Item search lost bill lines');
+            check(abs($found[0]['total_amount']-$rows[0]['total_amount'])<0.005,'Item search changed total');
+           }
+          }
+          $sample=$service->historyBills(['q'=>'PB-261007194240-600']);
+          check(count($sample)===1,'Reported purchase must appear once');
+          check($sample[0]['item_count']>=3,'Reported purchase lines missing');
+          $blade=file_get_contents($argv[1].'/index.blade.php');
+          $blade=preg_replace('/^@extends.*$/m','',$blade);
+          $blade=preg_replace('/^@section.*$|^@endsection.*$/m','',$blade);
+          $html=\Illuminate\Support\Facades\Blade::render($blade,['rows'=>$sample,'filters'=>['q'=>'MUKESH','type'=>'']],true);
+          check(substr_count($html,'<tr data-purchase-url=')===1,'Rendered duplicate bill');
+          check(str_contains($html,route('erp.purchases.show',$sample[0]['id'])),'Missing detail link');
+          check(str_contains($html,number_format($sample[0]['total_amount'],2)),'Rendered total mismatch');
+          echo 'PASS whole bills, limits, PART/OSL filters, empty search, item search full totals, detail line reconciliation, one rendered reported bill; SAMPLE_ITEMS='.$sample[0]['item_count'].' TOTAL='.$sample[0]['total_amount'].PHP_EOL;
+          
+          PHP
+          php "$TMP/verify.php" "$TMP"
+          php -r 'require "vendor/autoload.php";$app=require "bootstrap/app.php";$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();file_put_contents($argv[2],\Illuminate\Support\Facades\Blade::compileString(file_get_contents($argv[1])));' "$TMP/index.blade.php" "$TMP/compiled.php"
+          php -l "$TMP/compiled.php"
+          BACKUP="storage/app/PURCHASE_ONE_BILL_BACKUP_$(date +%Y%m%d_%H%M%S)"
+          mkdir -m 700 "$BACKUP"
+          cp -p app/Services/PurchaseService.php "$BACKUP/PurchaseService.php"
+          cp -p app/Http/Controllers/Web/AdminPurchasePageController.php "$BACKUP/AdminPurchasePageController.php"
+          cp -p resources/views/purchases/index.blade.php "$BACKUP/index.blade.php"
+          rollback(){
+           cp -p "$BACKUP/PurchaseService.php" app/Services/PurchaseService.php
+           cp -p "$BACKUP/AdminPurchasePageController.php" app/Http/Controllers/Web/AdminPurchasePageController.php
+           cp -p "$BACKUP/index.blade.php" resources/views/purchases/index.blade.php
+           php artisan view:clear >/dev/null 2>&1 || true
+           echo PURCHASE_REGISTER_ROLLBACK_RESTORED
+          }
+          trap rollback ERR
+          cp "$TMP/PurchaseService.php" app/Services/PurchaseService.php
+          cp "$TMP/AdminPurchasePageController.php" app/Http/Controllers/Web/AdminPurchasePageController.php
+          cp "$TMP/index.blade.php" resources/views/purchases/index.blade.php
+          php artisan view:clear
+          cmp "$TMP/PurchaseService.php" app/Services/PurchaseService.php
+          cmp "$TMP/AdminPurchasePageController.php" app/Http/Controllers/Web/AdminPurchasePageController.php
+          cmp "$TMP/index.blade.php" resources/views/purchases/index.blade.php
+          php "$TMP/verify.php" "$TMP"
+          trap - ERR
+          echo "PURCHASE_REGISTER_ONE_BILL_STAGING_DEPLOYED BACKUP=$BACKUP NO_DATABASE_WRITES"
+          REMOTE
       - name: Cleanup
         if: always()
         run: rm -f ~/.ssh/id_ed25519
