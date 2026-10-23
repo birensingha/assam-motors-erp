@@ -1,0 +1,13 @@
+--- a/resources/views/job-cards/show.blade.php
++++ b/resources/views/job-cards/show.blade.php
+@@ -3719,7 +3719,9 @@
+    window.addEventListener('scroll',position,{passive:true,capture:true});
+  }
+  function scan(){
+-   document.querySelectorAll('form[action*="change-mechanic"] select[name="staff_id"]')
++   // Enhance only the OPEN dialog, not the hidden source form.
++   // cloneNode(true) copies data-am109-enhanced but NOT attached listeners.
++   document.querySelectorAll('dialog.am87-dialog[open] form[action*="change-mechanic"] select[name="staff_id"]')
+      .forEach(enhance);
+  }
+  function ready(){
