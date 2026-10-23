@@ -1,0 +1,56 @@
+name: Purchase Register One Bill Source Audit
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/purchase-register-one-bill.yml']
+permissions: {contents: read}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - name: SSH configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ -n "$KEY" ]; then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Bounded current source slices and metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT");fi
+          "${SSH[@]}" "$USERNAME@$HOST" "python3 - '$ROOT'" <<'PY'
+          from pathlib import Path
+          import sys,re
+          root=Path(sys.argv[1]).resolve()
+          assert (root/'artisan').is_file()
+          import hashlib
+          def show(f):
+           text=f.read_text(errors='replace')
+           print('SOURCE_BEGIN',f.relative_to(root),'SHA256',hashlib.sha256(f.read_bytes()).hexdigest())
+           print(text)
+           print('SOURCE_END')
+          for f in (root/'resources/views/purchases').glob('*.blade.php'):
+           if f.name in ['index.blade.php','show.blade.php']:show(f)
+          for f in (root/'app/Http/Controllers').rglob('*.php'):
+           txt=f.read_text(errors='replace')
+           if "view('purchases.index'" in txt or 'view("purchases.index"' in txt:
+            show(f)
+          for line in (root/'routes/web.php').read_text().splitlines():
+           if 'purchases' in line: print('PURCHASE_ROUTE',line)
+
+          PY
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
