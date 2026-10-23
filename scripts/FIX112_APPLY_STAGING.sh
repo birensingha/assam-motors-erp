@@ -3,8 +3,8 @@
 set -Eeuo pipefail
 cd "$HOME/domains/assammotors.com/assam-erp-staging"
 file='resources/views/job-cards/show.blade.php'
-oldsha='4fd49ba66df4bcf9dc7f5c7b636b4cabdbc702c78ebd5395ad1a9a36d7977515'
-newsha='e2a272d22e65d29705d6f80b1c800fdafecbd15b57ad857620f5d46acf755d71'
+oldsha='639a4bfc0e91778b2764d4b8a5edde6b1d5e13a825e594b7afe7aba0111f3059'
+newsha='9dffb0849b3857a4ff5e648ecd54a8f5f950aabb7bc471ea21cbed029a59cf2e'
 patchsha='92ef413a4cdc10915b38424e2371f1e1a2a7f721c3b5ce8c3d8314df668d2da9'
 for exe in curl patch sha256sum php; do command -v "$exe" >/dev/null || { echo "STOP: $exe not available"; exit 1; }; done
 [ -f "$file" ] || { echo 'STOP: Job Card view missing'; exit 1; }
