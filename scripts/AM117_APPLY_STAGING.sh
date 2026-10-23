@@ -102,9 +102,9 @@ $partial=<<<'BLADE'
         && strtoupper(trim((string)($line->mechanic_name??'')))!=='OSL';
 @endphp
 @if($am117Candidate)
-  @if($am117Eligible)
   <details class="am117-delete" style="display:inline-block;position:relative;margin:3px 5px 3px 0;padding:5px;border:1px solid #efc6c6;border-radius:6px;background:#fffafa">
     <summary style="cursor:pointer;color:#a32727;font-size:12px;font-weight:800">Delete ROT</summary>
+    @if($am117Eligible)
     <form class="am117-cancel-form" method="post" action="{{ route('erp.job-cards.labour.delete-admin',[$job->id,$line->id]) }}" style="margin-top:10px" onsubmit="return confirm('Remove this unstarted ROT from the Job Card? This will be audited and update billing totals. Original approved estimate stays unchanged.');">
       @csrf
       @method('DELETE')
