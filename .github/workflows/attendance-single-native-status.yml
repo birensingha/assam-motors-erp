@@ -1,4 +1,4 @@
-name: Attendance Working Single Status Picker STAGING
+name: Attendance Searchable Floating Status STAGING
 on:
   push:
     branches: [main]
@@ -30,71 +30,88 @@ jobs:
            'use strict';
            function init(){
             var source=document.getElementById('attEditStatus');
-            if(!source || source.dataset.amStatusPicker==='1')return;
-            source.dataset.amStatusPicker='1';
+            if(!source || source.dataset.amStatusSearch==='1')return;
+            source.dataset.amStatusSearch='1';
             var wrap=document.createElement('div');
-            wrap.style.cssText='position:relative;display:block;width:100%;';
+            wrap.style.cssText='position:relative;display:block;width:100%;height:36px;box-sizing:border-box;';
             source.parentNode.insertBefore(wrap,source);wrap.appendChild(source);
-            // Keep the original form control and values; expose exactly one picker.
-            source.hidden=true;source.tabIndex=-1;
-            source.style.setProperty('display','none','important');
-            var button=document.createElement('button');button.type='button';
-            button.id='amAttendanceStatusButton';
-            button.style.cssText='display:flex;align-items:center;justify-content:space-between;width:100%;min-height:36px;padding:7px 10px;border:1px solid #94b6df;border-radius:6px;background:#fff;color:#153c69;font:inherit;text-align:left;cursor:pointer;';
-            button.setAttribute('aria-label','Attendance status');
-            button.setAttribute('aria-haspopup','listbox');
-            button.setAttribute('aria-expanded','false');
-            button.setAttribute('aria-controls','amAttendanceStatusList');
-            var caption=document.createElement('span');var arrow=document.createElement('span');
-            arrow.textContent='▼';arrow.setAttribute('aria-hidden','true');
-            button.append(caption,arrow);wrap.appendChild(button);
+            source.hidden=true;source.tabIndex=-1;source.style.setProperty('display','none','important');
+            var input=document.createElement('input');input.type='text';input.id='amAttendanceStatusSearch';
+            input.autocomplete='off';input.spellcheck=false;input.placeholder='Type status…';
+            input.setAttribute('role','combobox');input.setAttribute('aria-label','Attendance status: type to search');
+            input.setAttribute('aria-autocomplete','list');input.setAttribute('aria-expanded','false');
+            input.setAttribute('aria-controls','amAttendanceStatusList');
+            input.style.cssText='display:block;width:100%;height:36px;min-height:36px;box-sizing:border-box;margin:0;padding:7px 35px 7px 10px;border:1px solid #94b6df;border-radius:6px;background:#fff;color:#153c69;font:inherit;';
+            wrap.appendChild(input);
+            var arrow=document.createElement('button');arrow.type='button';arrow.tabIndex=-1;
+            arrow.id='amAttendanceStatusArrow';arrow.textContent='▼';arrow.setAttribute('aria-label','Show attendance statuses');
+            arrow.style.cssText='position:absolute;right:1px;top:1px;width:32px;height:34px;min-height:0;margin:0;padding:0;border:0;background:transparent;color:#153c69;cursor:pointer;';
+            wrap.appendChild(arrow);
             var menu=document.createElement('div');menu.id='amAttendanceStatusList';
-            menu.setAttribute('role','listbox');menu.setAttribute('aria-label','Attendance status options');
-            menu.style.cssText='display:none;position:relative;width:100%;box-sizing:border-box;margin-top:4px;border:1px solid #94b6df;border-radius:6px;background:#fff;padding:3px;';
+            menu.setAttribute('role','listbox');menu.setAttribute('aria-label','Attendance statuses');
+            menu.style.cssText='display:none;position:absolute;left:0;top:39px;width:100%;box-sizing:border-box;max-height:180px;overflow:auto;overscroll-behavior:contain;border:1px solid #94b6df;border-radius:6px;background:#fff;padding:3px;box-shadow:0 8px 20px #12345635;z-index:2147483000;';
             wrap.appendChild(menu);
+            var matches=[],active=-1,isOpen=false;
             function options(){return Array.from(source.options).filter(function(o){return o.value&&!o.disabled;});}
-            function sync(){
-             var selected=Array.from(source.options).find(function(o){return o.value===source.value;});
-             caption.textContent=selected?selected.textContent.trim():'Select status';
+            function sync(){var opt=Array.from(source.options).find(function(o){return o.value===source.value;});input.value=opt?opt.textContent.trim():'';}
+            function position(){
+             if(!isOpen)return;
+             var r=wrap.getBoundingClientRect(),dialog=source.closest('dialog');
+             var bounds=dialog?dialog.getBoundingClientRect():{top:0,bottom:window.innerHeight};
+             var below=Math.min(window.innerHeight,bounds.bottom)-r.bottom-8;
+             var above=r.top-Math.max(0,bounds.top)-8;
+             var up=below<150 && above>below;
+             menu.style.top=up?'auto':'39px';menu.style.bottom=up?'39px':'auto';
+             menu.style.maxHeight=Math.max(40,Math.min(180,up?above:below))+'px';
             }
-            function close(focus){menu.style.display='none';button.setAttribute('aria-expanded','false');if(focus)button.focus();}
-            function open(){
-             menu.replaceChildren();
-             options().forEach(function(opt){
-              var item=document.createElement('button');item.type='button';item.setAttribute('role','option');
-              item.setAttribute('aria-selected',String(opt.value===source.value));
-              item.dataset.value=opt.value;item.textContent=opt.textContent.trim();
-              item.style.cssText='display:block;width:100%;min-height:34px;padding:7px 9px;border:0;border-radius:3px;text-align:left;font:inherit;cursor:pointer;color:#153c69;background:'+(opt.value===source.value?'#e6f1ff':'#fff')+';';
-              item.addEventListener('click',function(e){
-               e.preventDefault();source.value=opt.value;
-               source.dispatchEvent(new Event('input',{bubbles:true}));
-               source.dispatchEvent(new Event('change',{bubbles:true}));sync();close(true);
-              });menu.appendChild(item);
+            function highlight(index){
+             active=index;Array.from(menu.querySelectorAll('[role="option"]')).forEach(function(el,i){
+              el.style.background=i===active?'#e6f1ff':'#fff';
              });
-             sync();menu.style.display='block';button.setAttribute('aria-expanded','true');
+             var el=menu.querySelectorAll('[role="option"]')[active];
+             if(el){input.setAttribute('aria-activedescendant',el.id);el.scrollIntoView({block:'nearest'});}
+             else input.removeAttribute('aria-activedescendant');
             }
-            button.addEventListener('click',function(e){e.preventDefault();if(menu.style.display==='none')open();else close(false);});
-            button.addEventListener('keydown',function(e){
-             if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){
-              e.preventDefault();open();var items=Array.from(menu.children);
-              var active=menu.querySelector('[aria-selected="true"]');
-              (e.key==='End'?items[items.length-1]:e.key==='Home'?items[0]:active||items[0])?.focus();
-             }else if(e.key==='Escape'&&menu.style.display!=='none'){e.preventDefault();e.stopPropagation();close(true);}
+            function close(restore){isOpen=false;menu.style.display='none';input.setAttribute('aria-expanded','false');input.removeAttribute('aria-activedescendant');if(restore)sync();}
+            function choose(opt){
+             source.value=opt.value;source.dispatchEvent(new Event('input',{bubbles:true}));
+             source.dispatchEvent(new Event('change',{bubbles:true}));close(true);input.focus();input.select();
+            }
+            function open(filter){
+             var q=String(filter||'').trim().toLowerCase();
+             matches=options().filter(function(o){return o.textContent.toLowerCase().includes(q)||o.value.toLowerCase().includes(q);});
+             menu.replaceChildren();
+             matches.forEach(function(opt,i){
+              var item=document.createElement('div');item.id='amAttendanceStatusOption'+i;
+              item.setAttribute('role','option');item.setAttribute('aria-selected',String(opt.value===source.value));item.dataset.value=opt.value;item.textContent=opt.textContent.trim();
+              item.style.cssText='display:block;box-sizing:border-box;width:100%;min-height:34px;padding:7px 9px;border:0;border-radius:3px;text-align:left;font:inherit;cursor:pointer;color:#153c69;background:#fff;';
+              item.addEventListener('mousedown',function(e){e.preventDefault();});
+              item.addEventListener('click',function(e){e.preventDefault();choose(opt);});
+              item.addEventListener('mousemove',function(){highlight(i);});menu.appendChild(item);
+             });
+             if(!matches.length){var empty=document.createElement('div');empty.textContent='No matching status';empty.setAttribute('role','status');empty.style.cssText='padding:9px;color:#63758a;';menu.appendChild(empty);}
+             isOpen=true;menu.style.display='block';input.setAttribute('aria-expanded','true');position();
+             highlight(matches.length?(q?0:Math.max(0,matches.findIndex(function(o){return o.value===source.value;}))):-1);
+            }
+            input.addEventListener('focus',function(){input.select();});
+            input.addEventListener('click',function(){if(!isOpen){sync();open('');input.select();}});
+            input.addEventListener('input',function(){open(input.value);});
+            arrow.addEventListener('mousedown',function(e){e.preventDefault();});
+            arrow.addEventListener('click',function(e){e.preventDefault();if(isOpen)close(true);else{input.focus();sync();open('');input.select();}});
+            input.addEventListener('keydown',function(e){
+             if(e.key==='ArrowDown'||e.key==='ArrowUp'){
+              e.preventDefault();if(!isOpen){open('');return;}
+              if(matches.length)highlight((active+(e.key==='ArrowDown'?1:matches.length-1))%matches.length);
+             }else if(e.key==='Enter'){
+              e.preventDefault();if(!isOpen)open('');else if(matches[active])choose(matches[active]);
+             }else if(e.key==='Escape'&&isOpen){e.preventDefault();e.stopPropagation();close(true);input.select();}
+             else if(e.key==='Tab'){close(true);}
             });
-            menu.addEventListener('keydown',function(e){
-             if(e.key==='Escape'){e.preventDefault();e.stopPropagation();close(true);return;}
-             if(e.key==='Tab'){close(false);return;}
-             var items=Array.from(menu.children),index=items.indexOf(document.activeElement);
-             if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){
-              e.preventDefault();var next=e.key==='Home'?0:e.key==='End'?items.length-1:(index+(e.key==='ArrowDown'?1:items.length-1))%items.length;
-              items[next]?.focus();
-             }
-            });
-            document.addEventListener('click',function(e){if(!wrap.contains(e.target))close(false);});
+            wrap.addEventListener('focusout',function(e){if(!wrap.contains(e.relatedTarget))close(true);});
+            document.addEventListener('click',function(e){if(isOpen&&!wrap.contains(e.target))close(true);});
             source.addEventListener('change',sync);
-            var dialog=source.closest('dialog');
-            if(dialog){new MutationObserver(function(){sync();close(false);}).observe(dialog,{attributes:true,attributeFilter:['open']});}
-            sync();
+            var dialog=source.closest('dialog');if(dialog)new MutationObserver(function(){close(true);}).observe(dialog,{attributes:true,attributeFilter:['open']});
+            window.addEventListener('resize',position);document.addEventListener('scroll',position,true);sync();
            }
            if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
           })();
@@ -103,30 +120,47 @@ jobs:
           const {chromium}=require('playwright');const fs=require('fs');
           (async()=>{
            const browser=await chromium.launch({headless:true});
-           for(const width of [1280,390]){
-            const page=await browser.newPage({viewport:{width,height:844}});
-            await page.setContent('<button id="open" onclick="document.querySelector(\'dialog\').showModal()">Edit</button><dialog style="width:90%;max-width:700px"><form><label>Status<select id="attEditStatus" name="status" required><option value="present">Present</option><option value="absent">Absent</option><option value="leave">Leave</option><option value="off">Week Off</option></select></label><input name="notes"><button>Save Correction</button></form></dialog>');
+           for(const size of [{width:1280,height:844},{width:390,height:844},{width:390,height:520}]){
+            const page=await browser.newPage({viewport:size});
+            await page.setContent('<button id="open" onclick="document.querySelector(\'dialog\').showModal()">Edit</button><dialog style="width:90%;max-width:700px;box-sizing:border-box;padding:16px"><form><h3>Edit Attendance</h3><label>Status<select id="attEditStatus" name="status" required><option value="present">Present</option><option value="absent">Absent</option><option value="leave">Leave</option><option value="off">Week Off</option></select></label><label style="display:block;margin-top:12px">Check-In<input id="checkin" type="time" style="display:block;height:36px;width:100%"></label><label style="display:block;margin-top:12px">Check-Out<input type="time" style="display:block;height:36px;width:100%"></label><input id="notes" name="notes" style="display:block;margin-top:12px;height:36px"><button id="save">Save Correction</button></form></dialog>');
             await page.addScriptTag({content:fs.readFileSync('picker.js','utf8')});
+            await page.evaluate(()=>{window.submits=0;document.querySelector('form').addEventListener('submit',e=>{e.preventDefault();window.submits++})});
             await page.click('#open');
-            for(const value of ['absent','leave','off','present']){
-             await page.click('#amAttendanceStatusButton');
-             if(!await page.locator('#amAttendanceStatusList').isVisible())throw Error('list hidden');
-             await page.click('[data-value="'+value+'"]');
+            const field=page.locator('#amAttendanceStatusSearch');
+            const initial=await page.locator('dialog').boundingBox();
+            const checkin=await page.locator('#checkin').boundingBox();
+            await field.click();
+            const opened=await page.locator('dialog').boundingBox(),after=await page.locator('#checkin').boundingBox();
+            if(Math.abs(initial.height-opened.height)>1||Math.abs(initial.y-opened.y)>1||Math.abs(checkin.y-after.y)>1)throw Error('Opening popup changed form layout');
+            for(const [term,value] of [['abs','absent'],['lea','leave'],['week','off'],['pre','present']]){
+             await field.fill(term);
+             if(await page.locator('#amAttendanceStatusList [role="option"]').count()!==1)throw Error('Typing filter failed '+term);
+             await field.press('Enter');
              const actual=await page.evaluate(()=>new FormData(document.querySelector('form')).get('status'));
-             if(actual!==value)throw Error('form value mismatch');
+             if(actual!==value)throw Error('Wrong submitted value '+term);
             }
-            await page.locator('#amAttendanceStatusButton').focus();
-            await page.keyboard.press('ArrowDown');await page.keyboard.press('ArrowDown');await page.keyboard.press('Enter');
-            if(await page.locator('#attEditStatus').inputValue()!=='absent')throw Error('keyboard mismatch');
-            await page.click('#amAttendanceStatusButton');
-            await page.locator('#amAttendanceStatusList button').first().focus();
-            await page.keyboard.press('Escape');
-            if(!await page.locator('dialog').evaluate(d=>d.open))throw Error('Escape closed editor');
-            await page.evaluate(()=>{document.querySelector('dialog').close();document.querySelector('select').value='leave';document.querySelector('dialog').showModal();});
+            await page.click('#amAttendanceStatusArrow');
+            await page.locator('[data-value="absent"]').click();
+            if(await field.inputValue()!=='Absent')throw Error('Mouse selection');
+            await field.fill('xyzno');
+            if(await page.locator('#amAttendanceStatusList [role="option"]').count()!==0)throw Error('No match failed');
+            await field.press('Enter');
+            if(await page.locator('#attEditStatus').inputValue()!=='absent')throw Error('Unmatched value submitted');
+            await field.press('Escape');
+            if(!await page.locator('dialog').evaluate(d=>d.open))throw Error('Escape closed form');
+            await page.click('#amAttendanceStatusArrow');await field.press('ArrowDown');await field.press('Enter');
+            if(await field.inputValue()!=='Leave')throw Error('Keyboard selection');
+            await field.fill('pre');await field.press('Tab');
+            if(await field.inputValue()!=='Leave')throw Error('Tab changed committed status');
+            if(await page.evaluate(()=>window.submits)!==0)throw Error('Picker submitted form');
+            await page.evaluate(()=>{document.querySelector('dialog').close();document.querySelector('select').value='off';document.querySelector('dialog').showModal()});
             await page.waitForTimeout(50);
-            if(!(await page.locator('#amAttendanceStatusButton').innerText()).includes('Leave'))throw Error('reopen sync');
-            if(await page.locator('select').isVisible())throw Error('duplicate visible');
-            console.log('PASS',width,'all status clicks, form values, keyboard, Escape, reopen, one visible picker');
+            if(await field.inputValue()!=='Week Off')throw Error('Reopen stale');
+            if(await page.locator('select').isVisible())throw Error('Duplicate source');
+            await field.click();
+            const rect=await page.locator('#amAttendanceStatusList').boundingBox();
+            if(rect.x<0||rect.x+rect.width>size.width+1||rect.y<0||rect.y+rect.height>size.height+1)throw Error('Popup outside viewport');
+            console.log('PASS',JSON.stringify(size),'fixed form height and position, typing 4 statuses, Enter/mouse/arrows, no match, Tab/Escape, form values, reopen, popup bounds');
             await page.close();
            }
            await browser.close();
@@ -172,90 +206,108 @@ jobs:
           from pathlib import Path
           p=Path(sys.argv[1]);raw=p.read_bytes()
           text=raw.decode('utf8','surrogateescape')
-          marker='AM_WORKING_ATTENDANCE_STATUS_20261023_V2'
+          marker='AM_SEARCH_FLOATING_ATTENDANCE_STATUS_20261023_V3'
           assert marker not in text,'ALREADY_APPLIED_STOP'
-          anchor='<!-- AM_SINGLE_NATIVE_ATTENDANCE_STATUS_20261023 -->'
-          assert text.count(anchor)==1,'EXPECTED_SINGLE_PREVIOUS_CORRECTION'
+          pattern=r'<!-- AM_WORKING_ATTENDANCE_STATUS_20261023_V2 -->\s*<script>[\s\S]*?</script>'
+          blocks=list(re.finditer(pattern,text))
+          assert len(blocks)==1,'EXPECTED_ONE_PREVIOUS_PICKER'
           options=re.findall(r'<select\b[^>]*id="attEditStatus"[^>]*>[\s\S]*?</select>',text)
           assert len(options)==1,'EXPECTED_ONE_STATUS_SELECT'
           for status in ['present','absent','leave','off']:
               assert 'value="'+status+'"' in options[0]
-          replacement=r'''<!-- AM_WORKING_ATTENDANCE_STATUS_20261023_V2 -->
+          replacement=r'''<!-- AM_SEARCH_FLOATING_ATTENDANCE_STATUS_20261023_V3 -->
           <script>
           (function(){
            'use strict';
            function init(){
             var source=document.getElementById('attEditStatus');
-            if(!source || source.dataset.amStatusPicker==='1')return;
-            source.dataset.amStatusPicker='1';
+            if(!source || source.dataset.amStatusSearch==='1')return;
+            source.dataset.amStatusSearch='1';
             var wrap=document.createElement('div');
-            wrap.style.cssText='position:relative;display:block;width:100%;';
+            wrap.style.cssText='position:relative;display:block;width:100%;height:36px;box-sizing:border-box;';
             source.parentNode.insertBefore(wrap,source);wrap.appendChild(source);
-            // Keep the original form control and values; expose exactly one picker.
-            source.hidden=true;source.tabIndex=-1;
-            source.style.setProperty('display','none','important');
-            var button=document.createElement('button');button.type='button';
-            button.id='amAttendanceStatusButton';
-            button.style.cssText='display:flex;align-items:center;justify-content:space-between;width:100%;min-height:36px;padding:7px 10px;border:1px solid #94b6df;border-radius:6px;background:#fff;color:#153c69;font:inherit;text-align:left;cursor:pointer;';
-            button.setAttribute('aria-label','Attendance status');
-            button.setAttribute('aria-haspopup','listbox');
-            button.setAttribute('aria-expanded','false');
-            button.setAttribute('aria-controls','amAttendanceStatusList');
-            var caption=document.createElement('span');var arrow=document.createElement('span');
-            arrow.textContent='▼';arrow.setAttribute('aria-hidden','true');
-            button.append(caption,arrow);wrap.appendChild(button);
+            source.hidden=true;source.tabIndex=-1;source.style.setProperty('display','none','important');
+            var input=document.createElement('input');input.type='text';input.id='amAttendanceStatusSearch';
+            input.autocomplete='off';input.spellcheck=false;input.placeholder='Type status…';
+            input.setAttribute('role','combobox');input.setAttribute('aria-label','Attendance status: type to search');
+            input.setAttribute('aria-autocomplete','list');input.setAttribute('aria-expanded','false');
+            input.setAttribute('aria-controls','amAttendanceStatusList');
+            input.style.cssText='display:block;width:100%;height:36px;min-height:36px;box-sizing:border-box;margin:0;padding:7px 35px 7px 10px;border:1px solid #94b6df;border-radius:6px;background:#fff;color:#153c69;font:inherit;';
+            wrap.appendChild(input);
+            var arrow=document.createElement('button');arrow.type='button';arrow.tabIndex=-1;
+            arrow.id='amAttendanceStatusArrow';arrow.textContent='▼';arrow.setAttribute('aria-label','Show attendance statuses');
+            arrow.style.cssText='position:absolute;right:1px;top:1px;width:32px;height:34px;min-height:0;margin:0;padding:0;border:0;background:transparent;color:#153c69;cursor:pointer;';
+            wrap.appendChild(arrow);
             var menu=document.createElement('div');menu.id='amAttendanceStatusList';
-            menu.setAttribute('role','listbox');menu.setAttribute('aria-label','Attendance status options');
-            menu.style.cssText='display:none;position:relative;width:100%;box-sizing:border-box;margin-top:4px;border:1px solid #94b6df;border-radius:6px;background:#fff;padding:3px;';
+            menu.setAttribute('role','listbox');menu.setAttribute('aria-label','Attendance statuses');
+            menu.style.cssText='display:none;position:absolute;left:0;top:39px;width:100%;box-sizing:border-box;max-height:180px;overflow:auto;overscroll-behavior:contain;border:1px solid #94b6df;border-radius:6px;background:#fff;padding:3px;box-shadow:0 8px 20px #12345635;z-index:2147483000;';
             wrap.appendChild(menu);
+            var matches=[],active=-1,isOpen=false;
             function options(){return Array.from(source.options).filter(function(o){return o.value&&!o.disabled;});}
-            function sync(){
-             var selected=Array.from(source.options).find(function(o){return o.value===source.value;});
-             caption.textContent=selected?selected.textContent.trim():'Select status';
+            function sync(){var opt=Array.from(source.options).find(function(o){return o.value===source.value;});input.value=opt?opt.textContent.trim():'';}
+            function position(){
+             if(!isOpen)return;
+             var r=wrap.getBoundingClientRect(),dialog=source.closest('dialog');
+             var bounds=dialog?dialog.getBoundingClientRect():{top:0,bottom:window.innerHeight};
+             var below=Math.min(window.innerHeight,bounds.bottom)-r.bottom-8;
+             var above=r.top-Math.max(0,bounds.top)-8;
+             var up=below<150 && above>below;
+             menu.style.top=up?'auto':'39px';menu.style.bottom=up?'39px':'auto';
+             menu.style.maxHeight=Math.max(40,Math.min(180,up?above:below))+'px';
             }
-            function close(focus){menu.style.display='none';button.setAttribute('aria-expanded','false');if(focus)button.focus();}
-            function open(){
-             menu.replaceChildren();
-             options().forEach(function(opt){
-              var item=document.createElement('button');item.type='button';item.setAttribute('role','option');
-              item.setAttribute('aria-selected',String(opt.value===source.value));
-              item.dataset.value=opt.value;item.textContent=opt.textContent.trim();
-              item.style.cssText='display:block;width:100%;min-height:34px;padding:7px 9px;border:0;border-radius:3px;text-align:left;font:inherit;cursor:pointer;color:#153c69;background:'+(opt.value===source.value?'#e6f1ff':'#fff')+';';
-              item.addEventListener('click',function(e){
-               e.preventDefault();source.value=opt.value;
-               source.dispatchEvent(new Event('input',{bubbles:true}));
-               source.dispatchEvent(new Event('change',{bubbles:true}));sync();close(true);
-              });menu.appendChild(item);
+            function highlight(index){
+             active=index;Array.from(menu.querySelectorAll('[role="option"]')).forEach(function(el,i){
+              el.style.background=i===active?'#e6f1ff':'#fff';
              });
-             sync();menu.style.display='block';button.setAttribute('aria-expanded','true');
+             var el=menu.querySelectorAll('[role="option"]')[active];
+             if(el){input.setAttribute('aria-activedescendant',el.id);el.scrollIntoView({block:'nearest'});}
+             else input.removeAttribute('aria-activedescendant');
             }
-            button.addEventListener('click',function(e){e.preventDefault();if(menu.style.display==='none')open();else close(false);});
-            button.addEventListener('keydown',function(e){
-             if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){
-              e.preventDefault();open();var items=Array.from(menu.children);
-              var active=menu.querySelector('[aria-selected="true"]');
-              (e.key==='End'?items[items.length-1]:e.key==='Home'?items[0]:active||items[0])?.focus();
-             }else if(e.key==='Escape'&&menu.style.display!=='none'){e.preventDefault();e.stopPropagation();close(true);}
+            function close(restore){isOpen=false;menu.style.display='none';input.setAttribute('aria-expanded','false');input.removeAttribute('aria-activedescendant');if(restore)sync();}
+            function choose(opt){
+             source.value=opt.value;source.dispatchEvent(new Event('input',{bubbles:true}));
+             source.dispatchEvent(new Event('change',{bubbles:true}));close(true);input.focus();input.select();
+            }
+            function open(filter){
+             var q=String(filter||'').trim().toLowerCase();
+             matches=options().filter(function(o){return o.textContent.toLowerCase().includes(q)||o.value.toLowerCase().includes(q);});
+             menu.replaceChildren();
+             matches.forEach(function(opt,i){
+              var item=document.createElement('div');item.id='amAttendanceStatusOption'+i;
+              item.setAttribute('role','option');item.setAttribute('aria-selected',String(opt.value===source.value));item.dataset.value=opt.value;item.textContent=opt.textContent.trim();
+              item.style.cssText='display:block;box-sizing:border-box;width:100%;min-height:34px;padding:7px 9px;border:0;border-radius:3px;text-align:left;font:inherit;cursor:pointer;color:#153c69;background:#fff;';
+              item.addEventListener('mousedown',function(e){e.preventDefault();});
+              item.addEventListener('click',function(e){e.preventDefault();choose(opt);});
+              item.addEventListener('mousemove',function(){highlight(i);});menu.appendChild(item);
+             });
+             if(!matches.length){var empty=document.createElement('div');empty.textContent='No matching status';empty.setAttribute('role','status');empty.style.cssText='padding:9px;color:#63758a;';menu.appendChild(empty);}
+             isOpen=true;menu.style.display='block';input.setAttribute('aria-expanded','true');position();
+             highlight(matches.length?(q?0:Math.max(0,matches.findIndex(function(o){return o.value===source.value;}))):-1);
+            }
+            input.addEventListener('focus',function(){input.select();});
+            input.addEventListener('click',function(){if(!isOpen){sync();open('');input.select();}});
+            input.addEventListener('input',function(){open(input.value);});
+            arrow.addEventListener('mousedown',function(e){e.preventDefault();});
+            arrow.addEventListener('click',function(e){e.preventDefault();if(isOpen)close(true);else{input.focus();sync();open('');input.select();}});
+            input.addEventListener('keydown',function(e){
+             if(e.key==='ArrowDown'||e.key==='ArrowUp'){
+              e.preventDefault();if(!isOpen){open('');return;}
+              if(matches.length)highlight((active+(e.key==='ArrowDown'?1:matches.length-1))%matches.length);
+             }else if(e.key==='Enter'){
+              e.preventDefault();if(!isOpen)open('');else if(matches[active])choose(matches[active]);
+             }else if(e.key==='Escape'&&isOpen){e.preventDefault();e.stopPropagation();close(true);input.select();}
+             else if(e.key==='Tab'){close(true);}
             });
-            menu.addEventListener('keydown',function(e){
-             if(e.key==='Escape'){e.preventDefault();e.stopPropagation();close(true);return;}
-             if(e.key==='Tab'){close(false);return;}
-             var items=Array.from(menu.children),index=items.indexOf(document.activeElement);
-             if(['ArrowDown','ArrowUp','Home','End'].includes(e.key)){
-              e.preventDefault();var next=e.key==='Home'?0:e.key==='End'?items.length-1:(index+(e.key==='ArrowDown'?1:items.length-1))%items.length;
-              items[next]?.focus();
-             }
-            });
-            document.addEventListener('click',function(e){if(!wrap.contains(e.target))close(false);});
+            wrap.addEventListener('focusout',function(e){if(!wrap.contains(e.relatedTarget))close(true);});
+            document.addEventListener('click',function(e){if(isOpen&&!wrap.contains(e.target))close(true);});
             source.addEventListener('change',sync);
-            var dialog=source.closest('dialog');
-            if(dialog){new MutationObserver(function(){sync();close(false);}).observe(dialog,{attributes:true,attributeFilter:['open']});}
-            sync();
+            var dialog=source.closest('dialog');if(dialog)new MutationObserver(function(){close(true);}).observe(dialog,{attributes:true,attributeFilter:['open']});
+            window.addEventListener('resize',position);document.addEventListener('scroll',position,true);sync();
            }
            if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init,{once:true});else init();
           })();
           </script>'''
-          out=text.replace(anchor,replacement,1)
+          out=text[:blocks[0].start()]+replacement+text[blocks[0].end():]
           assert re.findall(r'<select\b[^>]*id="attEditStatus"[^>]*>[\s\S]*?</select>',out)==options
           assert out.count('id="attEditStatus"')==1
           assert 'Save Correction' in out and 'Reset Attendance' in out
@@ -289,7 +341,7 @@ jobs:
           ' "$ATT" "$TMP/deployed.php"
           php -l "$TMP/deployed.php"
           cmp "$ATT" "$TMP/candidate.blade.php"
-          grep -q AM_WORKING_ATTENDANCE_STATUS_20261023_V2 "$ATT"
+          grep -q AM_SEARCH_FLOATING_ATTENDANCE_STATUS_20261023_V3 "$ATT"
           trap - ERR
           echo "ATTENDANCE_SINGLE_STATUS_STAGING_DEPLOYED BACKUP=$BACKUP NO_DATABASE_WRITES"
           REMOTE
