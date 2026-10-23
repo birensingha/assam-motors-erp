@@ -47,6 +47,7 @@ jobs:
            txt=f.read_text(errors='replace')
            if "view('purchases.index'" in txt or 'view("purchases.index"' in txt:
             show(f)
+          for f in (root/'app').rglob('PurchaseService.php'):show(f)
           for line in (root/'routes/web.php').read_text().splitlines():
            if 'purchases' in line: print('PURCHASE_ROUTE',line)
 
