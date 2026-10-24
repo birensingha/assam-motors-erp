@@ -5,6 +5,10 @@ on:
     paths:
       - '.github/workflows/am127-gh-p55-mechanic-readonly.yml'
       - 'deployment/live-fixes/AM127_GH_STAGING_READONLY/inspect.php'
+  pull_request:
+    paths:
+      - '.github/workflows/am127-gh-p55-mechanic-readonly.yml'
+      - 'deployment/live-fixes/AM127_GH_STAGING_READONLY/inspect.php'
   workflow_dispatch:
 permissions: {contents: read}
 concurrency: {group: assam-motors-am127-readonly, cancel-in-progress: false}
