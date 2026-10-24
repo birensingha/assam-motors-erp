@@ -1,0 +1,76 @@
+name: AM122 Inventory Quick Create READ ONLY
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/am122-inventory-quick-create-readonly.yml']
+permissions: {contents: read}
+concurrency:
+  group: assam-inventory-audit-readonly
+  cancel-in-progress: false
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for i in 1 2 3 4;do
+            if ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Read-only code and schema inspection
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=12 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=12 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f artisan
+          echo '=== ESTIMATE VIEW 1-145 ==='
+          sed -n '1,145p' resources/views/estimates/create.blade.php
+          echo '=== ESTIMATE VIEW 285-348 ==='
+          sed -n '285,348p' resources/views/estimates/create.blade.php
+          echo '=== ESTIMATE JS ==='
+          sed -n '1,280p' public/js/estimate-entry.js
+          echo '=== JOBCARD PARTS SECTIONS INDEX ==='
+          grep -nEi 'part_master_id|parts master|parts quick|search part|new part|add part|parts section|parts —|parts -' resources/views/job-cards/show.blade.php | head -n 90 || true
+          echo '=== JOB CARD PARTS ACTIONS ==='
+          grep -nEi -C 15 "part_master_id|name=\"part_master_id\"|am54FilterPartSelect" resources/views/job-cards/show.blade.php | head -n 260 || true
+          echo '=== ESTIMATE CONTROLLER CREATE ==='
+          sed -n '24,63p' app/Http/Controllers/Web/AdminEstimatePageController.php
+          echo '=== PARTS ROUTES ==='
+          grep -nEi 'parts-master|parts\.master|part-masters|inventory|part.*store|part.*create|parts.*create|job-cards.*parts' routes/web.php | head -n 100 || true
+          echo '=== PART MODEL ==='
+          if test -f app/Models/PartMaster.php;then sed -n '1,180p' app/Models/PartMaster.php;fi
+          echo '=== PART MASTER CONTROLLER FILES ==='
+          find app/Http/Controllers -maxdepth 4 -type f -iname '*part*' -o -iname '*inventory*' | head -n 35
+          echo '=== ADMIN / LEGACY LOOKUP REFERENCES ==='
+          grep -nEi 'admin login required|legacy|old.er[p]|auth|required' public/js/estimate-entry.js public/js/estimate-entry-fix104.js resources/views/estimates/create.blade.php | head -n 65 || true
+          echo 'AM122_AUDIT_READ_ONLY_COMPLETE'
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
