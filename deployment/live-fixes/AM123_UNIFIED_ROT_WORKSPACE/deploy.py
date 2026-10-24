@@ -50,7 +50,7 @@ checks={
   'MAIN_JC_HAS_VOID': 'AM121_COMPLETED_ROT_VOID' in old,
   'MAIN_JC_HAS_DELETE': 'AM117:' in old,
   'FRAGMENT_SINGLE_MARKER': frame.count(marker)==1,
-  'FRAGMENT_CSF_REQUIRED': 'data-p55-form' not in frame and "@include('job-cards.rot-alteration'" in frame,
+  'FRAGMENT_CSF_REQUIRED': 'data-p55-form' not in frame and "make('job-cards.rot-alteration'" in frame and 'Full ROT Correction unavailable' in frame,
 }
 for key,val in checks.items():
     print('AM123_PREFLIGHT_'+key+'='+('PASS' if val else 'FAIL'))
