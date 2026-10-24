@@ -23,6 +23,8 @@ grep -Fxq "AM121_PREFLIGHT_RESULT=READY_FOR_STAGING_CODE_REVIEW" /tmp/am121_pref
 python3 "$DEST/deploy.py" check "$PWD"
 echo AM121_DEPLOYING_TO_STAGING_ONLY
 python3 "$DEST/deploy.py" apply "$PWD"
+echo "AM121_CLEAR_STAGING_ROUTE_CACHE"
+php artisan route:clear
 echo "AM121_VERIFY_ROUTE"
 php artisan route:list --path=job-cards | grep 'completed-void' || {
   echo "AM121_ROUTE_NOT_VISIBLE: check route cache and staging log; do not use Void until verified"; exit 3;
