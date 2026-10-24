@@ -87,14 +87,28 @@ try:
         run=subprocess.run(args,cwd=root,capture_output=True,text=True,timeout=90)
         print((run.stdout or run.stderr)[-350:])
         if run.returncode:raise RuntimeError('Validation failed: '+' '.join(args))
-    # Compiled source verification avoids reporting success for an uncached view.
+    # Blade comments are stripped by compilation; never search for the
+    # source-only AM121_COMPLETED_ROT_VOID marker inside compiled PHP.
+    # Instead require compiled *visible HTML* from our dedicated partial:
+    # its class names survive Blade compilation and cannot be satisfied
+    # by a comment in show.blade.php.
     found=False
     for p in (root/'storage/framework/views').glob('*.php'):
-        if 'AM121_COMPLETED_ROT_VOID' in p.read_text('utf8',errors='replace'):
-            run=subprocess.run(['php','-l',str(p)],capture_output=True,text=True,timeout=20)
-            if run.returncode:raise RuntimeError('Compiled Blade syntax error')
+        compiled=p.read_text('utf8',errors='replace')
+        if 'am121-void-panel' in compiled and 'am121-voided-label' in compiled:
+            run=subprocess.run(['php','-l',str(p)],
+                capture_output=True,text=True,timeout=20)
+            if run.returncode:
+                raise RuntimeError('AM121 compiled Blade syntax error: '+run.stderr[-300:])
+            print('AM121_COMPILED_PARTIAL_FOUND_AND_PHP_LINT_PASS='+str(p))
             found=True
-    if not found:raise RuntimeError('Compiled AM121 Blade missing')
+            break
+    if not found:
+        raise RuntimeError('AM121 compiled partial HTML missing; rollback as precaution')
+    # Verify the parent view still references our partial, not merely that
+    # a similarly named orphan partial was compiled.
+    if "@include('job-cards.partials.completed-rot-void'" not in view.read_text('utf8',errors='surrogateescape'):
+        raise RuntimeError('AM121 parent Job Card lost the partial include')
 except BaseException as err:
     if modified:restore()
     raise SystemExit('AM121_APPLY_FAILED_ROLLED_BACK: '+str(err))
