@@ -134,6 +134,13 @@ function start(){
   var portal=document.getElementById('am123-correction-forms');
   if(portal && !document.getElementById('am116-rot-dialog')){
     console.warn('AM123 P55 form/card mapping unavailable: use existing Amount Editor.');
+    if(!document.getElementById('am123-correction-warning')){
+      var notice=document.createElement('p');
+      notice.id='am123-correction-warning';
+      notice.className='am123-correction-alert';
+      notice.textContent='Admin Full ROT Correction could not be linked to all ROT cards. Use existing Amount Editor; no changes were made.';
+      portal.parentNode.insertBefore(notice,portal);
+    }
   }
 }
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',start,{once:true});
