@@ -85,6 +85,12 @@
      bar.setAttribute('aria-label','ROT time correction and Admin tools');
      target.parentNode.insertBefore(bar,target);
      bar.appendChild(target);
+     var voidLabel=voidPanel.querySelector('summary');
+     if(voidLabel){
+       voidLabel.textContent='Void ROT';
+       voidLabel.title='Admin only: Void Completed ROT billing with full audit';
+       voidLabel.setAttribute('aria-label','Void Completed ROT (Admin)');
+     }
      bar.appendChild(voidPanel);
      var id=String(card.getAttribute('data-am90-labour-id')||'');
      if(findBillingButton(id)){
