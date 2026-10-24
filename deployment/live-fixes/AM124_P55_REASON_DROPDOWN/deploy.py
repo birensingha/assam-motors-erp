@@ -30,7 +30,8 @@ checks = {
     "REASON_SELECT": re.search(r'<select\b[^>]*\bname\s*=\s*["\']alteration_reason["\']',original,re.I|re.S) is not None,
     "MAIN_JC_USES_P55": "job-cards.partials.am123-unified-correction" in show.read_text("utf-8",errors="surrogateescape"),
     "PATCH_ONCE": patch.count(marker)==1,
-    "PRESERVES_NATIVE_FORM_SELECT": "select.style.setProperty('display','none','important')" in patch
+    "PRESERVES_NATIVE_FORM_SELECT": "select.style.setProperty('opacity','0','important')" in patch
+        and "select.addEventListener('invalid'" in patch
         and "select.dispatchEvent(new Event('change',{bubbles:true}))" in patch,
     "POPUP_INSIDE_DIALOG": "dialog.appendChild(popup)" in patch,
     "PATCH_SCOPED_TO_AM116": "var dialogId='am116-rot-dialog'" in patch,
