@@ -11,11 +11,24 @@
 @endphp
 @if($am123Admin && $am123Rows->isNotEmpty())
   <div id="am123-correction-forms" hidden>
-    @include('job-cards.rot-alteration', [
-      'p55Rows'=>$am123Rows,
-      'p55InvoiceLocked'=>!empty($job->invoice_id),
-      'p55OperationalLocked'=>!$am123Wip,
-    ])
+    @php
+      // Render from the same inherited Blade context as @include. Failure must
+      // NEVER make the whole Main Job Card return HTTP 500; preserve the
+      // original Amount Editor as a fallback.
+      try {
+          echo $__env->make('job-cards.rot-alteration', [
+              'p55Rows'=>$am123Rows,
+              'p55InvoiceLocked'=>!empty($job->invoice_id),
+              'p55OperationalLocked'=>!$am123Wip,
+          ], \Illuminate\Support\Arr::except(get_defined_vars(), ['__data','__path']))->render();
+      } catch (\Throwable $am123Error) {
+          \Illuminate\Support\Facades\Log::warning(
+              'AM123 P55 correction rendering blocked',
+              ['error_type'=>get_class($am123Error)]
+          );
+          echo '<p class="am123-correction-alert">Full ROT Correction unavailable on this JC. The original Amount Editor remains available.</p>';
+      }
+    @endphp
   </div>
 @endif
 @once
