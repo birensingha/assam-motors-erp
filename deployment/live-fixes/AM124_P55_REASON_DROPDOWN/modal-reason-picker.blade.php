@@ -183,7 +183,20 @@
       select.insertAdjacentElement('afterend',trigger);
       // Keep select in form for unchanged POST and P55 validation.
       // P55 scripts use the same exact select node and can set its value.
-      select.style.setProperty('display','none','important');
+      // Keep native select focusable for HTML5 required-field validation.
+      // Hiding with display:none would make an invalid required control
+      // impossible to focus and can silently block form submission.
+      select.style.setProperty('position','absolute','important');
+      select.style.setProperty('opacity','0','important');
+      select.style.setProperty('width','1px','important');
+      select.style.setProperty('height','1px','important');
+      select.style.setProperty('pointer-events','none','important');
+      select.style.setProperty('clip-path','inset(50%)','important');
+      select.tabIndex=-1;
+      select.addEventListener('invalid',function(event){
+        event.preventDefault();
+        openPicker(dialog,select,trigger);
+      });
       function sync(){
         var option=select.selectedOptions[0];
         txt.textContent=option&&select.value?String(option.textContent||'').trim():'— Select Reason —';
