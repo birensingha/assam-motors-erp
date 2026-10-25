@@ -4,6 +4,9 @@ from pathlib import Path
 import sys,re,shutil,datetime
 if len(sys.argv)!=3 or sys.argv[1] not in ('check','apply'): raise SystemExit('Usage: apply.py check|apply STAGING_ROOT')
 mode=sys.argv[1]; root=Path(sys.argv[2]).expanduser().resolve()
+# Safeguard: 2026-10-25 staging rendered HTTP 500 after AM130 was applied.
+# Do NOT reapply until exact Blade compilation error is diagnosed and tested.
+if mode=='apply': raise SystemExit('AM130_APPLY_DISABLED: staging HTTP 500 reported; restore timestamped .bak and investigate Laravel error log first.')
 path=root/'resources/views/job-cards/summary-print.blade.php'
 if not (root/'artisan').is_file() or not path.is_file(): raise SystemExit('STOP: Laravel Summary file not found')
 s=path.read_text()
