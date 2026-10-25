@@ -1,0 +1,119 @@
+name: AM161 Hide DELETED OSL From Active Register STAGING
+on:
+  pull_request:
+    branches: [main]
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'audit/am159-target-osl-261025162952-811'
+    runs-on: ubuntu-latest
+    timeout-minutes: 17
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/AM160_HIDE_DELETED_OSL_REGISTER/apply.py
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail;install -d -m 700 ~/.ssh
+          for i in 1 2 3 4;do if ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi;sleep 3;done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: STAGING guarded deploy and verify exact deleted purchase
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -p "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=12)
+            SCP=(scp -P "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=12)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT" -o ConnectTimeout=12)
+            SCP=(sshpass -e scp -P "$PORT" -o ConnectTimeout=12)
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p ~/AM160_HIDE_DELETED_OSL_REGISTER'
+          "${SCP[@]}" deployment/live-fixes/AM160_HIDE_DELETED_OSL_REGISTER/apply.py "$REMOTE:~/AM160_HIDE_DELETED_OSL_REGISTER/apply.py"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          cd "$APP";test -f artisan
+          PATCH="$HOME/AM160_HIDE_DELETED_OSL_REGISTER/apply.py"
+          python3 "$PATCH" check "$APP"
+          TMP="$(mktemp -d "$APP/storage/app/am161_preview_XXXXXXXX")"
+          trap 'rm -rf "$TMP"' EXIT
+          AM160_PREVIEW="$TMP" python3 "$PATCH" check "$APP"
+          php -l "$TMP/app/Http/Controllers/Web/AdminWorkshopControlPageController.php"
+          php -r '
+             require "vendor/autoload.php";$a=require "bootstrap/app.php";
+             $a->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+             file_put_contents($argv[2],\Illuminate\Support\Facades\Blade::compileString(file_get_contents($argv[1])));
+          ' "$TMP/resources/views/workshop-controls/osl-index.blade.php" "$TMP/compiled.php"
+          php -l "$TMP/compiled.php"
+          php -d display_errors=1 -d log_errors=0 <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $a=require 'bootstrap/app.php';$a->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $p=\Illuminate\Support\Facades\DB::table('workshop_purchases')->where('purchase_no','OSL-261025162952-811')->first();
+          if(!$p||(int)$p->id!==32||(int)$p->job_card_id!==42||strtoupper((string)$p->record_status)!=='DELETED'){
+            echo "AM161_STOP_TARGET_RECORD_CHANGED";exit(2);
+          }
+          echo 'AM161_TARGET_STATUS=ALREADY_DELETED'.PHP_EOL;
+          PHP
+          OUT="$(python3 "$PATCH" apply "$APP")"
+          printf '%s\n' "$OUT"
+          if printf '%s\n' "$OUT" | grep -Fxq 'AM160_ALREADY_INSTALLED';then
+            echo AM161_INSTALL_ALREADY_ACTIVE
+            exit 0
+          fi
+          BACKUP="$(printf '%s\n' "$OUT" | sed -n 's/^AM160_BACKUP=//p')"
+          test -n "$BACKUP"
+          test -f "$BACKUP/app/Http/Controllers/Web/AdminWorkshopControlPageController.php"
+          test -f "$BACKUP/resources/views/workshop-controls/osl-index.blade.php"
+          rollback(){
+            echo AM161_ROLLBACK_STAGING_REGISTER
+            cp -p "$BACKUP/app/Http/Controllers/Web/AdminWorkshopControlPageController.php" app/Http/Controllers/Web/AdminWorkshopControlPageController.php
+            cp -p "$BACKUP/resources/views/workshop-controls/osl-index.blade.php" resources/views/workshop-controls/osl-index.blade.php
+            php artisan view:clear >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          php artisan view:clear
+          php artisan view:cache
+          grep -Fq 'AM160_ACTIVE_OSL_REGISTER' app/Http/Controllers/Web/AdminWorkshopControlPageController.php
+          grep -Fq 'AM160_OSL_HISTORY_UI' resources/views/workshop-controls/osl-index.blade.php
+          php artisan route:list --path=workshop-tools/osl | grep -q 'osl'
+          php -d display_errors=1 -d log_errors=0 <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $a=require 'bootstrap/app.php';$a->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::class;
+          $target=$db::table('workshop_purchases')->where('purchase_no','OSL-261025162952-811')->first();
+          if(!$target||(int)$target->id!==32||strtoupper((string)$target->record_status)!=='DELETED')
+              throw new \RuntimeException('AM161_TARGET_STATUS_MUTATED');
+          $q=$db::table('workshop_purchases')->where('purchase_type','OSL')
+             ->whereRaw("UPPER(TRIM(COALESCE(record_status,'ACTIVE'))) <> 'DELETED'")->whereNull('deleted_at');
+          if((clone $q)->where('id',32)->exists())throw new \RuntimeException('AM161_DELETED_VISIBLE_IN_ACTIVE_QUERY');
+          echo 'AM161_TARGET_REMOVED_FROM_ACTIVE_QUERY_ID=32'.PHP_EOL;
+          echo 'AM161_ACTIVE_OSL_COUNT='.$q->count().PHP_EOL;
+          echo 'AM161_DELETED_RECORD_PRESERVED_ID=32'.PHP_EOL;
+          PHP
+          for p in /erp/login /staff/login;do
+            CODE="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$p")"
+            echo "AM161_HEALTH $p $CODE";test "$CODE" = 200
+          done
+          trap - ERR
+          echo "AM161_STAGING_DEPLOY_PASS BACKUP=$BACKUP NO_FINANCIAL_DB_WRITES"
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
