@@ -59,7 +59,7 @@ def main():
  if c.count(sig)!=1:stop("METHOD_SIGNATURE_NOT_FOUND")
  c=c.replace(sig,"public function vendorDatabase(Request $request, \\App\\Services\\VendorService $vendorService): View",1)
  old1='<div><span>Purchase line totals*</span><b>₹{{ number_format((float)($purchaseTotals[$v->id] ?? 0),2) }}</b></div><div><span>Vendor payments*</span><b>₹{{ number_format((float)($paymentTotals[$v->id] ?? 0),2) }}</b></div>'
- new1='<div><span>Purchases (Ledger)</span><b>₹{{ number_format((float)($vendorSummaries[$v->id][\\'purchases\\'] ?? 0),2) }}</b></div><div><span>Payments (Ledger)</span><b>₹{{ number_format((float)($vendorSummaries[$v->id][\\'payments\\'] ?? 0),2) }}</b></div><div><span>Outstanding Payable</span><b>₹{{ number_format((float)($vendorSummaries[$v->id][\\'outstanding\\'] ?? 0),2) }}</b></div>'
+ new1="""<div><span>Purchases (Ledger)</span><b>₹{{ number_format((float)($vendorSummaries[$v->id]['purchases'] ?? 0),2) }}</b></div><div><span>Payments (Ledger)</span><b>₹{{ number_format((float)($vendorSummaries[$v->id]['payments'] ?? 0),2) }}</b></div><div><span>Outstanding Payable</span><b>₹{{ number_format((float)($vendorSummaries[$v->id]['outstanding'] ?? 0),2) }}</b></div>"""
  if v.count(old1)!=1:stop("VENDOR_CARD_AMOUNT_ANCHOR")
  v=v.replace(old1,new1,1)
  old2='*Values are purchase/payment table aggregates, not verified final outstanding. OSL purchase corrections must reconcile supplier invoice and customer Job Card billing.'
