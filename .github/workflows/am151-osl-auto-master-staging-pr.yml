@@ -1,0 +1,120 @@
+name: AM151 JC OSL Typed Master and Error STAGING
+on:
+  pull_request:
+    branches: [main]
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  install:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'audit/am143-osl-jc-master-20261025'
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate patch
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/AM150_OSL_AUTOMASTER_ERRORS/apply.py
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail;install -d -m 700 ~/.ssh
+          for i in 1 2 3 4;do
+            if ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi;sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Preflight, STAGING source deploy, guarded master backfill
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -p "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=12)
+            SCP=(scp -P "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=12)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT" -o ConnectTimeout=12)
+            SCP=(sshpass -e scp -P "$PORT" -o ConnectTimeout=12)
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p ~/AM150_OSL_AUTOMASTER_ERRORS'
+          "${SCP[@]}" deployment/live-fixes/AM150_OSL_AUTOMASTER_ERRORS/apply.py "$REMOTE:~/AM150_OSL_AUTOMASTER_ERRORS/apply.py"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          cd "$APP"
+          PATCH="$HOME/AM150_OSL_AUTOMASTER_ERRORS/apply.py"
+          python3 "$PATCH" check "$APP"
+          TMP="$(mktemp -d "$APP/storage/app/am151_preview_XXXXXXXX")"
+          trap 'rm -rf "$TMP"' EXIT
+          AM150_PREVIEW_DIR="$TMP" python3 "$PATCH" check "$APP"
+          php -l "$TMP/controller.php"
+          php -r '
+             require "vendor/autoload.php";$a=require "bootstrap/app.php";
+             $a->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+             file_put_contents($argv[2],\Illuminate\Support\Facades\Blade::compileString(file_get_contents($argv[1])));
+          ' "$TMP/view.blade.php" "$TMP/compiled.php"
+          php -l "$TMP/compiled.php"
+          out="$(python3 "$PATCH" apply "$APP")"
+          printf '%s\n' "$out"
+          BACKUP="$(printf '%s\n' "$out" | sed -n 's/^AM150_BACKUP=//p')"
+          if test -n "$BACKUP";then
+            test -f "$BACKUP/controller.bak" && test -f "$BACKUP/view.bak"
+            rollback(){
+              echo AM151_SOURCE_ROLLBACK
+              cp -p "$BACKUP/controller.bak" app/Http/Controllers/Web/AdminJobCardOslLineController.php
+              cp -p "$BACKUP/view.bak" resources/views/job-cards/show.blade.php
+              php artisan view:clear >/dev/null 2>&1 || true
+            }
+            trap rollback ERR
+          elif ! printf '%s\n' "$out" | grep -q AM150_ALREADY_INSTALLED;then
+            echo AM151_INVALID_APPLY_STATE;exit 1
+          fi
+          php artisan view:clear
+          php artisan route:list --path=job-cards | grep -q osl-billing
+          grep -Fq AM150_TYPED_OSL_MASTER app/Http/Controllers/Web/AdminJobCardOslLineController.php
+          grep -Fq AM150_REAL_VALIDATION resources/views/job-cards/show.blade.php
+          for url in /erp/login /staff/login;do
+            status="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$url")"
+            echo "AM151_HEALTH $url $status";test "$status" = 200
+          done
+          echo AM151_SAFE_STAGING_UI_CONTROLLER_PASS
+          # One-time idempotent master catalog backfill for this exact already
+          # existing historical JC OSL service. Never changes JC/purchase/ledger.
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';$a=require 'bootstrap/app.php';
+          $a->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          use Illuminate\Support\Facades\DB;
+          $row=DB::table('job_card_labour')
+            ->where('id',91)->where('job_card_id',42)
+            ->whereRaw("UPPER(TRIM(COALESCE(mechanic_name,'')))='OSL'")->first();
+          if(!$row||mb_strtoupper(trim((string)$row->description))!=='SILENCER WELDING'){
+              echo "AM151_TARGET_NOT_MATCHED_NO_MASTER_CHANGE\n";
+              exit(0);
+          }
+          DB::transaction(function()use($row){
+              $existing=DB::table('workshop_osl_master')->whereRaw('LOWER(TRIM(osl_name))=?',['silencer welding'])->lockForUpdate()->first();
+              if($existing){echo "AM151_MASTER_ALREADY_EXISTS_ID=".$existing->id.PHP_EOL;return;}
+              $id=DB::table('workshop_osl_master')->insertGetId([
+                 'osl_code'=>'OSL-Q-'.strtoupper(substr(str_replace('-','',(string)\Illuminate\Support\Str::uuid()),0,14)),
+                 'osl_name'=>'SILENCER WELDING','category'=>'OUTSIDE LABOUR',
+                 'default_cost'=>0,'gst_percent'=>0,'active'=>1,
+                 'created_at'=>now(),'updated_at'=>now()
+              ]);
+              echo "AM151_NEW_MASTER_SILENCER_WELDING_ID=".$id.PHP_EOL;
+          },3);
+          echo AM151_MASTER_CATALOG_BACKFILL_DONE
+          PHP
+          trap - ERR
+          echo AM151_STAGING_DEPLOY_FINISHED
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
