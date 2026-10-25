@@ -133,7 +133,7 @@ def main():
     # Download pinned code, PHP lint, compile view BEFORE touching live sources.
     with tempfile.TemporaryDirectory(prefix="fix126_prepare_") as d:
         source=Path(d)/"AdminJobCardPartsBatchController.php"
-        urllib.request.urlretrieve(CONTROLLER_URL,str(source))
+        execute(["curl","-fsSL","--retry","2",CONTROLLER_URL,"-o",str(source)],root)
         execute(["php","-l",str(source)],root)
         tmpview=Path(d)/"show.blade.php"
         tmpview.write_bytes(newview)
