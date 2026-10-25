@@ -1,0 +1,69 @@
+name: FIX127 WIP Inspection Parts Layout Regression - READ ONLY
+on:
+  push:
+    branches: [fix/fix126-bulk-issue-fit-20261025]
+    paths: ['.github/workflows/fix127-jc-layout-regression-audit.yml']
+permissions:
+  contents: read
+jobs:
+  staging-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Configure remote access
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          for i in 1 2 3;do
+            ssh-keyscan -T 10 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null && break
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Inspect layout regression after FIX126 read only
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=12 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=12 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f artisan
+          echo 'FIX127_READONLY_BEGIN'
+          echo '=== CHECKSUM CURRENT BLADE AND LIFECYCLE ==='
+          sha256sum resources/views/job-cards/show.blade.php resources/views/job-cards/lifecycle-panel.blade.php
+          echo '=== INSPECTION SECTION OPEN CLOSE ANCHORS ==='
+          grep -nEi -C 3 'Inspection / Final Diagnosis|Assigned Inspector|Vehicle Inspection|FIX126_BULK|<div class="card section-gap jc-purchase-block|</section>|</main>' resources/views/job-cards/show.blade.php | head -n 140 || true
+          echo '=== HEADER TO INSPECTION ==='
+          sed -n '70,275p' resources/views/job-cards/show.blade.php
+          echo '=== LIFECYCLE TO PARTS OPEN ==='
+          sed -n '740,990p' resources/views/job-cards/show.blade.php
+          echo '=== PARTS TABLE TO LABOUR ==='
+          sed -n '1105,1165p' resources/views/job-cards/show.blade.php
+          echo '=== VIEWS INCLUDE TARGETS ==='
+          grep -nE 'inspection|lifecycle-panel|part-stock-control' resources/views/job-cards/show.blade.php | head -n 35 || true
+          echo 'FIX127_READONLY_COMPLETE'
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
