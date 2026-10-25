@@ -35,7 +35,6 @@ for name,needle in expected:
 if old.count(expected[0][1])!=1:raise SystemExit("AM126_DUPLICATE_SNAPSHOT_MARKER_STOP")
 
 old_php=expected[0][1]
-new_php=old_php+StringMarkerNotUsed if False else None
 new_php=old_php+'''
 {{-- AM126_COMPLETED_TAT_FROM_CORRECTED_START_END:
     For COMPLETED ROT display corrected wall-clock elapsed TAT (Start->End)
@@ -129,7 +128,7 @@ try:
     hits=[]
     for p in (root/"storage/framework/views").glob("*.php"):
         s=p.read_text("utf8",errors="replace")
-        if "am126-productive" in s and "AM126_COMPLETED_TAT_FROM_CORRECTED_START_END" in s:
+        if "am126-productive" in s and "am126CompletedTAT" in s:
             r=subprocess.run(["php","-l",str(p)],cwd=root,capture_output=True,text=True,timeout=25)
             if r.returncode:raise RuntimeError("Compiled partial PHP syntax error: "+r.stderr[-200:])
             hits.append(str(p))
