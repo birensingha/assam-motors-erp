@@ -35,13 +35,14 @@ for name,needle in expected:
 if old.count(expected[0][1])!=1:raise SystemExit("AM126_DUPLICATE_SNAPSHOT_MARKER_STOP")
 
 old_php=expected[0][1]
-new_php=old_php+'''
+new_php='''
 {{-- AM126_COMPLETED_TAT_FROM_CORRECTED_START_END:
     For COMPLETED ROT display corrected wall-clock elapsed TAT (Start->End)
     as primary time/progress; keep productive work and raw work events intact.
     The source of truth is the audited Labour start/end, not live work seconds.
     Running/Paused ROTs keep the original V639 productive stopwatch unchanged. --}}
 @php
+    $rotClock=\\App\\Support\\RotLiveClock::snapshot($session);
     $am126CompletedTAT=false;
     $am126FinishedAt=null;
     $am126ProductiveSeconds=max(0,(int)($session->total_seconds??0));
@@ -102,6 +103,29 @@ for before,after in changes:
     if candidate.count(before)!=1:raise SystemExit("AM126_ANCHOR_CHANGED_"+str(before[:35]))
     candidate=candidate.replace(before,after,1)
 if candidate.count(marker)!=1:raise SystemExit("AM126_INVALID_PATCH_MARKER")
+
+# Compile the entire candidate Blade BEFORE writing it to a served staging view.
+# AM126 v1 missed a Blade @php(...) + @php block compiler boundary and could
+# return HTTP 500 despite successful php-l. This preflight rejects that.
+import re
+with tempfile.TemporaryDirectory(prefix="am126_blade_preflight_") as tmpdir:
+    candidate_blade=Path(tmpdir)/"am126-candidate.blade.php"
+    compiled_php=Path(tmpdir)/"am126-candidate.php"
+    candidate_blade.write_text(candidate,encoding="utf8",errors="surrogateescape")
+    php_script = r"""require 'vendor/autoload.php';
+$app=require 'bootstrap/app.php';
+$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+file_put_contents($argv[2],\Illuminate\Support\Facades\Blade::compileString(file_get_contents($argv[1])));"""
+    cmd=subprocess.run(["php","-r",php_script,str(candidate_blade),str(compiled_php)],
+                       cwd=root,capture_output=True,text=True,timeout=50)
+    if cmd.returncode:raise SystemExit("AM126_STOP_CANDIDATE_BLADE_COMPILE_FAILED "+cmd.stderr[-240:])
+    compiled=compiled_php.read_text("utf8",errors="replace")
+    if not re.search(r"<\?php\s+\$rotClock\s*=\s*\\App\\Support\\RotLiveClock::snapshot\(\$session\)\s*;",compiled):
+        raise SystemExit("AM126_STOP_CANDIDATE_CLOCK_ASSIGNMENT_NOT_VALID_PHP")
+    lint=subprocess.run(["php","-l",str(compiled_php)],cwd=root,capture_output=True,text=True,timeout=25)
+    if lint.returncode:raise SystemExit("AM126_STOP_CANDIDATE_PHP_SYNTAX_FAILED "+lint.stderr[-240:])
+    print("AM126_CANDIDATE_COMPILED_CLOCK_ASSIGNMENT_PASS")
+
 if mode=="check":
     print("AM126_READONLY_PREFLIGHT_PASS");sys.exit(0)
 

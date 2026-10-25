@@ -26,7 +26,11 @@ rollback(){
 }
 trap rollback ERR
 python3 "$SCRIPT_DIR/apply.py" apply "$APP"
-php "$SCRIPT_DIR/verify.php"
+# Laravel CLI can report a rendering exception with process exit 0 on some
+# hosting environments. Require the explicit end-of-test PASS marker as well.
+VERIFY_OUTPUT="$(php "$SCRIPT_DIR/verify.php" 2>&1)"
+printf '%s\n' "$VERIFY_OUTPUT"
+printf '%s\n' "$VERIFY_OUTPUT" | grep -Fxq 'AM126_READ_ONLY_STAGING_RENDER_VERIFIED'
 STATUS="$(curl -sS -L --max-time 25 -o /dev/null -w '%{http_code}' https://staging.assammotors.com/erp/login)"
 echo "AM126_STAGING_LOGIN_HEALTH=$STATUS"
 test "$STATUS" = 200
