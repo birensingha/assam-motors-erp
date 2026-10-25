@@ -1,0 +1,108 @@
+name: AM124 OSL Delete Button STAGING
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/am124-osl-visible-delete-staging.yml','deployment/live-fixes/AM124_OSL_VISIBLE_DELETE/apply.py']
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint Python and JavaScript
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/AM124_OSL_VISIBLE_DELETE/apply.py
+          python3 - <<'PY'
+          from pathlib import Path
+          import ast,re
+          tree=ast.parse(Path('deployment/live-fixes/AM124_OSL_VISIBLE_DELETE/apply.py').read_text())
+          blocks=[n.value.value for n in ast.walk(tree) if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='addition' for t in n.targets) and isinstance(n.value,ast.Constant) and isinstance(n.value.value,str)]
+          assert len(blocks)==1
+          js=re.search(r'<script id="am124-osl-delete-script">(.*?)</script>',blocks[0],re.S)
+          assert js
+          Path('/tmp/am124.js').write_text(js.group(1))
+          for marker in ('data-am124-osl-delete','MutationObserver','data-am91-osl-edit','am91-delete'):assert marker in js.group(1)
+          print('AM124_JS_EXTRACT_PASS')
+          PY
+          node --check /tmp/am124.js
+      - name: Setup SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for i in 1 2 3 4;do
+            if ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Safe staging deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -p "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=12)
+            SCP=(scp -P "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=12)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT" -o ConnectTimeout=12)
+            SCP=(sshpass -e scp -P "$PORT" -o ConnectTimeout=12)
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p ~/AM124_OSL_VISIBLE_DELETE'
+          "${SCP[@]}" deployment/live-fixes/AM124_OSL_VISIBLE_DELETE/apply.py "$REMOTE:~/AM124_OSL_VISIBLE_DELETE/apply.py"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1";cd "$APP";test -f artisan && test -d vendor
+          PATCH="$HOME/AM124_OSL_VISIBLE_DELETE/apply.py"
+          python3 "$PATCH" check "$APP"
+          TMP="$(mktemp -d "$APP/storage/app/am124_preview_XXXXXXXX")"
+          trap 'rm -rf "$TMP"' EXIT
+          AM124_PREVIEW_OUTPUT="$TMP/show.blade.php" python3 "$PATCH" check "$APP"
+          php -r '
+            require "vendor/autoload.php";
+            $a=require "bootstrap/app.php";$a->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            file_put_contents($argv[2],\Illuminate\Support\Facades\Blade::compileString(file_get_contents($argv[1])));
+          ' "$TMP/show.blade.php" "$TMP/compiled.php"
+          php -l "$TMP/compiled.php"
+          BEFORE="$(sha256sum resources/views/job-cards/show.blade.php | cut -d' ' -f1)"
+          OUTPUT="$(python3 "$PATCH" apply "$APP")"
+          printf '%s\n' "$OUTPUT"
+          if printf '%s\n' "$OUTPUT" | grep -Fxq AM124_ALREADY_INSTALLED;then
+            echo AM124_ALREADY_PRESENT_NOOP;exit 0
+          fi
+          BACKUP="$(printf '%s\n' "$OUTPUT" | sed -n 's/^AM124_APPLIED_BACKUP=//p')"
+          test -n "$BACKUP" && test -f "$BACKUP"
+          test "$BEFORE" = "$(sha256sum "$BACKUP" | cut -d' ' -f1)"
+          rollback(){
+            echo AM124_QA_FAILURE_ROLLING_BACK
+            cp -p "$BACKUP" resources/views/job-cards/show.blade.php
+            php artisan view:clear >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          php artisan view:clear
+          php artisan view:cache
+          grep -Fq 'AM124_VISIBLE_OSL_DELETE' resources/views/job-cards/show.blade.php
+          grep -Fq 'data-am124-osl-delete' resources/views/job-cards/show.blade.php
+          php artisan route:list --path=job-cards | grep -F 'osl-billing' | grep -q DELETE
+          for p in /erp/login /staff/login;do
+            CODE="$(curl -sSL --max-time 20 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$p")"
+            echo "AM124_HEALTH_ $p $CODE";test "$CODE" = 200
+          done
+          trap - ERR
+          echo "AM124_STAGING_DEPLOY_PASS BACKUP=$BACKUP NO_DB_WRITES"
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
