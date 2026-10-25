@@ -166,8 +166,9 @@ def mutate(old):
 <a class="{{ !$am124ShowGst?'am124-selected':'' }}" href="{{ route('erp.job-cards.summary-print',$job->id) }}?gst=0">Without GST</a>
 <span>''',1)
     # Drop duplicate Job Card link (keeps one back link and print action).
-    unique(old, '<a href="{{ route(\'erp.job-cards.show\',$job->id) }}">← Job Card</a>',"BACK_LINK")
-    # toolbar duplicate link exists by our insert and original, so count must be 2.
+    # New and old toolbar Job Card links are both present until the next guard.
+    if old.count('<a href="{{ route(\'erp.job-cards.show\',$job->id) }}">← Job Card</a>')!=2:
+        abort("BACK_LINK_EXPECTED_TWICE")
     return old
 
 def compile_view(root,source):
