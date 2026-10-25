@@ -46,13 +46,14 @@ def tag_row(s, loop, var):
 src = tag_row(src, "$headParts as $part", "part")
 src = tag_row(src, "$headLabour as $line", "line")
 
-# New checkbox beside the existing Print button.
-button_re = re.compile(r"(<button\b[^>]*>[^<]*Print\s*/\s*Save as PDF[^<]*</button>)", re.I)
-if len(button_re.findall(src)) != 1:
-    raise SystemExit("STOP: Print button markup has changed")
+# Insert the checkbox in the document independently of the Print button's HTML.
+# The actual button may contain icons/spans or be an <a>, so do not parse its markup.
+# On DOM ready we move this control directly before the visible Print/Save as PDF action.
+if src.count("<body>") != 1:
+    raise SystemExit("STOP: cannot identify body opening")
 control = """<label class="am131-control"><input type="checkbox" id="am131-discount-switch"> Show Discount</label>
 """
-src = button_re.sub(lambda m: control + m.group(1), src, count=1)
+src = src.replace("<body>", "<body>\n" + control, 1)
 
 css = """<style id="AM131_SHOW_DISCOUNT_ONLY">
 .am131-control{display:inline-flex;align-items:center;gap:5px;white-space:nowrap;
@@ -60,6 +61,7 @@ css = """<style id="AM131_SHOW_DISCOUNT_ONLY">
   padding:7px 10px;font:700 12px Arial,Helvetica,sans-serif}
 .am131-control input{accent-color:#18558f;width:15px;height:15px}
 .am131-added{min-width:40px}
+@media screen{.toolbar{flex-wrap:wrap}.toolbar span{display:inline-flex;align-items:center;gap:7px;flex-wrap:wrap}}
 @media print{.am131-control{display:none!important}}
 </style>
 """
@@ -73,6 +75,14 @@ script = """<script id="am131-discount-script">
   function ready(){
     var input=document.getElementById('am131-discount-switch');
     if(!input)return;
+    var control=input.parentElement;
+    var toolbar=document.querySelector('.toolbar');
+    if(toolbar && control){
+      var actions=Array.prototype.slice.call(toolbar.querySelectorAll('button,a'));
+      var printAction=actions.find(function(el){return /Print\\s*\\/\\s*Save as PDF/i.test(el.textContent||'')});
+      if(printAction && printAction.parentNode)printAction.parentNode.insertBefore(control,printAction);
+      else toolbar.appendChild(control);
+    }
     function render(){
       var enabled=input.checked;
       Array.prototype.forEach.call(document.querySelectorAll('section.section'),function(section){
