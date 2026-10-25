@@ -1,0 +1,99 @@
+name: AM154 JC42 GST Total Guarded Reconciliation STAGING
+on:
+  pull_request:
+    branches: [main]
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-finance-jc42, cancel-in-progress: false}
+jobs:
+  reconcile:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'audit/am143-osl-jc-master-20261025'
+    runs-on: ubuntu-latest
+    timeout-minutes: 11
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: SSH
+        shell: bash
+        run: |
+          set -euo pipefail;install -d -m 700 ~/.ssh
+          for i in 1 2 3 4;do if ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi;sleep 3;done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Conditional JC42 financial reconciliation with audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then SSH=(ssh -p "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=12)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT" -o ConnectTimeout=12);fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          php -d display_errors=1 -d log_errors=0 <<'PHP'
+          <?php
+          error_reporting(E_ALL);
+          try{
+              require 'vendor/autoload.php';
+              $app=require 'bootstrap/app.php';
+              $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+              $db=\Illuminate\Support\Facades\DB::class;
+              $tax=\App\Services\JobCardTaxTotals::class;
+              $fmt=static fn($v)=>number_format((float)$v,2,'.','');
+              $result=$db::transaction(function()use($db,$tax,$fmt){
+                  $job=$db::table('job_cards')->where('id',42)->lockForUpdate()->first();
+                  if(!$job || $job->job_no!=='JC-20261025-00042'||$job->vehicle_reg_no!=='AS01BS5140'){
+                      throw new \RuntimeException('JC42 identity guard failed');
+                  }
+                  if(!in_array(strtolower(trim((string)$job->status)),['in-progress','in progress','wip','work in progress'],true))
+                      throw new \RuntimeException('JC42 not WIP');
+                  if($job->invoice_id || $db::table('invoices')->where('job_card_id',42)->whereRaw("LOWER(COALESCE(status,'')) <> 'reversed'")->exists())
+                      throw new \RuntimeException('Invoice exists - not reconciling');
+                  if(!$db::table('job_card_labour')->where('job_card_id',42)->where('id',91)->where('mechanic_name','OSL')->exists()
+                     || $db::table('job_card_labour')->where('job_card_id',42)->where('id',92)->exists())
+                      throw new \RuntimeException('JC42 OSL line identity changed');
+                  $correct=$tax::forJob(42);
+                  echo 'AM154_CURRENT='.$fmt($job->grand_total).PHP_EOL;
+                  echo 'AM154_AUTHORITATIVE='.$fmt($correct['grand_total']).PHP_EOL;
+                  if($fmt($job->grand_total)===$fmt($correct['grand_total']) &&
+                     $fmt($job->pre_round_total)===$fmt($correct['pre_round_total']))
+                      return 'ALREADY_MATCHED';
+                  foreach(['parts_total'=>'3469.22','labour_total'=>'3700.40','gst_total'=>'1290.53','pre_round_total'=>'7169.62','round_off'=>'0.38','grand_total'=>'7170.00'] as $k=>$expected)
+                      if($fmt($job->$k)!==$expected)throw new \RuntimeException('Unexpected existing JC42 '.$k.' - refused');
+                  foreach(['parts_total'=>'3469.22','labour_total'=>'3700.40','gst_total'=>'1290.53','pre_round_total'=>'8460.15','round_off'=>'-0.15','grand_total'=>'8460.00'] as $k=>$expected)
+                      if($fmt($correct[$k])!==$expected)throw new \RuntimeException('Unexpected calculated JC42 '.$k.' - refused');
+                  $before=array_intersect_key((array)$job,array_flip(['id','job_no','parts_total','labour_total','gst_total','pre_round_total','round_off','grand_total','updated_at']));
+                  $db::table('job_cards')->where('id',42)->update([
+                     'parts_total'=>$correct['parts_total'],'labour_total'=>$correct['labour_total'],
+                     'gst_total'=>$correct['gst_total'],'pre_round_total'=>$correct['pre_round_total'],
+                     'round_off'=>$correct['round_off'],'grand_total'=>$correct['grand_total'],'updated_at'=>now()
+                  ]);
+                  $after=(array)$db::table('job_cards')->where('id',42)->first();
+                  $db::table('job_card_change_audits')->insert([
+                    'job_card_id'=>42,'entity_type'=>'JOB_CARD','entity_id'=>42,
+                    'action'=>'AM154_STAGING_JC42_GST_RECONCILIATION',
+                    'before_json'=>json_encode($before,JSON_INVALID_UTF8_SUBSTITUTE),
+                    'after_json'=>json_encode(array_intersect_key($after,array_flip(array_keys($before))),JSON_INVALID_UTF8_SUBSTITUTE),
+                    'reason'=>'Owner-requested OSL billing repair: reconcile taxable+GST+roundoff to authoritative JC totals; no labour, purchase or payment mutation',
+                    'actor_id'=>null,'actor_name'=>'SYSTEM_AM154_STAGING_AUDITED',
+                    'created_at'=>now(),'updated_at'=>now(),
+                  ]);
+                  return 'UPDATED_WITH_AUDIT';
+              },3);
+              echo 'AM154_ACTION='.$result.PHP_EOL;
+              $after=$db::table('job_cards')->where('id',42)->first();
+              echo 'AM154_POST_TOTAL='.$fmt($after->grand_total).PHP_EOL;
+              echo 'AM154_POST_GST='.$fmt($after->gst_total).PHP_EOL;
+              echo 'AM154_POST_RECALC='.$fmt($tax::forJob(42)['grand_total']).PHP_EOL;
+              echo "AM154_COMPLETED\n";
+          }catch(\Throwable $e){
+              echo 'AM154_REJECTED='.get_class($e).' '.substr($e->getMessage(),0,230).PHP_EOL;
+              exit(1);
+          }
+          PHP
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
