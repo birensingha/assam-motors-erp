@@ -22,6 +22,7 @@
 .p133-help{font-size:11px;color:#58718a;margin:5px 0 0}
 .p133-toggle{display:flex;align-items:center;gap:9px;margin:5px 0 10px;background:#e8f5ff;border:1px solid #bad9ee;border-radius:9px;padding:10px;color:#174d75;font-size:12px;font-weight:800;text-transform:none}
 .p133-toggle input{accent-color:#14609b;min-width:16px;min-height:16px}
+.p133-toggle[hidden],.p133-multi[hidden]{display:none!important}
 .p133-multi{border:1px solid #b7d2e7;background:#f4faff;border-radius:9px;padding:10px;margin:7px 0}
 .p133-bills{display:grid;gap:7px;max-height:290px;overflow-y:auto;margin:10px 0}
 .p133-bill{display:grid;grid-template-columns:auto minmax(0,1fr) 115px;gap:8px;align-items:center;background:#fff;border:1px solid #cbddec;border-radius:8px;padding:8px}
