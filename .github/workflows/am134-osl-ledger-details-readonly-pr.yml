@@ -1,0 +1,55 @@
+name: AM134 OSL Vendor Payment Reference Detail
+on:
+  pull_request:
+    branches: [main]
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for i in 1 2 3 4;do
+            if ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Readonly voucher and purchase edit source ranges
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then SSH=(ssh -p "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=12)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT" -o ConnectTimeout=12);fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          echo AM134_PAYMENT_ALLOCATIONS_REFERENCES
+          grep -R -n 'workshop_payment_allocations' app/Http/Controllers/Web app/Services resources/views 2>/dev/null | head -n 80 || true
+          echo AM134_VENDOR_LEDGER_METHODS
+          grep -nE 'function |workshop_payment_vouchers|workshop_vendor_payments|workshop_payment_allocations|workshop_purchases|source_reference' app/Http/Controllers/Web/AdminVendorPageController.php | head -n 140
+          echo AM134_PAYMENT_CONTROLLER_NAMES
+          grep -nE 'function |workshop_payment_allocations|source_reference|payment_mode|against|purchase_ref|allocation' app/Http/Controllers/Web/AdminExpensePaymentPageController.php app/Http/Controllers/Web/AdminPaymentVoucherEditController.php | head -n 160 || true
+          echo AM134_OSL_EDITOR_ROUTE_IMPLEMENTATION
+          grep -R -n 'function oslEdit\|function oslSave\|function editOsl\|function saveOsl\|function oslIndex' app/Http/Controllers/Web | head -n 50 || true
+          echo AM134_ROUTES_TARGET
+          grep -n -C 2 -E 'fix48.osl-edit|fix48.osl-save|fix49.payment|vendor-payments|erp.payment-vouchers|payment-vouchers.create' routes/web.php | head -n 155 || true
+          echo AM134_PAYMENT_VIEW_LIST
+          find resources/views -maxdepth 3 -type f | grep -Ei 'payment|voucher|vendor|osl' | head -n 85
+          echo AM134_LIVE_OSL_EDIT_MODAL
+          sed -n '2428,2547p' resources/views/job-cards/show.blade.php | cut -c1-230
+          echo AM134_READ_ONLY_COMPLETE
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
