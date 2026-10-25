@@ -41,8 +41,12 @@ s=s.replace(rate_l,rate_l+'''\n<td class="num am130-discount">{{ number_format((
 # Headings appear in two summary tables.
 s=re.sub(head_pat,'''<th class="num am130-discount">Dis%</th><th class="num am130-discount">Dis Amt</th>\n\\1''',s)
 # Ensure empty and condensed rows span added fields only when enabled.
-s=s.replace('$am124ShowGst?10:6', '$am124ShowGst?10:8')
-s=s.replace('$am124ShowGst?9:5', '$am124ShowGst?9:7')
+# Keep original colspan when discount is hidden; expand only when it is shown.
+# Dedicated DOM data attributes allow the checkbox to update condensed/empty rows.
+if s.count('colspan="{{ $am124ShowGst?10:6 }}"')!=2 or s.count('colspan="{{ $am124ShowGst?9:5 }}"')!=2:
+    raise SystemExit('STOP: unexpected summary colspan markup')
+s=s.replace('colspan="{{ $am124ShowGst?10:6 }}"', 'colspan="{{ $am124ShowGst?10:6 }}" data-am130-base="6"')
+s=s.replace('colspan="{{ $am124ShowGst?9:5 }}"', 'colspan="{{ $am124ShowGst?9:5 }}" data-am130-base="5"')
 # Hidden by default; toggled via checkbox in print top area.
 css='''<style id="am130-discount-style">
 .am130-discount{display:none}
@@ -52,11 +56,13 @@ body.am130-show-discount .am130-discount{display:table-cell}
 '''
 s=s.replace('</head>',css+'</head>',1)
 toolbar='''<div class="am130-control" style="margin:8px 0;text-align:right;font:13px Arial">
-<label><input type="checkbox" id="am130-discount-toggle" onchange="document.body.classList.toggle('am130-show-discount',this.checked)"> Show Discount</label>
+<label><input type="checkbox" id="am130-discount-toggle" onchange="document.body.classList.toggle('am130-show-discount',this.checked);document.querySelectorAll('[data-am130-base]').forEach(function(c){c.colSpan=Number(c.dataset.am130Base)+(document.body.classList.contains('am130-show-discount')?2:0)})"> Show Discount</label>
 </div>
 '''
 s=s.replace('<body>', '<body>\n'+toolbar,1) if '<body>' in s else s
 if toolbar not in s:raise SystemExit('STOP: body tag differs')
+if s.count('am130-discount-toggle')!=1 or s.count('data-am130-base=')!=4:
+    raise SystemExit('STOP: injected layout validation failed')
 if mode=='check':print('AM130_PREFLIGHT_PASS_NO_WRITES');sys.exit(0)
 backup=path.with_name(path.name+'.AM130_'+datetime.datetime.now().strftime('%Y%m%d_%H%M%S')+'.bak')
 shutil.copy2(path,backup)
