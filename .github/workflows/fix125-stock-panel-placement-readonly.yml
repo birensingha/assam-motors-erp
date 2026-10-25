@@ -1,0 +1,63 @@
+name: FIX125 Parts Status Panel Placement - READ ONLY
+on:
+  push:
+    branches: [audit/fix125-jc-parts-status-20261025]
+    paths: ['.github/workflows/fix125-stock-panel-placement-readonly.yml']
+permissions:
+  contents: read
+jobs:
+  staging-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Configure remote access
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          for i in 1 2 3;do
+            ssh-keyscan -T 10 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null && break
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Inspect placement of existing stock controls read only
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=12 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=12 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f artisan
+          echo 'FIX125_PARTS_UI_PLACEMENT_READONLY_START'
+          echo '=== EXISTING STOCK PANEL ==='
+          sed -n '1,210p' resources/views/job-cards/part-stock-control.blade.php
+          echo '=== EXISTING VISIBLE ACTIONS ==='
+          sed -n '1,180p' resources/views/job-cards/part-actions-visible.blade.php
+          echo '=== STOCK PARTIAL INCLUDES ==='
+          grep -Rni 'part-stock-control\|part-actions-visible' resources/views/job-cards/show.blade.php resources/views/job-cards/*.blade.php | head -n 45 || true
+          echo 'FIX125_PARTS_UI_PLACEMENT_READONLY_COMPLETE'
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
