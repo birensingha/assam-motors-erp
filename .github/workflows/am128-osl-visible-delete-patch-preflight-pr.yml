@@ -1,0 +1,55 @@
+name: AM128 OSL Visible Delete Preflight
+on:
+  pull_request:
+    branches: [main]
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: SSH setup
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for i in 1 2 3 4;do
+            if ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Read only source preflight and preview compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then SSH=(ssh -p "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=12)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT" -o ConnectTimeout=12);fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          PATCH="$HOME/AM124_OSL_VISIBLE_DELETE/apply.py"
+          test -f "$PATCH"
+          echo 'AM128_PATCH_HASH';sha256sum "$PATCH"
+          echo 'AM128_READ_ONLY_CHECK'
+          python3 "$PATCH" check "$PWD"
+          echo 'AM128_CHECK_PASSED'
+          TMP="$(mktemp -d "$PWD/storage/app/am128_preview_XXXXXX")"
+          trap 'rm -rf "$TMP"' EXIT
+          AM124_PREVIEW_OUTPUT="$TMP/show.blade.php" python3 "$PATCH" check "$PWD"
+          php -r '
+           require "vendor/autoload.php";$a=require "bootstrap/app.php";$a->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+           file_put_contents($argv[2],\Illuminate\Support\Facades\Blade::compileString(file_get_contents($argv[1])));
+          ' "$TMP/show.blade.php" "$TMP/compiled.php"
+          php -l "$TMP/compiled.php"
+          echo 'AM128_READ_ONLY_BLADE_COMPILE_PASS'
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
