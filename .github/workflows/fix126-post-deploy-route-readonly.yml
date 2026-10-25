@@ -1,0 +1,75 @@
+name: FIX126 Bulk Parts Post-Deployment Verification - READ ONLY
+on:
+  push:
+    branches: [fix/fix126-bulk-issue-fit-20261025]
+    paths: ['.github/workflows/fix126-post-deploy-route-readonly.yml']
+permissions:
+  contents: read
+jobs:
+  staging-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Configure remote access
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          for i in 1 2 3;do
+            ssh-keyscan -T 10 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null && break
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Post deployment route URLs, UI and DB status verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=12 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=12 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f artisan
+          echo 'FIX126_POSTDEPLOY_READONLY_START'
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          foreach(['erp.job-cards.parts.issue-all','erp.job-cards.parts.fitted-all'] as $name) {
+            echo "NAMED_ROUTE_{$name}=".(\Illuminate\Support\Facades\Route::has($name)?'YES':'NO')."\n";
+            if(\Illuminate\Support\Facades\Route::has($name)) echo "URL_PATH_{$name}=".parse_url(route($name,40),PHP_URL_PATH)."\n";
+          }
+          $db=\Illuminate\Support\Facades\DB::class;
+          $rows=$db::table('job_card_parts')->where('job_card_id',40)->selectRaw('issue_status,COUNT(*) as n')->groupBy('issue_status')->get();
+          foreach($rows as $x) echo "JC40_STATUS={$x->issue_status} COUNT={$x->n}\n";
+          $count=$db::table('inventory_movements')->where('job_card_id',40)->where('movement_type','JOB_ISSUE')->count();
+          echo "JC40_STOCK_OUT_MOVEMENTS={$count}\n";
+          echo "FIX126_READ_ONLY_DATABASE_PASS\n";
+          PHP
+          echo '=== UI MARKER AND REMOVED PER-ROW FORMS ==='
+          grep -nE 'FIX126_BULK_PARTS_TWO_BUTTONS|Mark All Fitted|Issue All Parts|FIX126: individual' resources/views/job-cards/show.blade.php | head -n 12
+          echo 'FIX126_POSTDEPLOY_READONLY_COMPLETE'
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
