@@ -127,6 +127,10 @@ end="""                if ($billingLine) {
                     $saleGst=(float)$billingLine->gst_percent;
                 } else {"""
 once(ps,start,end,'do_not_overwrite_customer_price')
+# An existing JC billing line was not changed by its supplier purchase:
+# do not inadvertently re-sync legacy stored totals during cost inward.
+once(ps,"                $this->syncJobTotals($jobId);\n            }\n\n            $money = \\App\\Services\\OslPurchaseTax::quote",
+        "                if(!$billingLine) $this->syncJobTotals($jobId);\n            }\n\n            $money = \\App\\Services\\OslPurchaseTax::quote",'preserve_linked_jc_totals')
 # Presentation: remove approved estimate OSL voided from billing table, keep work history elsewhere.
 once(jc,"          @forelse($labour as $line)",
 """          @forelse(collect($labour)->filter(static fn($line)=>
