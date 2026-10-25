@@ -59,15 +59,15 @@ def main():
  raw=view.read_bytes()
  print("FIX125_MODE="+mode)
  print("FIX125_SHOW_SHA="+sha(raw))
- if MARKER in raw.decode("utf-8"):
+ if MARKER in raw.decode("utf-8","surrogateescape"):
   print("FIX125_ALREADY_APPLIED=YES");return
  if sha(raw)!=BASELINE:abort("UNEXPECTED_SHOW_SOURCE_SHA")
  if sha(part.read_bytes())!=PARTIAL_SHA:abort("STOCK_PARTIAL_SOURCE_CHANGED")
- src=patch(raw.decode("utf-8"))
+ src=patch(raw.decode("utf-8","surrogateescape"))
  print("FIX125_RESTORED_STOCK_ACTIONS=REQUISITION_ISSUE_FITTED")
  print("FIX125_AUTOMATIC_STOCK_ISSUE=NO")
  print("FIX125_CONTROLLERS_ROUTES_DB_UNCHANGED=YES")
- print("FIX125_NEW_SHOW_SHA="+sha(src.encode("utf-8")))
+ print("FIX125_NEW_SHOW_SHA="+sha(src.encode("utf-8","surrogateescape")))
  if mode=="check":
   print("FIX125_CHECK_PASS_NO_WRITES");return
  backups=root/"storage/app/am-backups";backups.mkdir(parents=True,exist_ok=True)
@@ -79,12 +79,12 @@ def main():
  tmp=view.with_name(".show.fix125.tmp.blade.php")
  if tmp.exists():abort("TEMP_ALREADY_EXISTS")
  try:
-  tmp.write_text(src,encoding="utf-8")
+  tmp.write_bytes(src.encode("utf-8","surrogateescape"))
   os.chmod(tmp,view.stat().st_mode&0o777)
   compile_blade(root,tmp)
   if sha(view.read_bytes())!=BASELINE:abort("VIEW_CHANGED_CONCURRENTLY")
   os.replace(tmp,view)
-  if sha(view.read_bytes())!=sha(src.encode("utf-8")):
+  if sha(view.read_bytes())!=sha(src.encode("utf-8","surrogateescape")):
    view.write_bytes(raw)
    abort("POST_WRITE_MISMATCH_ROLLED_BACK")
   print("FIX125_STAGING_PARTS_UI_APPLIED=YES")
