@@ -90,11 +90,8 @@ def mutate_view(raw):
     if src.count(ADD_ANCHOR)!=1:fail("PARTS_INSERTION_ANCHOR_COUNT")
     if src.count(PARTIAL)!=1:fail("EXISTING_PART_STOCK_ACTIONS_ANCHOR_COUNT")
     start=src.index(ADD_ANCHOR)
-    at=src.rfind("  ",0,start)
-    # Only insert before a real Blade comment, preserving existing markup.
-    open_comment=src.rfind("{{--",0,start)
-    if open_comment<0 or start-open_comment>4:fail("PARTS_COMMENT_UNEXPECTED")
-    src=src[:open_comment]+BULK_UI+src[open_comment:]
+    # ADD_ANCHOR itself starts with the exact Blade comment opener.
+    src=src[:start]+BULK_UI+src[start:]
     src=src.replace(PARTIAL,"{{-- FIX126: individual Requisition/Issue/Fitted controls replaced by two bulk actions. --}}",1)
     if src.count(MARKER)!=1:fail("VIEW_PATCH_BAD")
     return src.encode("utf-8","surrogateescape")
