@@ -1,0 +1,113 @@
+name: AM137 OSL Edit + Purchase Reference STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/am137-osl-edit-purchase-links-staging.yml'
+      - 'deployment/live-fixes/AM137_OSL_PURCHASE_EDIT_LINKS/apply.py'
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python + Javascript static checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/AM137_OSL_PURCHASE_EDIT_LINKS/apply.py
+          python3 - <<'PY'
+          from pathlib import Path
+          import ast,re
+          tree=ast.parse(Path('deployment/live-fixes/AM137_OSL_PURCHASE_EDIT_LINKS/apply.py').read_text())
+          blocks=[n.value.value for n in ast.walk(tree)
+            if isinstance(n,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='addition' for t in n.targets)
+            and isinstance(n.value,ast.Constant) and isinstance(n.value.value,str)]
+          assert len(blocks)==1
+          js=re.search(r'<script id="am137-osl-edit-actions">(.*?)</script>',blocks[0],re.S)
+          assert js and 'data-am137-link-line' in blocks[0]
+          source=js.group(1).replace("@json(route('erp.purchases.osl.create'))",'"\/erp\/purchases\/osl\/create"')
+          Path('/tmp/am137-inline.js').write_text(source)
+          print('AM137_SOURCE_JS_EXTRACTED')
+          PY
+          node --check /tmp/am137-inline.js
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for attempt in 1 2 3 4;do
+            if ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: STAGING-only preflight, backup, apply with rollback
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -p "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=12)
+            SCP=(scp -P "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=12)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT" -o ConnectTimeout=12)
+            SCP=(sshpass -e scp -P "$PORT" -o ConnectTimeout=12)
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p ~/AM137_OSL_PURCHASE_EDIT_LINKS'
+          "${SCP[@]}" deployment/live-fixes/AM137_OSL_PURCHASE_EDIT_LINKS/apply.py "$REMOTE:~/AM137_OSL_PURCHASE_EDIT_LINKS/apply.py"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1";cd "$APP";test -f artisan && test -d vendor
+          PATCH="$HOME/AM137_OSL_PURCHASE_EDIT_LINKS/apply.py"
+          python3 "$PATCH" check "$APP"
+          TMP="$(mktemp -d "$APP/storage/app/am137_preview_XXXXXX")"
+          trap 'rm -rf "$TMP"' EXIT
+          AM137_PREVIEW="$TMP/show.blade.php" python3 "$PATCH" check "$APP"
+          php -r '
+          require "vendor/autoload.php";
+          $app=require "bootstrap/app.php";$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          file_put_contents($argv[2],\Illuminate\Support\Facades\Blade::compileString(file_get_contents($argv[1])));
+          ' "$TMP/show.blade.php" "$TMP/compiled.php"
+          php -l "$TMP/compiled.php"
+          OUTPUT="$(python3 "$PATCH" apply "$APP")"
+          printf '%s\n' "$OUTPUT"
+          if printf '%s\n' "$OUTPUT" | grep -Fxq AM137_ALREADY_INSTALLED;then
+             echo AM137_ALREADY_INSTALLED_NOOP;exit 0
+          fi
+          BACKUP="$(printf '%s\n' "$OUTPUT" | sed -n 's/^AM137_BACKUP=//p')"
+          test -n "$BACKUP" && test -f "$BACKUP"
+          rollback(){
+            echo AM137_ROLLBACK_VIEW
+            cp -p "$BACKUP" resources/views/job-cards/show.blade.php
+            php artisan view:clear >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          php artisan view:clear
+          php artisan view:cache
+          grep -Fq AM137_OSL_EDIT_PURCHASE_LINKS resources/views/job-cards/show.blade.php
+          grep -Fq 'Payment Against Reference' resources/views/job-cards/show.blade.php
+          php artisan route:list | grep -F 'erp.fix48.osl-edit' >/dev/null
+          php artisan route:list | grep -F 'erp.payments.create' >/dev/null
+          for p in /erp/login /staff/login;do
+            STATUS="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$p")"
+            echo "AM137_HEALTH $p $STATUS"
+            test "$STATUS" = 200
+          done
+          trap - ERR
+          echo "AM137_STAGING_DEPLOY_PASS BACKUP=$BACKUP NO_DATABASE_WRITES"
+          REMOTE
+      - name: Remove temp SSH credential
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
