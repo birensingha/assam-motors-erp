@@ -20,6 +20,27 @@ jobs:
           set -euo pipefail
           python3 -m py_compile deployment/live-fixes/AM146_OSL_MASTER_LINK/apply.py
           php -l deployment/live-fixes/AM146_OSL_MASTER_LINK/AdminOslQuickMasterController.php
+          python3 - <<'PY'
+          import ast,re
+          from pathlib import Path
+          tree=ast.parse(Path('deployment/live-fixes/AM146_OSL_MASTER_LINK/apply.py').read_text())
+          blocks={}
+          for node in ast.walk(tree):
+            if isinstance(node,ast.Assign) and isinstance(node.value,ast.Constant) and isinstance(node.value.value,str):
+              for target in node.targets:
+                if isinstance(target,ast.Name) and target.id in ('ui','pui'):
+                  blocks[target.id]=node.value.value
+          assert 'ui' in blocks and 'pui' in blocks
+          for label,block,tag in [('jc',blocks['ui'],'am146-osl-calculations'),('purchase',blocks['pui'],'am146-purchase-link-script')]:
+            match=re.search(r'<script id="'+tag+r'">(.*?)</script>',block,re.S)
+            assert match,label
+            code=match.group(1).replace("@json(route('erp.osl-masters.quick-create'))", '"/erp/osl-masters/quick-create"')
+            code=code.replace("@json($am146Masters)",'[]').replace("@json($oslBillingOptions)",'[]')
+            Path('/tmp/am146-'+label+'.js').write_text(code)
+          print('AM146_EXTRACTED_2_JS_BLOCKS')
+          PY
+          node --check /tmp/am146-jc.js
+          node --check /tmp/am146-purchase.js
       - name: Configure staging SSH
         shell: bash
         run: |
