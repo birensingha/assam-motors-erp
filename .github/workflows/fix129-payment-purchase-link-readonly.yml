@@ -1,0 +1,97 @@
+name: FIX129 Payment JC/Vehicle Purchase Link - READ ONLY
+on:
+  push:
+    branches: [audit/fix129-payment-jc-link-20261025]
+    paths: ['.github/workflows/fix129-payment-purchase-link-readonly.yml']
+permissions:
+  contents: read
+jobs:
+  staging-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Configure remote access
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          for i in 1 2 3;do
+            ssh-keyscan -T 10 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null && break
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Inspect Payment Voucher JC mapping and selected Purchase Bill linkage read only
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=12 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=12 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f artisan
+          echo 'FIX129_AUDIT_START'
+          echo '=== PAYMENT PAGE FILES ==='
+          find resources/views/payments app/Http/Controllers/Web app/Services -maxdepth 3 -type f \( -iname '*Payment*' -o -path '*/payments/*' \) -print 2>/dev/null | head -n 65 || true
+          echo '=== PAYMENT MAPPING ANCHORS ==='
+          grep -nEi -C 4 'JC / VEHICLE|jcVehicle|jc_vehicle|job_no|vehicle_reg_no|purchase_batch_no|workshop_purchase_batches|payment against|paymentAgainst|source_type' resources/views/payments/*.blade.php app/Http/Controllers/Web/*Payment*.php app/Services/*Payment*.php 2>/dev/null | head -n 220 || true
+          echo '=== SCHEMA AND SELECTED PURCHASE BILL (READ ONLY) ==='
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $schema=\Illuminate\Support\Facades\Schema::class;
+          $db=\Illuminate\Support\Facades\DB::class;
+          foreach(['workshop_purchase_batches','workshop_purchases','job_cards','payment_vouchers'] as $table) {
+            if (!$schema::hasTable($table)){echo "TABLE_{$table}=MISSING\n";continue;}
+            echo "COLUMNS_{$table}=".implode(',',$schema::getColumnListing($table))."\n";
+          }
+          $bill='PB-261025124019-467';
+          if($schema::hasTable('workshop_purchase_batches')) {
+            $cols=$schema::getColumnListing('workshop_purchase_batches');
+            $key=in_array('batch_no',$cols,true)?'batch_no':(in_array('purchase_batch_no',$cols,true)?'purchase_batch_no':null);
+            if($key) {
+              $r=$db::table('workshop_purchase_batches')->where($key,$bill)->first();
+              echo "BILL_HEADER_FOUND=".($r?'YES':'NO')."\n";
+              if($r)foreach(['id','batch_no','job_card_id','purchase_type','grand_total','vendor_id'] as $key) if(property_exists($r,$key)) echo "BILL_HEADER_{$key}=".($r->{$key}??'NULL')."\n";
+            }
+          }
+          if($schema::hasTable('workshop_purchases')) {
+            $cols=$schema::getColumnListing('workshop_purchases');
+            if(in_array('purchase_batch_no',$cols,true)) {
+              $rows=$db::table('workshop_purchases')->where('purchase_batch_no',$bill)->orderBy('id')->get();
+              echo "BILL_LINE_COUNT=".$rows->count()."\n";
+              foreach($rows as $r) {
+                $jid=$r->job_card_id??null;
+                $job=$jid?$db::table('job_cards')->where('id',$jid)->first(['job_no','vehicle_reg_no']):null;
+                echo "LINE_ID={$r->id} TYPE=".($r->purchase_type??'NULL')." JC_ID=".($jid??'NULL')." JC_NO=".($job->job_no??'NULL')." VEHICLE=".($job->vehicle_reg_no??'NULL')."\n";
+              }
+            }
+          }
+          echo "FIX129_DB_READ_ONLY_COMPLETE\n";
+          PHP
+          echo 'FIX129_AUDIT_COMPLETE_NO_WRITES'
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
