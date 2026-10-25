@@ -25,18 +25,15 @@ def patch(txt):
  label='<div class="muted">{{ $p->part_code }} {{ $p->part_number }}</div>'
  if block.count(label)!=1:abort("PART_LABEL_ANCHOR_MISMATCH")
  block=block.replace(label,label+'\n           {{-- '+MARKER+': billing selection and physical fitting are distinct. --}}\n           <div class="muted" style="font-size:10px;margin-top:2px">Stock: <strong>{{ strtoupper(trim((string)($p->issue_status ?? \'PLANNED\'))) }}</strong></div>',1)
- action_end='''           </details>
-           @endif
-         </td>
-       </tr>'''
- if block.count(action_end)!=1:abort("PART_ACTION_END_ANCHOR_MISMATCH")
- insert='''           </details>
-           {{-- FIX125: existing audited stock transitions; no automatic stock movement. --}}
-           @include('job-cards.part-stock-control', ['p' => $p])
-           @endif
-         </td>
-       </tr>'''
- block=block.replace(action_end,insert,1)
+ # The last action-cell @endif in the Parts loop closes the Edit/Delete controls.
+ # Match structurally to avoid whitespace variations from legacy Blade revisions.
+ marker=block.rfind("@endif")
+ if marker<0:abort("LAST_ACTION_ENDIF_MISSING")
+ tail=block[marker+len("@endif"):]
+ import re
+ if not re.fullmatch(r"\s*</td>\s*</tr>\s*",tail):
+  abort("LAST_ACTION_ENDIF_NOT_PARTS_ACTION_CELL")
+ block=block[:marker]+"{{-- FIX125: audited stock controls; no automatic stock movement. --}}\n           @include('job-cards.part-stock-control', ['p' => $p])\n           "+block[marker:]
  out=before+block+after
  if out.count(MARKER)!=1 or out.count("           @include('job-cards.part-stock-control', ['p' => $p])")!=1:abort("INTEGRITY_FAILURE")
  if out.count("{{ $p->total+$amJcPartsTax")!=txt.count("{{ $p->total+$amJcPartsTax"): abort("PRICING_CHANGED")
