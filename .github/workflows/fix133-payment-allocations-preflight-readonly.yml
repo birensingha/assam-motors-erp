@@ -1,0 +1,75 @@
+name: FIX133 Payment Allocation Structural Preflight - READ ONLY
+on:
+  push:
+    branches: [audit/fix132-vendor-balance-multipayment-20261025]
+    paths: ['.github/workflows/fix133-payment-allocations-preflight-readonly.yml']
+permissions:
+  contents: read
+jobs:
+  staging-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Configure remote access
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          for i in 1 2 3;do
+            ssh-keyscan -T 10 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null && break
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Inspect payment save/void/show and money receipt theme source read only
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=12 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=12 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f artisan
+          echo 'FIX133_AUDIT_BEGIN'
+          sha256sum app/Http/Controllers/Web/AdminExpensePaymentPageController.php app/Services/ExpensePaymentService.php resources/views/payments/create.blade.php resources/views/payments/show.blade.php public/js/payment-voucher.js app/Http/Controllers/Web/AdminPaymentVoucherEditController.php
+          echo '=== VOUCHER SAVE SHOW VOID SERVICE ==='
+          grep -nE "function (showPayment|voidPayment|payableSources|savePayment|resolveSource|createVoucher|searchPayments)" app/Services/ExpensePaymentService.php
+          sed -n '186,250p' app/Services/ExpensePaymentService.php
+          sed -n '255,375p' app/Services/ExpensePaymentService.php
+          echo '=== VOUCHER SHOW TEMPLATE ==='
+          sed -n '1,155p' resources/views/payments/show.blade.php
+          echo '=== VOUCHER MODEL ==='
+          sed -n '1,145p' app/Models/WorkshopPaymentVoucher.php
+          echo '=== MIGRATION AREA ==='
+          ls -1 database/migrations/ | tail -n 14
+          echo '=== EXISTING PAYMENT AUDIT TABLES ==='
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';$app=require 'bootstrap/app.php';$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $s=\Illuminate\Support\Facades\Schema::class;
+          foreach(['workshop_payment_edit_audits','workshop_payment_vouchers','workshop_payment_allocations','workshop_voucher_allocations'] as $t)echo $t.'_EXISTS='.($s::hasTable($t)?'YES':'NO').PHP_EOL;
+          PHP
+          echo 'FIX133_AUDIT_COMPLETE'
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
