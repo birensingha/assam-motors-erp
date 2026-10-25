@@ -1,0 +1,65 @@
+name: FIX131 Payment Voucher Source JC Context - READ ONLY
+on:
+  push:
+    branches: [audit/fix131-voucher-jc-context-20261025]
+    paths: ['.github/workflows/fix131-payment-jc-source-readonly.yml']
+permissions:
+  contents: read
+jobs:
+  staging-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Configure remote access
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          for i in 1 2 3;do
+            ssh-keyscan -T 10 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null && break
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Audit Purchase-to-Payment Voucher JC context without writes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=12 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=12 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f artisan
+          echo 'FIX131_READONLY_BEGIN'
+          echo '=== VOUCHER CREATE VIEW LOCATION ==='
+          grep -RnlE 'New Payment Voucher|Select Outstanding Source|JC / VEHICLE|JC / Vehicle' resources/views | head -n 20 || true
+          echo '=== VOUCHER OUTSTANDING SERVICE ==='
+          nl -ba app/Services/ExpensePaymentService.php | sed -n '115,232p'
+          echo '=== VOUCHER CONTROLLER ==='
+          nl -ba app/Http/Controllers/Web/AdminExpensePaymentPageController.php | sed -n '1,195p'
+          echo '=== VOUCHER JC RELATED SOURCE ==='
+          grep -RniE 'source_reference|job_no|vehicle_reg_no|job_card_id|against.*purchase' resources/views/workshop-controls resources/views/payments app/Http/Controllers/Web/AdminExpensePaymentPageController.php 2>/dev/null | head -n 105 || true
+          echo 'FIX131_READONLY_COMPLETE'
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
