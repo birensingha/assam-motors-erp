@@ -86,33 +86,7 @@ jobs:
             echo "AM151_HEALTH $url $status";test "$status" = 200
           done
           echo AM151_SAFE_STAGING_UI_CONTROLLER_PASS
-          # One-time idempotent master catalog backfill for this exact already
-          # existing historical JC OSL service. Never changes JC/purchase/ledger.
-          php <<'PHP'
-          <?php
-          require 'vendor/autoload.php';$a=require 'bootstrap/app.php';
-          $a->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-          use Illuminate\Support\Facades\DB;
-          $row=DB::table('job_card_labour')
-            ->where('id',91)->where('job_card_id',42)
-            ->whereRaw("UPPER(TRIM(COALESCE(mechanic_name,'')))='OSL'")->first();
-          if(!$row||mb_strtoupper(trim((string)$row->description))!=='SILENCER WELDING'){
-              echo "AM151_TARGET_NOT_MATCHED_NO_MASTER_CHANGE\n";
-              exit(0);
-          }
-          DB::transaction(function()use($row){
-              $existing=DB::table('workshop_osl_master')->whereRaw('LOWER(TRIM(osl_name))=?',['silencer welding'])->lockForUpdate()->first();
-              if($existing){echo "AM151_MASTER_ALREADY_EXISTS_ID=".$existing->id.PHP_EOL;return;}
-              $id=DB::table('workshop_osl_master')->insertGetId([
-                 'osl_code'=>'OSL-Q-'.strtoupper(substr(str_replace('-','',(string)\Illuminate\Support\Str::uuid()),0,14)),
-                 'osl_name'=>'SILENCER WELDING','category'=>'OUTSIDE LABOUR',
-                 'default_cost'=>0,'gst_percent'=>0,'active'=>1,
-                 'created_at'=>now(),'updated_at'=>now()
-              ]);
-              echo "AM151_NEW_MASTER_SILENCER_WELDING_ID=".$id.PHP_EOL;
-          },3);
-          echo AM151_MASTER_CATALOG_BACKFILL_DONE
-          PHP
+          echo AM151_MASTER_BACKFILL_SEPARATED_FOR_DB_DIAGNOSTIC
           trap - ERR
           echo AM151_STAGING_DEPLOY_FINISHED
           REMOTE
