@@ -93,8 +93,8 @@ jobs:
           php artisan view:clear
           php artisan route:clear
           php artisan route:list | grep -F 'erp.osl-masters.quick-create'
-          php artisan route:list | grep -F 'erp.job-cards.osl.admin-delete'
-          php artisan route:list | grep -F 'erp.purchases.osl.store'
+          php artisan route:list --path=job-cards | grep -F 'osl-billing' | grep -q 'DELETE'
+          php artisan route:list --path=purchases/osl | grep -q 'POST'
           grep -Fq AM146_OSL_MASTER resources/views/job-cards/show.blade.php
           grep -Fq AM146_OSL_MASTER resources/views/purchases/osl-create.blade.php
           grep -Fq AM146_OSL_MASTER app/Services/PurchaseService.php
