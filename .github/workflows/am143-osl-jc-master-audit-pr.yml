@@ -1,0 +1,70 @@
+name: AM143 OSL JC and Purchase Master Read Only
+on:
+  pull_request:
+    branches: [main]
+permissions: {contents: read}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for i in 1 2 3 4;do if ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi;sleep 3;done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Read-only source and schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then SSH=(ssh -p "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=12)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT" -o ConnectTimeout=12);fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          echo 'AM143_VIEW_OSL_GRID'
+          sed -n '1130,1225p' resources/views/job-cards/show.blade.php | cut -c1-240
+          echo 'AM143_VIEW_OSL_FORM_MASTER'
+          sed -n '1315,1395p' resources/views/job-cards/show.blade.php | cut -c1-230
+          echo 'AM143_VIEW_OSL_MODAL'
+          sed -n '2370,2560p' resources/views/job-cards/show.blade.php | cut -c1-230
+          echo 'AM143_VIEW_AM137'
+          sed -n '2845,3090p' resources/views/job-cards/show.blade.php | cut -c1-230
+          echo 'AM143_OSL_PURCHASE_FORM'
+          sed -n '40,190p' resources/views/purchases/osl-create.blade.php | cut -c1-230
+          echo 'AM143_OSL_PURCHASE_SCRIPT_REFERENCES'
+          grep -nEi 'osl_master|osl-master|oslMaster|osls|js-|addLine|labour_line|customer_rate|job_card_id|options|datalist' resources/views/purchases/osl-create.blade.php | head -n 125 || true
+          echo 'AM143_PURCHASE_CONTROLLER'
+          grep -nEi -C 3 'createOsl|storeOsl|oslMaster|osl_master|osl-create|OSL Master|function.*Osl' app/Http/Controllers/Web/AdminPurchasePageController.php | head -n 190 || true
+          echo 'AM143_OSL_BILLING_CONTROLLER'
+          sed -n '1,175p' app/Http/Controllers/Web/AdminJobCardOslLineController.php | cut -c1-235
+          echo 'AM143_OSL_MASTER_ROUTES'
+          php artisan route:list | grep -Ei 'osl-master|osl-master|osl-items|osl.*master|job-cards.*osl|osl.create|osl.store' | head -n 55 || true
+          echo 'AM143_SCHEMA'
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';$a=require 'bootstrap/app.php';
+          $a->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          use Illuminate\Support\Facades\DB;
+          use Illuminate\Support\Facades\Schema;
+          foreach(['workshop_osl_master','job_card_labour','workshop_purchases','job_estimate_items','job_cards'] as $table){
+            echo 'AM143_TABLE='.$table.'|'.implode(',',Schema::getColumnListing($table)).PHP_EOL;
+          }
+          $rows=DB::table('workshop_osl_master')->select('id','osl_code','osl_name','active')->orderBy('id')->limit(12)->get();
+          foreach($rows as $r)echo 'AM143_OSL_MASTER='.json_encode($r).PHP_EOL;
+          echo 'AM143_OSL_MASTER_COUNT='.DB::table('workshop_osl_master')->count().PHP_EOL;
+          echo "AM143_DB_READ_ONLY_COMPLETE\n";
+          PHP
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
