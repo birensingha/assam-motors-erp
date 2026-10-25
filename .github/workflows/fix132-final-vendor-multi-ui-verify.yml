@@ -1,0 +1,74 @@
+name: FIX132 Vendor Card and Multi Bill Payment - FINAL CHECK
+on:
+  push:
+    branches: [audit/fix132-vendor-outstanding-payment-multi-20261025]
+    paths: ['.github/workflows/fix132-final-vendor-multi-ui-verify.yml']
+permissions:
+  contents: read
+jobs:
+  staging-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Configure remote access
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          for i in 1 2 3;do
+            ssh-keyscan -T 10 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null && break
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Audit Vendor Master card vs ledger outstanding for vendor 5
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=12 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=12 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f artisan
+          echo 'FIX132_FINAL_VERIFY_BEGIN'
+          sed -n '395,428p' app/Http/Controllers/Web/AdminWorkshopControlPageController.php
+          echo '=== MULTI PAYMENT CONTROLLER AND VIEW ==='
+          sed -n '65,95p' app/Http/Controllers/Web/AdminExpensePaymentPageController.php
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $d=$app->make(\App\Services\VendorService::class)->ledger(5);
+          echo 'VENDOR5_CARD_EXPECTED_OUTSTANDING='.$d['summary']['outstanding'].PHP_EOL;
+          $s=\Illuminate\Support\Facades\Schema::class;
+          echo 'MULTI_ALLOCATIONS_TABLE_PRESENT='.($s::hasTable('workshop_payment_allocations')?'YES':'NO').PHP_EOL;
+          echo 'VENDOR5_LEDGER_ROW_COUNT='.count($d['entries']).PHP_EOL;
+          echo 'FIX132_FINAL_READ_ONLY_PASS'.PHP_EOL;
+          PHP
+          echo '=== MONEY RECEIPT STYLE & MULTI BILL UI ==='
+          grep -nE 'p133-heading|p133-multi-bills|p133-payment-mode|p133-preview|p133-save' resources/views/payments/create.blade.php | head -n 15
+          echo 'FIX132_FINAL_VERIFY_COMPLETE'
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
