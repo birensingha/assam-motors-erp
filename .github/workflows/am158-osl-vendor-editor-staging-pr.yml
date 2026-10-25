@@ -1,0 +1,106 @@
+name: AM158 Vendor Details OSL Cost Editor STAGING
+on:
+  pull_request:
+    branches: [main]
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'audit/am156-osl-editor-vendor-detail-20261025'
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Installer lint
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/AM157_OSL_VENDOR_DETAILS/apply.py
+      - name: SSH setup
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for i in 1 2 3 4;do
+            if ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Source preflight and guarded STAGING deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -p "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=12)
+            SCP=(scp -P "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=12)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT" -o ConnectTimeout=12)
+            SCP=(sshpass -e scp -P "$PORT" -o ConnectTimeout=12)
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p ~/AM157_OSL_VENDOR_DETAILS'
+          "${SCP[@]}" deployment/live-fixes/AM157_OSL_VENDOR_DETAILS/apply.py "$REMOTE:~/AM157_OSL_VENDOR_DETAILS/apply.py"
+          "${SSH[@]}" "$REMOTE" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          APP="$HOME/domains/assammotors.com/assam-erp-staging"
+          cd "$APP"
+          PATCH="$HOME/AM157_OSL_VENDOR_DETAILS/apply.py"
+          python3 "$PATCH" check "$APP"
+          TMP="$(mktemp -d "$APP/storage/app/am158_preview_XXXXXXXX")"
+          trap 'rm -rf "$TMP"' EXIT
+          AM157_PREVIEW_DIR="$TMP" python3 "$PATCH" check "$APP"
+          php -l "$TMP/app/Http/Controllers/Web/AdminWorkshopControlPageController.php"
+          php -r '
+            require "vendor/autoload.php";$app=require "bootstrap/app.php";
+            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            file_put_contents($argv[2],\Illuminate\Support\Facades\Blade::compileString(file_get_contents($argv[1])));
+          ' "$TMP/resources/views/workshop-controls/osl-edit.blade.php" "$TMP/osl-edit-compiled.php"
+          php -l "$TMP/osl-edit-compiled.php"
+          php -r '
+            require "vendor/autoload.php";$app=require "bootstrap/app.php";
+            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $db=\Illuminate\Support\Facades\DB::class;
+            echo "AM158_VENDOR16_EXISTS=".($db::table("workshop_vendors")->where("id",16)->exists()?"YES":"NO").PHP_EOL;
+          '
+          out="$(python3 "$PATCH" apply "$APP")"
+          printf '%s\n' "$out"
+          if printf '%s\n' "$out" | grep -Fxq AM157_ALREADY_INSTALLED;then
+             echo AM158_INSTALLED_NOOP
+             exit 0
+          fi
+          BACKUP="$(printf '%s\n' "$out" | sed -n 's/^AM157_BACKUP=//p')"
+          test -n "$BACKUP" && test -f "$BACKUP/app/Http/Controllers/Web/AdminWorkshopControlPageController.php"
+          test -f "$BACKUP/resources/views/workshop-controls/osl-edit.blade.php"
+          rollback(){
+            echo AM158_ROLLBACK_STAGING_VENDOR_EDITOR
+            cp -p "$BACKUP/app/Http/Controllers/Web/AdminWorkshopControlPageController.php" app/Http/Controllers/Web/AdminWorkshopControlPageController.php
+            cp -p "$BACKUP/resources/views/workshop-controls/osl-edit.blade.php" resources/views/workshop-controls/osl-edit.blade.php
+            php artisan view:clear >/dev/null 2>&1 || true
+          }
+          trap rollback ERR
+          php artisan view:clear
+          php artisan view:cache
+          grep -Fq AM157_VENDOR_MASTER_DETAILS app/Http/Controllers/Web/AdminWorkshopControlPageController.php
+          grep -Fq 'View Vendor Ledger' resources/views/workshop-controls/osl-edit.blade.php
+          php artisan route:list --path=vendors | grep -q 'ledger'
+          for p in /erp/login /staff/login;do
+            code="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$p")"
+            echo "AM158_HEALTH $p $code"
+            test "$code" = 200
+          done
+          trap - ERR
+          echo "AM158_STAGING_VENDOR_DETAILS_DEPLOY_PASS BACKUP=$BACKUP NO_DATABASE_WRITES"
+          REMOTE
+      - name: Clear SSH file
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
