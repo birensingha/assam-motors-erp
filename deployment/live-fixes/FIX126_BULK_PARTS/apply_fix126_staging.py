@@ -167,9 +167,11 @@ def main():
             execute(["php","artisan","route:clear"],root)
             execute(["php","artisan","view:clear"],root)
             routeslist=execute(["php","artisan","route:list","--name=erp.job-cards.parts.issue-all"],root)
+            print("FIX126_ROUTE_ISSUE_DIAGNOSTIC="+repr(routeslist[:950]))
             if "erp.job-cards.parts.issue-all" not in routeslist:
                 raise RuntimeError("BATCH_ISSUE_ROUTE_NOT_REGISTERED")
             routeslist=execute(["php","artisan","route:list","--name=erp.job-cards.parts.fitted-all"],root)
+            print("FIX126_ROUTE_FITTED_DIAGNOSTIC="+repr(routeslist[:950]))
             if "erp.job-cards.parts.fitted-all" not in routeslist:
                 raise RuntimeError("BATCH_FITTED_ROUTE_NOT_REGISTERED")
             print("FIX126_BATCH_ROUTES_REGISTERED=YES")
