@@ -1,0 +1,55 @@
+name: AM135 OSL Vendor Voucher Implementation Audit
+on:
+  pull_request:
+    branches: [main]
+permissions: {contents: read}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for i in 1 2 3 4;do
+            if ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Read only payment implementation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then SSH=(ssh -p "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=12)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT" -o ConnectTimeout=12);fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          echo AM135_ROUTES_PAYMENT
+          grep -n -C 2 -E 'payments.create|payments.store|osl-edit|vendors.ledger' routes/web.php | head -n 110
+          echo AM135_PAYMENT_CREATE_VIEW
+          sed -n '1,230p' resources/views/payments/create.blade.php | cut -c1-220
+          echo AM135_PAYMENT_PAGE_CONTROLLER
+          sed -n '57,112p' app/Http/Controllers/Web/AdminExpensePaymentPageController.php
+          echo AM135_MULTI_SERVICE
+          sed -n '1,175p' app/Services/MultiPurchasePaymentService.php | cut -c1-240
+          echo AM135_VENDOR_SERVICE_REFERENCES
+          grep -nE 'function ledger|function |allocation|payment|purchase|OSL' app/Services/VendorService.php | head -n 120 || true
+          echo AM135_OSL_EDIT_TEMPLATE
+          sed -n '1,185p' resources/views/workshop-controls/osl-edit.blade.php | cut -c1-230
+          echo AM135_OSL_CONTROLLER
+          sed -n '245,365p' app/Http/Controllers/Web/AdminWorkshopControlPageController.php | cut -c1-230
+          echo AM135_READONLY_COMPLETE
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
