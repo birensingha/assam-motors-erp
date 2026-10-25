@@ -1,0 +1,97 @@
+name: AM162 Staff Inspection Assignment Complaint and Save Audit
+on:
+  pull_request:
+    branches: [main]
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 13
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Setup SSH
+        shell: bash
+        run: |
+          set -euo pipefail;install -d -m 700 ~/.ssh
+          for i in 1 2 3 4;do if ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi;sleep 3;done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Read-only code/assignment and recent errors
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then SSH=(ssh -p "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=12)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT" -o ConnectTimeout=12);fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          python3 - <<'PY'
+          from pathlib import Path
+          import re,hashlib
+          sources={
+           'app/Http/Controllers/Api/V1/StaffExtraController.php':[r'function inspections',r'function saveInspection',r'function inspection'],
+           'app/Http/Controllers/Web/AdminInspectionPageController.php':[r'function .*assign',r'function .*submit'],
+           'resources/views/staff/assigned-inspection.blade.php':[r'(?i)complaint',r'(?i)complete 30',r'(?i)submit',r'(?i)fetch\('],
+           'app/Support/VehicleInspectionChecklist.php':[r'(?i)function',r'required'],
+          }
+          for file,needles in sources.items():
+           p=Path(file)
+           print('AM162_FILE',file,'present',p.exists())
+           if not p.exists():continue
+           lines=p.read_text(errors='replace').splitlines()
+           print('AM162_SHA',file,hashlib.sha256(p.read_bytes()).hexdigest(),'lines',len(lines))
+           if 'assigned-inspection' in file:
+             for i,line in enumerate(lines[:420]):print('AM162_VIEW',i+1,line[:300].encode('ascii','backslashreplace').decode())
+           elif 'VehicleInspectionChecklist' in file:
+             for i,line in enumerate(lines[:220]):print('AM162_CHECKLIST',i+1,line[:275])
+           else:
+             start=[]
+             for i,line in enumerate(lines):
+               if any(re.search(k,line,re.I) for k in needles):
+                 if re.search(r'\bfunction\b',line):start.append(i)
+             for i in start[:8]:
+               for j in range(i,min(len(lines),i+125)):
+                 if j>i and re.search(r'^\s+(?:public|private|protected) function ',lines[j]):break
+                 print('AM162_METHOD',file,j+1,lines[j][:300])
+          p=Path('storage/logs/laravel.log')
+          if p.exists():
+           lines=p.read_text(errors='replace').splitlines()[-6500:]
+           errors=[x for x in lines if re.search('inspection',x,re.I) and re.search('ERROR|Exception',x)]
+           for err in errors[-6:]:
+             print('AM162_ERROR',re.sub(r'\{.*',' [detail omitted]',err[:250]))
+          PY
+          echo AM162_INSPECTION_ROUTES
+          php artisan route:list --json 2>/dev/null | python3 -c 'import sys,json; r=json.load(sys.stdin); [print(x.get("method"),x.get("uri"),x.get("name"),x.get("action")) for x in r if "inspect" in (str(x.get("uri",""))+str(x.get("action",""))).lower()]' | head -n 35 || true
+          echo AM162_DB_STRUCTURE_COUNTS
+          php -d display_errors=1 -d log_errors=0 <<'PHP'
+          <?php
+          try{
+            require 'vendor/autoload.php';$a=require 'bootstrap/app.php';
+            $a->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $db=\Illuminate\Support\Facades\DB::class;
+            $sch=\Illuminate\Support\Facades\Schema::class;
+            foreach(['job_cards','job_card_inspection_assignments','job_card_inspections','vehicle_inspections','staff','erp_auth_users'] as $tbl)
+             if($sch::hasTable($tbl))echo 'AM162_SCHEMA '.$tbl.'='.implode(',',$sch::getColumnListing($tbl)).PHP_EOL;
+            $j=$db::table('job_cards')->where('job_no','JC-20261016-00035')->first();
+            if($j) {
+             $fields=['id','job_no','inspection_status','inspection_assigned_staff_id','inspection_submitted_by','inspection_submitted_at','status'];
+             echo 'AM162_JC35='.json_encode(array_intersect_key((array)$j,array_flip($fields))).PHP_EOL;
+             if($sch::hasTable('job_card_inspection_assignments')){
+              foreach($db::table('job_card_inspection_assignments')->where('job_card_id',$j->id)->limit(10)->get() as $r)
+               echo 'AM162_ASSIGNMENT='.json_encode(array_intersect_key((array)$r,array_flip(['id','job_card_id','assigned_staff_id','assigned_by_user_id','status','completed_at']))).PHP_EOL;
+             }
+            }
+            $staff=$db::table('staff')->where('staff_code','AM9472')->first();
+            if($staff)echo 'AM162_STAFF_AM9472='.json_encode(array_intersect_key((array)$staff,array_flip(['id','staff_code','status','active']))).PHP_EOL;
+            echo 'AM162_DB_READ_ONLY_COMPLETE'.PHP_EOL;
+          }catch(\Throwable $e){echo 'AM162_SCHEMA_ERROR='.get_class($e).' '.substr($e->getMessage(),0,170).PHP_EOL;exit(1);}
+          PHP
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
