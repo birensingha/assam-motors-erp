@@ -17,10 +17,18 @@ $std=(int)round((float)$line->standard_hours*3600);
 if($tat<0||$std<=0)reportFail('INVALID_TEST_TIMESTAMP');
 $param=(new \ReflectionMethod(\App\Support\RotLiveClock::class,'snapshot'))->getParameters()[0];
 $paramType=$param->getType();
-if(!$paramType||!($paramType instanceof \ReflectionNamedType))reportFail('UNRECOGNIZED_SESSION_MODEL_TYPE');
-$class=$paramType->getName();
-if(!class_exists($class)||!method_exists($class,'query'))reportFail('SESSION_MODEL_UNAVAILABLE');
-$session=$class::query()->whereKey($line->rot_session_id)->first();
+// V639 accepts an object snapshot (not necessarily an Eloquent model).
+// Prefer its Eloquent class only when the type explicitly identifies one;
+// otherwise pass a DB stdClass with the same session columns used in Main JC.
+if($paramType instanceof \ReflectionNamedType && !$paramType->isBuiltin()
+    && class_exists($paramType->getName())
+    && method_exists($paramType->getName(),'query')){
+    $cls=$paramType->getName();
+    $session=$cls::query()->whereKey($line->rot_session_id)->first();
+}else{
+    $session=DB::table('rot_sessions')->where('id',$line->rot_session_id)->first();
+    echo "AM126_VERIFY_SESSION_SOURCE=DB_STDCLASS\n";
+}
 if(!$session||strtolower(trim((string)$session->status))!=='completed')reportFail('SESSION_NOT_COMPLETED');
 if((int)$session->labour_line_id!==(int)$line->id)reportFail('SESSION_LINE_MISMATCH');
 $snapshot=\App\Support\RotLiveClock::snapshot($session);
@@ -47,7 +55,9 @@ echo "AM126_COMPLETED_TAT_AND_PRODUCTIVE_DISPLAY_PASS\n";
 foreach(['Running','Paused'] as $state){
     $candidate=DB::table('rot_sessions')->where('status',$state)->first();
     if(!$candidate){echo 'AM126_'.$state.'_NO_SAMPLE_SKIP'."\n";continue;}
-    $other=$class::query()->whereKey($candidate->id)->first();
+    $other=($session instanceof \Illuminate\Database\Eloquent\Model)
+      ? $session::query()->whereKey($candidate->id)->first()
+      : DB::table('rot_sessions')->where('id',$candidate->id)->first();
     if(!$other)reportFail('MISSING_'.$state.'_MODEL');
     $base=\App\Support\RotLiveClock::snapshot($other);
     $nonCompletedHtml=view('dashboard.partials.rot-live-clock',['session'=>$other])->render();
