@@ -1,0 +1,77 @@
+name: AM133 OSL Edit Purchase Vendor Reference Audit
+on:
+  pull_request:
+    branches: [main]
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 13
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for i in 1 2 3 4;do
+            if ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Targeted read-only code and accounting audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then SSH=(ssh -p "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=12)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT" -o ConnectTimeout=12);fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          echo "AM133_FILE_HASHES"
+          for f in resources/views/job-cards/show.blade.php resources/views/purchases/osl-edit.blade.php resources/views/purchases/osl-create.blade.php app/Services/PurchaseService.php app/Http/Controllers/Web/AdminJobCardOslLineController.php routes/web.php;do
+            if [ -f "$f" ];then sha256sum "$f";fi
+          done
+          echo "AM133_OSL_MODAL_LINE"
+          grep -nE 'function show\(row\)|am91-osl-form|am91-delete|am129-osl-delete|am93-osl-tools-template|data-am93-purchase-id|am91-osl-edit' resources/views/job-cards/show.blade.php | tail -n 45
+          echo "AM133_PURCHASE_AND_PAYMENT_ROUTE_LIST"
+          php artisan route:list 2>/dev/null | grep -Ei 'osl|payment-voucher|vendor-ledger|vendor' | head -n 85 || true
+          echo "AM133_CONTROLLER_FILES"
+          find app/Http/Controllers/Web -maxdepth 1 -type f | grep -Ei 'Purchase|Payment|Voucher|Vendor|Ledger|Osl' | head -n 70
+          echo "AM133_PURCHASE_SERVICE_OSL_CRUD"
+          sed -n '870,1068p' app/Services/PurchaseService.php | cut -c1-230
+          echo "AM133_PAYMENT_AND_OSL_VIEW_REFERENCES"
+          grep -R -nEi --include='*.php' -m 2 'against.reference|reference_id|reference_no|purchase_id|vendor_id|payment_mode|vendor.*ledger' resources/views/payment-vouchers resources/views/purchases app/Http/Controllers/Web/*Payment* app/Services/*Ledger* 2>/dev/null | head -n 110 || true
+          echo "AM133_SCHEMA_READONLY"
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          use Illuminate\Support\Facades\DB;
+          use Illuminate\Support\Facades\Schema;
+          foreach(DB::select('SHOW TABLES') as $row) {
+            $table=(string)array_values((array)$row)[0];
+            if(preg_match('/vendor|voucher|payment|ledger|purchase|allocation|reference/i',$table)) {
+              echo 'AM133_TABLE='.$table.' ['.implode(',',Schema::getColumnListing($table)).']'.PHP_EOL;
+            }
+          }
+          $c=DB::table('job_cards')->where('job_no','JC-20261025-00042')->first();
+          if($c) {
+            foreach(DB::table('workshop_purchases')->where('job_card_id',$c->id)->where('purchase_type','OSL')->orderBy('id')->limit(12)->get() as $r) {
+              echo 'AM133_OSL42='.json_encode(array_intersect_key((array)$r,array_flip(['id','purchase_no','purchase_type','vendor_id','supplier_name','job_card_id','labour_line_id','record_status','deleted_at','billing_line_created','customer_billing_status','supplier_invoice','total_amount','customer_amount'])),JSON_INVALID_UTF8_SUBSTITUTE).PHP_EOL;
+            }
+          }
+          echo "AM133_DB_NO_WRITES_DONE\n";
+          PHP
+          echo "AM133_SOURCE_AUDIT_COMPLETE"
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
