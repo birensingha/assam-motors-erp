@@ -1,0 +1,51 @@
+name: AM144 OSL Linkage Totals Read Only
+on:
+  pull_request:
+    branches: [main]
+permissions: {contents: read}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 13
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: SSH
+        shell: bash
+        run: |
+          set -euo pipefail;install -d -m 700 ~/.ssh
+          for i in 1 2 3 4;do if ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi;sleep 3;done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Source
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then SSH=(ssh -p "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=12)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT" -o ConnectTimeout=12);fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          echo 'AM144_TAX_SERVICE'
+          sed -n '1,240p' app/Services/JobCardTaxTotals.php | cut -c1-235
+          echo 'AM144_SHOW_QUERY'
+          grep -nEi -C 3 'billing_included|am83OslPurchases|am83OslLabour|labour =|labour\\s*=' app/Http/Controllers/Web/AdminJobCardPageController.php | head -n 145 || true
+          echo 'AM144_MULTI_OSL_METHODS'
+          grep -nE 'function saveOsl|function.*Osl|billingLine|labour_line_id|OSL_PURCHASE|saveOslBatch' app/Services/PurchaseService.php | tail -n 70
+          echo 'AM144_CONTROLLER_OSL'
+          sed -n '40,142p' app/Http/Controllers/Web/AdminPurchasePageController.php | cut -c1-230
+          echo 'AM144_OSL_BATCH_CODE'
+          grep -n -C 3 'function saveOslBatch|function saveOslLines' app/Services/PurchaseService.php | head -n 35 || true
+          echo 'AM144_OSL_TEMPLATE_SCRIPT'
+          sed -n '178,350p' resources/views/purchases/osl-create.blade.php | cut -c1-220
+          echo 'AM144_ROUTE_GROUP'
+          sed -n '173,211p' routes/web.php | cut -c1-220
+          echo AM144_DONE
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
