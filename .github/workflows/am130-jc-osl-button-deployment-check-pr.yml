@@ -1,0 +1,54 @@
+name: AM130 STAGING OSL Delete Button Confirmation
+on:
+  pull_request:
+    branches: [main]
+permissions: {contents: read}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: SSH setup
+        shell: bash
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          for i in 1 2 3 4;do
+            if ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Read-only verify AM129 deployed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then SSH=(ssh -p "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=12)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT" -o ConnectTimeout=12);fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          FILE=resources/views/job-cards/show.blade.php
+          if grep -Fq AM129_VISIBLE_OSL_DELETE "$FILE";then
+            echo AM130_UI_AM129=INSTALLED
+          else
+            echo AM130_UI_AM129=MISSING
+          fi
+          if test -f "$HOME/AM129_OSL_VISIBLE_DELETE_UTF8_FIX/apply.py";then
+            echo AM130_SCRIPT=AVAILABLE
+            python3 "$HOME/AM129_OSL_VISIBLE_DELETE_UTF8_FIX/apply.py" check "$PWD"
+          else
+            echo AM130_SCRIPT=NOT_UPLOADED
+          fi
+          grep -n -F 'data-am129-osl-delete' "$FILE" | head -n 5 || true
+          echo AM130_STAGING_READONLY_COMPLETE
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
