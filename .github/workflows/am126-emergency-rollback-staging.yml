@@ -50,13 +50,13 @@ jobs:
           set -euo pipefail
           if [ -n "$KEY" ]; then
             ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519 "$USERNAME@$HOST" 'mkdir -p "$HOME/AM126_EMERGENCY_ROLLBACK"'
-            scp -o BatchMode=yes -o ConnectTimeout=14 -P "$PORT" -i ~/.ssh/id_ed25519 deployment/live-fixes/AM126_ROT_LIVE_SYNC/ROLLBACK_STAGING.py "$USERNAME@$HOST:~/AM126_EMERGENCY_ROLLBACK/verify.php"
-            ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519 "$USERNAME@$HOST" "cd '$ROOT' && php -l ~/AM126_EMERGENCY_ROLLBACK/verify.php && php ~/AM126_EMERGENCY_ROLLBACK/verify.php"
+            scp -o BatchMode=yes -o ConnectTimeout=14 -P "$PORT" -i ~/.ssh/id_ed25519 deployment/live-fixes/AM126_ROT_LIVE_SYNC/ROLLBACK_STAGING.py "$USERNAME@$HOST:~/AM126_EMERGENCY_ROLLBACK/ROLLBACK_STAGING.py"
+            ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519 "$USERNAME@$HOST" "cd '$ROOT' && python3 ~/AM126_EMERGENCY_ROLLBACK/ROLLBACK_STAGING.py '$ROOT'"
           else
             export SSHPASS="$PASSWORD"
             sshpass -e ssh -o ConnectTimeout=14 -p "$PORT" "$USERNAME@$HOST" 'mkdir -p "$HOME/AM126_EMERGENCY_ROLLBACK"'
-            sshpass -e scp -o ConnectTimeout=14 -P "$PORT" deployment/live-fixes/AM126_ROT_LIVE_SYNC/ROLLBACK_STAGING.py "$USERNAME@$HOST:~/AM126_EMERGENCY_ROLLBACK/verify.php"
-            sshpass -e ssh -o ConnectTimeout=14 -p "$PORT" "$USERNAME@$HOST" "cd '$ROOT' && php -l ~/AM126_EMERGENCY_ROLLBACK/verify.php && php ~/AM126_EMERGENCY_ROLLBACK/verify.php"
+            sshpass -e scp -o ConnectTimeout=14 -P "$PORT" deployment/live-fixes/AM126_ROT_LIVE_SYNC/ROLLBACK_STAGING.py "$USERNAME@$HOST:~/AM126_EMERGENCY_ROLLBACK/ROLLBACK_STAGING.py"
+            sshpass -e ssh -o ConnectTimeout=14 -p "$PORT" "$USERNAME@$HOST" "cd '$ROOT' && python3 ~/AM126_EMERGENCY_ROLLBACK/ROLLBACK_STAGING.py '$ROOT'"
           fi
       - name: Remove transient key
         if: always()
