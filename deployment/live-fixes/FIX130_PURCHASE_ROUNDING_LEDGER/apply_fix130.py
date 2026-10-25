@@ -102,8 +102,10 @@ def mutate_service(src):
  src=src[:st]+NEW_PURCHASE_LOOP+src[en:]
  a="        foreach($batchDeltas as $adj) {"
  # first occurrence at method line 105 is inline 'if' different; closest matching full line for loop near end
- if src.count(a)!=1:fail("ROUND_OFF_LOOP_ANCHOR_COUNT_"+str(src.count(a)))
- st=src.index(a)
+ if src.count(a)!=2:fail("ROUND_OFF_LOOP_ANCHOR_COUNT_"+str(src.count(a)))
+ anchor_after_payments="        foreach ($unifiedPayments as $r) {"
+ if src.count(anchor_after_payments)!=1:fail("UNIFIED_PAYMENT_ANCHOR")
+ st=src.index(a,src.index(anchor_after_payments))
  en=src.index("        usort($entries,",st)
  old=src[st:en]
  if "ROUND_OFF" not in old or "periodPurchases" not in old:fail("ROUND_OFF_LOOP_UNEXPECTED")
