@@ -1,0 +1,81 @@
+name: FIX126 Bulk Issue and Fit Implementation Preflight - READ ONLY
+on:
+  push:
+    branches: [fix/fix126-bulk-issue-fit-20261025]
+    paths: ['.github/workflows/fix126-bulk-stock-preflight-readonly.yml']
+permissions:
+  contents: read
+jobs:
+  staging-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Configure remote access
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          for i in 1 2 3;do
+            ssh-keyscan -T 10 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null && break
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Preflight current job card stock ledger schema and page SHA
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=12 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=12 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f artisan
+          echo 'FIX126_BULK_PREFLIGHT_BEGIN'
+          echo '=== LIVE ROUTE AND VIEW SHA ==='
+          sha256sum routes/web.php resources/views/job-cards/show.blade.php app/Http/Controllers/Web/AdminJobCardPartIssueController.php
+          echo '=== PARTS PANEL / ROUTE ANCHORS ==='
+          grep -nE "part-stock-control|FIX125_PART_STOCK_ACTIONS|jc-parts-block|job-cards.parts.(requisition|issue|fitted)" resources/views/job-cards/show.blade.php routes/web.php | head -n 28 || true
+          echo '=== DB SCHEMA AND JC-40 STOCK AVAILABILITY READ-ONLY ==='
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $schema=\Illuminate\Support\Facades\Schema::class;
+          $db=\Illuminate\Support\Facades\DB::class;
+          foreach(['job_card_parts','parts_master','inventory_movements','job_card_change_audits','job_cards'] as $t){
+           if(!$schema::hasTable($t)){echo "TABLE_MISSING={$t}\n";continue;}
+           echo "COLUMNS_".strtoupper($t)."=".implode(',',$schema::getColumnListing($t))."\n";
+          }
+          $rows=$db::table('job_card_parts')->where('job_card_id',40)->get(['id','part_master_id','part_name','qty','issue_status']);
+          foreach($rows as $p){
+           $stock=$db::table('parts_master')->where('id',$p->part_master_id)->value('stock_qty');
+           $move=$db::table('inventory_movements')->where('job_card_id',40)->where('reference_no','JC-PART-'.$p->id.'-ISSUE')->count();
+           echo "JC40_PART={$p->id} MASTER={$p->part_master_id} QTY={$p->qty} STATUS={$p->issue_status} STOCK=".($stock??'NULL')." MOVEMENTS={$move}\n";
+          }
+          echo 'FIX126_PRECHECK_READONLY_COMPLETE';
+          PHP
+          echo 'FIX126_BULK_PREFLIGHT_COMPLETE_NO_WRITES'
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
