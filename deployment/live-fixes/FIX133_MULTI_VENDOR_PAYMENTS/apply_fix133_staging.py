@@ -173,7 +173,15 @@ def main():
   print("FIX133_BACKUPS_VERIFIED=YES")
   touched=[]
   try:
+   # Install additive empty-table migration before service begins querying it.
+   # Existing application code keeps running unchanged during migration.
+   migration="database/migrations/2026_10_25_093000_create_workshop_payment_allocations.php"
+   migration_target=root/migration
+   migration_target.write_bytes(all_files[migration])
+   touched.append(migration)
+   run(["php","artisan","migrate","--path="+migration,"--force","--no-interaction"],root,timeout=80)
    for p,content in all_files.items():
+    if p==migration: continue
     target=root/p;temp=target.with_name("."+target.name+".fix133.tmp")
     if temp.exists():raise RuntimeError("STALE_TEMP")
     temp.write_bytes(content)
@@ -181,9 +189,7 @@ def main():
     os.replace(temp,target);touched.append(p)
    for p,content in all_files.items():
     if sha((root/p).read_bytes())!=sha(content):raise RuntimeError("POST_INSTALL_HASH_FAIL_"+p)
-   # Only the new, named additive allocation migration is run.
-   migration="database/migrations/2026_10_25_093000_create_workshop_payment_allocations.php"
-   run(["php","artisan","migrate","--path="+migration,"--force","--no-interaction"],root,timeout=80)
+   # Exactly one named additive migration was executed before application switch.
    run(["php","artisan","view:clear"],root)
    code="require 'vendor/autoload.php';$a=require 'bootstrap/app.php';$a->make(\\Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();if(!\\Illuminate\\Support\\Facades\\Schema::hasTable('workshop_payment_allocations'))exit(3);echo 'FIX133_ALLOCATION_TABLE_READY=YES';"
    print(run(["php","-r",code],root))
