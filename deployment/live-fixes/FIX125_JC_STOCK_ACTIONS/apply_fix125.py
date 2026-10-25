@@ -19,8 +19,8 @@ def abort(msg):
 def patch(txt):
  start=txt.find("@forelse($parts as $p)")
  if start<0 or txt.count("@forelse($parts as $p)")!=1:abort("PART_FORELSE_ANCHOR_MISSING")
- end=txt.find("@endforelse",start)
- if end<0:abort("PART_ENDFORELSE_MISSING")
+ end=txt.find("@empty",start)
+ if end<0:abort("PART_EMPTY_BOUNDARY_MISSING")
  before,block,after=txt[:start],txt[start:end],txt[end:]
  label='<div class="muted">{{ $p->part_code }} {{ $p->part_number }}</div>'
  if block.count(label)!=1:abort("PART_LABEL_ANCHOR_MISMATCH")
