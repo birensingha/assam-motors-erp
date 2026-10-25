@@ -1,0 +1,78 @@
+name: AM159 Exact Deleted OSL Row Audit
+on:
+  pull_request:
+    branches: [main]
+permissions: {contents: read}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail;install -d -m 700 ~/.ssh
+          for i in 1 2 3 4;do if ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi;sleep 3;done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Read-only target and register audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then SSH=(ssh -p "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=12)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT" -o ConnectTimeout=12);fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          echo AM159_REGISTER_CONTROLLER
+          sed -n '238,273p' app/Http/Controllers/Web/AdminWorkshopControlPageController.php | cut -c1-250
+          echo AM159_REGISTER_VIEW
+          sed -n '1,170p' resources/views/workshop-controls/osl-index.blade.php | cut -c1-225
+          echo AM159_PURCHASE_REGISTER
+          grep -R -n "record_status.*DELETED\\|deleted_at\\|purchase_type.*OSL" app/Services/PurchaseService.php app/Http/Controllers/Web/AdminPurchasePageController.php | head -n 80
+          echo AM159_TARGET_DB
+          php -d display_errors=1 -d log_errors=0 <<'PHP'
+          <?php
+          try{
+            require 'vendor/autoload.php';$a=require 'bootstrap/app.php';
+            $a->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $db=\Illuminate\Support\Facades\DB::class;
+            $schema=\Illuminate\Support\Facades\Schema::class;
+            $ref='OSL-261025162952-811';
+            $rows=$db::table('workshop_purchases')->where('purchase_no',$ref)->get();
+            echo 'AM159_EXACT_COUNT='.$rows->count().PHP_EOL;
+            foreach($rows as $r) {
+              $out=array_intersect_key((array)$r,array_flip(['id','purchase_no','purchase_batch_no','purchase_type','job_card_id','labour_line_id','vendor_id','record_status','deleted_at','total_amount','customer_amount','supplier_invoice','billing_line_created','customer_billing_status']));
+              echo 'AM159_TARGET='.json_encode($out,JSON_INVALID_UTF8_SUBSTITUTE).PHP_EOL;
+              foreach(['workshop_purchase_batches','workshop_payment_vouchers','workshop_payment_allocations','workshop_vendor_payments','job_card_change_audits','workshop_purchase_audit_logs'] as $table){
+                if(!$schema::hasTable($table))continue;
+                $columns=$schema::getColumnListing($table);
+                $matches=[];
+                foreach(['purchase_id','source_id','source_reference','purchase_no','batch_no','purchase_batch_no','job_card_labour_id','labour_line_id','billing_line_id','entity_id'] as $col){
+                  if(!in_array($col,$columns,true))continue;
+                  $vals=[];
+                  if(in_array($col,['purchase_id','source_id','entity_id'],true))$vals=[(int)$r->id];
+                  elseif(in_array($col,['job_card_labour_id','labour_line_id','billing_line_id'],true))$vals=[(int)$r->labour_line_id];
+                  elseif(in_array($col,['batch_no','purchase_batch_no'],true))$vals=[(string)$r->purchase_batch_no];
+                  else $vals=[$ref,(string)$r->purchase_batch_no];
+                  $vals=array_values(array_filter($vals,fn($v)=>$v!==null && $v!==''));
+                  if(!$vals)continue;
+                  $count=$db::table($table)->whereIn($col,$vals)->count();
+                  if($count)$matches[]=$col.':'.$count;
+                }
+                echo 'AM159_REFS_'.$table.'='.implode(',',$matches).PHP_EOL;
+              }
+            }
+            echo 'AM159_DB_NO_WRITES_DONE'.PHP_EOL;
+          }catch(\Throwable $e){echo 'AM159_ERROR='.get_class($e).' '.substr($e->getMessage(),0,170).PHP_EOL;exit(1);}
+          PHP
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
