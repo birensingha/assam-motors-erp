@@ -201,6 +201,24 @@ def main():
    for path,expected in updated.items():
     if sha((ROOT/path).read_bytes())!=sha(expected):raise RuntimeError("POST_WRITE_HASH_MISMATCH")
    run(["php","artisan","view:clear"],ROOT)
+   # End-to-end read-only ledger check against the exact reported purchase bill.
+   verifyphp=r"""require 'vendor/autoload.php';
+   $app=require 'bootstrap/app.php';
+   $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+   $svc=$app->make(\App\Services\VendorService::class);
+   $data=$svc->ledger(5,'2026-10-23','2026-10-26');
+   $hits=array_values(array_filter($data['entries'],static fn($r)=>
+       ($r['entry_no']??'')==='PB-261025124019-467'));
+   if(count($hits)!==1) {fwrite(STDERR,'PURCHASE_ROW_COUNT='.count($hits));exit(21);}
+   $x=$hits[0];
+   if(($x['entry_type']??'')!=='PURCHASE' ||
+      abs((float)($x['credit']??0)-560.00)>0.011 ||
+      abs((float)($x['debit']??0))>0.011) {
+      fwrite(STDERR,'PURCHASE_AMOUNT_OR_TYPE_MISMATCH');exit(22);
+   }
+   if((float)($x['balance']??0)<-1000000000)exit(23);
+   echo 'FIX130_SAMPLE_VENDOR_LEDGER_ONE_ROW_560=PASS'.PHP_EOL;"""
+   print(run(["php","-r",verifyphp],ROOT))
    print("FIX130_STAGING_APPLIED=YES")
    print("FIX130_NEW_SERVICE_SHA="+sha(updated[SOURCE]))
    print("FIX130_NEW_VIEW_SHA="+sha(updated[VIEW]))
