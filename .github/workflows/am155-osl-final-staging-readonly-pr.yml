@@ -1,0 +1,63 @@
+name: AM155 Final OSL Staging Read Only State
+on:
+  pull_request:
+    branches: [main]
+permissions: {contents: read}
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: SSH
+        shell: bash
+        run: |
+          set -euo pipefail;install -d -m 700 ~/.ssh
+          for i in 1 2 3 4;do if ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi;sleep 3;done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else test -n "$PASSWORD";sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Read-only final state
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then SSH=(ssh -p "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=12)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT" -o ConnectTimeout=12);fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          for token in AM146_OSL_MASTER AM150_REAL_VALIDATION;do
+            if grep -Fq "$token" resources/views/job-cards/show.blade.php;then echo "AM155_JC_UI_$token=ON";else echo "AM155_JC_UI_$token=OFF";fi
+          done
+          for token in AM146_OSL_MASTER am146-purchase-link-script;do
+            if grep -Fq "$token" resources/views/purchases/osl-create.blade.php;then echo "AM155_PURCHASE_UI_$token=ON";else echo "AM155_PURCHASE_UI_$token=OFF";fi
+          done
+          for token in AM146_OSL_MASTER AM150_TYPED_OSL_MASTER;do
+            if grep -Fq "$token" app/Http/Controllers/Web/AdminJobCardOslLineController.php;then echo "AM155_BACKEND_$token=ON";else echo "AM155_BACKEND_$token=OFF";fi
+          done
+          php artisan route:list | grep -F 'erp.osl-masters.quick-create'
+          php -d display_errors=1 -d log_errors=0 <<'PHP'
+          <?php
+          try{
+            require 'vendor/autoload.php';$a=require 'bootstrap/app.php';$a->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $db=\Illuminate\Support\Facades\DB::class;
+            $jc=$db::table('job_cards')->where('id',42)->first();
+            echo 'AM155_JC42_STATUS='.(string)($jc->status??'MISSING').PHP_EOL;
+            echo 'AM155_JC42_INVOICE_ID='.(string)($jc->invoice_id??'NONE').PHP_EOL;
+            echo 'AM155_JC42_STORED_TOTAL='.(string)($jc->grand_total??'NONE').PHP_EOL;
+            echo 'AM155_JC42_CALCULATED_TOTAL='.(string)\App\Services\JobCardTaxTotals::forJob(42)['grand_total'].PHP_EOL;
+            echo 'AM155_OSL_LABOUR_ROWS='.json_encode($db::table('job_card_labour')->where('job_card_id',42)->whereRaw("UPPER(COALESCE(mechanic_name,''))='OSL'")->orderBy('id')->pluck('id')->all()).PHP_EOL;
+            $item=$db::table('workshop_osl_master')->whereRaw('LOWER(TRIM(osl_name))=?',['silencer welding'])->first();
+            echo 'AM155_SILENCER_MASTER=' . ($item ? $item->id.' '.$item->osl_code.' ACTIVE='.$item->active:'MISSING').PHP_EOL;
+            echo 'AM155_ACTIVE_OSL_PURCHASES='.$db::table('workshop_purchases')->where('job_card_id',42)->where('purchase_type','OSL')->where('record_status','ACTIVE')->whereNull('deleted_at')->count().PHP_EOL;
+            echo 'AM155_READ_ONLY_COMPLETE'.PHP_EOL;
+          }catch(\Throwable $e){echo 'AM155_READ_FAILURE='.get_class($e).PHP_EOL;exit(1);}
+          PHP
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
