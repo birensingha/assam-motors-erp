@@ -50,7 +50,7 @@ jobs:
           cd "$HOME/domains/assammotors.com/assam-erp-staging"
           test -f artisan
           echo 'FIX126_STAGING_DEPLOY_BEGIN'
-          curl -fsSL --retry 2 'https://raw.githubusercontent.com/birensingha/assam-motors-erp/a4c1bb4dad6cf41239e05f7a689438037bf00b2d/deployment/live-fixes/FIX126_BULK_PARTS/apply_fix126_staging.py' -o /tmp/fix126-staging.py
+          curl -fsSL --retry 2 'https://raw.githubusercontent.com/birensingha/assam-motors-erp/131051e333ae47886c4db57d04dcf13736eeba57/deployment/live-fixes/FIX126_BULK_PARTS/apply_fix126_staging.py' -o /tmp/fix126-staging.py
           python3 -m py_compile /tmp/fix126-staging.py
           python3 /tmp/fix126-staging.py check "$PWD"
           python3 /tmp/fix126-staging.py apply "$PWD"
