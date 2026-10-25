@@ -1,0 +1,92 @@
+name: FIX125 Job Card Eight Parts Issue Status - READ ONLY
+on:
+  push:
+    branches: [audit/fix125-jc-parts-status-20261025]
+    paths: ['.github/workflows/fix125-jc-parts-issue-status-audit.yml']
+permissions:
+  contents: read
+jobs:
+  staging-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Configure remote access
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          for i in 1 2 3;do
+            ssh-keyscan -T 10 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null && break
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Inspect 8 Job Card parts issue statuses and Work Complete gates (read only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=12 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=12 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f artisan
+          echo 'FIX125_READ_ONLY_BEGIN'
+          echo '=== WORK COMPLETE PART ISSUE GATES ==='
+          grep -nE -C 4 "PartPending|issue_status|FIX48_WORK_COMPLETE_GUARDS" resources/views/job-cards/lifecycle-panel.blade.php | head -n 100 || true
+          grep -nE -C 5 "function unfinishedWork|Part line not fitted|issue_status" app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php | tail -n 110 || true
+          echo '=== CURRENT STOCK ISSUE UI AND ROUTES ==='
+          grep -nEi 'part.*issue|issue.*part|part.*fitt|fitt.*part|issue_status|stock_issue' routes/web.php resources/views/job-cards/show.blade.php app/Http/Controllers/Web/AdminJobCardPageController.php | head -n 110 || true
+          echo '=== DB COUNTS (NO PERSONAL DATA) ==='
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::class;
+          $schema=\Illuminate\Support\Facades\Schema::class;
+          $cols=$schema::getColumnListing('job_card_parts');
+          echo 'COLUMNS_PARTS='.implode(',', $cols)."\n";
+          if(!in_array('issue_status',$cols,true)){echo "ISSUE_STATUS_COLUMN=NO\n";exit;}
+          $all=$db::table('job_card_parts')->selectRaw('COALESCE(issue_status,\'NULL\') as issue_status, COUNT(*) AS qty')->groupBy('issue_status')->orderByDesc('qty')->limit(15)->get();
+          foreach($all as $x) echo "ALL_PART_STATUS={$x->issue_status} COUNT={$x->qty}\n";
+          if(in_array('part_name',$cols,true)){
+            $names=['Knuckle Assembly','Bumper Bracket','Fender Liner RH','Washer Tank','Fog Lamp Bulb','Chinese Screw','Fender Clip','Door Trim Clip'];
+            $jobs=$db::table('job_card_parts')->select('job_card_id')->selectRaw('COUNT(*) AS matched')->whereIn('part_name',$names)->groupBy('job_card_id')->orderByDesc('matched')->limit(5)->get();
+            foreach($jobs as $j){
+              echo "CANDIDATE_JOB_ID={$j->job_card_id} MATCHED={$j->matched}\n";
+              if((int)$j->matched<5)continue;
+              $rows=$db::table('job_card_parts')->where('job_card_id',$j->job_card_id)->orderBy('id')->get(['id','part_name','issue_status','qty','total','gst_percent']);
+              echo "CANDIDATE_JOB_PART_COUNT=".$rows->count()."\n";
+              foreach($rows as $x) {
+                echo "PART_ID={$x->id} NAME={$x->part_name} ISSUE_STATUS=".($x->issue_status??'NULL')." QTY={$x->qty}\n";
+              }
+              $job=$db::table('job_cards')->where('id',$j->job_card_id)->first(['status','inspection_status','diagnosis_status','decision_status']);
+              if($job)echo "JC_STATUS={$job->status} INSPECTION={$job->inspection_status} DIAGNOSIS={$job->diagnosis_status} DECISION={$job->decision_status}\n";
+            }
+          }
+          echo "FIX125_DB_READ_ONLY_COMPLETE\n";
+          PHP
+          echo 'FIX125_READ_ONLY_COMPLETE_NO_WRITES'
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
