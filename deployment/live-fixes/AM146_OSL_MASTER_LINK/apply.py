@@ -138,7 +138,7 @@ s[jc]=s[jc].replace("route('erp.purchases.osl.create')","route('erp.purchases.os
 markerAnchor='<script id="am93-osl-row-sort">'
 ui=r'''
 {{-- AM146_OSL_MASTER: one OSL master for JC and Purchase, live billing math. --}}
-@php($am146Masters=\\Illuminate\\Support\\Facades\\DB::table('workshop_osl_master')->where('active',1)->orderBy('osl_name')->get(['id','osl_code','osl_name','gst_percent']))
+@php($am146Masters=\Illuminate\Support\Facades\DB::table('workshop_osl_master')->where('active',1)->orderBy('osl_name')->get(['id','osl_code','osl_name','gst_percent']))
 <script id="am146-osl-calculations">
 (function(){
  'use strict';
