@@ -47,17 +47,22 @@ addon=r"""
 .am172-name-bar button{border:1px solid #15528d;background:#15528d;color:white;
  font-size:11px;font-weight:800;padding:8px 10px;border-radius:5px;cursor:pointer}
 </style>
-@if((int)($job->customer_id ?? 0)>0 && empty($job->invoice_id) &&
+@if(empty($job->invoice_id) &&
  !in_array(strtolower((string)($job->status??'')),['invoiced','cancelled','canceled'],true))
 <div class="am172-name-bar">
  <strong>Customer Name Correction</strong>
- <span>Sync from ERP Customer Master (Admin · verified phone/email · audited)</span>
+ <span>Verified Master Sync or manual correction (Admin · audited). Existing invoices are protected.</span>
  <form method="POST" action="{{ route('erp.job-cards.customer-name-sync',$job->id) }}"
-   onsubmit="return confirm('Sync the verified Customer Master name into this Job Card? An audit entry will be kept.');">
+   onsubmit="return confirm('Correct this Job Card customer name? The original name and reason will be audited.');">
    @csrf
+   <input type="text" name="new_name" minlength="2" maxlength="200"
+     aria-label="Manual corrected customer name" placeholder="New customer name (manual only)">
    <input type="text" name="reason" required minlength="10" maxlength="500"
      aria-label="Customer name correction reason" placeholder="Correction reason (10+ characters)">
-   <button type="submit">Sync Customer Name</button>
+   @if((int)($job->customer_id ?? 0)>0)
+   <button type="submit" name="mode" value="sync">Sync from Master</button>
+   @endif
+   <button type="submit" name="mode" value="manual">Correct Name Manually</button>
  </form>
 </div>
 @endif
