@@ -58,16 +58,36 @@ $app=require $argv[1].'/bootstrap/app.php';
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-$sets=['am_erp_customers'=>'customer_id','customer_master'=>'customer_id'];
-foreach($sets as $table=>$field){
+$sets=['am_erp_customers','customer_master'];
+foreach($sets as $table){
  if(!Schema::hasTable($table)){echo "TABLE_MISSING $table\n";continue;}
  try{
-  $r=DB::table('job_cards as j')
-  ->leftJoin("$table as c",'c.id','=','j.customer_id')
-  ->selectRaw("COUNT(*) as total, SUM(CASE WHEN j.customer_id IS NOT NULL THEN 1 ELSE 0 END) as with_customer_id, SUM(CASE WHEN c.id IS NOT NULL THEN 1 ELSE 0 END) as linked, SUM(CASE WHEN c.id IS NOT NULL AND TRIM(COALESCE(j.customer_name,'')) <> TRIM(COALESCE(c.name,'')) THEN 1 ELSE 0 END) as name_mismatch")
-  ->first();
-  echo "LINK_COUNTS {$table} total={$r->total} with_customer_id={$r->with_customer_id} linked={$r->linked} name_mismatch={$r->name_mismatch}\n";
- }catch(\Throwable $e){echo "LINK_CHECK_NOT_AVAILABLE $table ".get_class($e)."\n";}
+  // Use separate small aggregates to avoid MariaDB collation/ONLY_FULL_GROUP_BY
+  // failures in the earlier combined GROUP query.
+  $total=DB::table('job_cards')->count();
+  $withId=DB::table('job_cards')->whereNotNull('customer_id')->count();
+  $linked=DB::table('job_cards as j')
+   ->join("$table as c",'c.id','=','j.customer_id')->count();
+  echo "LINK_COUNTS {$table} total={$total} with_customer_id={$withId} linked={$linked}\n";
+  try{
+   // Compare normalized UTF8 as bytes; do not retrieve or print any names.
+   $different=DB::table('job_cards as j')
+    ->join("$table as c",'c.id','=','j.customer_id')
+    ->whereRaw("BINARY TRIM(COALESCE(j.customer_name,'')) <> BINARY TRIM(COALESCE(c.name,''))")
+    ->count();
+   echo "NAME_MISMATCH_COUNT {$table} {$different} (includes case-only differences)\n";
+  }catch(\Illuminate\Database\QueryException $e){
+   $info=$e->errorInfo??[];
+   echo "NAME_COMPARE_SQL_ERROR {$table} SQLSTATE=".($info[0]??'unknown').
+    " DB_CODE=".($info[1]??'unknown')."\n";
+  }
+ }catch(\Illuminate\Database\QueryException $e){
+   $info=$e->errorInfo??[];
+   echo "LINK_QUERY_SQL_ERROR {$table} SQLSTATE=".($info[0]??'unknown').
+    " DB_CODE=".($info[1]??'unknown')."\n";
+ }catch(\Throwable $e){
+   echo "LINK_CHECK_NOT_AVAILABLE {$table} TYPE=".get_class($e)."\n";
+ }
 }
 """,encoding="utf8")
     try:
