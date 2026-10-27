@@ -25,11 +25,15 @@ final class AdminJobCardCustomerNameSyncController extends Controller
         );
 
         $validated = $request->validate([
+            'mode' => ['required', 'in:sync,manual'],
             'reason' => ['required', 'string', 'min:10', 'max:500'],
+            'new_name' => ['nullable', 'required_if:mode,manual', 'string', 'min:2', 'max:200'],
         ]);
+        $mode = (string) $validated['mode'];
         $reason = trim((string) $validated['reason']);
+        $manualName = trim((string) ($validated['new_name'] ?? ''));
 
-        $result = DB::transaction(function () use ($job, $actor, $reason): array {
+        $result = DB::transaction(function () use ($job, $actor, $mode, $manualName, $reason): array {
             $card = DB::table('job_cards')->where('id', $job)->lockForUpdate()->first();
             if (!$card) {
                 abort(404);
@@ -57,45 +61,48 @@ final class AdminJobCardCustomerNameSyncController extends Controller
             }
 
             $customerId = (int) ($card->customer_id ?? 0);
-            if ($customerId < 1) {
-                throw ValidationException::withMessages([
-                    'customer_id' => 'Job Card has no linked Customer Master ID. Link must be reviewed first.',
-                ]);
-            }
+            $verification = 'ADMIN_MANUAL_REVIEW';
+            $newName = $manualName;
 
-            // AM171 showed only 16 of 32 JCs have a numeric ID in this master.
-            // Numeric ID alone is NOT enough to prove identity across two
-            // separate master tables. Verify a second identifier.
-            $master = DB::table('am_erp_customers')->where('id', $customerId)->first();
-            if (!$master) {
-                throw ValidationException::withMessages([
-                    'customer_id' => 'Customer ID is not in active ERP Customer Master. Review linkage first.',
-                ]);
-            }
+            if ($mode === 'sync') {
+                if ($customerId < 1) {
+                    throw ValidationException::withMessages([
+                        'customer_id' => 'No linked Customer Master ID; use manual name correction after reviewing identity.',
+                    ]);
+                }
 
-            $cardPhone = preg_replace('/\D+/', '', (string) ($card->customer_phone ?? ''));
-            $masterPhone = preg_replace('/\D+/', '', (string) ($master->phone ?? ''));
-            $cardEmail = strtolower(trim((string) ($card->customer_email ?? '')));
-            $masterEmail = strtolower(trim((string) ($master->email ?? '')));
+                // AM171: numeric IDs can collide across two different customer
+                // tables. Verify a second identifier before syncing.
+                $master = DB::table('am_erp_customers')->where('id', $customerId)->first();
+                if (!$master) {
+                    throw ValidationException::withMessages([
+                        'customer_id' => 'Customer ID is not in ERP Master. Use reviewed manual name correction.',
+                    ]);
+                }
 
-            // Prefer the 10-digit verified Indian mobile number. If phones
-            // conflict, an email coincidence cannot override that conflict.
-            $cardMobile = strlen($cardPhone) >= 10 ? substr($cardPhone, -10) : '';
-            $masterMobile = strlen($masterPhone) >= 10 ? substr($masterPhone, -10) : '';
-            $phoneAvailable = $cardMobile !== '' && $masterMobile !== '';
-            $phoneMatches = $phoneAvailable && hash_equals($cardMobile, $masterMobile);
-            $emailMatches = $cardEmail !== '' && $masterEmail !== '' &&
-                hash_equals($cardEmail, $masterEmail);
+                $cardPhone = preg_replace('/\D+/', '', (string) ($card->customer_phone ?? ''));
+                $masterPhone = preg_replace('/\D+/', '', (string) ($master->phone ?? ''));
+                $cardEmail = strtolower(trim((string) ($card->customer_email ?? '')));
+                $masterEmail = strtolower(trim((string) ($master->email ?? '')));
 
-            if (($phoneAvailable && !$phoneMatches) ||
-                (!$phoneMatches && !$emailMatches)) {
-                throw ValidationException::withMessages([
-                    'customer_id' => 'Customer identity cannot be verified by phone/email. No name was changed. Review Customer Link.',
-                ]);
+                $cardMobile = strlen($cardPhone) >= 10 ? substr($cardPhone, -10) : '';
+                $masterMobile = strlen($masterPhone) >= 10 ? substr($masterPhone, -10) : '';
+                $phoneAvailable = $cardMobile !== '' && $masterMobile !== '';
+                $phoneMatches = $phoneAvailable && hash_equals($cardMobile, $masterMobile);
+                $emailMatches = $cardEmail !== '' && $masterEmail !== '' &&
+                    hash_equals($cardEmail, $masterEmail);
+
+                if (($phoneAvailable && !$phoneMatches) ||
+                    (!$phoneMatches && !$emailMatches)) {
+                    throw ValidationException::withMessages([
+                        'customer_id' => 'Phone/email verification failed. No automatic sync performed; manually review identity.',
+                    ]);
+                }
+                $verification = $phoneMatches ? 'PHONE_MATCH' : 'EMAIL_MATCH';
+                $newName = trim((string) ($master->name ?? ''));
             }
 
             $oldName = trim((string) ($card->customer_name ?? ''));
-            $newName = trim((string) ($master->name ?? ''));
             if ($newName === '') {
                 throw ValidationException::withMessages([
                     'customer_name' => 'Customer Master name is empty. No changes made.',
@@ -113,7 +120,7 @@ final class AdminJobCardCustomerNameSyncController extends Controller
                 'job_card_id' => $job,
                 'entity_type' => 'CUSTOMER',
                 'entity_id' => $customerId,
-                'action' => 'AM172_CUSTOMER_NAME_SYNC',
+                'action' => $mode === 'sync' ? 'AM172_CUSTOMER_NAME_SYNC' : 'AM172_CUSTOMER_NAME_MANUAL',
                 'before_json' => json_encode([
                     'customer_id' => $customerId,
                     'customer_name' => $oldName,
@@ -121,7 +128,7 @@ final class AdminJobCardCustomerNameSyncController extends Controller
                 'after_json' => json_encode([
                     'customer_id' => $customerId,
                     'customer_name' => $newName,
-                    'verification' => $phoneMatches ? 'PHONE_MATCH' : 'EMAIL_MATCH',
+                    'verification' => $verification,
                 ], JSON_INVALID_UTF8_SUBSTITUTE | JSON_UNESCAPED_UNICODE),
                 'reason' => $reason,
                 'actor_id' => (int) $actor->id,
@@ -136,8 +143,8 @@ final class AdminJobCardCustomerNameSyncController extends Controller
 
         return redirect()->route('erp.job-cards.show', $job)->with('success',
             $result['changed']
-                ? 'Customer name synced from verified ERP Master. Audit saved.'
-                : 'Job Card already has the current Customer Master name.'
+                ? ($mode === 'sync' ? 'Customer name synced from verified ERP Master. Audit saved.' : 'Job Card customer name corrected manually. Audit saved.')
+                : 'Job Card already has this customer name.'
         );
     }
 }
