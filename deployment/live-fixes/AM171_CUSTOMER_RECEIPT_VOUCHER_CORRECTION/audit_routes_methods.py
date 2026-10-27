@@ -9,7 +9,7 @@ import re,sys,subprocess,tempfile
 if len(sys.argv)!=2:raise SystemExit("Usage: python3 audit_routes_methods.py ROOT")
 root=Path(sys.argv[1]).expanduser().resolve()
 if not (root/"artisan").is_file():raise SystemExit("NOT_LARAVEL_ROOT")
-private=re.compile(r"(?i)password|secret|private.?key|bearer|csrf|api.?key|authorization|\\.env")
+private=re.compile(r"(?i)password|secret|private.?key|bearer|csrf|api.?key|authorization|\.env")
 paths=[
 "app/Http/Controllers/Web/AdminNativeModuleController.php",
 "app/Http/Controllers/Web/AdminMoneyReceiptController.php",
@@ -23,8 +23,8 @@ paths=[
 "routes/web.php",
 ]
 route_rx=re.compile(r"customer|receipt|ledger|payments|voucher|job.cards",re.I)
-method_rx=re.compile(r"^\\s*(?:public|protected|private)\\s+(?:static\\s+)?function\\s+(?:update|save|store|edit|void|reverse|correct|index|show|create|customer|receipt|payment|voucher|detail|post|submit)\\w*\\s*\\(",re.I)
-field_rx=re.compile(r"(?:customer_name|customer_id|customer_master|am_erp_customers|job_cards|customer_payments|workshop_payment_vouchers|payment_allocations|customer_ledger|route\\()",re.I)
+method_rx=re.compile(r"^\s*(?:public|protected|private)\s+(?:static\s+)?function\s+(?:update|save|store|edit|void|reverse|correct|index|show|create|customer|receipt|payment|voucher|detail|post|submit)\w*\s*\(",re.I)
+field_rx=re.compile(r"(?:customer_name|customer_id|customer_master|am_erp_customers|job_cards|customer_payments|workshop_payment_vouchers|payment_allocations|customer_ledger|route\()",re.I)
 def out(line):
     if private.search(line):return "[security-sensitive line omitted]"
     return line.rstrip()[:250]
