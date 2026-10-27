@@ -87,9 +87,12 @@ details.am170-rot-delete-parent[open]{
    var panel=details._am170Panel;
    if(panel){
      panel.classList.remove('am170-rot-delete-popover');
+     var saved=panel._am170OriginalStyles||{};
      ['top','bottom','left','right','width','max-height'].forEach(function(k){
        panel.style.removeProperty(k);
+       if(saved[k] && saved[k].value)panel.style.setProperty(k,saved[k].value,saved[k].priority||'');
      });
+     delete panel._am170OriginalStyles;
    }
    delete details._am170Panel;
  }
@@ -101,6 +104,15 @@ details.am170-rot-delete-parent[open]{
    var panel=details._am170Panel || findPanel(details);
    if(!summary||!panel)return;
    details._am170Panel=panel;
+   if(!panel._am170OriginalStyles){
+     panel._am170OriginalStyles={};
+     ['top','bottom','left','right','width','max-height'].forEach(function(k){
+       panel._am170OriginalStyles[k]={
+         value:panel.style.getPropertyValue(k),
+         priority:panel.style.getPropertyPriority(k)
+       };
+     });
+   }
    details.classList.add('am170-rot-delete-parent');
    panel.classList.add('am170-rot-delete-popover');
    var r=summary.getBoundingClientRect();
