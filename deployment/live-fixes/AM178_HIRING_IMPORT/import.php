@@ -6,8 +6,8 @@
  * INSERT ONLY: php import.php apply LARAVEL_STAGING_ROOT
  *
  * Two existing applicants (or any already-matching applicant) are preserved.
- * NEVER overwrites records/status/CVs or reuses public IDs. Preserves the
- * original application timestamps and statuses; no emails are sent.
+ * NEVER overwrites records/status/CVs. Preserves original public application IDs,
+ * application timestamps and statuses; no emails are sent.
  * Does not print PII, database credentials, application data or resume URLs.
  *
  * Requires CLI; DO NOT put this file under public_html. No external library.
@@ -72,6 +72,9 @@ function am178Plan(array $public, array $erp): array {
     }
     $missing = [];
     $similar = 0;
+    $idCollisions = 0;
+    $erpById = [];
+    foreach ($erp as $row) { $erpById[(int) $row['id']] = am178Key($row); }
     foreach ($public as $row) {
         $key = am178Key($row);
         $publicGroups[$key] = ($publicGroups[$key] ?? 0) + 1;
@@ -86,12 +89,17 @@ function am178Plan(array $public, array $erp): array {
         if (isset($loose[am178Key($row,true)])) {
             $similar++;
         }
+        if (isset($erpById[(int) $row['id']]) &&
+            $erpById[(int) $row['id']] !== $key) {
+            $idCollisions++;
+        }
         $missing[] = $row;
     }
     $duplicateGroups = count(array_filter($publicGroups, static fn($count) => $count > 1));
     return [
         'missing'=>$missing,'matched'=>$matched,'similar'=>$similar,
-        'duplicates'=>$duplicateGroups,'statusDiscrepancy'=>$statusDiscrepancy
+        'duplicates'=>$duplicateGroups,'idCollisions'=>$idCollisions,
+        'statusDiscrepancy'=>$statusDiscrepancy
     ];
 }
 
@@ -145,9 +153,10 @@ try {
     echo 'MISSING_CANDIDATES ', count($plan['missing']), "\n";
     echo 'POTENTIAL_SIMILAR_APPLICANTS ', $plan['similar'], "\n";
     echo 'SOURCE_DUPLICATE_GROUPS ', $plan['duplicates'], "\n";
+    echo 'MISSING_SOURCE_ID_COLLISIONS ', $plan['idCollisions'], "\n";
     echo 'EXISTING_STATUS_DIFFERENCES_PRESERVED ', $plan['statusDiscrepancy'], "\n";
 
-    if ($plan['similar'] || $plan['duplicates']) {
+    if ($plan['similar'] || $plan['duplicates'] || $plan['idCollisions']) {
         throw new RuntimeException('AMBIGUOUS_APPLICANTS_MANUAL_REVIEW_REQUIRED');
     }
     if ($mode === 'check') {
@@ -166,18 +175,18 @@ try {
     try {
         $latest = am178Open($erp, 'ERP');
         $fresh = am178Plan($sourceRows, $latest);
-        if ($fresh['similar'] || $fresh['duplicates']) {
+        if ($fresh['similar'] || $fresh['duplicates'] || $fresh['idCollisions']) {
             throw new RuntimeException('AMBIGUOUS_APPLICANTS_AFTER_RECHECK');
         }
         $insert = $erp->prepare(
             'INSERT INTO job_applications ' .
-            '(name,phone,email,position,qualification,experience,address,resume_url,message,status,created_at) ' .
-            'VALUES (?,?,?,?,?,?,?,?,?,?,?)'
+            '(id,name,phone,email,position,qualification,experience,address,resume_url,message,status,created_at) ' .
+            'VALUES (?,?,?,?,?,?,?,?,?,?,?,?)'
         );
         $imported = 0;
         foreach ($fresh['missing'] as $row) {
             $insert->execute([
-                $row['name'], $row['phone'], $row['email'], $row['position'],
+                $row['id'], $row['name'], $row['phone'], $row['email'], $row['position'],
                 $row['qualification'], $row['experience'], $row['address'],
                 $row['resume_url'], $row['message'], $row['status'], $row['created_at']
             ]);
