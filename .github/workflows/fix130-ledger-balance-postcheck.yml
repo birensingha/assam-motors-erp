@@ -1,0 +1,91 @@
+name: FIX130 Ledger Balance Preservation - READ ONLY
+on:
+  push:
+    branches: [fix/fix130-purchase-roundoff-ledger-single-row-20261025]
+    paths: ['.github/workflows/fix130-ledger-balance-postcheck.yml']
+permissions:
+  contents: read
+jobs:
+  deploy-staging-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          for i in 1 2 3;do
+            ssh-keyscan -T 10 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null && break
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Verify vendor ledger credits and outstanding remain consistent with posted bills
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=12 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=12 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f artisan
+          echo 'FIX130_POSTVERIFY_START'
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::class;
+          $service=$app->make(\App\Services\VendorService::class);
+          $vendor=5;
+          $base=(float)$db::table('workshop_purchases')->where('vendor_id',$vendor)
+                  ->whereRaw("COALESCE(record_status,'ACTIVE') <> 'DELETED'")
+                  ->sum('total_amount');
+          $deltas=0.0;
+          $headers=$db::table('workshop_purchase_batches')->where('vendor_id',$vendor)
+                  ->where('purchase_type','PART')->where('record_status','ACTIVE')->get();
+          foreach($headers as $h){
+           $active=$db::table('workshop_purchases')->where('vendor_id',$vendor)
+                  ->where('purchase_batch_no',$h->batch_no)->where('purchase_type','PART')
+                  ->whereRaw("COALESCE(record_status,'ACTIVE') <> 'DELETED'")
+                  ->get(['total_amount']);
+           if($active->isNotEmpty())$deltas+=round((float)$h->grand_total-(float)$active->sum('total_amount'),2);
+          }
+          $expected=round($base+$deltas,2);
+          $ledger=$service->ledger($vendor);
+          $actual=round((float)$ledger['summary']['purchases'],2);
+          echo "VENDOR_ID={$vendor} EXPECTED_PURCHASE_CREDIT={$expected} LEDGER_PURCHASE_CREDIT={$actual}\n";
+          if(abs($expected-$actual)>0.01){echo "FIX130_LEDGER_SUM_MISMATCH\n";exit(2);}
+          $rows=array_values(array_filter($ledger['entries'],fn($e)=>($e['entry_no']??'')==='PB-261025124019-467'));
+          echo 'SAMPLE_BILL_ROW_COUNT='.count($rows)."\n";
+          if(count($rows)!==1 || abs((float)$rows[0]['credit']-560.0)>0.01)exit(3);
+          $net=round((float)$ledger['summary']['opening_balance']+(float)$ledger['summary']['purchases']
+                 +(float)$ledger['summary']['expenses']-(float)$ledger['summary']['payments'],2);
+          echo "SUMMARY_OUTSTANDING={$ledger['summary']['outstanding']} RECALCULATED_OUTSTANDING={$net}\n";
+          if(abs($net-(float)$ledger['summary']['outstanding'])>0.01)exit(4);
+          echo "FIX130_FINANCIAL_READONLY_VERIFICATION_PASS\n";
+          PHP
+          echo 'FIX130_POSTVERIFY_COMPLETE'
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
