@@ -109,6 +109,16 @@ try {
     $app = require $root . '/bootstrap/app.php';
     $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
     $erp = $app->make('db')->connection()->getPdo();
+    // Source routes/web.php had no literal hiring route in the read-only
+    // scan; inspect *runtime* Laravel route names without modifying routes.
+    $routeNames = array_keys($app->make('router')->getRoutes()->getRoutesByName());
+    $jobRoutes = array_values(array_filter($routeNames, static fn($name) =>
+        str_contains(strtolower((string) $name), 'job-applications')
+    ));
+    echo 'ERP_HIRING_NAMED_ROUTES ', count($jobRoutes), "\n";
+    if (!$jobRoutes) {
+        echo "ERP_HIRING_ROUTE_WARNING_CHECK_HR_ADMIN_MENU\n";
+    }
     if (!$erp instanceof PDO) {
         throw new RuntimeException('ERP_NOT_PDO');
     }
