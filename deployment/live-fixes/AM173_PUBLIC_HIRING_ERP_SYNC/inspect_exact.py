@@ -65,6 +65,16 @@ plugins=domain/"public_html/wp-content/plugins"
 if plugins.is_dir():
     bases+=sorted(x for x in plugins.iterdir() if x.is_dir() and
         re.search(r'job|career|recruit|hiring|application|contact.form|wpforms',x.name,re.I))[:10]
+# A /hiring/ URL can be implemented by a single PHP file or a CMS route;
+# list only likely top-level public files without exposing their contents.
+publicroot=domain/"public_html"
+if publicroot.is_dir():
+    print("PUBLIC_ROOT_FOUND",publicroot.relative_to(domain))
+    for file in sorted(publicroot.iterdir()):
+        if file.is_file() and re.search(r"hiring|career|recruit|apply|job",file.name,re.I):
+            print("PUBLIC_TOPLEVEL_FILE",file.relative_to(domain))
+    if (publicroot/"wp-content").is_dir():
+        print("PUBLIC_CMS_WORDPRESS_DIRECTORY_FOUND")
 found=0
 for base in bases:
     if not base.is_dir():continue
