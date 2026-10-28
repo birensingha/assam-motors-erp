@@ -24,13 +24,18 @@ public=domain/"public_html"
 target=public/"api/job-apply.php"
 cfg=public/"api/config.php"
 js=public/"hiring/hiring.js"
+# Backups must never be web-accessible.
+safe_backups=root/"storage/app/am-backups/hiring-bridge"
 marker="AM176_PUBLIC_HIRING_DIRECT_NEW_ERP_DB"
 if not all(p.is_file() for p in (target,cfg,js,root/"bootstrap/app.php",root/"vendor/autoload.php")):
     raise SystemExit("AM176_STOP_REQUIRED_PUBLIC_OR_ERP_FILE_MISSING")
 source=target.read_text(encoding="utf8",errors="surrogateescape")
 if action=="rollback":
     if marker not in source:raise SystemExit("AM176_ROLLBACK_NOT_INSTALLED")
-    backups=sorted(target.parent.glob("job-apply.php.AM176_*.bak"),reverse=True)
+    backups=sorted(safe_backups.glob("job-apply.php.AM176_*.bak"),reverse=True)
+    # Accept historical backups from the old script until they are moved safely.
+    if not backups:
+        backups=sorted(target.parent.glob("job-apply.php.AM176_*.bak"),reverse=True)
     if not backups:raise SystemExit("AM176_STOP_NO_BACKUP")
     backup=backups[0]
     candidate=backup.read_text(encoding="utf8",errors="surrogateescape")
@@ -154,8 +159,18 @@ if action=="check":
     print("AM176_PREFLIGHT_PASS_NO_WRITES")
     sys.exit(0)
 stamp=datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-backup=target.with_name(target.name+".AM176_"+stamp+".bak")
+safe_backups.mkdir(parents=True,exist_ok=True)
+os.chmod(safe_backups,0o700)
+backup=safe_backups/(target.name+".AM176_"+stamp+".bak")
 shutil.copy2(target,backup)
+os.chmod(backup,0o600)
+# Old backups from this patch's first deployment may remain under public_html.
+# Move them outside the public document root; do not delete historical backups.
+for legacy in target.parent.glob("job-apply.php.AM176_*.bak"):
+    destination=safe_backups/legacy.name
+    if not destination.exists():
+        shutil.move(str(legacy),str(destination))
+        os.chmod(destination,0o600)
 fd,filename=tempfile.mkstemp(prefix=".am176_",dir=target.parent)
 try:
     with os.fdopen(fd,"w",encoding="utf8",errors="surrogateescape") as f:
