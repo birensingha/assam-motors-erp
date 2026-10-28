@@ -103,9 +103,18 @@ function am178Plan(array $public, array $erp): array {
     ];
 }
 
-echo "AM178_HIRING_PUBLIC_TO_NEW_ERP\n";
 try {
-    require_once $config;
+    // This shared config sets HTTP headers; invoking it in a CLI diagnostic
+    // should not emit header warnings or assume a web REQUEST_METHOD exists.
+    // Keep the config unchanged for the live website.
+    $_SERVER['REQUEST_METHOD'] ??= 'GET';
+    ob_start();
+    try {
+        require_once $config;
+    } finally {
+        ob_end_clean();
+    }
+    echo "AM178_HIRING_PUBLIC_TO_NEW_ERP\n";
     if (!function_exists('getDB')) {
         throw new RuntimeException('PUBLIC_GETDB_UNAVAILABLE');
     }
