@@ -103,7 +103,15 @@ final class VehicleHealthReportController extends Controller
 
     private function requireLogin(Request $request): void
     {
-        abort_unless($request->user() !== null, 403, 'ERP login required.');
+        // Admin routes sit beside the existing AdminJobCardPageController route,
+        // but must not depend solely on a potentially broad "auth" middleware.
+        // Deny unknown roles rather than accidentally authorizing staff members.
+        $user = $request->user();
+        abort_unless($user !== null, 403, 'ERP login required.');
+        $role = strtolower(trim((string) ($user->role ?? $user->role_name ?? '')));
+        $allowed = in_array($role, ['owner','admin','administrator','super admin','super_admin'], true)
+            || (bool) ($user->is_admin ?? false) === true;
+        abort_unless($allowed, 403, 'Owner/Admin access required for Vehicle Health reports and valuation.');
     }
 
     private function authorizeInspector(Request $request, int $job): void
