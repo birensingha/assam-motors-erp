@@ -74,12 +74,10 @@ def nav_patch(data):
         return data,"ALREADY_PRESENT"
     # Duplicate existing attendance <a> style/parent for nav consistency.
     # Only a simple standalone link is eligible; do not modify Blade loops.
-    hits=list(re.finditer(
-        r'<a\b[^>]*\bhref\s*=\s*["\x27][^"\x27]*'
-        r"route\(['\x22]erp\.attendance['\x22]\)"
-        r'[^"\x27]*["\x27][^>]*>[\s\S]{0,350}?</a>',
-        data,re.I
-    ))
+    anchors=list(re.finditer(r'<a\\b[^>]{0,850}>[\\s\\S]{0,300}?</a>',data,re.I))
+    hits=[m for m in anchors if re.search(
+        r"route\\(['\\x22]erp\\.attendance['\\x22]\\)",m.group()
+    )]
     if len(hits)!=1:return data,"NO_UNAMBIGUOUS_ATTENDANCE_LINK"
     h=hits[0]
     orig=h.group()
