@@ -65,7 +65,7 @@ final class AdminVendorMasterConsolidatedController extends Controller
         if ($selectedId && $selectedId > 0) {
             $selected = DB::table(self::TABLE)->where('id', $selectedId)->first();
             abort_unless($selected, 404, 'Vendor not found');
-        } elseif ($viewMode !== 'new' && $vendors->isNotEmpty()) {
+        } elseif ($viewMode !== 'new' && $vendors->count() > 0) {
             $selected = $vendors->first();
         }
         $deleteEligibility = ['allowed' => false, 'blockers' => []];
