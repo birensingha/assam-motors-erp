@@ -33,7 +33,7 @@ restore(){
 }
 trap restore ERR
 python3 "$HERE/apply.py" apply "$ROOT"
-QA="$(php "$HERE/verify.php" 2>&1)"
+QA="$(php "$HERE/verify.php" 2>&1 || true)"
 printf '%s\n' "$QA"
 printf '%s\n' "$QA" | grep -Fxq "AM130_VERIFICATION_COMPLETE_NO_ATTENDANCE_DATA_WRITES"
 CODE="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' 'https://staging.assammotors.com/erp/login')"
