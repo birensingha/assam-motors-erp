@@ -7,7 +7,7 @@
 
   var KEY = "am-staging-sidebar-scroll-am189";
   var wanted = null, sidebar = null, restoring = true, userScrolling = false;
-  var nav = null, restoreTimer = null, lastManual = 0;
+  var nav = null, restoreTimer = null, navigationCaptured = false;
   try {
     var previous = JSON.parse(sessionStorage.getItem(KEY) || "null");
     if (previous && Number.isFinite(previous.top) && previous.top >= 0) {
@@ -87,15 +87,18 @@
 
   function captureClick(e) {
     var link = e.target.closest ? e.target.closest("a[href]") : null;
-    if (!link) return;
+    if (!link || navigationCaptured) return;
     var element = nav || scroller();
-    if (element && element.contains(link)) remember();
+    if (element && element.contains(link)) {
+      remember();
+      navigationCaptured = true;
+    }
   }
   document.addEventListener("pointerdown",captureClick,true);
   document.addEventListener("click",captureClick,true);
   window.addEventListener("pagehide",function() {
-    // Do not overwrite restored scroll position during navigation.
-    if (!restoring) remember();
+    // Keep the link-time snapshot. A late menu reset must never replace it.
+    if (!navigationCaptured && !restoring) remember();
   },true);
 
   function boot() {
