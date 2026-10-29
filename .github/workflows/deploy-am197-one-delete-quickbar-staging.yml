@@ -30,7 +30,7 @@ jobs:
           python3 -m py_compile deployment/live-fixes/AM197_DELETE_QUICK_BAR/apply.py
           python3 -m py_compile deployment/live-fixes/AM197_DELETE_QUICK_BAR/verify.py
           bash -n deployment/live-fixes/AM197_DELETE_QUICK_BAR/DEPLOY_STAGING.sh
-          grep -q 'AM197_DELETE_QUICK_BAR_AUDITED_CORRECTION' deployment/live-fixes/AM197_DELETE_QUICK_BAR/apply.py
+          grep -q 'AM197_SINGLE_AUDITED_DELETE_QUICKBAR' deployment/live-fixes/AM197_DELETE_QUICK_BAR/apply.py
       - name: Configure STAGING SSH
         shell: bash
         run: |
