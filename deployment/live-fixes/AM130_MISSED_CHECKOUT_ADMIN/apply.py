@@ -18,9 +18,9 @@ a=controller.read_text('utf8',errors='surrogateescape')
 b=view.read_text('utf8',errors='surrogateescape')
 register=payload.read_text('utf8',errors='surrogateescape')
 marker='AM130_MISSED_CHECKOUT_ADMIN_REGISTER'
-if marker in a and marker in b and partial.is_file():
+if 'AM130_MISSED_CHECKOUT_ADMIN_AUDITED_CORRECTION' in a and "@include('admin.native.partials.am130-missed-checkout')" in b and partial.is_file():
     print('AM130_ALREADY_DEPLOYED_NO_WRITES');sys.exit(0)
-if any(marker in x for x in [a,b]) or partial.is_file():
+if ('AM130_MISSED_CHECKOUT_ADMIN_AUDITED_CORRECTION' in a or "@include('admin.native.partials.am130-missed-checkout')" in b or partial.is_file()):
     raise SystemExit('AM130_STOP_PARTIAL_INSTALL_MUST_REVIEW_BEFORE_RETRY')
 anchors={
  'VIEW_RETURN':"return view('admin.native.attendance',compact(",
@@ -39,7 +39,6 @@ if register.count('AM130_MISSED_CHECKOUT_ADMIN_REGISTER')!=1:raise SystemExit('A
 
 # Query independent of selected month and staff filter to show ALL previously
 # unresolved dates, including historical rows for inactive staff.
-controller_insert=String.rawNotUsed if False else None
 controller_insert='''
         // AM130_MISSED_CHECKOUT_ADMIN_REGISTER: global unresolved register;
         // keep monthly attendance matrix and its filters unchanged.
