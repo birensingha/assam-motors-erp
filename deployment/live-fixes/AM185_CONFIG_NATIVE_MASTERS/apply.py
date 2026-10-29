@@ -128,11 +128,28 @@ for label,slug,route,viewname,methods in modules:
     # native master: do not silently migrate only its page.
     if re.search(r"/legacy/api/|/legacy/workshop/|/workshop/api/",v,re.I):
         errors.append(label+": LEGACY_API_DEPENDENCY")
-    forms=len(re.findall(r"<form\b",v,re.I))
+    form_tags=re.findall(r'<form\b[^>]*>',v,re.I|re.S)
+    forms=len(form_tags)
     print(" VIEW_FORM_COUNT",forms,"REFERENCED_NAMED_ROUTES",
           ",".join(refs) if refs else "NONE")
+    # A GET route must not turn a legacy/unregistered POST form into HTTP 405.
+    for tag in form_tags:
+        method_match=re.search(r'method\s*=\s*["\x27]([^"\x27]+)',tag,re.I)
+        is_post=method_match and method_match.group(1).upper()=="POST"
+        if not is_post:continue
+        action_route=re.search(
+          r'action\s*=\s*["\x27][^>]*?route\s*\(\s*["\x27]([^"\x27]+)',
+          tag,re.I)
+        if not action_route:
+            errors.append(label+": NATIVE_POST_FORM_ACTION_NOT_VERIFIED")
+            continue
+        dest=action_route.group(1)
+        handlers=[r for r in existing if r["name"]==dest and
+                  any(verb in r["methods"] for verb in ("POST","PUT","PATCH","DELETE"))]
+        if not handlers:
+            errors.append(label+": MISSING_POST_ACTION_ROUTE:"+dest)
     if not forms:
-        print(" VIEW_NO_NATIVE_FORM_CHECK_OPERABILITY_IN_BROWSER",label)
+        errors.append(label+": NO_SAVE_FORM_NATIVE_OPERABILITY_NOT_VERIFIED")
     planned.append((slug,route,method))
 if errors:
     print("AM185_MISSING_REQUIREMENTS",len(errors))
