@@ -86,7 +86,7 @@ checks=[
   ("app/Http/Controllers/Web/ManagerInspectionWorkController.php","complete"),
   ("app/Http/Controllers/Web/StaffAssignedInspectionController.php","complete"),
 ]
-pattern=re.compile(r"validate|transaction|lockForUpdate|inspection_status|assignments|->insert|->delete|->update|\\breturn\\b|->save|VehicleInspectionChecklist|abort\\(",re.I)
+pattern=re.compile(r"validate|transaction|lockForUpdate|inspection_status|assignments|->insert|->delete|->update|\breturn\b|->save|VehicleInspectionChecklist|abort\(",re.I)
 for path,method in checks:
     file=root/path
     print("CONTROLLER",path,"METHOD",method)
