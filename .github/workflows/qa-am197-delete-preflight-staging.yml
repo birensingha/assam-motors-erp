@@ -45,19 +45,19 @@ jobs:
             sudo apt-get update -qq
             sudo apt-get install -qq -y sshpass
           fi
-      - name: Inspect Staff Check-In & Admin correction routes
+      - name: Read-only compare original deletion forms and compile candidate Blade
         shell: bash
         run: |
           set -euo pipefail
           if [ -n "$KEY" ]; then
             ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519 "$USERNAME@$HOST" 'mkdir -p "$HOME/AM197_PREFLIGHT"'
-            scp -o BatchMode=yes -o ConnectTimeout=14 -P "$PORT" -i ~/.ssh/id_ed25519 deployment/live-fixes/AM197_DELETE_QUICK_BAR/apply.py "$USERNAME@$HOST:~/AM197_PREFLIGHT/AUDIT_READONLY.sh"
-            ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519 "$USERNAME@$HOST" "cd '$ROOT' && bash -n ~/AM197_PREFLIGHT/AUDIT_READONLY.sh && bash ~/AM197_PREFLIGHT/AUDIT_READONLY.sh '$ROOT'"
+            scp -o BatchMode=yes -o ConnectTimeout=14 -P "$PORT" -i ~/.ssh/id_ed25519 deployment/live-fixes/AM197_DELETE_QUICK_BAR/apply.py "$USERNAME@$HOST:~/AM197_PREFLIGHT/apply.py"
+            ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519 "$USERNAME@$HOST" "cd '$ROOT' && python3 -m py_compile ~/AM197_PREFLIGHT/apply.py && python3 ~/AM197_PREFLIGHT/apply.py check '$ROOT'"
           else
             export SSHPASS="$PASSWORD"
             sshpass -e ssh -o ConnectTimeout=14 -p "$PORT" "$USERNAME@$HOST" 'mkdir -p "$HOME/AM197_PREFLIGHT"'
-            sshpass -e scp -o ConnectTimeout=14 -P "$PORT" deployment/live-fixes/AM197_DELETE_QUICK_BAR/apply.py "$USERNAME@$HOST:~/AM197_PREFLIGHT/AUDIT_READONLY.sh"
-            sshpass -e ssh -o ConnectTimeout=14 -p "$PORT" "$USERNAME@$HOST" "cd '$ROOT' && bash -n ~/AM197_PREFLIGHT/AUDIT_READONLY.sh && bash ~/AM197_PREFLIGHT/AUDIT_READONLY.sh '$ROOT'"
+            sshpass -e scp -o ConnectTimeout=14 -P "$PORT" deployment/live-fixes/AM197_DELETE_QUICK_BAR/apply.py "$USERNAME@$HOST:~/AM197_PREFLIGHT/apply.py"
+            sshpass -e ssh -o ConnectTimeout=14 -p "$PORT" "$USERNAME@$HOST" "cd '$ROOT' && python3 -m py_compile ~/AM197_PREFLIGHT/apply.py && python3 ~/AM197_PREFLIGHT/apply.py check '$ROOT'"
           fi
       - name: Remove transient key
         if: always()
