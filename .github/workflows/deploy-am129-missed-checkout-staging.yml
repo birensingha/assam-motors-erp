@@ -30,7 +30,7 @@ jobs:
           python3 -m py_compile deployment/live-fixes/AM129_CHECKOUT_GATE/apply.py
           php -l deployment/live-fixes/AM129_CHECKOUT_GATE/verify.php
           bash -n deployment/live-fixes/AM129_CHECKOUT_GATE/DEPLOY_STAGING.sh
-          grep -q 'AM129_COMPLETED_TAT_FROM_CORRECTED_START_END' deployment/live-fixes/AM129_CHECKOUT_GATE/apply.py
+          grep -q 'AM129_PREVIOUS_DAY_MISSED_CHECKOUT_BLOCK' deployment/live-fixes/AM129_CHECKOUT_GATE/apply.py
       - name: Configure STAGING SSH
         shell: bash
         run: |
