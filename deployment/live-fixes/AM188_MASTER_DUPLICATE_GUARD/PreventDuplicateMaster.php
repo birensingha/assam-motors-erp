@@ -83,18 +83,18 @@ final class PreventDuplicateMaster
             $query->where(function ($sub)use($type,$useName,$usePhone,$useGst,$name,$phone,$gst,$n,$pc,$gc):void{
                 $nameSql="LOWER(REGEXP_REPLACE(COALESCE($n,''),'[[:space:][:punct:]]+','')) = ?";
                 if ($useName && $type==='vendor')$sub->orWhereRaw($nameSql,[$name]);
-                if ($useName && $type==='customer') {
-                    // Same person's name + mobile is duplicate. Shared family phone
-                    // with a different name is permitted.
+                if ($type==='customer') {
+                    // Same Indian mobile is the strongest Customer identity:
+                    // reject even when a name is misspelled differently.
                     if ($usePhone) {
                         $p=self::q($pc);
-                        $sub->orWhere(function ($x)use($nameSql,$name,$p,$phone):void{
-                            $x->whereRaw($nameSql,[$name])
-                              ->whereRaw("RIGHT(REGEXP_REPLACE(COALESCE($p,''),'[^0-9]',''),10) = ?",[$phone]);
-                        });
-                    } elseif (!$useGst) {
-                        // No reliable second identifier: conservatively refuse
-                        // exact-name duplicates instead of creating another.
+                        $sub->orWhereRaw(
+                            "RIGHT(REGEXP_REPLACE(COALESCE($p,''),'[^0-9]',''),10) = ?",
+                            [$phone]
+                        );
+                    } elseif ($useName && !$useGst) {
+                        // For customers without mobile/GSTIN, block an exact
+                        // normalized-name duplicate to prevent accidental copies.
                         $sub->orWhereRaw($nameSql,[$name]);
                     }
                 }
