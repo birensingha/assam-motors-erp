@@ -159,6 +159,53 @@ final class JobCardDeleteGuard
             }
         }
 
+        // IMPORTANT: a ROT session / stock issue can reference a planned
+        // labour/part row WITHOUT a direct job_card_id. Detect those child-
+        // of-child links, including ON DELETE CASCADE FKs, before deletion.
+        // Do not let a cascading delete silently erase workshop history.
+        $relationRows = DB::select(
+            "SELECT TABLE_NAME,COLUMN_NAME,REFERENCED_TABLE_NAME,
+                    REFERENCED_COLUMN_NAME
+             FROM information_schema.KEY_COLUMN_USAGE
+             WHERE TABLE_SCHEMA=DATABASE()
+               AND REFERENCED_TABLE_SCHEMA=DATABASE()
+               AND REFERENCED_TABLE_NAME IN
+                 ('job_card_labour','job_card_parts','job_card_inspection',
+                  'job_card_inspection_assignments',
+                  'job_card_inspection_items','job_card_inspection_photos',
+                  'job_card_change_audits')"
+        );
+        foreach ($relationRows as $rel) {
+            $parent = (string)$rel->REFERENCED_TABLE_NAME;
+            if (!isset($children[$parent])) continue;
+            $pk = (string)$rel->REFERENCED_COLUMN_NAME;
+            $ids = array_values(array_unique(array_filter(array_map(
+                fn($entry) => $entry[$pk] ?? null,
+                $children[$parent]['rows']
+            ),fn($id)=>$id!==null && $id!=='')));
+            if (!$ids) {
+                $blockers[] = "$parent has child relationships but no known primary keys";
+                continue;
+            }
+            $table = (string)$rel->TABLE_NAME;
+            $refField = (string)$rel->COLUMN_NAME;
+            if ($table === $parent) {
+                $blockers[] = "$parent contains self-referencing records";
+                continue;
+            }
+            $query = DB::table($table)->whereIn($refField,$ids);
+            if (!$query->exists()) continue;
+            // The only safe descendants are already independently archived
+            // as direct JC children; the deletion order handles these.
+            if (!isset($children[$table])) {
+                $blockers[] = "$table references $parent without a direct JC archive";
+                continue;
+            }
+            if (!in_array($table,self::INSPECTION_TABLES,true)) {
+                $blockers[] = "$table contains linked workshop records";
+            }
+        }
+
         // Check name/number references used by older / legacy modules.
         $jobNumbers = array_values(array_unique(array_filter(array_map(
             fn($field)=>trim((string)($job->{$field} ?? '')),
