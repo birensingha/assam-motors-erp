@@ -25,8 +25,7 @@ final class JobCardDeleteGuard
     private const PLANNED_TABLES = ['job_card_parts', 'job_card_labour'];
 
     private const DISALLOWED_STATUSES = [
-        'wip', 'work_in_progress', 'work in progress',
-        'in_progress', 'in progress', 'started', 'running',
+        'started', 'running',
         'work_completed', 'work completed', 'completed',
         'qc_pending', 'qc pending', 'qc_passed', 'qc passed',
         'ready_for_delivery', 'ready for delivery',
