@@ -48,7 +48,7 @@ input,textarea{display:block;width:100%;border:1px solid #c5d5e3;border-radius:8
 </div>
 <div style="height:16px"></div>
 <div class="score"><div class="number">{{ $health }}%</div><div><h2>Overall Vehicle Health</h2><div class="muted">Based on {{ count($points) }} submitted inspection points. Scoreable points are weighted; N/A and text readings are excluded.</div>
-<div class="{{ count($defects) ? 'bad':'good' }}">{{ count($defects) }} issue(s) observed · {{ $safety_open }} safety-critical · Repair verification may be required</div></div></div>
+<div class="{{ count($defects) ? 'bad':'good' }}">{{ count($defects) }} observed finding(s) · {{ count($open_defects) }} unresolved · {{ $safety_open }} unresolved safety-critical</div></div></div>
 </div></section>
 <section class="sheet"><div class="area"><h2>Category-wise Condition</h2>
 <table><thead><tr><th>Inspection Category</th><th>Checked Points</th><th>Health</th><th>Issues</th></tr></thead><tbody>
@@ -83,8 +83,8 @@ input,textarea{display:block;width:100%;border:1px solid #c5d5e3;border-radius:8
 <table><thead><tr><th>#</th><th>Inspection Point</th><th>Condition</th><th>Observation</th></tr></thead><tbody>
 @foreach($points as $i=>$point)<tr><td>{{ $i+1 }}</td><td>{{ $point['name'] }}</td>
 <td class="{{ $point['defect']?'bad':'good' }}">{{ strtoupper(str_replace('_',' ',$point['status'])) }}@if($point['critical']) · Safety @endif</td>
-<td>{{ $point['remarks'] ?: '—' }}</td></tr>@endforeach</tbody></table>
-@if($defects)<p class="note"><b>Open findings:</b> The {{ count($defects) }} observed issue(s) must be tracked for rectification and re-inspection in the Job Card before QC Pass, per Assam Motors policy. This report does not itself mark any defect as resolved.</p>@endif
+<td>{{ $point['remarks'] ?: '—' }}@if($point['defect'])<small style="display:block;color:#9b3232">Finding: {{ $point['defect_status'] }}</small>@endif</td></tr>@endforeach</tbody></table>
+@if($open_defects)<p class="note"><b>Unresolved findings:</b> {{ count($open_defects) }} observed issue(s) still require repair and verified re-inspection before QC PASS. Historical findings are retained even after verification.</p>@elseif($defects)<p class="note"><b>Previously observed findings:</b> All recorded defects currently show VERIFIED; original inspection evidence is preserved.</p>@endif
 </div><div class="footer">ASSAM MOTORS · Report {{ $report_no }} · This inspection is based on observed/supplied checks; it does not certify roadworthiness, ownership or market value. Generated from submitted ERP data, without vehicle photos.</div></section>
 </main>
 <script>
