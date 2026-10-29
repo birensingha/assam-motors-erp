@@ -48,7 +48,7 @@ Website: www.assammotors.com · MSME: UDYAM-AS-03-0045843</div></div></div>
 <div class="section-title">01 · Overall Vehicle Condition</div>
 <table class="summary"><tr><td style="width:32%;text-align:center"><span class="health-number">{{ $health }}%</span><div class="muted">INSPECTION HEALTH SCORE</div></td>
 <td style="width:68%"><div style="font-size:10pt;font-weight:bold">Condition Summary</div>
-<div style="margin-top:5px">{{ count($points) }} inspection items recorded · {{ count($defects) }} condition issue(s) · {{ $safety_open }} safety-critical finding(s)</div>
+<div style="margin-top:5px">{{ count($points) }} inspection items recorded · {{ count($defects) }} observed issue(s) · {{ count($open_defects) }} unresolved · {{ $safety_open }} unresolved safety-critical</div>
 <div class="muted" style="margin-top:6px">The score is weighted by inspection category. Non-graded readings and N/A items do not affect percentage.</div></td></tr></table>
 <div class="section-title">02 · Category-wise Health</div>
 <table class="report-table"><thead><tr><th>Category</th><th>Points</th><th>Health Score</th><th>Observed Issues</th></tr></thead><tbody>
@@ -67,9 +67,9 @@ Website: www.assammotors.com · MSME: UDYAM-AS-03-0045843</div></div></div>
 @if(count($defects))
 <div class="section-title">04 · Observed Defects and Required Attention</div>
 <table class="report-table"><thead><tr><th style="width:30%">Inspection Point</th><th style="width:18%">Result</th><th>Observation / Recommendation</th></tr></thead><tbody>
-@foreach($defects as $defect)<tr><td>{{ $defect['name'] }}</td><td class="red">{{ strtoupper(str_replace('_',' ',$defect['status'])) }}@if($defect['critical']) · Safety @endif</td><td>{{ $defect['remarks'] ?: 'Inspector observation not recorded' }}</td></tr>@endforeach
+@foreach($defects as $defect)<tr><td>{{ $defect['name'] }}</td><td class="red">{{ strtoupper(str_replace('_',' ',$defect['status'])) }} · {{ $defect['defect_status'] }}@if($defect['critical']) · Safety @endif</td><td>{{ $defect['remarks'] ?: 'Inspector observation not recorded' }}</td></tr>@endforeach
 </tbody></table>
-<div class="warning"><b>Repair pending:</b> Inspection completion does not resolve defects. Repair and re-inspection verification are separate audited steps before QC PASS.</div>
+<div class="warning"><b>Defect status:</b> {{ count($open_defects) }} unresolved finding(s). Findings marked VERIFIED retain their original inspection history. QC PASS requires separate repair and verification control.</div>
 @endif
 <div class="section-title">05 · Detailed Point-wise Inspection</div>
 <table class="report-table"><thead><tr><th style="width:6%">#</th><th style="width:39%">Inspection Check</th><th style="width:19%">Condition</th><th style="width:36%">Remarks / Reading</th></tr></thead><tbody>
