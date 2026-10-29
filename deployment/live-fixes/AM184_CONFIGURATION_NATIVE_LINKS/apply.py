@@ -185,15 +185,12 @@ if not changes:
 candidate=source
 for start,end,replacement in sorted(changes,reverse=True):
     candidate=candidate[:start]+replacement+candidate[end:]
-candidate="{{{-- "+marker+" --}}\n"+candidate if False else candidate
 # Valid Blade comment after the @section('content') prevents adding text before
 # @extends. Keep marker separate from the markup.
 insert_at=candidate.find("@section('content')")
 if insert_at<0:raise SystemExit("AM184_STOP_CONTENT_SECTION_MISSING")
 candidate=candidate[:insert_at]+"{{-- "+marker+" --}}\n"+candidate[insert_at:]
 if candidate.count(marker)!=1:raise SystemExit("AM184_STOP_MARKER_INTEGRITY_FAILED")
-for name in ("view","php"):
-    pass
 if mode=="check":
     print("AM184_CHECK_PASS_NO_WRITES")
     sys.exit(0)
