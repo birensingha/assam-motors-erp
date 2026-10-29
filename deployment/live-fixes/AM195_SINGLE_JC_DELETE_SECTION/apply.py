@@ -94,6 +94,21 @@ for field in (am193,"erp.job-cards.delete-unused","Permanently Delete Unstarted 
 if new_control.count("<form")!=1 or new_control.count("</form>")!=1:
     raise SystemExit("AM195_STOP_AM193_FORM_COUNT_UNEXPECTED")
 if len(new_control)>8500:raise SystemExit("AM195_STOP_AM193_BLOCK_TOO_LARGE")
+
+# Display the new audited control EXPANDED in the original lower red panel,
+# rather than the collapsed disclosure originally installed at the top.
+if new_control.count("<details>")!=1 or new_control.count("</details>")!=1:
+    raise SystemExit("AM195_STOP_AM193_DISCLOSURE_STRUCTURE_CHANGED")
+new_control=new_control.replace("<details>","",1).replace("</details>","",1)
+new_control,n_head=re.subn(
+    r"<summary\\b[^>]*>(.*?)</summary>",
+    r'<h3 style="color:#a42b20;font-size:15px;margin:0 0 9px">\\1</h3>',
+    new_control,count=1,flags=re.I|re.S
+)
+if n_head!=1:
+    raise SystemExit("AM195_STOP_AM193_SUMMARY_HEADING_MISSING")
+new_control=new_control.replace("border:1px solid #f4c9bf;",
+    "border:1px solid #f4c9bf;border-top:3px solid #dc2626;",1)
 remaining=source[:start]+source[ending:]
 
 # 2. Locate the lower legacy "Delete Empty Job Card" card by its
@@ -129,6 +144,8 @@ for a,b,name in intervals:
     if len(re.findall(r"<form\b",chunk,re.I))!=1:continue
     if len(re.findall(r"</form\s*>",chunk,re.I))!=1:continue
     if "erp.job-cards.delete-unused" in chunk:continue
+    if not re.search(r"(?i)Confirm\\s+Job\\s+Card\\s+Number",chunk):continue
+    if not re.search(r"(?i)Deletion\\s+Reason",chunk):continue
     if len(re.findall(r"(?i)Permanently\s+Delete\s+Empty\s+Job\s+Card",chunk))!=1:continue
     if len(re.findall(r"(?i)Delete\s+Empty\s+Job\s+Card",chunk))<2:continue
     if any(x in chunk for x in ("Job Card Summary","Credit Note","Estimate/ Reverse","am194-open","am75-quick-actions")):continue
