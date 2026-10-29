@@ -205,6 +205,45 @@ final class JobCardDeleteGuard
             }
         }
 
+        // Legacy ROT/stock tables sometimes reference JC LABOUR/PART IDs
+        // without declaring foreign keys. Catch those as well.
+        $linkColumnMap = [
+            'job_card_labour' => [
+                'job_card_labour_id', 'jobcard_labour_id', 'job_card_labour_item_id',
+                'job_card_rot_id', 'job_rot_id',
+            ],
+            'job_card_parts' => [
+                'job_card_part_id','jobcard_part_id','job_card_parts_id',
+                'job_card_part_line_id',
+            ],
+            'job_card_inspection' => [
+                'job_card_inspection_id',
+            ],
+        ];
+        $flatLinks = array_values(array_unique(array_merge(...array_values($linkColumnMap))));
+        $sqlMarks = implode(',',array_fill(0,count($flatLinks),'?'));
+        $extraColumns = DB::select(
+            "SELECT TABLE_NAME,COLUMN_NAME
+               FROM information_schema.COLUMNS
+              WHERE TABLE_SCHEMA=DATABASE()
+                AND COLUMN_NAME IN ($sqlMarks)",$flatLinks
+        );
+        foreach ($extraColumns as $reference) {
+            $field=(string)$reference->COLUMN_NAME;
+            $table=(string)$reference->TABLE_NAME;
+            foreach ($linkColumnMap as $parent=>$fields) {
+                if (!in_array($field,$fields,true) || !isset($children[$parent]))continue;
+                $ids=array_values(array_filter(array_map(
+                    fn($entry)=>$entry['id']??null,
+                    $children[$parent]['rows']
+                ),fn($id)=>$id!==null));
+                if ($ids && DB::table($table)->whereIn($field,$ids)->exists()
+                    && !isset($children[$table])) {
+                    $blockers[]="$table references $parent (indirect JC link)";
+                }
+            }
+        }
+
         // Check name/number references used by older / legacy modules.
         $jobNumbers = array_values(array_unique(array_filter(array_map(
             fn($field)=>trim((string)($job->{$field} ?? '')),
