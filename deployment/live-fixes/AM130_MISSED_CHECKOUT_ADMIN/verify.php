@@ -61,7 +61,7 @@ if(!str_contains($html,'Missed Check-Out Register')
     am130Stop('RENDERED_VIEW_CONTENT_MISSING');
 if($sample){
     foreach(['am130_resolution','am130_checkout_time','am130_reason',
-             'Save & Audit','csrf'] as $part){
+             'Save & Audit','name="_token"'] as $part){
         if(!str_contains($html,$part))am130Stop('RENDERED_FORM_MISSING_'.preg_replace('/[^a-z0-9]/i','_',$part));
     }
     $target=route('erp.attendance.update',$sample->id);
