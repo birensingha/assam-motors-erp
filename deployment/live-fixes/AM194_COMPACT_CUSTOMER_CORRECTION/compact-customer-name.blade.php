@@ -50,6 +50,7 @@
 .am194-field input,.am194-field textarea{display:block;width:100%;margin-top:6px;border:1px solid #c7d7e6;
   border-radius:8px;padding:10px;font-size:13px;background:#fff;color:#17365a}
 .am194-field textarea{min-height:66px;resize:vertical}
+.am194-field[hidden]{display:none!important}
 .am194-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:8px;margin-top:18px}
 .am194-actions button{cursor:pointer;border-radius:8px;padding:10px 13px;font-weight:750;font-size:12px}
 .am194-cancel{background:#fff;color:#254565;border:1px solid #c2d4e7}
@@ -124,7 +125,7 @@
   var form = document.getElementById('am194-customer-form');
   var nameInput = document.getElementById('am194-new-name');
   var manualLabel = document.getElementById('am194-manual-label');
-  var priorFocus = null;
+  var priorFocus = null, priorBodyOverflow = '';
   var choices = form.querySelectorAll('input[name="mode"]');
 
   function toggleMode() {
@@ -137,13 +138,14 @@
   function openModal() {
     priorFocus = document.activeElement;
     modal.hidden = false;
+    priorBodyOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     toggleMode();
     panel.focus();
   }
   function closeModal() {
     modal.hidden = true;
-    document.body.style.overflow = '';
+    document.body.style.overflow = priorBodyOverflow;
     if (priorFocus && priorFocus.focus) priorFocus.focus();
   }
   open.addEventListener('click', openModal);
