@@ -115,14 +115,15 @@ def classify(r):
     parts=u.split("/")
     # Exact master create paths. Do not block purchases, invoice, customer
     # job-card assignment, payment, OSL or activity endpoints.
-    vendor=any(x in parts for x in ("vendors","vendor-master","vendor_master","suppliers"))
-    customer=any(x in parts for x in ("customers","customer-master","customer_master"))
+    vendor=any(x in parts for x in ("vendors","vendor","vendor-master","vendor_master","suppliers","supplier"))
+    customer=any(x in parts for x in ("customers","customer","customer-master","customer_master"))
     if not vendor and not customer:return None
     if any(x in parts for x in ("payments","ledger","status","toggle",
         "delete","void","archive","merge","update","contact","import",
         "upload","activate","deactivate","assign","search")):return None
-    if not any(word in a for word in ("@save","@store","@create","@add","@insert",
-                                      "createcustomer","savecustomer","storecustomer")):
+    if not (any(word in a for word in ("@save","@store","@create","@add","@insert"))
+            or ("customer" in a and any(w in a for w in ("save","store","create","register","insert")))
+            or ("vendor" in a and any(w in a for w in ("save","store","create","insert")))):
         return None
     if vendor and ("vendor" in a or "supplier" in a or u=="erp/vendors"):
         return "vendor"
