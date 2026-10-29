@@ -41,6 +41,7 @@ def scan_file(p):
     if p.stat().st_size>400_000:return
     lines=read(p)
     print("SOURCE_FILE",rel(p),"LINES",len(lines))
+    count=0
     for i,l in enumerate(lines):
         if re.search(r'(?i)<form\b|<input\b|<select\b|action\s*=|method\s*=|'
                      r'(INSERT|UPDATE|DELETE)\s+|function\s+|DB::table|->save\(|'
@@ -48,7 +49,8 @@ def scan_file(p):
             if sensitive.search(l):continue
             # Only static source lines, no applicant/account record data.
             print(" SRC",i+1,safe(l))
-            if i>450:break
+            count+=1
+            if count>=70:break
 def eligible(p):
     return p.is_file() and p.stat().st_size<450_000 and p.suffix.lower() in (".php",".html",".htm",".js") and not re.search(r'(?i)(\.env|backup|\.bak|secret|credentials|config\.php|database\.php)',p.name)
 def related(p):
@@ -109,6 +111,9 @@ for base in (
     found=[]
     for p in base.iterdir():
         if eligible(p) and related(p):found.append(p)
+        if p.is_dir() and related(p):
+            for child in list(p.iterdir())[:100]:
+                if eligible(child):found.append(child)
     print("LEGACY_DIR",rel(base),"CONFIG_PAGE_CANDIDATES",len(found))
     for p in sorted(found)[:25]:
         scan_file(p)
@@ -142,7 +147,8 @@ try{
  foreach(Illuminate\Support\Facades\DB::select('SHOW TABLES') as $row){
   $values=array_values((array)$row);$t=(string)($values[0]??'');
   if(preg_match('/config|setting|option|preference|rate_master|tax_master/i',$t)){
-   echo 'TABLE '.$t."\n";
+   $cols=Illuminate\Support\Facades\Schema::getColumnListing($t);
+   echo 'TABLE '.$t.' COLUMNS '.implode(',',$cols)."\n";
   }
  }
 }catch(Throwable $e){echo 'SCHEMA_PROBE_FAILED '.get_class($e)."\n";}
