@@ -101,8 +101,8 @@ for base in bases:
     if not base.is_dir():continue
     matches=[]
     for p in base.iterdir():
-        if p.is_file() and re.search(r"(?i)configur|setup|setting|preference",p.name) and
-           not re.fullmatch(r"(?i)config(?:uration)?\.php",p.name):
+        if (p.is_file() and re.search(r"(?i)configur|setup|setting|preference",p.name)
+            and not re.fullmatch(r"(?i)config(?:uration)?\.php",p.name)):
             matches.append(p)
         if p.is_dir() and re.search(r"(?i)configur|setup|setting|preference",p.name):
             matches.append(p)
