@@ -51,8 +51,10 @@ $rows=$sample?collect([$sample]):collect();
 try {
     $html=view('admin.native.partials.am130-missed-checkout',[
         'am130PendingRows'=>$rows,'am130PendingCount'=>$pending,
+        'errors'=>new \Illuminate\Support\ViewErrorBag(),
     ])->render();
 }catch(\Throwable $e){
+    echo 'AM130_RENDER_EXCEPTION_DETAIL='.substr(preg_replace('/\s+/',' ',$e->getMessage()),0,320)."\n";
     am130Stop('VIEW_RENDER_EXCEPTION_'.get_class($e));
 }
 if(!str_contains($html,'Missed Check-Out Register')
