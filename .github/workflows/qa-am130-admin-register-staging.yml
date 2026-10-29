@@ -1,4 +1,4 @@
-name: AM130 Admin Register Staging Deploy and QA Audit
+name: AM130 Admin Register Staging QA Detailed Diagnostic
 on:
   pull_request:
     paths:
