@@ -75,7 +75,25 @@ final class AdminUnusedJobCardDeleteController extends Controller
 
                 // The archive holds ALL the removed administrative child data.
                 // Unknown or financial tables are never auto-deleted.
-                foreach ($check['children'] as $table=>$ref) {
+                // Delete inspection photos/checklist first, parent inspection
+                // rows afterwards. Any unexpected FK still fails atomically.
+                $deleteOrder = [
+                    'job_card_inspection_photos'=>0,
+                    'job_card_inspection_items'=>1,
+                    'job_card_inspection_checks'=>1,
+                    'job_card_inspection_checklist'=>1,
+                    'job_card_inspection_results'=>1,
+                    'job_card_inspection_reports'=>1,
+                    'job_card_parts'=>2,
+                    'job_card_labour'=>2,
+                    'job_card_inspection_assignments'=>3,
+                    'job_card_inspection'=>4,
+                    'job_card_change_audits'=>5,
+                ];
+                $toDelete=$check['children'];
+                uksort($toDelete,static fn($a,$b) =>
+                    ($deleteOrder[$a] ?? 9) <=> ($deleteOrder[$b] ?? 9));
+                foreach ($toDelete as $table=>$ref) {
                     $count=DB::table($table)
                         ->where($ref['column'],$job)->delete();
                     if ($count!==count($ref['rows'])) {
