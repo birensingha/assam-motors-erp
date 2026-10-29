@@ -31,7 +31,32 @@ final class InspectionQcDefectController extends Controller
         return view('inspection-defects.index',[
             'job'=>$card,'findings'=>$guard->findings($job),'staff'=>$staff,
             'identity'=>$this->jobIdentity($card),
+            'inspectionMeta'=>$this->inspectionMeta($job),
         ]);
+    }
+
+    /** Original saved point-count and missing-observation details; no mutation. */
+    private function inspectionMeta(int $job): array
+    {
+        $rows=DB::table('job_card_inspection')->where('job_card_id',$job)
+            ->get(['item_name','status','remarks']);
+        $official=\App\Support\VehicleInspectionChecklist::items();
+        $names=$rows->map(static fn ($r): string => trim((string)$r->item_name))->all();
+        $isCurrent=count($names)===count($official)
+            && count(array_unique($names))===count($names)
+            && !array_diff($names,$official)
+            && !array_diff($official,$names);
+        $missing=0;
+        foreach ($rows as $item) {
+            if (in_array(strtolower(trim((string)$item->status)),['fair','poor'],true)
+                && trim((string)($item->remarks??''))==='') $missing++;
+        }
+        return [
+            'saved_count'=>$rows->count(),
+            'official_count'=>count($official),
+            'current_30'=>$isCurrent,
+            'missing_defect_notes'=>$missing,
+        ];
     }
 
     /** Read-only header data, compatible with older and staging JC field names. */
