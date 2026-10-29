@@ -1,0 +1,226 @@
+/* AM196 — compact NEW ERP Job Card Register UI.
+   No action, invoice, receipt, return-to-JC, data or filter logic changes. */
+.am62-root #am62-selected.am62-preview {
+  display:grid!important;
+  grid-template-columns:minmax(230px,1fr) minmax(0,auto)!important;
+  grid-template-areas:"head actions" "profile profile" "notice notice" "rules rules"!important;
+  align-items:center!important;
+  gap:6px 12px!important;
+  padding:10px 13px!important;
+  margin-bottom:9px!important;
+}
+.am62-root #am62-selected .am62-preview-head {
+  grid-area:head!important;
+  justify-content:flex-start!important;
+  gap:10px!important;
+  min-width:0!important;
+  margin:0!important;
+}
+.am62-root #am62-selected .am62-preview-head h2 {
+  font-size:14px!important;
+  font-weight:850!important;
+  line-height:1.25!important;
+  margin:0!important;
+  overflow-wrap:anywhere!important;
+}
+.am62-root #am62-selected .am62-chip {
+  font-size:9px!important;
+  padding:4px 7px!important;
+}
+.am62-root #am62-selected .am62-profileactions {
+  grid-area:actions!important;
+  display:flex!important;
+  justify-content:flex-end!important;
+  gap:5px!important;
+  margin:0!important;
+  min-width:0!important;
+}
+.am62-root #am62-selected .am62-profileactions a {
+  font-size:10px!important;
+  font-weight:800!important;
+  min-height:30px!important;
+  padding:5px 9px!important;
+  border-radius:6px!important;
+}
+.am62-root #am62-selected .am62-profile {
+  grid-area:profile!important;
+  display:grid!important;
+  grid-template-columns:minmax(0,1fr) minmax(0,1fr) minmax(0,1fr)!important;
+  gap:6px 14px!important;
+  border-top:1px solid #ebf1f8!important;
+  padding-top:7px!important;
+  margin:0!important;
+}
+.am62-root #am62-selected .am62-profile > div {min-width:0!important}
+.am62-root #am62-selected .am62-profile small {
+  font-size:9px!important;
+  letter-spacing:.035em!important;
+  line-height:1.2!important;
+  margin:0 0 2px!important;
+}
+.am62-root #am62-selected .am62-profile strong {
+  display:block!important;
+  font-size:11px!important;
+  line-height:1.32!important;
+}
+.am62-root #am62-selected #am62-finance-msg.am62-notice {
+  grid-area:notice!important;
+  padding:6px 9px!important;
+  font-size:10px!important;
+  line-height:1.4!important;
+  margin:0!important;
+  border-radius:6px!important;
+}
+.am62-root #am62-selected #am62-finance-msg[hidden] {display:none!important}
+.am62-root #am62-selected .am196-finance-rules {
+  grid-area:rules!important;
+  margin:0!important;
+  color:#60758f!important;
+  font-size:10px!important;
+}
+.am62-root #am62-selected .am196-finance-rules > summary {
+  cursor:pointer!important;
+  display:inline-flex!important;
+  align-items:center!important;
+  gap:4px!important;
+  padding:2px 0!important;
+  border:0!important;
+  background:transparent!important;
+  color:#3b5f8b!important;
+  font-weight:700!important;
+  outline-offset:2px!important;
+}
+.am62-root #am62-selected .am196-finance-rules p {
+  margin:4px 0!important;
+  font-size:10px!important;
+  line-height:1.5!important;
+  color:#5f7088!important;
+}
+.am62-root details.am62-more {
+  padding:8px 12px 10px!important;
+  border-radius:10px!important;
+  margin-bottom:10px!important;
+}
+.am62-root details.am62-more > summary {
+  display:flex!important;
+  justify-content:space-between!important;
+  align-items:center!important;
+  gap:8px!important;
+  cursor:pointer!important;
+  font-size:11px!important;
+  line-height:1.4!important;
+  font-weight:850!important;
+  background:transparent!important;
+  border:0!important;
+  outline-offset:2px!important;
+  padding:1px 0!important;
+  list-style:none!important;
+  color:#1c426e!important;
+}
+.am62-root details.am62-more > summary::-webkit-details-marker {display:none!important}
+.am62-root details.am62-more > summary::after {
+  content:"▾";
+  font-size:12px;
+  color:#366ca2;
+}
+.am62-root details.am62-more:not([open]) > summary::after {content:"▸"}
+.am62-root details.am62-more .am62-existing {
+  display:grid!important;
+  grid-template-columns:repeat(5,minmax(0,1fr))!important;
+  gap:6px!important;
+  margin:7px 0!important;
+}
+.am62-root details.am62-more .am62-stat {
+  display:flex!important;
+  justify-content:space-between!important;
+  align-items:center!important;
+  gap:5px!important;
+  min-width:0!important;
+  padding:6px 9px!important;
+  border:1px solid #e2ebf7!important;
+  border-radius:6px!important;
+  background:#f5f8fd!important;
+  color:#3e5c7f!important;
+  font-size:9px!important;
+  font-weight:800!important;
+}
+.am62-root details.am62-more .am62-stat b {
+  display:inline!important;
+  flex:0 0 auto!important;
+  font-size:15px!important;
+  line-height:1!important;
+  color:#103d79!important;
+}
+.am62-root details.am62-more form.am62-filters {
+  display:grid!important;
+  grid-template-columns:repeat(3,minmax(0,1fr)) auto auto!important;
+  gap:7px!important;
+  align-items:center!important;
+  margin:7px 0 0!important;
+  width:100%!important;
+}
+.am62-root details.am62-more form.am62-filters > select {
+  display:block!important;
+  box-sizing:border-box!important;
+  min-width:0!important;
+  max-width:none!important;
+  width:100%!important;
+  height:34px!important;
+  min-height:34px!important;
+  padding:5px 9px!important;
+  border:1px solid #c7d9ed!important;
+  border-radius:7px!important;
+  background:#fff!important;
+  font-size:11px!important;
+  line-height:1.25!important;
+  margin:0!important;
+}
+.am62-root details.am62-more form.am62-filters > button,
+.am62-root details.am62-more form.am62-filters > a {
+  box-sizing:border-box!important;
+  min-height:34px!important;
+  height:34px!important;
+  padding:6px 10px!important;
+  font-size:10px!important;
+  line-height:1.2!important;
+  margin:0!important;
+  white-space:nowrap!important;
+}
+.am62-root details.am62-more form.am62-filters > input[type="hidden"] {
+  display:none!important;
+}
+@media(max-width:1150px) {
+  .am62-root #am62-selected.am62-preview {
+    grid-template-columns:1fr!important;
+    grid-template-areas:"head" "profile" "actions" "notice" "rules"!important;
+  }
+  .am62-root #am62-selected .am62-profileactions {
+    justify-content:flex-start!important;
+  }
+}
+@media(max-width:770px) {
+  .am62-root details.am62-more form.am62-filters {
+    grid-template-columns:repeat(3,minmax(0,1fr))!important;
+  }
+  .am62-root details.am62-more form.am62-filters > button,
+  .am62-root details.am62-more form.am62-filters > a {
+    grid-column:auto!important;
+  }
+}
+@media(max-width:590px) {
+  .am62-root #am62-selected .am62-profile {
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  }
+  .am62-root #am62-selected .am62-profile > div:last-child {
+    grid-column:1 / -1!important;
+  }
+  .am62-root details.am62-more .am62-existing {
+    grid-template-columns:repeat(2,minmax(0,1fr))!important;
+  }
+  .am62-root details.am62-more form.am62-filters {
+    grid-template-columns:minmax(0,1fr) minmax(0,1fr)!important;
+  }
+  .am62-root details.am62-more form.am62-filters > select {
+    grid-column:1 / -1!important;
+  }
+}
