@@ -116,6 +116,7 @@
 <script>
 (function() {
   'use strict';
+  function initCustomerModal() {
   var modal = document.getElementById('am194-customer-modal');
   var open = document.getElementById('am194-open');
   if (!modal || !open) return;
@@ -182,6 +183,12 @@
   });
   toggleMode();
   if (modal.getAttribute('data-restore') === '1') openModal();
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded',initCustomerModal,{once:true});
+  } else {
+    initCustomerModal();
+  }
 })();
 </script>
 @endif
