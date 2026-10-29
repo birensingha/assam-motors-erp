@@ -14,10 +14,32 @@ label{display:block;font-weight:700;margin:9px 0 4px}select,textarea{width:100%;
 .finding.verified{border-left-color:#19855f}.top{display:flex;justify-content:space-between;gap:10px;align-items:center}
 .status{font-size:11px;font-weight:bold;color:#a1322d}.verified .status{color:#197d54}
 .forms{display:grid;grid-template-columns:1fr 1fr;gap:14px}.pill{padding:5px 8px;background:#edf1f5;border-radius:7px}
-p{line-height:1.6}@media(max-width:700px){.forms{grid-template-columns:1fr}.top{align-items:flex-start;flex-direction:column}}
+p{line-height:1.6}
+.identity-bar{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:14px;max-width:1120px}
+.identity-field{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.2);border-radius:9px;padding:11px 13px;min-width:0}
+.identity-field .caption{font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:#bed4ea;font-weight:700;margin-bottom:4px}
+.identity-field .value{font-size:17px;color:#fff;font-weight:700;overflow-wrap:anywhere}
+.identity-field .missing{color:#fff1bc;font-size:13px}
+@media(max-width:700px){.forms{grid-template-columns:1fr}.top{align-items:flex-start;flex-direction:column}.identity-bar{grid-template-columns:1fr}.identity-field{padding:8px 11px}}
 </style></head><body>
-<header><h1>ASSAM MOTORS · Inspection Defects</h1>
-<p>Job Card {{ $job->job_no ?? $job->id }} · {{ $job->vehicle_reg_no ?? '—' }} · Quality Check protection</p></header>
+<header>
+<h1>ASSAM MOTORS · Inspection Defects</h1>
+<p>Job Card ID #{{ $job->id }} · Quality Check protection</p>
+<div class="identity-bar">
+  <div class="identity-field">
+    <div class="caption">Job Card No.</div>
+    <div class="value {{ $identity['job_no']==='Not recorded' ? 'missing' : '' }}">{{ $identity['job_no'] }}</div>
+  </div>
+  <div class="identity-field">
+    <div class="caption">Vehicle No.</div>
+    <div class="value {{ $identity['vehicle_no']==='Not recorded' ? 'missing' : '' }}">{{ $identity['vehicle_no'] }}</div>
+  </div>
+  <div class="identity-field">
+    <div class="caption">Customer Name</div>
+    <div class="value {{ $identity['customer_name']==='Not recorded' ? 'missing' : '' }}">{{ $identity['customer_name'] }}</div>
+  </div>
+</div>
+</header>
 <main>
 <a class="btn secondary" href="{{ route('erp.job-cards.show',$job->id) }}">← Back to Job Card</a>
 @if(session('success'))<div class="panel success">{{ session('success') }}</div>@endif
