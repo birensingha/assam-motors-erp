@@ -127,15 +127,15 @@ updated=updated.replace(create_link,create_link+
 # Match the semantic JS declaration with flexible indentation, but require
 # exactly ONE verified declaration and ONE subsequent row event block.
 head_pattern=re.compile(
-    r"(?m)^[ \\t]*const top=get\\('top-return'\\),button=get\\('return'\\),"
-    r"invoiceBtn=get\\('viewinvoice'\\),openBtn=get\\('open'\\),"
-    r"notice=get\\('finance-msg'\\);[ \\t]*$"
+    r"(?m)^[ \t]*const top=get\('top-return'\),button=get\('return'\),"
+    r"invoiceBtn=get\('viewinvoice'\),openBtn=get\('open'\),"
+    r"notice=get\('finance-msg'\);[ \t]*$"
 )
 heads=list(head_pattern.finditer(updated))
 if len(heads)!=1:
     raise SystemExit('AM199_STOP_SELECTION_JS_VARIANT_NOT_RECOGNIZED_COUNT_'+str(len(heads)))
 head=heads[0]
-row_pattern=re.compile(r"(?m)^[ \\t]*rows\\.forEach\\(row=>\\{[ \\t]*$")
+row_pattern=re.compile(r"(?m)^[ \t]*rows\.forEach\(row=>\{[ \t]*$")
 rows_blocks=list(row_pattern.finditer(updated,head.end()))
 if not rows_blocks:
     raise SystemExit('AM199_STOP_SELECTION_ROW_HANDLERS_NOT_FOUND')
@@ -159,7 +159,7 @@ selection="""  const top=get('top-return'),picked=document.getElementById('am199
 """
 updated=updated[:c]+selection+updated[d:]
 search_pattern=re.compile(
-    r"(?m)^[ \\t]*if\\(count\\)count\\.textContent=visible\\+' VISIBLE / '\\+rows\\.length\\+' LOADED';[ \\t]*$"
+    r"(?m)^[ \t]*if\(count\)count\.textContent=visible\+' VISIBLE / '\+rows\.length\+' LOADED';[ \t]*$"
 )
 searches=list(search_pattern.finditer(updated))
 if len(searches)!=1:
