@@ -41,7 +41,6 @@ edit_route="route('erp.job-cards.edit',$job->id)"
 for name,needle,count in [
     ("ACTION_BAR",nav_start,1),
     ("PAGE_HEAD",page_head,1),
-    ("TITLE_ACTION_WRAPPER",action,1),
     ("EDIT_ROUTE",edit_route,1),
     ("REVIEW_POST_ROUTE",review_route,1),
     ("FOUR_BUTTONS",'id="am194-open"',1),
@@ -56,6 +55,7 @@ for name,needle,count in [
 h=old.index(page_head)
 stop=old.index("{{-- FIX61B_ONE_BUTTON_RETURN_JC_V1 --}}",h)
 head=old[h:stop]
+if head.count(action)!=1:raise SystemExit("AM198_STOP_TITLE_ACTION_NOT_UNIQUE_WITHIN_HEAD")
 hit=re.search(r'(?ms)^  <div class="actions wrap">\s*(.*?)^  </div>\s*(?=</div>\s*$)',head)
 if not hit:raise SystemExit("AM198_STOP_CANNOT_ISOLATE_TITLE_ACTIONS")
 title_block=hit.group(0)
