@@ -97,7 +97,7 @@ rest=source[:start]+source[end:]
 # Remove ONLY the old legacy empty-only destructive form, including
 # its exact open-only @if wrapper. Never erase another section.
 old_pattern=(r"(?m)^[ \t]*@if\(strtolower\(\(string\)\$job->status\)==='open'\)\s*"
-             r"<section id=\"jc-delete-panel\"\b.*?</section>\s*@endif[ \t]*\n?")
+             r"<section id=\"jc-delete-panel\"[^>]*>.*?</section>\s*@endif[ \t]*\n?")
 hits=list(re.finditer(old_pattern,rest,re.S))
 if len(hits)!=1:raise SystemExit("AM197_STOP_LEGACY_FORM_NOT_ISOLATED_"+str(len(hits)))
 legacy=hits[0].group(0)
