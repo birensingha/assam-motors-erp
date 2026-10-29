@@ -86,7 +86,7 @@ if old.count('<form')!=1 or old.count('</form>')!=1:
     raise SystemExit('AM194_STOP_ORIGINAL_BLOCK_AMBIGUOUS')
 
 modal=read(payload).rstrip()
-if modal.count(marker)!=1:
+if modal.count('{{-- AM194_COMPACT_CUSTOMER_CORRECTION:')!=1:
     raise SystemExit('AM194_STOP_NEW_MODAL_MARKER_MISMATCH')
 required=[
     'route(\'erp.job-cards.customer-name-sync\', $job->id)',
