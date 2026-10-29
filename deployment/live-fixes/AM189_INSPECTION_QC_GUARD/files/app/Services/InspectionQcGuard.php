@@ -42,12 +42,16 @@ final class InspectionQcGuard
             ->where('job_card_id',$jobId)->get()->keyBy('point_key');
         $findings = [];
         $seen = [];
+        $currentPoints = [];
         foreach ($raw as $item) {
             $condition = strtolower(trim((string) ($item->status ?? '')));
-            if (!in_array($condition,['fair','poor'],true)) continue;
             $label = trim((string)($item->item_name??''));
             if ($label === '') continue;
             $key = $this->key($label);
+            // Track ALL saved answers: changing a registered Fair/Poor point
+            // to Good must never silently bypass a previous safety finding.
+            $currentPoints[$key][] = $condition;
+            if (!in_array($condition,['fair','poor'],true)) continue;
             $record = $records->get($key);
             $remarks = trim((string)($item->remarks??''));
             $same = $record
@@ -67,15 +71,21 @@ final class InspectionQcGuard
         // Stale repair records must never be forgotten because a current
         // inspection was edited, removed or replaced after the original issue.
         foreach ($records as $key=>$record) {
-            if (strtoupper((string)$record->status)==='VERIFIED') continue;
             if (isset($seen[$key])) continue;
+            // Even a VERIFIED defect remains tied to its original submitted
+            // inspection item. If somebody deletes/reclassifies that item,
+            // fail closed for QC rather than treating the history as resolved.
+            $current = $currentPoints[$key] ?? [];
+            $status = $current
+                ? 'ORIGINAL_INSPECTION_CHANGED'
+                : 'ORIGINAL_INSPECTION_MISSING';
             $findings[]=[
                 'point_key'=>$key,'label'=>(string)$record->point_label,
                 'condition'=>(string)$record->original_condition,
                 'remarks'=>(string)$record->original_observation,
                 'severity'=>(string)$record->severity,'record'=>$record,
-                'same'=>false,'verified'=>false,'duplicate'=>false,
-                'status'=>'RECORDED_'.strtoupper((string)$record->status),
+                'same'=>false,'verified'=>false,'duplicate'=>count($current)>1,
+                'status'=>$status,
             ];
         }
         return $findings;
