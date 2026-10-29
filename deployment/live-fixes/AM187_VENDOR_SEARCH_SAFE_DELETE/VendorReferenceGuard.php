@@ -131,6 +131,39 @@ final class VendorReferenceGuard
             }
         }
 
+        // Legacy modules sometimes store vendor CODE/NAME without a vendor_id.
+        // Inspect every other vendor/supplier/payee identifier column as well.
+        $otherIdentifiers = array_values(array_unique(array_filter(array_merge(
+            $names, [(string) $id]
+        ))));
+        $extra = DB::select(
+            "SELECT TABLE_NAME, COLUMN_NAME
+             FROM information_schema.COLUMNS
+             WHERE TABLE_SCHEMA = DATABASE()
+               AND (COLUMN_NAME LIKE '%vendor%'
+                    OR COLUMN_NAME LIKE '%supplier%'
+                    OR COLUMN_NAME IN ('payee_name','payee_code','payee_id'))
+               AND DATA_TYPE IN ('varchar','char','text','tinytext','mediumtext',
+                                 'longtext','int','bigint','mediumint','smallint')"
+        );
+        foreach ($extra as $col) {
+            $table = (string) $col->TABLE_NAME;
+            $field = (string) $col->COLUMN_NAME;
+            if (in_array($table, ['workshop_vendors', 'workshop_vendor_master_audits'], true)) {
+                continue;
+            }
+            if (isset($blocked[$table])) continue;
+            if (str_ends_with($field, '_type') || str_contains($field, 'status')) continue;
+            if ($table === 'workshop_payment_vouchers' && $field === 'payee_name') {
+                // Already handled using payee_type in the targeted scan.
+                continue;
+            }
+            if ($otherIdentifiers &&
+                DB::table($table)->whereIn($field, $otherIdentifiers)->exists()) {
+                $blocked[$table] = $table;
+            }
+        }
+
         return ['allowed' => !$blocked, 'blockers' => array_values($blocked)];
     }
 }
