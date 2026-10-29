@@ -41,6 +41,21 @@ p{line-height:1.6}
 </div>
 </header>
 <main>
+{{-- AM202_INSPECTION_HISTORY_AWARENESS — advisory only, preserves all prior inspection data --}}
+<div class="panel">
+  <div class="top">
+    <h2>Saved Inspection · {{ $inspectionMeta['saved_count'] }} points</h2>
+    <span class="pill">{{ $inspectionMeta['current_30'] ? 'Current canonical 30-point' : 'Historical / noncanonical format' }}</span>
+  </div>
+  @if(!$inspectionMeta['current_30'])
+    <p class="notice">This Job Card has {{ $inspectionMeta['saved_count'] }} saved inspection points; the current checklist contains {{ $inspectionMeta['official_count'] }}. Existing 10/20-point or other historical answers are preserved exactly as submitted. This does <strong>not</strong> automatically add missing points, change Completed status, or bypass unresolved defects before QC PASS.</p>
+  @else
+    <p class="muted">Saved point names match the current official 30-point checklist. Inspection findings and QC verification remain independently controlled.</p>
+  @endif
+  @if($inspectionMeta['missing_defect_notes']>0)
+    <p class="notice"><strong>Historical observation gap:</strong> {{ $inspectionMeta['missing_defect_notes'] }} Fair/Poor finding(s) have no saved inspector remarks. Do not invent or silently rewrite original observations. Record only actual repairs and independent re-inspection evidence.</p>
+  @endif
+</div>
 <a class="btn secondary" href="{{ route('erp.job-cards.show',$job->id) }}">← Back to Job Card</a>
 @if(session('success'))<div class="panel success">{{ session('success') }}</div>@endif
 @if($errors->any())<div class="panel error">{{ $errors->first() }}</div>@endif
