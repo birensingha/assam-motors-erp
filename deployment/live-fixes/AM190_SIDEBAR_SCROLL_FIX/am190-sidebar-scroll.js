@@ -165,8 +165,6 @@
   function onUserScroll(event) {
     var el = event.target;
     if (!el || !el.closest) return;
-    var sidebarLink = el.closest("a[href]");
-    if (sidebarLink) return; // clicking menu is NOT manual scrolling
     var area = el.closest('aside,nav,[class*="side" i],[id*="side" i]');
     if (!area) return;
     if (!scan(false).some(function (candidate) {
@@ -177,6 +175,11 @@
   }
   document.addEventListener("wheel", onUserScroll, {capture:true,passive:true});
   document.addEventListener("touchmove", onUserScroll, {capture:true,passive:true});
+  // Dragging the sidebar scrollbar should also stop automatic restoration.
+  document.addEventListener("pointerdown", function (e) {
+    if (!e.target.closest || e.target.closest("a[href]")) return;
+    onUserScroll(e);
+  }, true);
   document.addEventListener("keydown", function (e) {
     if (["ArrowDown","ArrowUp","PageUp","PageDown","Home","End"].indexOf(e.key) >= 0)
       onUserScroll(e);
