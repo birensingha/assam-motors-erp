@@ -25,7 +25,15 @@ if ("assam-erp-staging" not in str(root)
     or not (root / "artisan").is_file() or not target.is_file()):
     raise SystemExit("AM190B_STOP_NOT_STAGING_ADMIN_JOB_CARD")
 
-text = target.read_text(encoding="utf-8")
+# The legacy Admin JC Blade file contains some non-UTF-8 bytes.
+# Decode losslessly: surrogateescape round-trips each original byte.
+raw = target.read_bytes()
+text = raw.decode("utf-8", errors="surrogateescape")
+try:
+    raw.decode("utf-8")
+    print("AM190B_SOURCE_ENCODING_UTF8_VALID")
+except UnicodeDecodeError:
+    print("AM190B_SOURCE_LEGACY_BYTES_PRESERVED")
 marker = "AM190B_ADMIN_JOB_CARD_DEFECT_MANAGEMENT"
 if marker in text:
     print("AM190B_ALREADY_INSTALLED")
@@ -97,6 +105,12 @@ else:
     )
 
 updated = text[:location] + button + text[location:]
+# Byte-for-byte proof that adding our new shortcut is the only difference.
+button_bytes = button.encode("utf-8", errors="surrogateescape")
+updated_bytes = updated.encode("utf-8", errors="surrogateescape")
+if (updated_bytes.count(button_bytes) != 1 or
+    updated_bytes.replace(button_bytes, b"", 1) != raw):
+    raise SystemExit("AM190B_STOP_ORIGINAL_VIEW_BYTES_NOT_PRESERVED")
 if updated.count(marker) != 1:
     raise SystemExit("AM190B_STOP_UNEXPECTED_MARKER_COUNT")
 
@@ -117,8 +131,8 @@ tmp = None
 try:
     fd, tmppath = tempfile.mkstemp(prefix=".am190b_", suffix=".blade.php", dir=target.parent)
     tmp = Path(tmppath)
-    with os.fdopen(fd,"w",encoding="utf-8") as output:
-        output.write(updated)
+    with os.fdopen(fd,"wb") as output:
+        output.write(updated_bytes)
     shutil.copymode(target,tmp)
     os.replace(tmp,target)
     tmp = None
