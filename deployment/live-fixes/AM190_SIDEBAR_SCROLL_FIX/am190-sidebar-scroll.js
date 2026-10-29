@@ -9,7 +9,7 @@
   window.__am190SidebarScrollLoaded = true;
 
   var KEY = "am-staging-sidebar-scroll-am189";
-  var saved = null, lastElement = null, userScrolled = false;
+  var saved = null, lastElement = null, userScrolled = false, navigationCaptured = false;
   var restoreComplete = false, startTime = Date.now();
   var candidates = [], lastScan = 0, timer = null;
   try {
@@ -187,14 +187,19 @@
 
   // Save as EARLY as possible; don't wait for pagehide (it can run after
   // link state/active menu logic has already reset the sidebar scroll).
-  document.addEventListener("pointerdown", function (event) {
-    if (event.target.closest && event.target.closest("a[href]")) saveBeforeLeave();
+  function captureNavigation(event) {
+    if (!event.target.closest || !event.target.closest("a[href]")) return;
+    saveBeforeLeave();
+    navigationCaptured = true;
+  }
+  document.addEventListener("pointerdown", captureNavigation, true);
+  document.addEventListener("click", captureNavigation, true);
+  window.addEventListener("pagehide", function () {
+    if (!navigationCaptured) saveBeforeLeave();
   }, true);
-  document.addEventListener("click", function (event) {
-    if (event.target.closest && event.target.closest("a[href]")) saveBeforeLeave();
+  window.addEventListener("beforeunload", function () {
+    if (!navigationCaptured) saveBeforeLeave();
   }, true);
-  window.addEventListener("pagehide", saveBeforeLeave, true);
-  window.addEventListener("beforeunload", saveBeforeLeave, true);
 
   function boot() {
     restore();
