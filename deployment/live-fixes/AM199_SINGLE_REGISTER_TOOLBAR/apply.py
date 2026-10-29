@@ -121,12 +121,29 @@ updated=updated.replace(create_link,create_link+
 
 # Existing selection script depended on the duplicate lower preview. Retain
 # selection for the top Return button and one-line selected label only.
-old_head="  const top=get('top-return'),button=get('return'),invoiceBtn=get('viewinvoice'),openBtn=get('open'),notice=get('finance-msg');"
-row_head='  rows.forEach(row=>{'
-if updated.count(old_head)!=1:raise SystemExit('AM199_STOP_SELECTION_SCRIPT_HEAD_CHANGED')
-c=updated.index(old_head)
-d=updated.index(row_head,c)
+# The FIX62 source uses ONE leading space before "const top", whereas
+# AM199 v1 mistakenly required TWO. That blocked the whole installation
+# (AM199_STOP_SELECTION_SCRIPT_HEAD_CHANGED) even after AM197 succeeded.
+# Match the semantic JS declaration with flexible indentation, but require
+# exactly ONE verified declaration and ONE subsequent row event block.
+head_pattern=re.compile(
+    r"(?m)^[ \\t]*const top=get\\('top-return'\\),button=get\\('return'\\),"
+    r"invoiceBtn=get\\('viewinvoice'\\),openBtn=get\\('open'\\),"
+    r"notice=get\\('finance-msg'\\);[ \\t]*$"
+)
+heads=list(head_pattern.finditer(updated))
+if len(heads)!=1:
+    raise SystemExit('AM199_STOP_SELECTION_JS_VARIANT_NOT_RECOGNIZED_COUNT_'+str(len(heads)))
+head=heads[0]
+row_pattern=re.compile(r"(?m)^[ \\t]*rows\\.forEach\\(row=>\\{[ \\t]*$")
+rows_blocks=list(row_pattern.finditer(updated,head.end()))
+if not rows_blocks:
+    raise SystemExit('AM199_STOP_SELECTION_ROW_HANDLERS_NOT_FOUND')
+c=head.start()
+d=rows_blocks[0].start()
 old_selected=updated[c:d]
+if len(old_selected)>3500:
+    raise SystemExit('AM199_STOP_SELECTION_BLOCK_TOO_LARGE')
 for x in ("function destination(el,href)","function select(row)", "get('title').textContent",
           "destination(top,a.review)",'notice.hidden='):
     if x not in old_selected:raise SystemExit('AM199_STOP_SELECTION_SCRIPT_SHAPE_CHANGED '+x)
@@ -141,8 +158,13 @@ selection="""  const top=get('top-return'),picked=document.getElementById('am199
   }
 """
 updated=updated[:c]+selection+updated[d:]
-search_end="   if(count)count.textContent=visible+' VISIBLE / '+rows.length+' LOADED';"
-if updated.count(search_end)!=1:raise SystemExit('AM199_STOP_LIVE_SEARCH_CHANGED')
+search_pattern=re.compile(
+    r"(?m)^[ \\t]*if\\(count\\)count\\.textContent=visible\\+' VISIBLE / '\\+rows\\.length\\+' LOADED';[ \\t]*$"
+)
+searches=list(search_pattern.finditer(updated))
+if len(searches)!=1:
+    raise SystemExit('AM199_STOP_LIVE_SEARCH_VARIANT_NOT_RECOGNIZED_COUNT_'+str(len(searches)))
+search_end=searches[0].group(0)
 updated=updated.replace(search_end,search_end+"""
    const selected=rows.find(row=>row.classList.contains('am62-picked'));
    if(!selected || selected.hidden){
