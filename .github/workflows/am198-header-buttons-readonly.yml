@@ -1,0 +1,65 @@
+name: AM198 Header Edit and Estimate Review Readonly Audit
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/am198-header-buttons-readonly.yml'
+      - 'deployment/live-fixes/AM198_ACTION_BAR_REORDER/AUDIT_READONLY.sh'
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency: {group: assam-motors-am198-header-layout-readonly, cancel-in-progress: false}
+jobs:
+  inspect:
+    name: Inspect existing Edit Job Card and Estimate Review controls and exact header markup
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate audit shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n deployment/live-fixes/AM198_ACTION_BAR_REORDER/AUDIT_READONLY.sh
+      - name: SSH staging credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$KEY" || test -n "$PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4; do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then break; fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Inspect Staff Check-In & Admin correction routes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519 "$USERNAME@$HOST" 'mkdir -p "$HOME/AM198_READONLY"'
+            scp -o BatchMode=yes -o ConnectTimeout=14 -P "$PORT" -i ~/.ssh/id_ed25519 deployment/live-fixes/AM198_ACTION_BAR_REORDER/AUDIT_READONLY.sh "$USERNAME@$HOST:~/AM198_READONLY/AUDIT_READONLY.sh"
+            ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519 "$USERNAME@$HOST" "cd '$ROOT' && bash -n ~/AM198_READONLY/AUDIT_READONLY.sh && bash ~/AM198_READONLY/AUDIT_READONLY.sh '$ROOT'"
+          else
+            export SSHPASS="$PASSWORD"
+            sshpass -e ssh -o ConnectTimeout=14 -p "$PORT" "$USERNAME@$HOST" 'mkdir -p "$HOME/AM198_READONLY"'
+            sshpass -e scp -o ConnectTimeout=14 -P "$PORT" deployment/live-fixes/AM198_ACTION_BAR_REORDER/AUDIT_READONLY.sh "$USERNAME@$HOST:~/AM198_READONLY/AUDIT_READONLY.sh"
+            sshpass -e ssh -o ConnectTimeout=14 -p "$PORT" "$USERNAME@$HOST" "cd '$ROOT' && bash -n ~/AM198_READONLY/AUDIT_READONLY.sh && bash ~/AM198_READONLY/AUDIT_READONLY.sh '$ROOT'"
+          fi
+      - name: Remove transient key
+        if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519
