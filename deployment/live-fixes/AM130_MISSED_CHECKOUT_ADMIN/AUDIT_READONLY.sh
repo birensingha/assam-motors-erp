@@ -19,4 +19,25 @@ for f in $(find resources/views -type f \( -iname '*attendance*' -o -iname '*nat
 done
 echo '=== AUDIT TABLES / LOGGING SOURCE ==='
 grep -RniE -m 3 --include='*.php' 'attendance.*audit|audit.*attendance|HrOperationsService|correctAttendance' app/Services app/Http/Controllers | head -80 | cut -c1-235 || true
+
+echo '=== AUDIT TABLE WRITE SIGNATURE ==='
+sed -n '127,178p' app/Services/HrOperationsService.php | cut -c1-250
+sed -n '1180,1215p' app/Http/Controllers/Api/V1/OwnerWorkshopController.php | cut -c1-250
+echo '=== ATTENDANCE BLADE FIRST 210 ==='
+sed -n '1,210p' resources/views/admin/native/attendance.blade.php | cut -c1-270
+echo '=== ATTENDANCE VIEW EDIT FORMS ==='
+grep -n -C 8 "route('erp.attendance.update" resources/views/admin/native/attendance.blade.php | head -105 | cut -c1-270 || true
+echo '=== AUDIT TABLE SCHEMA ==='
+php <<'PHP'
+<?php
+require getcwd().'/vendor/autoload.php';
+$app=require getcwd().'/bootstrap/app.php';
+$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+foreach(['hr_audit_logs','attendance_change_audits','job_card_change_audits'] as $name) {
+ if(\Illuminate\Support\Facades\Schema::hasTable($name)){
+    echo $name.' COLUMNS='.implode(',',\Illuminate\Support\Facades\Schema::getColumnListing($name))."\n";
+ }else echo $name.' MISSING'."\n";
+}
+PHP
+
 echo AM130_SOURCE_COMPLETE_NO_WRITES
