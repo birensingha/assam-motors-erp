@@ -8,7 +8,7 @@ Does not print environment secrets, database data or session values.
 Usage: python3 audit.py /path/to/assam-erp-staging
 """
 from pathlib import Path
-import sys,re,hashlib,subprocess,tempfile,os,json
+import sys,re,hashlib,subprocess,tempfile,os,json,urllib.request,urllib.parse
 if len(sys.argv)!=2:raise SystemExit("Usage: python3 audit.py STAGING_LARAVEL_ROOT")
 root=Path(sys.argv[1]).expanduser().resolve()
 layout=root/"resources/views/layouts/erp.blade.php"
@@ -101,7 +101,25 @@ with tempfile.TemporaryDirectory(prefix="am191php_") as d:
     result=subprocess.run(["php",str(p),str(root)],capture_output=True,text=True,timeout=25)
     if result.returncode==0:
         url=result.stdout.strip()
-        if url.startswith("http"):print("ASSET_URL",url[:200])
+        if url.startswith("http"):
+            print("ASSET_URL",url[:200])
+            host=urllib.parse.urlsplit(url)
+            if host.scheme == "https" and host.hostname in (
+                "assammotors.com","www.assammotors.com",
+                "staging.assammotors.com"
+            ):
+                try:
+                    request=urllib.request.Request(
+                        url,headers={"User-Agent":"AM191SidebarAssetCheck/1"},
+                        method="GET")
+                    with urllib.request.urlopen(request,timeout=6) as response:
+                        first=response.read(32768)
+                        print("ASSET_HTTP_STATUS",response.status)
+                        print("ASSET_CONTENT_TYPE",response.headers.get("Content-Type","")[:70])
+                        print("ASSET_HTTP_HAS_AM190_MARKER",
+                              b"__am190SidebarScrollLoaded" in first)
+                except Exception as e:
+                    print("ASSET_HTTP_CHECK_UNAVAILABLE",type(e).__name__)
         else:print("ASSET_URL_UNKNOWN")
     else:print("ASSET_URL_PROBE_FAILED")
 
