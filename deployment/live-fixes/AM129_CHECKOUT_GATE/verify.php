@@ -41,23 +41,29 @@ $eligible=DB::table('attendance as a')
 if($eligible){
     $response='';
     $before=(clone $open)->count();
+    $error='';
+    $unexpectedSuccess=false;
     DB::beginTransaction();
     try{
-        // Deliberately invalid coordinates; if the prior-day guard is absent
-        // this MUST NOT be permitted to create attendance even in test.
+        // Synthetic bad location. ALL nested transactions are rolled back.
         app(AttendanceService::class)->checkIn((int)$eligible->staff_id,[
             'latitude'=>0.0,'longitude'=>0.0,'accuracy_m'=>10000,
             'is_mocked'=>true,
         ]);
-        am129Fail('MISSING_CHECKOUT_DID_NOT_BLOCK');
+        $unexpectedSuccess=true;
     }catch(ValidationException $e){
         $m=implode(' ',array_map(fn($a)=>implode(' ',$a),$e->errors()));
         if(!str_contains($m,'CHECK-IN BLOCKED') || !str_contains($m,'Contact Admin')
-            || !str_contains($m,'cannot back-date'))am129Fail('WRONG_ERROR_OR_GPS_ERROR');
-        $response='AM129_STAFF_PREVIOUS_CHECKOUT_BLOCK_ENFORCED=YES';
+            || !str_contains($m,'cannot back-date'))$error='WRONG_ERROR_OR_GPS_ERROR';
+        else $response='AM129_STAFF_PREVIOUS_CHECKOUT_BLOCK_ENFORCED=YES';
+    }catch(\Throwable $e){
+        $error='UNEXPECTED_EXCEPTION_'.get_class($e);
     }finally{
+        // Even if code unexpectedly permits Check-In, NEVER persist test data.
         DB::rollBack();
     }
+    if($unexpectedSuccess)am129Fail('MISSING_CHECKOUT_DID_NOT_BLOCK');
+    if($error!=='')am129Fail($error);
     if((clone $open)->count()!==$before)am129Fail('HISTORICAL_ROW_COUNT_CHANGED');
     echo $response."\n";
 }else{
