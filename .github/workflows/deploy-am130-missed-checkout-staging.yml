@@ -65,7 +65,7 @@ jobs:
             SCP=(sshpass -e scp -o ConnectTimeout=14 -P "$PORT")
           fi
           "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM130_ADMIN_REGISTER"'
-          "${SCP[@]}" deployment/live-fixes/AM130_MISSED_CHECKOUT_ADMIN/apply.py deployment/live-fixes/AM130_MISSED_CHECKOUT_ADMIN/verify.php deployment/live-fixes/AM130_MISSED_CHECKOUT_ADMIN/DEPLOY_STAGING.sh "$REMOTE:~/AM130_ADMIN_REGISTER/"
+          "${SCP[@]}" deployment/live-fixes/AM130_MISSED_CHECKOUT_ADMIN/apply.py deployment/live-fixes/AM130_MISSED_CHECKOUT_ADMIN/verify.php deployment/live-fixes/AM130_MISSED_CHECKOUT_ADMIN/DEPLOY_STAGING.sh deployment/live-fixes/AM130_MISSED_CHECKOUT_ADMIN/register.blade.php "$REMOTE:~/AM130_ADMIN_REGISTER/"
           "${SSH[@]}" "$REMOTE" "bash ~/AM130_ADMIN_REGISTER/DEPLOY_STAGING.sh '$ROOT'"
       - name: Remove transient SSH key
         if: always()
