@@ -6,6 +6,8 @@ on:
       - deployment/live-fixes/AM217_OSL_VENDOR_PAYMENT_EDIT/install.py
       - .github/workflows/am217-osl-payment-edit-staging.yml
       - deployment/live-fixes/AM219_PAYMENT_VENDOR_VISIBLE/audit.py
+      - deployment/live-fixes/AM220_PAYMENT_SINGLE_VENDOR_SEARCH/install.py
+      - deployment/live-fixes/AM220_PAYMENT_SINGLE_VENDOR_SEARCH/search.js
   workflow_dispatch:
 permissions: {contents: read}
 concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
@@ -63,6 +65,8 @@ jobs:
           REMOTE="$USERNAME@$HOST"
           "${SSH[@]}" "$REMOTE" 'mkdir -p -m 700 ~/AM217_OSL_VENDOR_PAYMENT_EDIT'
           "${SCP[@]}" deployment/live-fixes/AM217_OSL_VENDOR_PAYMENT_EDIT/install.py "$REMOTE:~/AM217_OSL_VENDOR_PAYMENT_EDIT/install.py"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p -m 700 ~/AM220_PAYMENT_SINGLE_VENDOR_SEARCH'
+          "${SCP[@]}" deployment/live-fixes/AM220_PAYMENT_SINGLE_VENDOR_SEARCH/install.py deployment/live-fixes/AM220_PAYMENT_SINGLE_VENDOR_SEARCH/search.js "$REMOTE:~/AM220_PAYMENT_SINGLE_VENDOR_SEARCH/"
           "${SSH[@]}" "$REMOTE" 'mkdir -p -m 700 ~/AM219_PAYMENT_VENDOR_VISIBLE'
           "${SCP[@]}" deployment/live-fixes/AM219_PAYMENT_VENDOR_VISIBLE/audit.py "$REMOTE:~/AM219_PAYMENT_VENDOR_VISIBLE/audit.py"
           "${SSH[@]}" "$REMOTE" 'mkdir -p -m 700 ~/AM218_PAYMENT_SIDENAV_OSL'
@@ -73,6 +77,13 @@ jobs:
           echo AM219_AUDIT_BEGIN
           python3 "$HOME/AM219_PAYMENT_VENDOR_VISIBLE/audit.py" "$ROOT"
           echo AM219_AUDIT_END
+          AM220="$HOME/AM220_PAYMENT_SINGLE_VENDOR_SEARCH/install.py"
+          python3 -m py_compile "$AM220"
+          python3 "$AM220" check "$ROOT"
+          python3 "$AM220" apply "$ROOT"
+          grep -Fq 'am220-payment-single-vendor-search.js' "$ROOT/resources/views/payments/create.blade.php"
+          test -s "$ROOT/public/js/am220-payment-single-vendor-search.js"
+          echo AM220_SINGLE_VENDOR_SEARCH_SOURCE_PASS
           AM218="$HOME/AM218_PAYMENT_SIDENAV_OSL/install.py"
           python3 -m py_compile "$AM218"
           python3 "$AM218" check "$ROOT"
