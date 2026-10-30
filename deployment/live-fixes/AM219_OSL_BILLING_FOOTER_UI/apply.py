@@ -19,10 +19,8 @@ view=root/"resources/views/job-cards/show.blade.php"
 backup=root/"storage/app/am-backups/AM219_OSL_BILLING_FOOTER_UI/show.blade.php.before_AM219"
 marker="AM219_HIDE_PURCHASE_ONLY_IN_CUSTOMER_BILLING"
 anchor='<script id="am93-osl-row-sort">'
-css='''{{-- AM219_HIDE_PURCHASE_ONLY_IN_CUSTOMER_BILLING: only a UI row;
-    supplier OSL purchases remain in the OSL Purchase Register. --}}
-<style id="am219-hide-purchase-only-billing">
-/* This vendor-cost reference is not a customer billing line. */
+css='''<style id="am219-hide-purchase-only-billing">
+/* AM219_HIDE_PURCHASE_ONLY_IN_CUSTOMER_BILLING: supplier cost belongs in Purchase Register. */
 .am93-purchase-pending { display: none !important; }
 </style>
 '''
