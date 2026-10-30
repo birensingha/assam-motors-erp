@@ -107,7 +107,7 @@ for field in ("am208_staff","am208_kind","am208_from","am208_to",
               "route('erp.attendance.update'",
               'name="am130_checkout_time"',
               'name="am130_reason"',"@csrf",
-              "name="am130_resolution""):
+              'name="am130_resolution"'):
     if field not in new_view:raise SystemExit('AM208_STOP_NEW_VIEW_MISSING_'+field)
 if new_view.count('<form')!=2 or new_view.count('</form>')!=2:
     raise SystemExit('AM208_STOP_SEARCH_AND_POST_FORMS_INVALID')
