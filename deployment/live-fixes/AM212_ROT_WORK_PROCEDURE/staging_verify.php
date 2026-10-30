@@ -37,7 +37,7 @@ vcheck(str_contains($ctl,"'work_procedure'"),'BACKEND_CREATE_EDIT_FIELD');
 vcheck(str_contains($ctl,'public function createLabour('),'CREATE_HANDLER');
 vcheck(str_contains($ctl,'public function updateLabour('),'EDIT_HANDLER');
 vcheck(str_contains($src,"route('erp.masters.labour.create')"),'CREATE_ACTION');
-vcheck(str_contains($src,"route('erp.masters.labour.update',$r->id)"),'EDIT_ACTION');
+vcheck(str_contains($src,'route(\'erp.masters.labour.update\',$r->id)'),'EDIT_ACTION');
 vcheck(substr_count($src,'@csrf')>=2,'CSRF');
 echo "AM212_SOURCE_CREATE_EDIT_LABELS_VERIFIED\n";
 echo "AM212_DB_WORK_PROCEDURE_COLUMN_VERIFIED\n";
