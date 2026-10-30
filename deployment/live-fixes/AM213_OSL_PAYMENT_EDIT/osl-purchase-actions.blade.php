@@ -32,6 +32,13 @@
  <h3>OSL Purchase · Vendor Actions</h3>
  @if(!$am213ValidVendor)
    <p class="am213-osl-notice">Vendor Master link is missing or the purchase lines refer to different vendors. Payment is safely blocked until the supplier identity is reconciled; no arbitrary vendor will be selected.</p>
+   @if($am213CanEdit)
+     <div class="am213-osl-links">
+       @foreach($am213Lines as $am213Line)
+         <a href="{{ route('erp.fix48.osl-edit',(int)$am213Line->id) }}">Edit OSL Purchase #{{ (int)$am213Line->id }}</a>
+       @endforeach
+     </div>
+   @endif
  @else
    <div class="am213-osl-links">
      @if($am213CanLedger)
