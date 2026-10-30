@@ -73,7 +73,7 @@ for path,methods in feature_map.items():
             print('METHOD_NOT_FOUND',file.name,method)
             continue
         found=[name for name in tokens if name in block]
-        literals=sorted(set(v for v in re.findall(r"['\\\"]([a-zA-Z][\\w-]{1,36})['\\\"]",block)
+        literals=sorted(set(v for v in re.findall(r"""['"]([A-Za-z][A-Za-z0-9_-]{1,36})['"]""",block)
                             if any(k in v.lower() for k in ['osl','vendor','purchase','expense','job'])))
         print('METHOD',file.name,method,'FEATURES',','.join(found),
               'SOURCE_LITERAL_HINTS',','.join(literals[:28]))
