@@ -1,0 +1,94 @@
+name: AM217 Parts and ROT Edit Popup STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-am217-edit-master-modals.yml'
+      - 'deployment/live-fixes/AM217_EDIT_MASTER_MODALS/**'
+permissions: {contents: read, issues: write}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate AM217 Python and popup JavaScript
+        id: qa
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/AM217_EDIT_MASTER_MODALS/install.py
+          python3 - <<'PY'
+          from pathlib import Path
+          import re,subprocess,tempfile
+          data=Path('deployment/live-fixes/AM217_EDIT_MASTER_MODALS/edit_popup.blade.php').read_text()
+          found=re.findall(r'<script>([\s\S]*?)</script>',data)
+          assert len(found)==1, 'AM217 JS missing'
+          with tempfile.TemporaryDirectory() as folder:
+            file=Path(folder)/'am217.js'
+            file.write_text(found[0].replace('__AM217_PAGE__','"parts"'))
+            subprocess.run(['node','--check',str(file)],check=True)
+          assert "window.amToggle=function(id)" in data
+          assert 'body.appendChild(form)' in data
+          assert "old.row.style.display" in data
+          print('AM217_JS_SYNTAX_AND_ORIGINAL_FORM_MOVE_PASS')
+          PY
+      - name: Configure private STAGING SSH
+        id: ssh
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$KEY" || test -n "$PASSWORD"
+          install -d -m 700 ~/.ssh
+          for n in 1 2 3 4; do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then break; fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Staging preflight and guarded Edit popup install
+        id: deploy
+        run: |
+          set -euo pipefail
+          REMOTE="$USERNAME@$HOST"
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -o ConnectTimeout=14 -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=14 -p "$PORT")
+            SCP=(sshpass -e scp -o ConnectTimeout=14 -P "$PORT")
+          fi
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/assam-motors-deploy/deployment/live-fixes"'
+          "${SCP[@]}" -r deployment/live-fixes/AM217_EDIT_MASTER_MODALS "$REMOTE:~/assam-motors-deploy/deployment/live-fixes/"
+          "${SSH[@]}" "$REMOTE" "set -e; P=~/assam-motors-deploy/deployment/live-fixes/AM217_EDIT_MASTER_MODALS/install.py; python3 \"\$P\" check '$ROOT'; python3 \"\$P\" apply '$ROOT'" 2>&1 | tee "$RUNNER_TEMP/am217_result.txt"
+      - name: Record STAGING status
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QA_STATUS: ${{ steps.qa.outcome }}
+          SSH_STATUS: ${{ steps.ssh.outcome }}
+          DEPLOY_STATUS: ${{ steps.deploy.outcome }}
+        run: |
+          msg=""
+          if [ -f "$RUNNER_TEMP/am217_result.txt" ]; then
+            msg="$(grep '^AM217_' "$RUNNER_TEMP/am217_result.txt" | tail -12 | tr '\n' ';' | cut -c1-1200 || true)"
+          fi
+          body="AM217 STAGING Edit Part/Edit ROT popup: static=$QA_STATUS, SSH=$SSH_STATUS, deploy=$DEPLOY_STATUS. Details: $msg. Browser Edit/Save/Refresh pending. Run https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          gh api repos/"$GITHUB_REPOSITORY"/issues/124/comments -f body="$body" || true
+      - name: Remove transient SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
