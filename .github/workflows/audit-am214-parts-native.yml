@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/audit-am214-parts-native.yml'
       - 'deployment/audits/AM214_PARTS_NATIVE_SOURCE/audit.py'
+      - 'deployment/audits/AM214_PARTS_NATIVE_SOURCE/edit_modal_audit.py'
 permissions: {contents: read, issues: write}
 jobs:
   source:
@@ -25,7 +26,7 @@ jobs:
         run: |
           set -euo pipefail
           FILE=deployment/audits/AM214_PARTS_NATIVE_SOURCE/audit.py
-          python3 -m py_compile "$FILE"
+          python3 -m py_compile "$FILE" deployment/audits/AM214_PARTS_NATIVE_SOURCE/edit_modal_audit.py
           test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
           install -d -m 700 ~/.ssh
           ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
@@ -42,8 +43,12 @@ jobs:
           REMOTE="$USERNAME@$HOST"
           "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM214_SOURCE_AUDIT"'
           "${SCP[@]}" "$FILE" "$REMOTE:~/AM214_SOURCE_AUDIT/audit.py"
+          "${SCP[@]}" deployment/audits/AM214_PARTS_NATIVE_SOURCE/edit_modal_audit.py "$REMOTE:~/AM214_SOURCE_AUDIT/edit_modal_audit.py"
           "${SSH[@]}" "$REMOTE" "python3 ~/AM214_SOURCE_AUDIT/audit.py '$ROOT'" | tee /tmp/am214_source_audit.out
           body="AM214 read-only Parts source audit ($GITHUB_SHA): $(grep '^AM214_' /tmp/am214_source_audit.out | tr '\n' ';' | cut -c1-3800)"
+          gh api repos/"$GITHUB_REPOSITORY"/issues/124/comments -f body="$body"
+          "${SSH[@]}" "$REMOTE" "python3 ~/AM214_SOURCE_AUDIT/edit_modal_audit.py '$ROOT'" | tee /tmp/am217_edit_dom.out
+          body="AM217 native master Edit DOM audit ($GITHUB_SHA): $(grep '^AM217_' /tmp/am217_edit_dom.out | tr '\n' ';' | cut -c1-9000)"
           gh api repos/"$GITHUB_REPOSITORY"/issues/124/comments -f body="$body"
       - name: SSH cleanup
         if: always()
