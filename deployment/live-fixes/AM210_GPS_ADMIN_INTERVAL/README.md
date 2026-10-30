@@ -34,3 +34,21 @@ safely, test 200 authorized / 401 not logged in / denied revoked accounts,
 and test the Android QA build. Android 6.3.20 currently fixed 60sec;
 Admin save alone doesn't alter installed phones. All GPS/geofence/
 attendance/ROT protections remain independent.
+
+
+## Secure integration helper (new)
+The \`install_api.py\` helper is now staged beside this README:
+- \`python3 install_api.py check ROOT\`: read-only API route & auth/middleware preflight, exact POST GPS controller/URI anchor check, syntax check.
+- \`python3 install_api.py prepare ROOT\`: copies only the new GPS interval GET controller; no route or database changes.
+- \`AM210_STAGING_APPROVED=YES python3 install_api.py apply ROOT\`: backs up the original \`routes/api.php\`, installs the read-only GET endpoint **next to** the existing GPS POST route and requires that their final registered Laravel middleware lists match. Any mismatch automatically restores the original routes.
+- If the existing route uses different nesting, per-route middleware, controllers or an ambiguous shape, the script **must safe-stop** and wait for a verified route-specific patch. Never bypass authentication.
+
+**Recommended first command:**
+\`\`\`bash
+cd ~/assam-motors-deploy &&
+git pull --ff-only origin main &&
+ROOT="$HOME/domains/assammotors.com/assam-erp-staging" &&
+python3 deployment/live-fixes/AM210_GPS_ADMIN_INTERVAL/audit.py "$ROOT" &&
+python3 deployment/live-fixes/AM210_GPS_ADMIN_INTERVAL/install_api.py check "$ROOT"
+\`\`\`
+This command is **read-only**. Inspect the results before migration/installation.
