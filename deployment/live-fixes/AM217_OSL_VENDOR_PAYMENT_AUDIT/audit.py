@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+"""AM217 STAGING OSL Vendor Payment audit. READ ONLY; no UPDATE/INSERT/DELETE.
+Usage: python3 audit.py STAGING_ROOT [PURCHASE_REFERENCE] [VENDOR_NAME]
+Do not pass credentials. Output is metadata and boolean checks, not customer rows.
+"""
+from pathlib import Path
+import hashlib, re, subprocess, sys, tempfile
+
+if len(sys.argv) not in (2, 3, 4):
+    raise SystemExit("AM217_USAGE audit.py STAGING_ROOT [PURCHASE_REFERENCE] [VENDOR_NAME]")
+root = Path(sys.argv[1]).expanduser().resolve()
+if root.name != 'assam-erp-staging' or not (root/'artisan').is_file():
+    raise SystemExit('AM217_STOP_NOT_STAGING')
+purchase = sys.argv[2] if len(sys.argv) >= 3 else ''
+vendor = sys.argv[3] if len(sys.argv) >= 4 else ''
+if len(purchase) > 80 or len(vendor) > 190:
+    raise SystemExit('AM217_STOP_QUERY_TOO_LONG')
+
+files = [
+ 'app/Http/Controllers/Web/AdminExpensePaymentPageController.php',
+ 'app/Http/Controllers/Web/AdminWorkshopControlPageController.php',
+ 'app/Http/Controllers/Web/AdminNativeModuleController.php',
+ 'app/Services/ExpensePaymentService.php',
+ 'resources/views/payments/create.blade.php',
+ 'resources/views/payments/show.blade.php',
+ 'resources/views/workshop-controls/osl-edit.blade.php',
+ 'routes/web.php'
+]
+print('AM217_SOURCE_STRUCTURE_BEGIN')
+for f in files:
+    p=root/f
+    if not p.is_file():
+        print('MISSING',f)
+        continue
+    content=p.read_text('utf8','replace')
+    print('SOURCE',f,'SHA256',hashlib.sha256(p.read_bytes()).hexdigest()[:16])
+    if f.endswith('.php') and '/Controllers/' in f or '/Services/' in f:
+        methods=re.findall(r'\bfunction\s+(\w+)\s*\(',content)
+        print('METHOD_NAMES',','.join(methods[:75]))
+    elif f.endswith('.blade.php'):
+        names=sorted(set(re.findall(r'\bname=[\'\"]([a-zA-Z][a-zA-Z_0-9-]*)[\'\"]',content)))
+        print('FORM_INPUT_NAMES',','.join(names[:95]))
+print('AM217_SOURCE_STRUCTURE_END')
+
+php=r'''<?php
+$root=$argv[1];
+require $root.'/vendor/autoload.php';
+$app=require $root.'/bootstrap/app.php';
+$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\DB;
+function cols($t) { return Schema::hasTable($t) ? Schema::getColumnListing($t) : []; }
+function has($c,$k) { return in_array($k,$c,true); }
+$tables=['workshop_vendors','workshop_purchases','workshop_purchase_batches',
+ 'workshop_purchase_lines','workshop_purchase_items','workshop_payment_vouchers',
+ 'workshop_vendor_payments','workshop_vendor_ledger','vendor_ledger','vendor_ledgers',
+ 'payment_voucher_allocations','workshop_payment_allocations','workshop_expenses',
+ 'cash_bank_ledger','account_ledger','ledger_entries','accounts'];
+echo "AM217_SCHEMA_BEGIN\n";
+foreach($tables as $t){
+  $c=cols($t);
+  echo "TABLE $t ".($c?implode(',',$c):'NOT_FOUND')."\n";
+}
+echo "AM217_SCHEMA_END\n";
+echo "AM217_ROUTE_BEGIN\n";
+foreach(app('router')->getRoutes() as $r){
+  $name=(string)$r->getName(); $uri=$r->uri();
+  if(!preg_match('/(payment|voucher|purchase|vendor|osl)/i',$name.' '.$uri))continue;
+  if(!str_starts_with($uri,'erp/'))continue;
+  echo implode(',',array_diff($r->methods(),['HEAD'])).' '.$uri.' NAME '.$name.' ACTION '.$r->getActionName()."\n";
+}
+echo "AM217_ROUTE_END\n";
+$ref=trim((string)($argv[2]??''));
+$expectedVendor=trim((string)($argv[3]??''));
+if($ref===''){echo "AM217_TARGET_LOOKUP_SKIPPED_NO_REFERENCE\n";exit(0);}
+$t='workshop_purchases'; $c=cols($t);
+if(!$c){echo "AM217_TARGET_PURCHASE_TABLE_NOT_FOUND\n";exit(0);}
+$refCols=array_values(array_intersect(['purchase_no','purchase_batch_no','reference_no','voucher_no'],$c));
+if(!$refCols){echo "AM217_TARGET_NO_REFERENCE_COLUMN\n";exit(0);}
+$q=DB::table($t);
+$q->where(function($q)use($refCols,$ref){
+ foreach($refCols as $k)$q->orWhere($k,'=',$ref);
+});
+$matches=$q->limit(2)->get();
+echo 'AM217_TARGET_MATCH_COUNT_CAPPED '.count($matches)."\n";
+if(count($matches)!==1){
+ if(cols('workshop_purchase_batches'))echo "AM217_INSPECT_PURCHASE_BATCH_LOOKUP_REQUIRED\n";
+ exit(0);
+}
+$row=$matches[0];
+$vendorId=(int)($row->vendor_id??0);
+echo 'AM217_TARGET_VENDOR_ID_PRESENT '.($vendorId>0?'YES':'NO')."\n";
+echo 'AM217_TARGET_RECORD_STATUS_PRESENT '.(property_exists($row,'record_status')?'YES':'NO')."\n";
+echo 'AM217_TARGET_TOTAL_AMOUNT_PRESENT '.(property_exists($row,'total_amount')?'YES':'NO')."\n";
+if(property_exists($row,'total_amount')){
+ $amount=(float)$row->total_amount;
+ echo 'AM217_TARGET_TOTAL_EQUALS_400 '.(abs($amount-400.0)<0.005?'YES':'NO')."\n";
+}
+$vc=cols('workshop_vendors');
+$vendorRow=($vendorId && $vc && has($vc,'id'))
+  ? DB::table('workshop_vendors')->where('id',$vendorId)->first():null;
+echo 'AM217_VENDOR_MASTER_ID_MATCH '.($vendorRow?'YES':'NO')."\n";
+if($vendorRow&&$expectedVendor!==''){
+ $name=(string)($vendorRow->vendor_name??$vendorRow->name??'');
+ echo 'AM217_VENDOR_NAME_MATCH '.(mb_strtolower(trim($name))===mb_strtolower($expectedVendor)?'YES':'NO')."\n";
+}
+foreach(['workshop_payment_vouchers','workshop_vendor_payments',
+         'workshop_vendor_ledger','vendor_ledger','vendor_ledgers'] as $table){
+ $cc=cols($table);
+ if(!$cc){echo 'AM217_TABLE_NOT_FOUND '.$table."\n";continue;}
+ $fk=has($cc,'vendor_id')?'vendor_id':(has($cc,'payee_vendor_id')?'payee_vendor_id':null);
+ if($fk&&$vendorId){
+  $n=DB::table($table)->where($fk,$vendorId)->limit(101)->count();
+  echo 'AM217_VENDOR_MATCHING_ROWS_CAPPED '.$table.' '.min(101,$n)."\n";
+ }else{echo 'AM217_VENDOR_JOIN_REQUIRES_REVIEW '.$table."\n";}
+}
+echo "AM217_NO_FINANCIAL_ROW_MUTATIONS\n";
+'''
+with tempfile.TemporaryDirectory(prefix='am217_readonly_') as tmp:
+    script=Path(tmp)/'audit.php'
+    script.write_text(php,encoding='utf8')
+    command=['php',str(script),str(root),purchase,vendor]
+    run=subprocess.run(command,cwd=root,capture_output=True,text=True,timeout=55)
+    if run.stdout:
+        print(run.stdout[:25000])
+    if run.returncode:
+        print('AM217_AUDIT_ERROR_EXIT',run.returncode)
+        print('AM217_AUDIT_ERROR_BRIEF',run.stderr[-550:])
+        sys.exit(run.returncode)
+print('AM217_READ_ONLY_COMPLETED')
