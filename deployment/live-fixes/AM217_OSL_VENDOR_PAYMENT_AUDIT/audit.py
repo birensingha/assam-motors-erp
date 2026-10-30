@@ -152,6 +152,16 @@ if($expectedVendor!==''){
  }
 }
 echo 'AM217_CURRENT_LINKED_VENDOR_ACTIVE '.((int)($vendorRow->active??0)===1?'YES':'NO')."\\n";
+$norm=fn($v)=>preg_replace('/[^a-z0-9]+/','',mb_strtolower(trim((string)$v)));
+echo 'AM217_PURCHASE_NAME_IS_BLANK '.(trim((string)($row->supplier_name??''))===''?'YES':'NO')."\\n";
+echo 'AM217_PURCHASE_NAME_EQUALS_LINKED_MASTER '.($norm($row->supplier_name??'')===$norm($vendorRow->vendor_name??'')?'YES':'NO')."\\n";
+echo 'AM217_PURCHASE_NAME_NORMALIZED_MATCH_EXPECTED '.($norm($row->supplier_name??'')===$norm($expectedVendor)?'YES':'NO')."\\n";
+echo 'AM217_MASTER_NAME_NORMALIZED_MATCH_EXPECTED '.($norm($vendorRow->vendor_name??'')===$norm($expectedVendor)?'YES':'NO')."\\n";
+foreach(['%SAH%','%ENGINEER%'] as $pattern){
+ $subset=DB::table('workshop_vendors')->where('vendor_name','like',$pattern)->limit(11)->get();
+ echo 'AM217_VENDOR_NAME_PATTERN_MATCH '.($pattern==='%SAH%'?'SAH':'ENGINEER').' '.count($subset)."\\n";
+}
+if($batchNo??false){} // no effect; batch consistency checked below
 $batchNo=trim((string)($row->purchase_batch_no??''));
 $batchCols=cols('workshop_purchase_batches');
 if($batchNo!=='' && has($batchCols,'batch_no')){
