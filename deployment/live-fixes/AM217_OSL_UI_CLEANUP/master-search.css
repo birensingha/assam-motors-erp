@@ -1,0 +1,11 @@
+/* AM217: compact searchable OSL Master, without changing original Master DB/select. */
+.am91-osl-dialog .am217-search-wrap{position:relative;width:100%;margin-top:4px}
+.am91-osl-dialog .am217-master-search{display:block;width:100%;min-height:37px;box-sizing:border-box;border:1px solid #9abfdb;border-radius:7px;background:#fff;color:#143e63;padding:8px 10px;font-size:12px}
+.am91-osl-dialog .am217-master-search:focus{outline:2px solid #6cb1dd;outline-offset:1px}
+.am91-osl-dialog .am217-results[hidden]{display:none!important}
+.am91-osl-dialog .am217-results{position:absolute;left:0;right:0;top:calc(100% - 14px);max-height:220px;overflow:auto;background:white;border:1px solid #a8c4da;box-shadow:0 12px 20px #1936502b;border-radius:7px;z-index:1900;padding:4px}
+.am91-osl-dialog .am217-result{display:block;width:100%;border:0;background:#fff;text-align:left;font-weight:650;font-size:11px;color:#194b75;padding:9px 10px;border-radius:5px;cursor:pointer}
+.am91-osl-dialog .am217-result:hover,.am91-osl-dialog .am217-result:focus{background:#e6f3ff;outline:1px solid #7cb9de}
+.am91-osl-dialog .am217-no-result{font-size:11px;padding:9px;color:#52677b}
+.am91-osl-dialog .am217-hint{display:block;font-size:10px;color:#56728a;margin:4px 0 0;line-height:1.4}
+.am91-osl-dialog select.am217-native-select{position:absolute!important;clip-path:inset(50%)!important;height:1px!important;width:1px!important;opacity:0!important;pointer-events:none!important}
