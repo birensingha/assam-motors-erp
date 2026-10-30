@@ -61,7 +61,7 @@ jobs:
           fi
           "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/assam-motors-deploy/deployment/live-fixes"'
           "${SCP[@]}" -r deployment/live-fixes/AM212_ROT_WORK_PROCEDURE deployment/live-fixes/AM214_NATIVE_MASTER_MODAL_SELECT "$REMOTE:~/assam-motors-deploy/deployment/live-fixes/"
-          "${SSH[@]}" "$REMOTE" "bash ~/assam-motors-deploy/deployment/live-fixes/AM212_ROT_WORK_PROCEDURE/DEPLOY_STAGING.sh '$ROOT'"
+          "${SSH[@]}" "$REMOTE" "bash ~/assam-motors-deploy/deployment/live-fixes/AM212_ROT_WORK_PROCEDURE/DEPLOY_STAGING.sh '$ROOT'" 2>&1 | tee "$RUNNER_TEMP/am212_staging_result.log"
       - name: Post safe deployment stage
         if: always()
         env:
@@ -70,7 +70,11 @@ jobs:
           SSH_STATUS: ${{ steps.ssh.outcome }}
           DEPLOY_STATUS: ${{ steps.deploy.outcome }}
         run: |
-          body="AM212/AM214 STAGING: source=$QA, ssh=$SSH_STATUS, deploy=$DEPLOY_STATUS. Authenticated browser save/refresh still requires verification. No Android updates. Commit $GITHUB_SHA"
+          hints=""
+          if [ -f "$RUNNER_TEMP/am212_staging_result.log" ]; then
+            hints="$(grep -E '^AM212_|^AM214_' "$RUNNER_TEMP/am212_staging_result.log" | tail -15 | tr '\n' ';' | cut -c1-950 || true)"
+          fi
+          body="AM212/AM214 STAGING: source=$QA, ssh=$SSH_STATUS, deploy=$DEPLOY_STATUS. Workflow: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID . Sanitized stage markers: $hints . Authenticated browser save/refresh still requires verification. No Android updates. Commit $GITHUB_SHA"
           gh api repos/"$GITHUB_REPOSITORY"/issues/124/comments -f body="$body" || true
       - name: Remove temporary SSH key
         if: always()
