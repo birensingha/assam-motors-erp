@@ -89,7 +89,7 @@ jobs:
             $app=require "bootstrap/app.php";
             $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
             $r=\Illuminate\Support\Facades\DB::table("workshop_purchases")
-              ->where("purchase_no","OB-261030184631-517")->first();
+              ->where(function($q){$q->where("purchase_no","OB-261030184631-517")->orWhere("purchase_batch_no","OB-261030184631-517");})->first();
             if(!$r || $r->purchase_type!=="OSL")exit(21);
             $sources=app(\App\Services\ExpensePaymentService::class)->payableSources();
             $key="OSL_JOB::".$r->id;
