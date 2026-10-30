@@ -38,6 +38,15 @@ def atomic(path,s):
     finally:
         if os.path.exists(tmp):os.unlink(tmp)
 def replace(name,old,new,label):
+    if name=='controller':
+        start=changed[name].find('    public function updateOsl(')
+        end=changed[name].find('    public function vendorDatabase(',start)
+        if start<0 or end<start:raise SystemExit('AM217_STOP_OSL_METHOD_BOUNDARIES')
+        body=changed[name][start:end]
+        if body.count(old)!=1:
+            raise SystemExit('AM217_STOP_ANCHOR_'+label+'_'+str(body.count(old)))
+        changed[name]=changed[name][:start]+body.replace(old,new,1)+changed[name][end:]
+        return
     if changed[name].count(old)!=1:
         raise SystemExit('AM217_STOP_ANCHOR_'+label+'_'+str(changed[name].count(old)))
     changed[name]=changed[name].replace(old,new,1)
