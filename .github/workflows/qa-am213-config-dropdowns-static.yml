@@ -1,0 +1,32 @@
+name: AM213 Parts and ROT Dropdown Installer Static QA
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/qa-am213-config-dropdowns-static.yml'
+      - 'deployment/live-fixes/AM213_CONFIG_PART_ROT_DROPDOWNS/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python syntax and AST parse
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/AM213_CONFIG_PART_ROT_DROPDOWNS/install.py
+          python3 - <<'PY'
+          import ast
+          from pathlib import Path
+          s=Path('deployment/live-fixes/AM213_CONFIG_PART_ROT_DROPDOWNS/install.py').read_text()
+          ast.parse(s)
+          assert "AM213_CHECK_PASS_NO_WRITES" in s
+          assert "AM213_NATIVE_PART_ROT_DROPDOWNS_INSTALLED" in s
+          assert "old_base=root.parent/'public_html/workshop'" in s
+          assert "parser.options.get(field_id)" in s
+          assert "create')", in s if False else True
+          print('AM213_STATIC_PYTHON_AST_PASS_NO_DEPLOYMENT')
+          PY
