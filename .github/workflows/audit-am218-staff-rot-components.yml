@@ -52,6 +52,11 @@ jobs:
           gh api repos/"$GITHUB_REPOSITORY"/issues/124/comments -f body="$body"
           "__SSHARRAY__" "$REMOTE" "python3 ~/AM218_ROT_AUDIT/detail_audit.py '$ROOT'" > /tmp/am218_detail.txt
           grep -E '^AM218_DETAIL_|^AM218_SOURCE' /tmp/am218_detail.txt | sed -n '1,140p'
+          for part in API PORTAL; do
+            snippet="$(grep "^AM218_SOURCE $part " /tmp/am218_detail.txt | head -75 | cut -c1-8000 | cut -c1-520 | tail -65 | cut -c1-6000 || true)"
+            body="AM218 $part read-only source anchors:\n$snippet"
+            gh api repos/"$GITHUB_REPOSITORY"/issues/124/comments -f body="$body" || true
+          done
       - name: Cleanup
         if: always()
         run: rm -f ~/.ssh/id_ed25519
