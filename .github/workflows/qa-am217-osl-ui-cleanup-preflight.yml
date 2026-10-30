@@ -52,12 +52,12 @@ jobs:
           set -euo pipefail
           if [ -n "$KEY" ]; then
             ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519 "$USERNAME@$HOST" 'mkdir -p "$HOME/AM217_PREFLIGHT"'
-            scp -o BatchMode=yes -o ConnectTimeout=14 -P "$PORT" -i ~/.ssh/id_ed25519 deployment/live-fixes/AM217_OSL_UI_CLEANUP/apply.py "$USERNAME@$HOST:~/AM217_PREFLIGHT/apply.py"
+            scp -o BatchMode=yes -o ConnectTimeout=14 -P "$PORT" -i ~/.ssh/id_ed25519 deployment/live-fixes/AM217_OSL_UI_CLEANUP/apply.py deployment/live-fixes/AM217_OSL_UI_CLEANUP/master-search.js deployment/live-fixes/AM217_OSL_UI_CLEANUP/master-search.css "$USERNAME@$HOST:~/AM217_PREFLIGHT/"
             ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519 "$USERNAME@$HOST" "cd '$ROOT' && python3 -m py_compile ~/AM217_PREFLIGHT/apply.py && python3 ~/AM217_PREFLIGHT/apply.py check '$ROOT'"
           else
             export SSHPASS="$PASSWORD"
             sshpass -e ssh -o ConnectTimeout=14 -p "$PORT" "$USERNAME@$HOST" 'mkdir -p "$HOME/AM217_PREFLIGHT"'
-            sshpass -e scp -o ConnectTimeout=14 -P "$PORT" deployment/live-fixes/AM217_OSL_UI_CLEANUP/apply.py "$USERNAME@$HOST:~/AM217_PREFLIGHT/apply.py"
+            sshpass -e scp -o ConnectTimeout=14 -P "$PORT" deployment/live-fixes/AM217_OSL_UI_CLEANUP/apply.py deployment/live-fixes/AM217_OSL_UI_CLEANUP/master-search.js deployment/live-fixes/AM217_OSL_UI_CLEANUP/master-search.css "$USERNAME@$HOST:~/AM217_PREFLIGHT/"
             sshpass -e ssh -o ConnectTimeout=14 -p "$PORT" "$USERNAME@$HOST" "cd '$ROOT' && python3 -m py_compile ~/AM217_PREFLIGHT/apply.py && python3 ~/AM217_PREFLIGHT/apply.py check '$ROOT'"
           fi
       - name: Remove transient key
