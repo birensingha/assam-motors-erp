@@ -30,7 +30,17 @@ foreach([
   'name="work_procedure"'=>2,
   'AM212_ROT_WORK_PROCEDURE'=>1,
 ] as $text=>$count){
-    vcheck(substr_count($src,$text)===$count,'EXPECTED_UI_COPY_OR_FIELD_COUNT');
+    $found=substr_count($src,$text);
+    $testName=match($text){
+      'Parts / Components to Remove &amp; Refit'=>'LABEL',
+      'Mention only the parts/components that must be removed, disconnected and refitted to perform this ROT.'=>'HELPER',
+      'Both rear wheels, rear brake drums, handbrake cables, brake hose/pipe brackets, ABS sensor wiring, shock lower bolts, coil springs, torsion beam mounting bolts.'=>'PLACEHOLDER',
+      'Workshop reference only. Not printed on Estimate / Invoice.'=>'BOTTOM_NOTE',
+      'name="work_procedure"'=>'FIELD',
+      default=>'SOURCE_MARKER',
+    };
+    echo "AM212_VERIFY_UI_".$testName."_COUNT_".$found."_EXPECTED_".$count."\n";
+    vcheck($found===$count,'UI_'+$testName+'_COUNT');
 }
 vcheck(!str_contains($src,'Work Procedure / Technical Instructions'),'OLD_HEADING_STILL_PRESENT');
 vcheck(str_contains($ctl,"'work_procedure'"),'BACKEND_CREATE_EDIT_FIELD');
