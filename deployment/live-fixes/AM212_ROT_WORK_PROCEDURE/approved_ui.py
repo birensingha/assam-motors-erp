@@ -31,7 +31,7 @@ if new_label in src and helper in src:
         raise SystemExit("AM212_COPY_STOP_MIXED_COPY")
     print("AM212_APPROVED_ROT_COMPONENTS_COPY_ALREADY_PRESENT")
     sys.exit(0)
-if any(src.count(s)!=1 for s in (old_label,old_placeholder,old_note)):
+if any(src.count(s)!=2 for s in (old_label,old_placeholder,old_note)):
     raise SystemExit("AM212_COPY_STOP_SOURCE_LABEL_ANCHORS_CHANGED")
 # The generated Create and Edit controls both share the same text.
 new=src.replace(old_label,new_label).replace(old_placeholder,new_placeholder).replace(old_note,new_note)
