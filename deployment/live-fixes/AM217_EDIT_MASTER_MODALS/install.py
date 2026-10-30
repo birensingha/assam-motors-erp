@@ -71,8 +71,8 @@ for name,source in old.items():
         raise SystemExit('AM217_STOP_ENDSECTION_ANCHOR_'+name)
     block=template.replace('__AM217_PAGE__','"'+name+'"')
     candidate[name]=source.replace('@endsection',block+'\n@endsection',1)
-    if candidate[name].count(marker)!=1 or candidate[name].count('id="am217-edit-popup"')!=0:
-        # dialog constructed by JS, not static HTML
+    if candidate[name].count(marker)!=1 or candidate[name].count('dialog.id="am217-edit-popup"')!=1:
+        # The popup is constructed once by JavaScript, not duplicated static HTML.
         raise SystemExit('AM217_STOP_CANDIDATE_INTEGRITY_'+name)
     if candidate[name].count("route('erp.masters."+route+".update',$r->id)")!=source.count("route('erp.masters."+route+".update',$r->id)"):
         raise SystemExit('AM217_STOP_ORIGINAL_UPDATE_ACTION_CHANGED_'+name)
