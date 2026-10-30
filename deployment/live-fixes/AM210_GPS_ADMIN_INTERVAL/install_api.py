@@ -72,7 +72,7 @@ if "GpsReportingIntervalController" in content or "staff/location/reporting-sett
 # existing api/v1 route group. Do not try to guess nested route definitions.
 line_matches=[
     (i,line) for i,line in enumerate(content.splitlines(keepends=True))
-    if re.search(r"Route::post\s*\(\s*['\"][^'\"]*/staff/location['\"]",line)
+    if re.search(r"Route::post\s*\(\s*['\"](?:/|v1/)?staff/location['\"]",line)
 ]
 if len(line_matches)!=1:
     print("AM210_API_POST_ACTION_FOR_MANUAL_ANCHOR_REVIEW",
@@ -86,9 +86,13 @@ if "->middleware(" in post_line:
 if "->" not in post_line or ";" not in post_line:
     raise SystemExit("AM210_API_STOP_POST_ROUTE_NOT_ONE_LINE")
 indent=re.match(r"^\s*",post_line).group(0)
+path_match=re.search(r"Route::post\s*\(\s*['\"](?P<path>(?:/|v1/)?staff/location)['\"]",post_line)
+if not path_match:
+    raise SystemExit("AM210_API_STOP_EXACT_POST_PATH_UNRESOLVED")
+get_path=path_match.group("path").rstrip("/")+"/reporting-settings"
 addition=(
     indent+"// "+marker+": same route group as authorized POST GPS\n"
-    +indent+"Route::get('/staff/location/reporting-settings', "
+    +indent+"Route::get('"+get_path+"', "
     +r"[\App\Http\Controllers\Api\V1\GpsReportingIntervalController::class, 'show']);"
     +"\n"
 )
