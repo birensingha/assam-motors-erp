@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # AM212 explicit STAGING deployment with fresh private DB export FIRST.
 set -Eeuo pipefail
-ROOT="\${1:-}"
-PKG="$(cd "$(dirname "\${BASH_SOURCE[0]}")" && pwd)"
+ROOT="${1:-}"
+PKG="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 if [[ ! -f "$ROOT/artisan" || "$(basename "$ROOT")" != "assam-erp-staging" ]]; then
   echo "AM212_DEPLOY_STOP_INVALID_STAGING_ROOT"; exit 2
 fi
