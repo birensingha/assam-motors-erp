@@ -57,4 +57,4 @@ if(file_put_contents($out,implode("\n",$lines)."\n",LOCK_EX)===false){
 if((fileperms($out)&077)!==0){
     @unlink($out);fwrite(STDERR,"AM212_BACKUP_STOP_CONFIG_PERMISSIONS\n");exit(2);
 }
-echo "AM212_BACKUP_TEMP_CONFIG_READY\n";
+echo "AM212_BACKUP_DB_NAME=".$db."\n";\necho "AM212_BACKUP_TEMP_CONFIG_READY\n";
