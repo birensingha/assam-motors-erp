@@ -8,6 +8,8 @@ on:
       - deployment/live-fixes/AM219_PAYMENT_VENDOR_VISIBLE/audit.py
       - deployment/live-fixes/AM220_PAYMENT_SINGLE_VENDOR_SEARCH/install.py
       - deployment/live-fixes/AM220_PAYMENT_SINGLE_VENDOR_SEARCH/search.js
+      - deployment/live-fixes/AM221_PAYMENT_INLINE_SEARCH/install.py
+      - deployment/live-fixes/AM221_PAYMENT_INLINE_SEARCH/search.js
   workflow_dispatch:
 permissions: {contents: read}
 concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
@@ -65,6 +67,8 @@ jobs:
           REMOTE="$USERNAME@$HOST"
           "${SSH[@]}" "$REMOTE" 'mkdir -p -m 700 ~/AM217_OSL_VENDOR_PAYMENT_EDIT'
           "${SCP[@]}" deployment/live-fixes/AM217_OSL_VENDOR_PAYMENT_EDIT/install.py "$REMOTE:~/AM217_OSL_VENDOR_PAYMENT_EDIT/install.py"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p -m 700 ~/AM221_PAYMENT_INLINE_SEARCH'
+          "${SCP[@]}" deployment/live-fixes/AM221_PAYMENT_INLINE_SEARCH/install.py deployment/live-fixes/AM221_PAYMENT_INLINE_SEARCH/search.js "$REMOTE:~/AM221_PAYMENT_INLINE_SEARCH/"
           "${SSH[@]}" "$REMOTE" 'mkdir -p -m 700 ~/AM220_PAYMENT_SINGLE_VENDOR_SEARCH'
           "${SCP[@]}" deployment/live-fixes/AM220_PAYMENT_SINGLE_VENDOR_SEARCH/install.py deployment/live-fixes/AM220_PAYMENT_SINGLE_VENDOR_SEARCH/search.js "$REMOTE:~/AM220_PAYMENT_SINGLE_VENDOR_SEARCH/"
           "${SSH[@]}" "$REMOTE" 'mkdir -p -m 700 ~/AM219_PAYMENT_VENDOR_VISIBLE'
@@ -84,17 +88,20 @@ jobs:
           grep -Fq 'am220-payment-single-vendor-search.js' "$ROOT/resources/views/payments/create.blade.php"
           test -s "$ROOT/public/js/am220-payment-single-vendor-search.js"
           echo AM220_SINGLE_VENDOR_SEARCH_SOURCE_PASS
-          ASSET_URL="$(cd "$ROOT" && php -r 'require "vendor/autoload.php"; $app=require "bootstrap/app.php"; $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap(); echo asset("js/am220-payment-single-vendor-search.js")."?v=220";')"
-          test -n "$ASSET_URL"
-          TMP_ASSET="$(mktemp)"
-          trap 'rm -f "$TMP_ASSET"' EXIT
-          HTTP="$(curl -sSL --max-time 30 -o "$TMP_ASSET" -w '%{http_code}' "$ASSET_URL")"
-          echo "AM220_PUBLIC_BROWSER_JS_STATUS $HTTP"
-          test "$HTTP" = 200
-          grep -Fq 'AM220_VENDOR_SOURCE_SINGLE_SEARCH' "$TMP_ASSET"
-          rm -f "$TMP_ASSET"
-          trap - EXIT
-          echo AM220_PUBLIC_ASSET_VERIFIED
+          # AM221: previous external asset URL returned HTTP 404; inline
+          # the validated search directly in Payment Voucher Blade instead.
+          AM221="$HOME/AM221_PAYMENT_INLINE_SEARCH/install.py"
+          python3 -m py_compile "$AM221"
+          python3 "$AM221" check "$ROOT"
+          python3 "$AM221" apply "$ROOT"
+          grep -Fq 'am221-payment-source-search-inline' "$ROOT/resources/views/payments/create.blade.php"
+          ! grep -Fq "asset('js/am220-payment-single-vendor-search.js')" "$ROOT/resources/views/payments/create.blade.php"
+          echo AM221_PAYMENT_INLINE_SEARCH_INSTALL_PASS
+          for p in /erp/login /staff/login;do
+            HTTP="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$p")"
+            echo "AM221_HEALTH $p $HTTP"
+            test "$HTTP" = 200
+          done
           AM218="$HOME/AM218_PAYMENT_SIDENAV_OSL/install.py"
           python3 -m py_compile "$AM218"
           python3 "$AM218" check "$ROOT"
