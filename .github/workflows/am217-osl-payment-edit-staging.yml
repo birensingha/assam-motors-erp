@@ -62,9 +62,18 @@ jobs:
           REMOTE="$USERNAME@$HOST"
           "${SSH[@]}" "$REMOTE" 'mkdir -p -m 700 ~/AM217_OSL_VENDOR_PAYMENT_EDIT'
           "${SCP[@]}" deployment/live-fixes/AM217_OSL_VENDOR_PAYMENT_EDIT/install.py "$REMOTE:~/AM217_OSL_VENDOR_PAYMENT_EDIT/install.py"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p -m 700 ~/AM218_PAYMENT_SIDENAV_OSL'
+          "${SCP[@]}" deployment/live-fixes/AM218_PAYMENT_SIDENAV_OSL/install.py deployment/live-fixes/AM218_PAYMENT_SIDENAV_OSL/payment-source-search.js "$REMOTE:~/AM218_PAYMENT_SIDENAV_OSL/"
           "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE_SCRIPT'
           set -euo pipefail
           ROOT="$1"
+          AM218="$HOME/AM218_PAYMENT_SIDENAV_OSL/install.py"
+          python3 -m py_compile "$AM218"
+          python3 "$AM218" check "$ROOT"
+          python3 "$AM218" apply "$ROOT"
+          grep -Fq AM218_PAYMENT_SIDENAV_OSL "$ROOT/resources/views/payments/create.blade.php"
+          test -s "$ROOT/public/js/am218-payment-source-search.js"
+          echo AM218_SIDE_NAV_VENDOR_OSL_SEARCH_INSTALLED
           PATCH="$HOME/AM217_OSL_VENDOR_PAYMENT_EDIT/install.py"
           cd "$ROOT"
           python3 -m py_compile "$PATCH"
