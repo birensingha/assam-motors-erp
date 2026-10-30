@@ -84,6 +84,17 @@ jobs:
           grep -Fq 'am220-payment-single-vendor-search.js' "$ROOT/resources/views/payments/create.blade.php"
           test -s "$ROOT/public/js/am220-payment-single-vendor-search.js"
           echo AM220_SINGLE_VENDOR_SEARCH_SOURCE_PASS
+          ASSET_URL="$(cd "$ROOT" && php -r 'require "vendor/autoload.php"; $app=require "bootstrap/app.php"; $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap(); echo asset("js/am220-payment-single-vendor-search.js")."?v=220";')"
+          test -n "$ASSET_URL"
+          TMP_ASSET="$(mktemp)"
+          trap 'rm -f "$TMP_ASSET"' EXIT
+          HTTP="$(curl -sSL --max-time 30 -o "$TMP_ASSET" -w '%{http_code}' "$ASSET_URL")"
+          echo "AM220_PUBLIC_BROWSER_JS_STATUS $HTTP"
+          test "$HTTP" = 200
+          grep -Fq 'AM220_VENDOR_SOURCE_SINGLE_SEARCH' "$TMP_ASSET"
+          rm -f "$TMP_ASSET"
+          trap - EXIT
+          echo AM220_PUBLIC_ASSET_VERIFIED
           AM218="$HOME/AM218_PAYMENT_SIDENAV_OSL/install.py"
           python3 -m py_compile "$AM218"
           python3 "$AM218" check "$ROOT"
