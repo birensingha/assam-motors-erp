@@ -1,0 +1,71 @@
+        // AM208_ATTENDANCE_PENDING_FILTERS: Admin-only read filters;
+        // original auditable AM130 resolution and AM129 staff check-in gate untouched.
+        $am208Today=now('Asia/Kolkata')->toDateString();
+        $am208StaffRaw=$request->query('am208_staff','');
+        $am208Staff=is_string($am208StaffRaw)?mb_substr(trim($am208StaffRaw),0,100):'';
+        $am208KindRaw=$request->query('am208_kind','missed_checkout');
+        $am208Kind=is_string($am208KindRaw)
+            && in_array($am208KindRaw,['missed_checkout','blocked_checkin','no_checkin_today','all'],true)
+            ? $am208KindRaw : 'missed_checkout';
+        $am208FromRaw=$request->query('am208_from','');
+        $am208ToRaw=$request->query('am208_to','');
+        $am208From=is_string($am208FromRaw)
+            && preg_match('/^\d{4}-\d{2}-\d{2}$/',$am208FromRaw)
+            && \Carbon\CarbonImmutable::createFromFormat('!Y-m-d',$am208FromRaw) !== false
+            ? $am208FromRaw : '';
+        $am208To=is_string($am208ToRaw)
+            && preg_match('/^\d{4}-\d{2}-\d{2}$/',$am208ToRaw)
+            && \Carbon\CarbonImmutable::createFromFormat('!Y-m-d',$am208ToRaw) !== false
+            ? $am208ToRaw : '';
+        $am208Pattern='%'.str_replace(['\\','%','_'],['\\\\','\\%','\\_'],$am208Staff).'%';
+        $am130Base=DB::table('attendance as a')
+            ->where('a.date','<',$am208Today)
+            ->whereNotNull('a.check_in')->whereNull('a.check_out');
+        // Badge always reflects complete unresolved backlog, not just filtered rows.
+        $am130PendingCount=(clone $am130Base)->count();
+        $am130Filtered=(clone $am130Base)
+            ->leftJoin('staff as s','s.id','=','a.staff_id');
+        if($am208Staff!==''){
+            $am130Filtered->where(function($q)use($am208Pattern){
+                $q->where('s.name','like',$am208Pattern)
+                  ->orWhere('s.staff_code','like',$am208Pattern);
+            });
+        }
+        if($am208From!=='')$am130Filtered->where('a.date','>=',$am208From);
+        if($am208To!=='')$am130Filtered->where('a.date','<=',$am208To);
+        $am208ShowMissing=in_array($am208Kind,['all','missed_checkout','blocked_checkin'],true);
+        $am208CheckoutMatched=$am208ShowMissing?(clone $am130Filtered)->count():0;
+        $am130PendingRows=$am208ShowMissing
+            ? (clone $am130Filtered)
+                ->select('a.id','a.staff_id','a.date','a.check_in',
+                    's.name as employee_name','s.staff_code','s.department')
+                ->orderBy('a.date')->orderBy('a.id')->limit(100)->get()
+            : collect();
+        // Not checked-in today is an informational queue, not an automatic
+        // declaration of absence, missing attendance or a disciplinary flag.
+        $am208ShowToday=in_array($am208Kind,['all','no_checkin_today'],true);
+        $am208NoCheckinRows=collect();
+        $am208NoCheckinCount=0;
+        $am208TodayWithinRange=($am208From===''||$am208From<=$am208Today)
+            && ($am208To===''||$am208To>=$am208Today);
+        if($am208ShowToday && $am208TodayWithinRange){
+            $am208TodayBase=DB::table('staff as s')
+                ->whereRaw("LOWER(COALESCE(s.status,'active')) = 'active'")
+                ->whereNotExists(function($q)use($am208Today){
+                    $q->selectRaw('1')->from('attendance as a2')
+                        ->whereColumn('a2.staff_id','s.id')
+                        ->where('a2.date',$am208Today)
+                        ->whereNotNull('a2.check_in');
+                });
+            if($am208Staff!==''){
+                $am208TodayBase->where(function($q)use($am208Pattern){
+                    $q->where('s.name','like',$am208Pattern)
+                      ->orWhere('s.staff_code','like',$am208Pattern);
+                });
+            }
+            $am208NoCheckinCount=(clone $am208TodayBase)->count();
+            $am208NoCheckinRows=(clone $am208TodayBase)
+                ->select('s.id as staff_id','s.name as employee_name',
+                    's.staff_code','s.department')
+                ->orderBy('s.name')->orderBy('s.id')->limit(100)->get();
+        }
