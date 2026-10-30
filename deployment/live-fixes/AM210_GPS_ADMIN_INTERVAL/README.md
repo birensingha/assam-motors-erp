@@ -1,32 +1,36 @@
-# AM210 — Admin GPS Reporting Interval (60 seconds / 5 minutes)
+# AM210 — Staff GPS interval API, seconds precision
 
-Status: **Staged for compatibility audit. NOT installed to Hostinger; no live ERP route changes.**
+**Status: STAGED ONLY, NOT ROUTED OR DEPLOYED.**
 
-## Goal
-Reuse existing STAGING GPS Settings (`staff_location_settings.sample_minutes`) as the single source of truth. Admin changes it to **1 minute (60 seconds)** or **5 minutes**, at any time. New Android QA app periodically downloads the authenticated setting; no new APK is needed for **subsequent interval changes** (the initial supporting APK still must be installed).
+The current Admin-selected timing is stored in
+\`staff_location_settings.sample_seconds\` (nullable; fall back to
+\`sample_minutes * 60\` until Admin custom interval is saved).
 
-## Package
-- `audit.py`: read-only: existing API route and auth middleware, Admin GPS settings form/controller anchors, table columns and current sample_minutes. No customer/staff/location coordinates or tokens are printed; no writes.
-- `files/app/Http/Controllers/Api/V1/GpsReportingIntervalController.php`: read-only, login-protected API **implementation file not installed yet**.
+## Proposed authorized Staff endpoint
+GET \`/api/v1/staff/location/reporting-settings\`:
+\`\`\`json
+{"ok":true,"interval_seconds":90,"sample_minutes":2,"source":"STAFF_LOCATION_SETTINGS"}
+\`\`\`
+The exact interval is **90 seconds**, not the rounded legacy two minutes.
+Valid configurable range: **30–900 seconds**, any whole-second value.
 
-## Planned API
-Authenticated GET `/api/v1/staff/location/reporting-settings`
-returns:
-```json
-{"ok": true, "interval_seconds": 300, "sample_minutes": 5, "source": "STAFF_LOCATION_SETTINGS"}
-```
-- Must use the exact authentication/authorization conventions of existing authenticated POST `/api/v1/staff/location`.
-- Unauthenticated/revoked user must not be granted access.
-- Do not expose workshop latitude/longitude, geofence settings, staff IDs or location history.
-- Mobile app defaults to 60 seconds until the endpoint is installed and validated. Offline retains the last server-verified interval.
-- Existing setting values from 1 to 15 minutes are retained to avoid silently changing previous 10-minute configurations.
+Controller source staged at:
+\`files/app/Http/Controllers/Api/V1/GpsReportingIntervalController.php\`.
 
-## Safe sequence
-1. Run `python3 audit.py "$HOME/domains/assammotors.com/assam-erp-staging"`.
-2. Inspect exact authenticated API route, existing Admin UI and actual sample_minutes value.
-3. Patch existing Admin GPS Settings dropdown in place, with options 1 and 5 minutes, preserving all existing accuracy/geofence fields.
-4. Add the protected read-only API endpoint after validating its route middleware matches existing Staff location POST.
-5. Compile, verify authorized / unauthorized access, and regression test original GPS upload and attendance/ROT geofence authorization.
-6. Build and test a signed next Android Staff App version using the original signing certificate, then verify toggling 1 ↔ 5 min on an enrolled device.
+**MUST** inherit existing authenticated/active Staff POST GPS reporting
+route's middleware. No public endpoint; no coords, tokens, GPS history or
+staff personal info in response.
 
-No new database migration, no duplicated GPS settings and no change to GPS reporting accuracy or Check-In/ROT precision requirements.
+Read-only STAGING audit:
+\`\`\`bash
+cd ~/assam-motors-deploy &&
+git pull --ff-only origin main &&
+python3 deployment/live-fixes/AM210_GPS_ADMIN_INTERVAL/audit.py \
+ "$HOME/domains/assammotors.com/assam-erp-staging"
+\`\`\`
+
+Next: verify current route and authentication, implement/activate route
+safely, test 200 authorized / 401 not logged in / denied revoked accounts,
+and test the Android QA build. Android 6.3.20 currently fixed 60sec;
+Admin save alone doesn't alter installed phones. All GPS/geofence/
+attendance/ROT protections remain independent.
