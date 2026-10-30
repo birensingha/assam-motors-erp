@@ -88,6 +88,28 @@ for rel in files:
         found+=1
 print("AM213_SOURCE_ANCHORS_END")
 
+print("AM213_PURCHASE_VIEW_CANDIDATES_BEGIN")
+for folder in ("resources/views/purchases","resources/views/workshop-controls"):
+    base=root/folder
+    if not base.is_dir():continue
+    for candidate in sorted(base.glob("*.blade.php")):
+        contents=candidate.read_text("utf8","replace")
+        if not ("Purchase View" in contents or "Print View" in contents or
+                "purchase_no" in contents and "vendor" in contents.lower()):
+            continue
+        rel=str(candidate.relative_to(root))
+        print("POSSIBLE_PURCHASE_VIEW",rel)
+        for i,line in enumerate(contents.splitlines()):
+            if any(k in line for k in
+                   ("Purchase View","Print View","@section('content')",
+                    "purchase_no","purchase_batch_no","supplier_name",
+                    "vendor_id","@foreach","return route(")):
+                if deny.search(line):continue
+                print(" CANDIDATE_LINE",i+1,line.strip()[:190].encode("ascii","backslashreplace").decode("ascii"))
+            if i>150:break
+print("AM213_PURCHASE_VIEW_CANDIDATES_END")
+
+
 # This inline PHP is read-only. It prints selected PO number, linked IDs,
 # sums and reference column names. It never prints staff details or whole
 # ledgers. Vendor name is already provided by the owner.
@@ -158,7 +180,7 @@ if(Schema::hasTable('workshop_vendors')) {
  }
  if($nameCol){
   $matches=DB::table('workshop_vendors')
-   ->whereRaw('LOWER(TRIM('.$nameCol.')) = ?', [mb_strtolower('SAHERA ENGINEERING WORKSHOP (DAKHINGAON)')])
+   ->whereRaw('LOWER(TRIM('.$nameCol.')) = ?', [strtolower('SAHERA ENGINEERING WORKSHOP (DAKHINGAON)')])
    ->limit(10)->get();
   echo "EXACT_SCREENSHOT_VENDOR_NAME_MASTER_MATCH_COUNT ".$matches->count()."\n";
   foreach($matches as $v)echo "EXACT_NAME_VENDOR_ID ".$v->id."\n";
