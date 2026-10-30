@@ -3,12 +3,11 @@
 @php
     $am214Choices=[];
     $am214Pairs=[];
-    $am214Table=\Illuminate\Support\Facades\Schema::hasTable('parts_master') ? 'parts_master' : null;
-    $am214Fields=['category','sub_category','unit','vehicle_make','vehicle_model','gst_percent'];
-    if(\Illuminate\Support\Facades\Schema::hasTable('labour_master')){
-        $am214Fields=['category'];
-        $am214Table='labour_master';
-    }
+    $am214Table='__AM214_MASTER_TABLE__';
+    $am214Fields=($am214Table==='labour_master')
+      ? ['category']
+      : ['category','sub_category','unit','vehicle_make','vehicle_model','gst_percent'];
+    if(!\Illuminate\Support\Facades\Schema::hasTable($am214Table))$am214Table=null;
     foreach($am214Fields as $am214Field){
         $am214Choices[$am214Field]=[];
         if($am214Table && \Illuminate\Support\Facades\Schema::hasColumn($am214Table,$am214Field)){
