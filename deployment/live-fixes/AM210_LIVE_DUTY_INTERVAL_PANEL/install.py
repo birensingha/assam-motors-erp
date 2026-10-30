@@ -108,9 +108,14 @@ new_quality="""const quality=p=>{
   return 'delayed';
 };"""
 view_new=view_new[:matches[0].start()]+new_quality+view_new[matches[0].end():]
+# Insert a scheduled filter only for a fresh panel. Prior AM210 versions
+# already have one; never produce two duplicate filter options.
+if '<option value="scheduled">' not in view_new:
+    if view_new.count('<option value="live">Live</option>')!=1:
+        raise SystemExit("AM210_STOP_LIVE_STATUS_FILTER_UNEXPECTED")
+    view_new=view_new.replace('<option value="live">Live</option>',
+        '<option value="live">Live</option><option value="scheduled">On Schedule</option>',1)
 for old,new in [
-    ('<option value="live">Live</option>',
-     '<option value="live">Live</option><option value="scheduled">On Schedule</option>'),
     ('<option value="scheduled">On Schedule (5 min)</option>',
      '<option value="scheduled">On Schedule</option>'),
     ("setText('slLive',labels.filter(x=>x==='live').length);",
@@ -131,6 +136,8 @@ for old,new in [
 foot_old="<strong>LIVE</strong> means a genuine GPS fix within 2 minutes; <strong>DELAYED</strong> 2–7 minutes; <strong>STALE</strong> 7–30 minutes; <strong>OFFLINE</strong> over 30 minutes."
 foot_new="<strong>LIVE</strong> means a GPS fix within 2 minutes; <strong>ON SCHEDULE</strong> is a last-known point within the Admin reporting cadence, not verified Check-In; <strong>DELAYED/STALE</strong> follow that cadence; <strong>OFFLINE</strong> means over 30 minutes."
 if foot_old in view_new:view_new=view_new.replace(foot_old,foot_new,1)
+if view_new.count('<option value="scheduled">')!=1:
+    raise SystemExit("AM210_STOP_DUPLICATE_SCHEDULED_FILTER")
 if view_new.count(marker)!=1 or route_new.count(route_marker)!=1:
     raise SystemExit("AM210_STOP_PATCH_MARKER_ERROR")
 if not all(x in controller_text for x in ("sample_seconds","sample_minutes","interval_seconds","isAdmin()")):
