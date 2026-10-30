@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
-"""AM210 STAGING-only: put Admin reporting-interval control BELOW Live Duty Location.
+"""AM210 STAGING Live Duty Location user-entered GPS interval.
 
-check: read-only preflight of exact current ERP files + PHP/JS candidates
-apply: backup, add one new controller + two Admin-only routes + bottom-page UI.
-       Laravel syntax, route auth and view compilation verified, rollback on fail.
+check: read-only source, DB, route and PHP/JS preflight
+prepare: copy ONLY non-destructive sample_seconds migration into STAGING
+apply: after DB backup + migration, install/upgrade existing panel and
+       Admin-only controller/routes with rollback on syntax/auth failure
 
-No migration, no JWT/API changes, no existing location/attendance/ROT writes.
+No check-in, ROT, location history, consent, geofence or GPS log mutation.
 """
 from pathlib import Path
 from datetime import datetime,timezone
 import argparse,os,re,shutil,subprocess,tempfile,json
-
 p=argparse.ArgumentParser()
-p.add_argument("mode",choices=["check","apply"])
+p.add_argument("mode",choices=["check","prepare","apply"])
 p.add_argument("root")
 args=p.parse_args()
 root=Path(args.root).expanduser().resolve()
 pkg=Path(__file__).resolve().parent
-if root.name!="assam-erp-staging" or not (root/"artisan").is_file() or not (root/"routes/web.php").is_file():
+if root.name!="assam-erp-staging" or not (root/"artisan").is_file():
     raise SystemExit("AM210_STOP_NOT_STAGING_LARAVEL_ROOT")
 
 routes=root/"routes/web.php"
@@ -25,14 +25,24 @@ view=root/"resources/views/admin/native/staff-live-location.blade.php"
 controller=root/"app/Http/Controllers/Web/Am210LiveGpsReportingController.php"
 source_controller=pkg/"files/app/Http/Controllers/Web/Am210LiveGpsReportingController.php"
 panel_path=pkg/"panel.blade.php"
-if not view.is_file() or not source_controller.is_file() or not panel_path.is_file():
-    raise SystemExit("AM210_STOP_LIVE_VIEW_OR_BUNDLE_MISSING")
+migration_rel="database/migrations/2026_10_30_180000_add_am210_sample_seconds_to_staff_location_settings.php"
+migration_source=pkg/"files"/migration_rel
+migration_dest=root/migration_rel
+for path in (routes,view,source_controller,panel_path,migration_source):
+    if not path.is_file():raise SystemExit("AM210_STOP_REQUIRED_FILE_MISSING "+str(path.name))
+
+def lint_php(source,label):
+    fd,tmp=tempfile.mkstemp(prefix=".am210_php_",suffix=".php")
+    try:
+        with os.fdopen(fd,"w",encoding="utf8") as f:f.write(source)
+        x=subprocess.run(["php","-l",tmp],capture_output=True,text=True,timeout=35)
+        if x.returncode:raise SystemExit("AM210_PHP_LINT_FAILED "+label+" "+x.stderr[-500:])
+    finally:os.unlink(tmp)
 
 route_text=routes.read_text(encoding="utf8")
 view_text=view.read_text(encoding="utf8")
 controller_text=source_controller.read_text(encoding="utf8")
 panel=panel_path.read_text(encoding="utf8")
-
 marker="AM210_LIVE_DUTY_GPS_REPORTING_INTERVAL"
 route_marker="AM210_LIVE_GPS_INTERVAL_ADMIN_ROUTES"
 route_anchor=(
@@ -48,213 +58,196 @@ route_add=(
     r"[\App\Http\Controllers\Web\Am210LiveGpsReportingController::class, 'update'])"
     "->name('erp.staff-live-location.reporting-interval.update');"
 )
-if route_text.count(route_anchor)!=1:
-    raise SystemExit("AM210_STOP_EXISTING_ADMIN_ROUTE_ANCHOR_CHANGED")
-if view_text.count('<div class="sl-foot">')!=1:
-    raise SystemExit("AM210_STOP_EXISTING_LIVE_PANEL_FOOTER_ANCHOR_CHANGED")
-if 'id="slMap"' not in view_text or 'id="slList"' not in view_text:
-    raise SystemExit("AM210_STOP_EXISTING_LIVE_LOCATION_UI_UNEXPECTED")
-if not all(x in view_text for x in ["function drawStaff()", "const quality=p=>{", "function geofence(p)"]):
-    raise SystemExit("AM210_STOP_DASHBOARD_STATUS_FUNCTIONS_UNEXPECTED")
-if "gpsFix" in panel or "gps_token" in panel:
-    raise SystemExit("AM210_STOP_UNEXPECTED_PANEL_CONTENT")
+in_view=marker in view_text
+in_route=route_marker in route_text
+in_controller=controller.is_file()
+if len({in_view,in_route,in_controller})!=1:
+    raise SystemExit("AM210_STOP_PARTIAL_OLD_INSTALLATION_REVIEW_REQUIRED")
+already_in=in_view
+if not all(t in view_text for t in
+           ('id="slMap"','id="slList"','function drawStaff()','function geofence(p)')):
+    raise SystemExit("AM210_STOP_ORIGINAL_DASHBOARD_ANCHORS_MISSING")
+if not already_in and (
+    view_text.count('<div class="sl-foot">')!=1 or route_text.count(route_anchor)!=1
+):
+    raise SystemExit("AM210_STOP_FRESH_INSTALL_ANCHOR_MISMATCH")
+if already_in:
+    if view_text.count(marker)!=1 or route_text.count(route_marker)!=1:
+        raise SystemExit("AM210_STOP_AMBIGUOUS_EXISTING_PANEL")
+    start=view_text.index('{{-- '+marker)
+    end=view_text.find('</script>',start)
+    if start<0 or end<0 or end-start>14000:
+        raise SystemExit("AM210_STOP_EXISTING_PANEL_END_UNKNOWN")
+    old_panel=view_text[start:end+len('</script>')]
+    if ('id="am210IntervalNumber"' not in old_panel and
+        'id="am210Interval"' not in old_panel):
+        raise SystemExit("AM210_STOP_EXISTING_AM210_PANEL_UNKNOWN")
+    view_new=view_text[:start]+panel+view_text[end+len('</script>'):]
+    route_new=route_text
+else:
+    view_new=view_text.replace('<div class="sl-foot">',panel+'\n <div class="sl-foot">',1)
+    route_new=route_text.replace(route_anchor,route_anchor+route_add,1)
 
-installed_view=marker in view_text
-installed_route=route_marker in route_text
-installed_controller=controller.is_file()
-if len({installed_view,installed_route,installed_controller})!=1:
-    raise SystemExit("AM210_STOP_PARTIAL_OLD_DEPLOYMENT_REVIEW_REQUIRED")
-installed=installed_view
-if installed:
-    if controller.read_text(encoding="utf8")!=controller_text:
-        raise SystemExit("AM210_STOP_EXISTING_CONTROLLER_DIFFERENT")
-    print("AM210_ALREADY_INSTALLED_NO_CHANGES")
-    raise SystemExit(0)
-
-if ("/staff-live-location/reporting-interval" in route_text or
-        "erp.staff-live-location.reporting-interval" in route_text):
-    raise SystemExit("AM210_STOP_ROUTE_COLLISION")
-if "sample_minutes" not in controller_text:
-    raise SystemExit("AM210_STOP_CONTROLLER_MISSING_GLOBAL_SAMPLE_MINUTES")
-
-# The anchor is a protected route inside the original ERP Admin group.
-route_new=route_text.replace(route_anchor,route_anchor+route_add,1)
-view_new=view_text.replace('<div class="sl-foot">',panel+'\n <div class="sl-foot">',1)
-
-# At a 5-minute setting, 2+ minutes without a new fix is expected, not a
-# server failure. Keep LIVE strictly <=2 min; add SCHEDULED for on-cadence
-# last-known locations. Never pass SCHEDULED to strict geofence verification.
-quality_old="""const quality=p=>{
+# Presentation only: avoid false STALE at slow cadence, but never treat old
+# fixes as fresh geofence verification. Existing check-in validation untouched.
+quality_pattern=r"const quality=p=>\{\n.*?\n\};"
+matches=list(re.finditer(quality_pattern,view_new,re.S))
+if len(matches)!=1:raise SystemExit("AM210_STOP_QUALITY_FUNCTION_AMBIGUOUS")
+original_quality=matches[0].group(0)
+if "ageMs(p)" not in original_quality or "return 'live'" not in original_quality:
+    raise SystemExit("AM210_STOP_QUALITY_LOGIC_UNEXPECTED")
+new_quality="""const quality=p=>{
   if(!p)return 'none';
   const age=ageMs(p);
-  if(age>1800000)return 'offline';
-  if(age>420000)return 'stale';
-  if(age>120000)return 'delayed';
-  return 'live';
-};"""
-quality_new="""// AM210 cadence-aware presentation only; no change to GPS authorization.
-const quality=p=>{
-  if(!p)return 'none';
-  const age=ageMs(p);
-  const minutes=Number(window.am210ActiveSampleMinutes)||1;
-  const expected=Math.min(15,Math.max(1,minutes))*60000;
+  const seconds=Number(window.am210ActiveSampleSeconds)||60;
+  const expected=Math.min(900,Math.max(30,seconds))*1000;
   if(age>1800000)return 'offline';
   if(age>Math.max(420000,expected*2+120000))return 'stale';
-  if(age<=120000)return 'live'; // only fresh <2m may enter geofence checks
-  if(expected>60000 && age<=expected+90000)return 'scheduled';
+  if(age<=120000)return 'live'; // only fresh <=2m is GPS-verified
+  if(expected>120000 && age<=expected+90000)return 'scheduled';
   return 'delayed';
 };"""
-if view_new.count(quality_old)!=1:
-    raise SystemExit("AM210_STOP_GPS_FRESHNESS_FUNCTION_CHANGED")
-view_new=view_new.replace(quality_old,quality_new,1)
-
-# Make On-Schedule visible in status filter and counts, not falsely STALE.
-filter_anchor='<option value="live">Live</option>'
-if view_new.count(filter_anchor)!=1:
-    raise SystemExit("AM210_STOP_GPS_FILTER_ANCHOR_CHANGED")
-view_new=view_new.replace(filter_anchor,
-    '<option value="live">Live</option><option value="scheduled">On Schedule (5 min)</option>',1)
-count_old="setText('slLive',labels.filter(x=>x==='live').length);"
-count_new="setText('slLive',labels.filter(x=>x==='live'||x==='scheduled').length);"
-if view_new.count(count_old)!=1:
-    raise SystemExit("AM210_STOP_GPS_METRIC_ANCHOR_CHANGED")
-view_new=view_new.replace(count_old,count_new,1)
-
-for old,new,label in [
-    ("<span class=\"sl-label\">FRESH GPS</span>",
-     "<span class=\"sl-label\">REPORTING OK</span>","metric label"),
-    ("<span class=\"sl-sub\">Latest sample ≤2 min</span>",
-     "<span class=\"sl-sub\">Fresh or within Admin reporting schedule</span>","metric explanation"),
+view_new=view_new[:matches[0].start()]+new_quality+view_new[matches[0].end():]
+for old,new in [
+    ('<option value="live">Live</option>',
+     '<option value="live">Live</option><option value="scheduled">On Schedule</option>'),
+    ('<option value="scheduled">On Schedule (5 min)</option>',
+     '<option value="scheduled">On Schedule</option>'),
+    ("setText('slLive',labels.filter(x=>x==='live').length);",
+     "setText('slLive',labels.filter(x=>x==='live'||x==='scheduled').length);"),
+    ('<span class="sl-label">FRESH GPS</span>',
+     '<span class="sl-label">REPORTING OK</span>'),
+    ('<span class="sl-sub">Latest sample ≤2 min</span>',
+     '<span class="sl-sub">Fresh or within Admin reporting schedule</span>'),
     ("const priority={live:0,delayed:1,stale:2,offline:3,none:4};",
-     "const priority={live:0,scheduled:1,delayed:2,stale:3,offline:4,none:5};","staff status priority"),
+     "const priority={live:0,scheduled:1,delayed:2,stale:3,offline:4,none:5};"),
+    ('Admin-selected 5-minute reporting cadence',
+     'Admin-selected reporting cadence'),
 ]:
-    if view_new.count(old)!=1:
-        raise SystemExit("AM210_STOP_"+label.upper().replace(" ","_")+"_ANCHOR_CHANGED")
-    view_new=view_new.replace(old,new,1)
+    if old in view_new:
+        if view_new.count(old)!=1:raise SystemExit("AM210_STOP_AMBIGUOUS_EXISTING_VIEW_TEXT")
+        view_new=view_new.replace(old,new,1)
 
-# Footnote is below the bottom control. Preserve safety explanation:
-# ON SCHEDULE is not equivalent to a physically verified Check-In.
 foot_old="<strong>LIVE</strong> means a genuine GPS fix within 2 minutes; <strong>DELAYED</strong> 2–7 minutes; <strong>STALE</strong> 7–30 minutes; <strong>OFFLINE</strong> over 30 minutes."
-foot_new=("<strong>LIVE</strong> is a genuine fix within 2 minutes; "
-          "<strong>ON SCHEDULE</strong> is a last-known position within the Admin-selected 5-minute reporting cadence, not a fresh Check-In verification; "
-          "<strong>DELAYED/STALE</strong> follow the configured interval plus a tolerance; <strong>OFFLINE</strong> means over 30 minutes without a fix.")
-if view_new.count(foot_old)!=1:
-    raise SystemExit("AM210_STOP_GPS_FOOTNOTE_CHANGED")
-view_new=view_new.replace(foot_old,foot_new,1)
+foot_new="<strong>LIVE</strong> means a GPS fix within 2 minutes; <strong>ON SCHEDULE</strong> is a last-known point within the Admin reporting cadence, not verified Check-In; <strong>DELAYED/STALE</strong> follow that cadence; <strong>OFFLINE</strong> means over 30 minutes."
+if foot_old in view_new:view_new=view_new.replace(foot_old,foot_new,1)
 if view_new.count(marker)!=1 or route_new.count(route_marker)!=1:
-    raise SystemExit("AM210_STOP_PATCH_MARKER_INVALID")
-
-def lint_php(data,label):
-    with tempfile.NamedTemporaryFile(mode="w",suffix=".php",encoding="utf8",delete=False) as tmp:
-        tmp.write(data);location=Path(tmp.name)
-    try:
-        result=subprocess.run(["php","-l",str(location)],capture_output=True,text=True,timeout=40)
-        if result.returncode:raise SystemExit("AM210_PHP_LINT_FAIL "+label+" "+result.stderr[-500:])
-    finally:location.unlink(missing_ok=True)
+    raise SystemExit("AM210_STOP_PATCH_MARKER_ERROR")
+if not all(x in controller_text for x in ("sample_seconds","sample_minutes","interval_seconds","isAdmin()")):
+    raise SystemExit("AM210_STOP_CONTROLLER_CONTRACT_CHANGED")
 
 lint_php(route_new,"routes/web.php")
-lint_php(controller_text,"new controller")
-# Lint only the new inline JS. Existing scripts contain Blade-specific
-# @json bindings, so do not misinterpret them as JavaScript syntax.
-inline=re.search(r"<script>\s*\(function\(\)\{\s*'use strict';\s*const endpoint=@json\(route\('erp.staff-live-location.reporting-interval'\)\);.*?</script>",
-    panel,re.S)
-if not inline:raise SystemExit("AM210_STOP_PANEL_JS_NOT_FOUND")
-js=inline.group().replace("<script>","").replace("</script>","")
-js=js.replace("@json(route('erp.staff-live-location.reporting-interval'))",'"http://localhost/erp/staff-live-location/reporting-interval"')
-js=js.replace("@json(csrf_token())",'"test-token"')
-if "@json" in js:raise SystemExit("AM210_STOP_BLADE_JS_TOKEN")
+lint_php(controller_text,"AM210 controller")
+lint_php(migration_source.read_text(encoding="utf8"),"sample_seconds migration")
+scripts=re.findall(r"<script>\s*(.*?)\s*</script>",panel,re.S)
+if len(scripts)!=1:raise SystemExit("AM210_STOP_PANEL_SCRIPT_INVALID")
+js=(scripts[0].replace("@json(route('erp.staff-live-location.reporting-interval'))",'"http://localhost/erp/staff-live-location/reporting-interval"')
+    .replace("@json(csrf_token())",'"test-csrf"'))
+if "@json" in js:raise SystemExit("AM210_STOP_BLADE_JS_TOKENS")
 if shutil.which("node"):
-    with tempfile.NamedTemporaryFile(mode="w",suffix=".js",encoding="utf8",delete=False) as tmp:
-        tmp.write(js);test=Path(tmp.name)
+    fd,tmp=tempfile.mkstemp(prefix=".am210_js_",suffix=".js")
     try:
-        result=subprocess.run(["node","--check",str(test)],capture_output=True,text=True,timeout=30)
-        if result.returncode:raise SystemExit("AM210_JS_LINT_FAIL "+result.stderr[-500:])
-    finally:test.unlink(missing_ok=True)
+        with os.fdopen(fd,"w",encoding="utf8") as f:f.write(js)
+        check=subprocess.run(["node","--check",tmp],capture_output=True,text=True,timeout=25)
+        if check.returncode:raise SystemExit("AM210_JS_LINT_FAIL "+check.stderr[-500:])
+    finally:os.unlink(tmp)
 
-# Confirm existing ERP GPS settings row is usable. This is read-only;
-# never create/overwrite workshop geofence settings in a patch preflight.
-probe = r"""
+# Only read scalar settings, not GPS logs, tokens, staff or coordinates.
+probe=r"""
 require 'vendor/autoload.php';
 $app=require 'bootstrap/app.php';
 $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 $schema=\Illuminate\Support\Facades\Schema::class;
 if (!$schema::hasTable('staff_location_settings') ||
     !$schema::hasColumn('staff_location_settings','sample_minutes')) {
-    fwrite(STDERR,"AM210_SAMPLE_MINUTES_SCHEMA_MISSING");exit(3);
+    fwrite(STDERR,'AM210_STAFF_SETTINGS_MISSING');exit(3);
 }
+$has=$schema::hasColumn('staff_location_settings','sample_seconds');
 $row=\Illuminate\Support\Facades\DB::table('staff_location_settings')->where('id',1)->first(['sample_minutes']);
-if (!$row || !is_numeric($row->sample_minutes) ||
-    (int)$row->sample_minutes<1 || (int)$row->sample_minutes>15) {
-    fwrite(STDERR,"AM210_SAMPLE_MINUTES_INVALID_OR_ROW_MISSING");exit(4);
-}
-echo "AM210_EXISTING_GPS_SETTING_READONLY_PASS\n";
+if(!$row || !is_numeric($row->sample_minutes)) {fwrite(STDERR,'AM210_STAFF_SETTINGS_ROW_MISSING');exit(4);}
+$minutes=(int)$row->sample_minutes;
+if($minutes<1 || $minutes>15){fwrite(STDERR,'AM210_LEGACY_INTERVAL_OUTSIDE_1_15_MIN');exit(5);}
+echo json_encode(['legacy_sample_minutes'=>$minutes,'sample_seconds_column'=>$has]);
 """
-dbcheck=subprocess.run(["php","-r",probe],cwd=root,capture_output=True,text=True,timeout=45)
-if dbcheck.returncode:
-    raise SystemExit("AM210_DB_POLICY_PREFLIGHT_FAILED "+dbcheck.stderr[-300:])
-print(dbcheck.stdout.strip())
-
-print("AM210_PRECHECK_PASS_PHP_JS")
-print("AM210_PANEL_PLACEMENT=BELOW_STAFF_DETAILS_ABOVE_EXISTING_FOOTNOTE")
-print("AM210_SAVES_ONLY=staff_location_settings.sample_minutes")
-print("AM210_60SEC_OR_5MIN_WITH_CONSERVATIVE_LIVE_STALE_INDICATORS")
-print("AM210_APP_6_3_20_REMAINS_FIXED_60SEC_UNTIL_NEW_APK")
+check=subprocess.run(["php","-r",probe],cwd=root,capture_output=True,text=True,timeout=50)
+if check.returncode:
+    raise SystemExit("AM210_DB_READ_ONLY_CHECK_FAILED "+check.stderr[-400:])
+state=json.loads(check.stdout)
+has_seconds=state['sample_seconds_column']
+print("AM210_PHP_JS_PREFLIGHT_PASS")
+print("AM210_PANEL_POSITION=BELOW_LIVE_DUTY_LOCATION")
+print("AM210_INTERVAL=ADMIN_CUSTOM_30_TO_900_SECONDS")
+print("AM210_MIGRATION_COLUMN="+("PRESENT" if has_seconds else "MISSING"))
+print("AM210_EXISTING_PANEL="+("YES" if already_in else "NO"))
 if args.mode=="check":
-    print("AM210_DRY_RUN_COMPLETE_NO_STAGING_WRITES")
+    print("AM210_CHECK_COMPLETE_NO_WRITES")
+    raise SystemExit(0)
+if args.mode=="prepare":
+    if migration_dest.is_file():
+        if migration_dest.read_bytes()!=migration_source.read_bytes():
+            raise SystemExit("AM210_STOP_EXISTING_MIGRATION_CONFLICT")
+        print("AM210_MIGRATION_ALREADY_PREPARED")
+    else:
+        migration_dest.parent.mkdir(parents=True,exist_ok=True)
+        shutil.copy2(migration_source,migration_dest)
+        print("AM210_MIGRATION_PREPARED_ONLY_NO_DB_WRITES")
+    print("AM210_NEXT=BACKUP_DB_THEN_php_artisan_migrate_path_FORCE")
+    raise SystemExit(0)
+if os.environ.get("AM210_STAGING_APPROVED")!="YES":
+    raise SystemExit("AM210_STOP_EXPLICIT_APPLY_APPROVAL_REQUIRED")
+if not has_seconds:
+    raise SystemExit("AM210_STOP_RUN_NON_DESTRUCTIVE_SAMPLE_SECONDS_MIGRATION_FIRST")
+if already_in and route_text==route_new and view_text==view_new and controller.read_text(encoding="utf8")==controller_text:
+    print("AM210_CUSTOM_INTERVAL_ALREADY_INSTALLED_NO_WRITES")
     raise SystemExit(0)
 
-if os.environ.get("AM210_STAGING_APPROVED")!="YES":
-    raise SystemExit("AM210_STOP_SET_AM210_STAGING_APPROVED=YES_FOR_APPLY")
-
 backup=root/"storage/app/am-backups"/(
-    "AM210_LIVE_DUTY_INTERVAL_"+datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S"))
+    "AM210_CUSTOM_GPS_INTERVAL_"+datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S"))
 backup.mkdir(parents=True,mode=0o700,exist_ok=False)
-for source,rel in [(routes,"routes/web.php"),
-                   (view,"resources/views/admin/native/staff-live-location.blade.php")]:
-    dest=backup/rel
+for f,rel in [(routes,"routes/web.php"),(view,"resources/views/admin/native/staff-live-location.blade.php")]:
+    dest=backup/rel;dest.parent.mkdir(parents=True,exist_ok=True)
+    shutil.copy2(f,dest);dest.chmod(0o600)
+if controller.is_file():
+    dest=backup/"app/Http/Controllers/Web/Am210LiveGpsReportingController.php"
     dest.parent.mkdir(parents=True,exist_ok=True)
-    shutil.copy2(source,dest)
-    dest.chmod(0o600)
+    shutil.copy2(controller,dest);dest.chmod(0o600)
 written=[]
-def atomic(path,text):
+def atomic(path,content):
     path.parent.mkdir(parents=True,exist_ok=True)
     fd,tmp=tempfile.mkstemp(prefix=".am210_",dir=path.parent)
     try:
-        with os.fdopen(fd,"w",encoding="utf8") as file:file.write(text)
-        os.chmod(tmp,path.stat().st_mode & 0o777 if path.exists() else 0o644)
-        os.replace(tmp,path)
-        written.append(path)
+        with os.fdopen(fd,"w",encoding="utf8") as f:f.write(content)
+        os.chmod(tmp,path.stat().st_mode&0o777 if path.exists() else 0o644)
+        os.replace(tmp,path);written.append(path)
     finally:
         if os.path.exists(tmp):os.unlink(tmp)
-
 try:
     atomic(controller,controller_text)
-    atomic(routes,route_new)
-    atomic(view,view_new)
+    if routes.read_text(encoding="utf8")!=route_new:atomic(routes,route_new)
+    if view.read_text(encoding="utf8")!=view_new:atomic(view,view_new)
     for cmd in (["php","artisan","route:clear"],
                 ["php","artisan","view:clear"],
                 ["php","artisan","view:cache"],
                 ["php","artisan","route:list","--json"]):
-        result=subprocess.run(cmd,cwd=root,capture_output=True,text=True,timeout=100)
+        result=subprocess.run(cmd,cwd=root,capture_output=True,text=True,timeout=110)
         if result.returncode:
-            raise RuntimeError("Laravel validation failed: "+" ".join(cmd)+" "+result.stderr[-400:])
+            raise RuntimeError("AM210_LARAVEL_VALIDATION "+str(cmd)+" "+result.stderr[-500:])
         if cmd[-1]=="--json":
-            entries=json.loads(result.stdout)
-            for name in ("erp.staff-live-location.reporting-interval",
-                         "erp.staff-live-location.reporting-interval.update"):
-                route=[x for x in entries if x.get("name")==name]
-                if len(route)!=1 or not any(
-                    "EnsureErpAdmin" in str(m) for m in route[0].get("middleware",[])
-                ):
-                    raise RuntimeError("AM210_PROTECTED_ROUTE_AUTH_FAILED "+name)
-    print("AM210_APPLIED_STAGING_LIVE_DUTY_INTERVAL_PANEL=PASS")
-    print("AM210_ADMIN_MIDDLEWARE=VERIFIED")
+            registered=json.loads(result.stdout)
+            for name in ("erp.staff-live-location.reporting-interval","erp.staff-live-location.reporting-interval.update"):
+                match=[x for x in registered if x.get("name")==name]
+                if len(match)!=1 or not any("EnsureErpAdmin" in str(m) for m in match[0].get("middleware",[])):
+                    raise RuntimeError("AM210_ROUTE_AUTH_REQUIRED "+name)
+    print("AM210_CUSTOM_GPS_INTERVAL_STAGING_APPLIED")
+    print("AM210_ADMIN_AUTH_VERIFIED")
     print("AM210_BACKUP="+str(backup))
-except Exception as err:
-    if routes in written:shutil.copy2(backup/"routes/web.php",routes)
-    if view in written:shutil.copy2(
-        backup/"resources/views/admin/native/staff-live-location.blade.php",view)
-    if controller in written:controller.unlink(missing_ok=True)
+except Exception as e:
+    for f,rel in [(routes,"routes/web.php"),(view,"resources/views/admin/native/staff-live-location.blade.php")]:
+        if f in written:shutil.copy2(backup/rel,f)
+    if controller in written:
+        old=backup/"app/Http/Controllers/Web/Am210LiveGpsReportingController.php"
+        if old.is_file():shutil.copy2(old,controller)
+        else:controller.unlink(missing_ok=True)
     for cmd in (["php","artisan","route:clear"],["php","artisan","view:clear"]):
         subprocess.run(cmd,cwd=root,capture_output=True,text=True,timeout=45)
-    raise SystemExit("AM210_APPLY_FAILED_BACKUP_RESTORED "+str(err))
+    raise SystemExit("AM210_FAILED_FILES_RESTORED_DB_COLUMN_RETAINED "+str(e))
