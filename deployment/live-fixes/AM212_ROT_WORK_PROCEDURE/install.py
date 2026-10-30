@@ -81,20 +81,31 @@ def patch_method(source,name):
     if len(vh)!=1:raise SystemExit('AM212_STOP_'+name+'_VALIDATION_ANCHOR_'+str(len(vh)))
     insert_val="\n            'work_procedure'=>['nullable','string','max:12000'],"
     part=part[:vh[0].start()]+insert_val+part[vh[0].start():]
-    # Must persist along with the existing per-master description, in the same
-    # insert/update transaction. Do not accidentally change JC/invoice records.
-    write=re.compile(r"'rot_description'\s*=>\s*\$data\s*\[\s*'rot_description'\s*\]")
-    hits=list(write.finditer(part))
-    if len(hits)!=1:raise SystemExit('AM212_STOP_'+name+'_WRITE_ANCHOR_'+str(len(hits)))
-    w=hits[0]
-    part=part[:w.end()]+",'work_procedure'=>($data['work_procedure']??null)"+part[w.end():]
-    # Three literal occurrences are expected: validation key, DB write key,
-    # and input access ($data['work_procedure']). The earlier guard expected
-    # only two, incorrectly rejecting a correctly generated Create/Update.
+    # AM211 confirmed that native Create writes an explicit insert array,
+    # while Update validates $data and calls update($data) directly.
+    # Preserve each existing persistence mechanism without fabricating a
+    # second update or changing any historical Job Card/Invoice records.
+    if name=='createLabour':
+        write=re.compile(r"'rot_description'\s*=>\s*\$data\s*\[\s*'rot_description'\s*\]")
+        hits=list(write.finditer(part))
+        if len(hits)!=1:raise SystemExit('AM212_STOP_createLabour_INSERT_ANCHOR_'+str(len(hits)))
+        w=hits[0]
+        part=part[:w.end()]+",'work_procedure'=>($data['work_procedure']??null)"+part[w.end():]
+        write_keys=len(re.findall(r"'work_procedure'\s*=>\s*\(\s*\$data\s*\[\s*'work_procedure'\s*\]",part))
+        if write_keys!=1:
+            raise SystemExit('AM212_STOP_CREATE_PERSISTENCE_KEY_'+str(write_keys))
+    elif name=='updateLabour':
+        # Existing controller uses validated $data directly, so
+        # adding the optional validation field includes it automatically.
+        pattern=r"DB::table\(\s*'labour_master'\s*\)\s*->where\(\s*'id'\s*,\s*\$labour\s*\)\s*->update\(\s*\$data\s*\)"
+        update_calls=len(re.findall(pattern,part))
+        if update_calls!=1:
+            raise SystemExit('AM212_STOP_updateLabour_DATA_UPDATE_ANCHOR_'+str(update_calls))
+    else:
+        raise SystemExit('AM212_STOP_UNEXPECTED_METHOD_'+name)
     validation_keys=len(re.findall(r"'work_procedure'\s*=>\s*\[\s*'nullable'",part))
-    write_keys=len(re.findall(r"'work_procedure'\s*=>\s*\(\s*\$data\s*\[\s*'work_procedure'\s*\]",part))
-    if validation_keys!=1 or write_keys!=1:
-        raise SystemExit('AM212_STOP_'+name+'_FIELD_COUNT_VALIDATION_'+str(validation_keys)+'_WRITE_'+str(write_keys))
+    if validation_keys!=1:
+        raise SystemExit('AM212_STOP_'+name+'_VALIDATION_KEY_'+str(validation_keys))
     return source[:start]+part+source[end:]
 new_controller=patch_method(current_controller,'createLabour')
 new_controller=patch_method(new_controller,'updateLabour')
