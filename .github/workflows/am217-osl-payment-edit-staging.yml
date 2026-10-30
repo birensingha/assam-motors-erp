@@ -1,0 +1,113 @@
+name: AM217 OSL payment + edit STAGING guarded deploy
+on:
+  push:
+    branches: [fix/am217-osl-vendor-payment-audit-20261030]
+    paths:
+      - deployment/live-fixes/AM217_OSL_VENDOR_PAYMENT_EDIT/install.py
+      - .github/workflows/am217-osl-payment-edit-staging.yml
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch syntax and guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/AM217_OSL_VENDOR_PAYMENT_EDIT/install.py
+          OUTPUT="$(python3 deployment/live-fixes/AM217_OSL_VENDOR_PAYMENT_EDIT/install.py check /tmp/not-staging 2>&1 || true)"
+          printf '%s\n' "$OUTPUT" | grep -q 'AM217_STOP_NOT_STAGING'
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          for i in 1 2 3;do
+            if ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 2
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Check apply and independently verify in STAGING
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -p "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=15)
+            SCP=(scp -P "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=15)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT" -o ConnectTimeout=15)
+            SCP=(sshpass -e scp -P "$PORT" -o ConnectTimeout=15)
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p -m 700 ~/AM217_OSL_VENDOR_PAYMENT_EDIT'
+          "${SCP[@]}" deployment/live-fixes/AM217_OSL_VENDOR_PAYMENT_EDIT/install.py "$REMOTE:~/AM217_OSL_VENDOR_PAYMENT_EDIT/install.py"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          ROOT="$1"
+          PATCH="$HOME/AM217_OSL_VENDOR_PAYMENT_EDIT/install.py"
+          cd "$ROOT"
+          python3 -m py_compile "$PATCH"
+          python3 "$PATCH" check "$ROOT"
+          OUTPUT="$(python3 "$PATCH" apply "$ROOT")"
+          printf '%s\n' "$OUTPUT"
+          if echo "$OUTPUT" | grep -Fxq 'AM217_ALREADY_INSTALLED';then
+            echo AM217_ALREADY_INSTALLED_SOURCE_NOOP;exit 0
+          fi
+          rollback(){
+            echo AM217_ROLLING_BACK_SOURCE_AFTER_FAILED_VERIFICATION
+            python3 "$PATCH" rollback "$ROOT" || true
+          }
+          trap rollback ERR
+          grep -Fq 'AM217_OSL_VENDOR_PAYMENT_EDIT' app/Services/ExpensePaymentService.php
+          grep -Fq 'Pay Against Reference' resources/views/purchases/show.blade.php
+          grep -Fq 'name="supplier_invoice"' resources/views/workshop-controls/osl-edit.blade.php
+          php artisan route:list | grep -F 'erp.fix48.osl-edit' >/dev/null
+          php artisan route:list | grep -F 'erp.payments.create' >/dev/null
+          php -r '
+            require "vendor/autoload.php";
+            $app=require "bootstrap/app.php";
+            $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+            $r=\Illuminate\Support\Facades\DB::table("workshop_purchases")
+              ->where("purchase_no","OB-261030184631-517")->first();
+            if(!$r || $r->purchase_type!=="OSL")exit(21);
+            $sources=app(\App\Services\ExpensePaymentService::class)->payableSources();
+            $key="OSL_JOB::".$r->id;
+            $matches=array_values(array_filter($sources,fn($s)=>($s["key"]??null)===$key));
+            if(count($matches)!==1)exit(22);
+            $s=$matches[0];
+            if((int)($s["vendor_id"]??0)!==(int)$r->vendor_id)exit(23);
+            if(abs((float)$s["outstanding"]-400.0)>0.01)exit(24);
+            echo "AM217_REFERENCE_AND_VENDOR_PAYMENT_SOURCE_PASS\n";
+          '
+          for p in /erp/login /staff/login;do
+            STATUS="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$p")"
+            echo "AM217_HEALTH $p $STATUS"
+            test "$STATUS" = 200
+          done
+          trap - ERR
+          echo AM217_STAGING_SOURCE_DEPLOY_VERIFIED_NO_FINANCIAL_DB_WRITES
+          REMOTE_SCRIPT
+      - name: Remove temporary SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
