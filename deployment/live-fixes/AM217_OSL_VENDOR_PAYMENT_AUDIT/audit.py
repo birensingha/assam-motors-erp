@@ -141,6 +141,34 @@ if($vendorRow&&$expectedVendor!==''){
  $name=(string)($vendorRow->vendor_name??$vendorRow->name??'');
  echo 'AM217_VENDOR_NAME_MATCH '.(mb_strtolower(trim($name))===mb_strtolower($expectedVendor)?'YES':'NO')."\n";
 }
+if($expectedVendor!==''){
+ $supplier=trim((string)($row->supplier_name??''));
+ echo 'AM217_PURCHASE_SUPPLIER_NAME_MATCH '.(mb_strtolower($supplier)===mb_strtolower($expectedVendor)?'YES':'NO')."\\n";
+ $candidate=DB::table('workshop_vendors')->whereRaw('LOWER(TRIM(vendor_name)) = ?', [mb_strtolower($expectedVendor)])->limit(3)->get();
+ echo 'AM217_EXPECTED_VENDOR_MASTER_MATCH_COUNT_CAPPED '.count($candidate)."\\n";
+ if(count($candidate)===1){
+  echo 'AM217_EXPECTED_VENDOR_ACTIVE '.((int)($candidate[0]->active??0)===1?'YES':'NO')."\\n";
+  echo 'AM217_EXPECTED_VENDOR_EQUALS_CURRENT_LINK '.((int)$candidate[0]->id===$vendorId?'YES':'NO')."\\n";
+ }
+}
+echo 'AM217_CURRENT_LINKED_VENDOR_ACTIVE '.((int)($vendorRow->active??0)===1?'YES':'NO')."\\n";
+$batchNo=trim((string)($row->purchase_batch_no??''));
+$batchCols=cols('workshop_purchase_batches');
+if($batchNo!=='' && has($batchCols,'batch_no')){
+ $batch=DB::table('workshop_purchase_batches')->where('batch_no',$batchNo)->limit(2)->get();
+ echo 'AM217_BATCH_MATCH_COUNT_CAPPED '.count($batch)."\\n";
+ if(count($batch)===1)echo 'AM217_BATCH_VENDOR_ID_EQUALS_PURCHASE '.((int)($batch[0]->vendor_id??0)===$vendorId?'YES':'NO')."\\n";
+ $linked=DB::table('workshop_purchases')->where('purchase_batch_no',$batchNo)->limit(101)->get();
+ echo 'AM217_BATCH_PURCHASE_LINES_CAPPED '.count($linked)."\\n";
+ echo 'AM217_BATCH_LINES_SAME_VENDOR '.($linked->every(fn($x)=>(int)($x->vendor_id??0)===$vendorId)?'YES':'NO')."\\n";
+}
+$allAudit=DB::select("SELECT TABLE_NAME FROM information_schema.TABLES
+ WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME LIKE '%audit%' ORDER BY TABLE_NAME");
+foreach($allAudit as $at){
+ $t=(string)$at->TABLE_NAME;
+ if(preg_match('/(purchase|payment|vendor|account)/i',$t))
+   echo 'AM217_RELATED_AUDIT_TABLE '.$t.' COLUMNS '.implode(',',cols($t))."\\n";
+}
 foreach(['workshop_payment_vouchers','workshop_vendor_payments',
          'workshop_vendor_ledger','vendor_ledger','vendor_ledgers'] as $table){
  $cc=cols($table);
