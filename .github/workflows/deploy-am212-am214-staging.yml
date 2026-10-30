@@ -1,0 +1,77 @@
+name: AM212 ROT Components and AM214 Master Dropdowns STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-am212-am214-staging.yml'
+      - 'deployment/live-fixes/AM212_ROT_WORK_PROCEDURE/**'
+      - 'deployment/live-fixes/AM214_NATIVE_MASTER_MODAL_SELECT/**'
+permissions: {contents: read, issues: write}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static Python PHP and Bash checks
+        id: qa
+        run: |
+          set -euo pipefail
+          BASE=deployment/live-fixes/AM212_ROT_WORK_PROCEDURE
+          UI=deployment/live-fixes/AM214_NATIVE_MASTER_MODAL_SELECT
+          python3 -m py_compile "$BASE/install.py" "$BASE/approved_ui.py" "$UI/install.py"
+          bash -n "$BASE/DEPLOY_STAGING.sh"
+          php -l "$BASE/staging_db_backup.php"
+          php -l "$BASE/staging_verify.php"
+          php -l "$BASE/files/database/migrations/2026_10_30_190000_add_work_procedure_to_labour_master.php"
+      - name: Configure STAGING SSH
+        id: ssh
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$KEY" || test -n "$PASSWORD"
+          install -d -m 700 ~/.ssh
+          for n in 1 2 3 4; do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then break; fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          else sudo apt-get update -qq; sudo apt-get install -qq -y sshpass; fi
+      - name: Private database backup gate migration approved copy and AM214 modal deployment
+        id: deploy
+        run: |
+          set -euo pipefail
+          REMOTE="$USERNAME@$HOST"
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -o ConnectTimeout=14 -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=14 -p "$PORT")
+            SCP=(sshpass -e scp -o ConnectTimeout=14 -P "$PORT")
+          fi
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/assam-motors-deploy/deployment/live-fixes"'
+          "${SCP[@]}" -r deployment/live-fixes/AM212_ROT_WORK_PROCEDURE deployment/live-fixes/AM214_NATIVE_MASTER_MODAL_SELECT "$REMOTE:~/assam-motors-deploy/deployment/live-fixes/"
+          "${SSH[@]}" "$REMOTE" "bash ~/assam-motors-deploy/deployment/live-fixes/AM212_ROT_WORK_PROCEDURE/DEPLOY_STAGING.sh '$ROOT'"
+      - name: Post safe deployment stage
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QA: ${{ steps.qa.outcome }}
+          SSH_STATUS: ${{ steps.ssh.outcome }}
+          DEPLOY_STATUS: ${{ steps.deploy.outcome }}
+        run: |
+          body="AM212/AM214 STAGING: source=$QA, ssh=$SSH_STATUS, deploy=$DEPLOY_STATUS. Authenticated browser save/refresh still requires verification. No Android updates. Commit $GITHUB_SHA"
+          gh api repos/"$GITHUB_REPOSITORY"/issues/124/comments -f body="$body" || true
+      - name: Remove temporary SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
