@@ -69,6 +69,10 @@ jobs:
             resources/views/payments/create.blade.php \
             resources/views/purchases/show.blade.php \
             resources/views/workshop-controls/osl-edit.blade.php \
+            public/js/payment-voucher.js \
+            public/js/payment-voucher-multi.js \
+            app/Services/VendorService.php \
+            app/Services/MultiPurchasePaymentService.php \
             routes/web.php;do
             if [ -f "$ROOT/$p" ];then files+=("$p");fi
           done
