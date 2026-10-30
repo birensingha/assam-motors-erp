@@ -102,8 +102,8 @@ changed['editor']=changed['editor'].replace(
     '{{-- AM217_OSL_VENDOR_PAYMENT_EDIT: supplier invoice correction follows existing audited OSL save. --}}\n<form method="post" action="{{ route(\'erp.fix48.osl-save\',$row->id) }}"',1)
 
 replace('controller',
-    "'expected_old_total'=>['required','numeric'],",
-    "'expected_old_total'=>['required','numeric'],\n            'supplier_invoice'=>['nullable','string','max:100'],",
+    "'expected_old_total'=>['required','numeric'],\n        ]);\n        DB::transaction(function()use($purchase,$data,$user){",
+    "'expected_old_total'=>['required','numeric'],\n            'supplier_invoice'=>['nullable','string','max:100'],\n        ]);\n        DB::transaction(function()use($purchase,$data,$user){",
     'INVOICE_VALIDATION')
 replace('controller',
     "'discount_percent'=>(float)$data['discount_percent'],\n                'discount_amount'=>$q['discountAmount'],",
