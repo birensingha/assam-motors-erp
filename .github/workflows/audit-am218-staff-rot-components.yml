@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/audit-am218-staff-rot-components.yml'
       - 'deployment/live-fixes/AM218_ROT_COMPONENTS_STAFF_VISIBILITY/audit.py'
+      - 'deployment/live-fixes/AM218_ROT_COMPONENTS_STAFF_VISIBILITY/detail_audit.py'
 permissions: {contents: read, issues: write}
 jobs:
   inspect:
@@ -24,7 +25,7 @@ jobs:
         run: |
           set -euo pipefail
           FILE=deployment/live-fixes/AM218_ROT_COMPONENTS_STAFF_VISIBILITY/audit.py
-          python3 -m py_compile "$FILE"
+          python3 -m py_compile "$FILE" deployment/live-fixes/AM218_ROT_COMPONENTS_STAFF_VISIBILITY/detail_audit.py
           test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
           test -n "$KEY" || test -n "$PASSWORD"
           install -d -m 700 ~/.ssh
@@ -49,6 +50,8 @@ jobs:
           "${SSH[@]}" "$REMOTE" "python3 ~/AM218_ROT_AUDIT/audit.py '$ROOT'" | tee /tmp/am218.txt
           body="AM218 read-only STAGING staff API source inventory: $(grep '^AM218_' /tmp/am218.txt | head -75 | tr '\n' ' ' | cut -c1-8500)"
           gh api repos/"$GITHUB_REPOSITORY"/issues/124/comments -f body="$body"
+          "__SSHARRAY__" "$REMOTE" "python3 ~/AM218_ROT_AUDIT/detail_audit.py '$ROOT'" > /tmp/am218_detail.txt
+          grep -E '^AM218_DETAIL_|^AM218_SOURCE' /tmp/am218_detail.txt | sed -n '1,140p'
       - name: Cleanup
         if: always()
         run: rm -f ~/.ssh/id_ed25519
