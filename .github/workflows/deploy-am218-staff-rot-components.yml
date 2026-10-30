@@ -56,6 +56,10 @@ jobs:
           "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM218_ROT_COMPONENTS"'
           "${SCP[@]}" deployment/live-fixes/AM218_ROT_COMPONENTS_STAFF_VISIBILITY/apply.py "$REMOTE:~/AM218_ROT_COMPONENTS/apply.py"
           "${SSH[@]}" "$REMOTE" "python3 ~/AM218_ROT_COMPONENTS/apply.py check '$ROOT' && python3 ~/AM218_ROT_COMPONENTS/apply.py apply '$ROOT'" 2>&1 | tee "$RUNNER_TEMP/am218_deploy.log"
+          "${SCP[@]}" "$REMOTE:$ROOT/public/legacy/staff.js" "$RUNNER_TEMP/am218_staff_portal.js"
+          node --check "$RUNNER_TEMP/am218_staff_portal.js"
+          grep -Fq 'AM218_ROT_COMPONENTS_STAFF_VISIBILITY' "$RUNNER_TEMP/am218_staff_portal.js"
+          echo "AM218_DEPLOYED_STAFF_PORTAL_JAVASCRIPT_SYNTAX_PASS" | tee -a "$RUNNER_TEMP/am218_deploy.log"
       - name: Release status without private data
         if: always()
         env:
