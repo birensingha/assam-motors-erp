@@ -9,15 +9,17 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Validation\Rule;
 
 /**
- * AM210 - Admin GPS reporting interval in the existing Live Duty Location UI.
- * Save only staff_location_settings.sample_minutes. No location, attendance,
- * geofence, precision, payroll, or ROT record is touched.
+ * AM210: user-selected numeric GPS interval, seconds/minutes in the
+ * EXISTING Live Duty Location panel. No attendance, location, ROT or
+ * geofence values are modified. Active Admin session required.
  */
 final class Am210LiveGpsReportingController extends Controller
 {
+    private const MIN_SECONDS = 30;
+    private const MAX_SECONDS = 900;
+
     private function authorizeAdmin(Request $request): void
     {
         $user = $request->user();
@@ -28,56 +30,68 @@ final class Am210LiveGpsReportingController extends Controller
         );
     }
 
-    private function currentMinutes(): int
+    private function currentSeconds(): int
     {
         abort_unless(
             Schema::hasTable('staff_location_settings') &&
-            Schema::hasColumn('staff_location_settings', 'sample_minutes'),
+            Schema::hasColumn('staff_location_settings', 'sample_minutes') &&
+            Schema::hasColumn('staff_location_settings', 'sample_seconds'),
             503,
-            'Staff GPS Settings are unavailable.'
+            'AM210 seconds migration is required before enabling this setting.'
         );
-        $value = DB::table('staff_location_settings')->where('id', 1)
-            ->value('sample_minutes');
-        abort_if($value === null, 503, 'GPS Settings record is missing.');
-        return (int) $value;
+        $row = DB::table('staff_location_settings')->where('id', 1)
+            ->first(['sample_minutes', 'sample_seconds']);
+        abort_unless($row, 503, 'GPS Settings record is missing.');
+        $seconds = $row->sample_seconds === null
+            ? (int) $row->sample_minutes * 60
+            : (int) $row->sample_seconds;
+        abort_unless(
+            $seconds >= self::MIN_SECONDS && $seconds <= self::MAX_SECONDS,
+            503,
+            'Existing interval is outside the supported safe range; review settings first.'
+        );
+        return $seconds;
     }
 
     public function show(Request $request): JsonResponse
     {
         $this->authorizeAdmin($request);
-        $minutes = $this->currentMinutes();
-        return response()->json([
-            'ok' => true,
-            'sample_minutes' => $minutes,
-            'interval_seconds' => $minutes * 60,
-            'supported_options' => [1, 5],
-            'source' => 'STAFF_LOCATION_SETTINGS',
-        ])->header('Cache-Control', 'private, no-store');
+        return $this->response($this->currentSeconds());
     }
 
     public function update(Request $request): JsonResponse
     {
         $this->authorizeAdmin($request);
         $data = $request->validate([
-            'sample_minutes' => ['required', 'integer', Rule::in([1, 5])],
+            'interval_seconds' => ['required', 'integer', 'between:30,900'],
         ]);
-        $minutes = (int) $data['sample_minutes'];
-        // Fail closed if the historical Settings row does not exist. Do not
-        // insert defaults or risk replacing existing geofence configuration.
-        $this->currentMinutes();
-        DB::transaction(function () use ($minutes): void {
-            $row = DB::table('staff_location_settings')
-                ->where('id', 1)->lockForUpdate()->first(['id', 'sample_minutes']);
-            abort_unless($row, 503, 'GPS Settings record is missing.');
-            DB::table('staff_location_settings')
-                ->where('id', 1)->update(['sample_minutes' => $minutes]);
-        }, 3);
+        $seconds = (int) $data['interval_seconds'];
 
+        // Ensure migration and settings record exist; never create/reset them.
+        $this->currentSeconds();
+        DB::transaction(function () use ($seconds): void {
+            $row = DB::table('staff_location_settings')->where('id', 1)
+                ->lockForUpdate()->first(['id', 'sample_minutes', 'sample_seconds']);
+            abort_unless($row, 503, 'GPS Settings record is missing.');
+            DB::table('staff_location_settings')->where('id', 1)->update([
+                'sample_seconds' => $seconds,
+                // Legacy source remains readable for clients using minutes.
+                'sample_minutes' => (int) ceil($seconds / 60),
+            ]);
+        }, 3);
+        return $this->response($seconds, true);
+    }
+
+    private function response(int $seconds, bool $saved = false): JsonResponse
+    {
         return response()->json([
             'ok' => true,
-            'sample_minutes' => $minutes,
-            'interval_seconds' => $minutes * 60,
-            'message' => 'Global GPS reporting interval saved in STAGING ERP.',
+            'interval_seconds' => $seconds,
+            'sample_minutes' => (int) ceil($seconds / 60),
+            'min_seconds' => self::MIN_SECONDS,
+            'max_seconds' => self::MAX_SECONDS,
+            'source' => 'STAFF_LOCATION_SETTINGS',
+            'message' => $saved ? 'Custom GPS reporting interval saved in ERP.' : null,
         ])->header('Cache-Control', 'private, no-store');
     }
 }
