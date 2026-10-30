@@ -209,8 +209,10 @@ if mode=='check':
     print('AM217_CHECK_PASS_NO_WRITES')
     sys.exit(0)
 if backup.exists():
-    if not manifest.exists() and all((backup/(n+'.before')).is_file() and
+    if all((backup/(n+'.before')).is_file() and
       (backup/(n+'.before')).read_text('utf8',errors='surrogateescape')==src[n] for n in paths):
+        # A prior guarded run rolled back to byte-identical originals.
+        # Preserve that backup under a unique archive name before retrying.
         backup.rename(backup.with_name(backup.name+'_rolled_back_'+str(os.getpid())))
     else:raise SystemExit('AM217_STOP_BACKUP_COLLISION')
 backup.mkdir(parents=True,exist_ok=False)
