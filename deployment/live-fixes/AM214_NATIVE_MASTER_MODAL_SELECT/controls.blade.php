@@ -182,6 +182,8 @@
   function attach(input){
     if(input.dataset.am214Bound)return;
     input.dataset.am214Bound="1";
+    // Suppress older AM213 native datalist so it does not overlap this menu.
+    input.removeAttribute("list");
     input.setAttribute("autocomplete","off");
     input.setAttribute("aria-autocomplete","list");
     var label=input.closest("label");
