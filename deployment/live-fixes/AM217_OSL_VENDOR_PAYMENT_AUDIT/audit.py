@@ -161,7 +161,19 @@ foreach(['%SAH%','%ENGINEER%'] as $pattern){
  $subset=DB::table('workshop_vendors')->where('vendor_name','like',$pattern)->limit(11)->get();
  echo 'AM217_VENDOR_NAME_PATTERN_MATCH '.($pattern==='%SAH%'?'SAH':'ENGINEER').' '.count($subset)."\\n";
 }
-if($batchNo??false){} // no effect; batch consistency checked below
+$vCandidates=DB::table('workshop_vendors')->where('vendor_name','like','%SAH%')->limit(3)->get();
+if(count($vCandidates)===1){
+ $v=$vCandidates[0];
+ $nm=mb_strtolower(preg_replace('/\\s+/',' ',trim((string)$v->vendor_name)));
+ $target=mb_strtolower(preg_replace('/\\s+/',' ',trim($expectedVendor)));
+ similar_text($nm,$target,$similarity);
+ echo 'AM217_NEAREST_VENDOR_SIMILARITY_PERCENT '.round($similarity)."\\n";
+ echo 'AM217_NEAREST_HAS_ENGINEER '.(str_contains($nm,'engineer')?'YES':'NO')."\\n";
+ echo 'AM217_NEAREST_HAS_WORKSHOP '.(str_contains($nm,'workshop')?'YES':'NO')."\\n";
+ echo 'AM217_NEAREST_VENDOR_ACTIVE '.((int)($v->active??0)===1?'YES':'NO')."\\n";
+ echo 'AM217_NEAREST_IS_NOT_PURCHASE_VENDOR '.((int)$v->id!==$vendorId?'YES':'NO')."\\n";
+}
+
 $batchNo=trim((string)($row->purchase_batch_no??''));
 $batchCols=cols('workshop_purchase_batches');
 if($batchNo!=='' && has($batchCols,'batch_no')){
