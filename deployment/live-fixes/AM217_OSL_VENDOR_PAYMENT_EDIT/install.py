@@ -86,6 +86,18 @@ replace('service',
     "'payee'=>$o->vendor_name,'job_no'=>$o->job_no",
     "'payee'=>$o->vendor_name,'vendor_id'=>(int)$o->vendor_id,'job_no'=>$o->job_no",
     'OSL_PAYABLE_SOURCE_VENDOR_ID')
+replace('service',
+    "->get(['p.id','p.purchase_no','p.purchase_date','p.description'",
+    "->get(['p.id','p.purchase_no','p.purchase_batch_no','p.purchase_date','p.description'",
+    'OSL_BATCH_REFERENCE_SELECT')
+replace('service',
+    "'label'=>$o->purchase_no.' · '.$o->job_no",
+    "'label'=>($o->purchase_batch_no ?: $o->purchase_no).' · '.$o->job_no",
+    'OSL_BATCH_REFERENCE_LABEL')
+replace('service',
+    "'source_reference'=>$p->purchase_no,'job_card_id'=>$p->job_card_id",
+    "'source_reference'=>($p->purchase_batch_no ?: $p->purchase_no),'job_card_id'=>$p->job_card_id",
+    'OSL_BATCH_PAYMENT_REFERENCE')
 changed['service']=changed['service'].replace(
     '    public function payableSources(): array',
     '    // AM217_OSL_VENDOR_PAYMENT_EDIT: OSL source carries same Vendor Master identity as its payable.\n    public function payableSources(): array',1)
@@ -196,7 +208,11 @@ print('AM217_OSL_SOURCE_VENDOR_PAYMENT_AND_EDIT_UI_PREPARED')
 if mode=='check':
     print('AM217_CHECK_PASS_NO_WRITES')
     sys.exit(0)
-if backup.exists():raise SystemExit('AM217_STOP_BACKUP_COLLISION')
+if backup.exists():
+    if not manifest.exists() and all((backup/(n+'.before')).is_file() and
+      (backup/(n+'.before')).read_text('utf8',errors='surrogateescape')==src[n] for n in paths):
+        backup.rename(backup.with_name(backup.name+'_rolled_back_'+str(os.getpid())))
+    else:raise SystemExit('AM217_STOP_BACKUP_COLLISION')
 backup.mkdir(parents=True,exist_ok=False)
 os.chmod(backup,0o700)
 for n in paths:
