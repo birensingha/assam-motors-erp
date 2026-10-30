@@ -6,6 +6,7 @@ on:
       - '.github/workflows/deploy-am212-am214-staging.yml'
       - 'deployment/live-fixes/AM212_ROT_WORK_PROCEDURE/**'
       - 'deployment/live-fixes/AM214_NATIVE_MASTER_MODAL_SELECT/**'
+      - 'deployment/live-fixes/AM216_PARTS_VEHICLE_FIELDS/**'
 permissions: {contents: read, issues: write}
 concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
 jobs:
@@ -27,7 +28,8 @@ jobs:
           set -euo pipefail
           BASE=deployment/live-fixes/AM212_ROT_WORK_PROCEDURE
           UI=deployment/live-fixes/AM214_NATIVE_MASTER_MODAL_SELECT
-          python3 -m py_compile "$BASE/install.py" "$BASE/approved_ui.py" "$UI/install.py"
+          MAKE=deployment/live-fixes/AM216_PARTS_VEHICLE_FIELDS
+          python3 -m py_compile "$BASE/install.py" "$BASE/approved_ui.py" "$UI/install.py" "$MAKE/install.py"
           bash -n "$BASE/DEPLOY_STAGING.sh"
           php -l "$BASE/staging_db_backup.php"
           php -l "$BASE/staging_verify.php"
@@ -60,7 +62,7 @@ jobs:
             SCP=(sshpass -e scp -o ConnectTimeout=14 -P "$PORT")
           fi
           "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/assam-motors-deploy/deployment/live-fixes"'
-          "${SCP[@]}" -r deployment/live-fixes/AM212_ROT_WORK_PROCEDURE deployment/live-fixes/AM214_NATIVE_MASTER_MODAL_SELECT "$REMOTE:~/assam-motors-deploy/deployment/live-fixes/"
+          "${SCP[@]}" -r deployment/live-fixes/AM212_ROT_WORK_PROCEDURE deployment/live-fixes/AM214_NATIVE_MASTER_MODAL_SELECT deployment/live-fixes/AM216_PARTS_VEHICLE_FIELDS "$REMOTE:~/assam-motors-deploy/deployment/live-fixes/"
           "${SSH[@]}" "$REMOTE" "bash ~/assam-motors-deploy/deployment/live-fixes/AM212_ROT_WORK_PROCEDURE/DEPLOY_STAGING.sh '$ROOT'" 2>&1 | tee "$RUNNER_TEMP/am212_staging_result.log"
       - name: Post safe deployment stage
         if: always()
