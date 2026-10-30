@@ -16,19 +16,27 @@ php -l "$PKG/staging_verify.php"
 php -l "$PKG/files/database/migrations/2026_10_30_190000_add_work_procedure_to_labour_master.php"
 python3 "$PKG/install.py" check "$ROOT"
 echo "AM212_DEPLOY_PRECHECK_PASSED"
-bash "$PKG/staging_shell_backup.sh" "$ROOT"
-echo "AM212_DEPLOY_BACKUP_GATE_PASSED"
-python3 "$PKG/install.py" prepare "$ROOT"
-(
-  cd "$ROOT"
-  php artisan migrate --path=database/migrations/2026_10_30_190000_add_work_procedure_to_labour_master.php --force
-)
-echo "AM212_DEPLOY_MIGRATION_EXECUTED"
-python3 "$PKG/install.py" apply "$ROOT"
-python3 "$PKG/approved_ui.py" check "$ROOT"
-python3 "$PKG/approved_ui.py" apply "$ROOT"
-php "$PKG/staging_verify.php" "$ROOT"
-echo "AM212_DEPLOY_SOURCE_AND_DB_VERIFIED"
+BACKUP_DIR="$ROOT/storage/app/am-backups/AM212_ROT_WORK_PROCEDURE"
+LATEST_CHECKSUM="$(find "$BACKUP_DIR" -maxdepth 1 -name 'staging_before_AM212_*.sql.sha256' -type f -mtime -1 2>/dev/null | sort | tail -1)"
+if [[ -n "$LATEST_CHECKSUM" ]] &&
+   (cd "$BACKUP_DIR" && sha256sum -c "$(basename "$LATEST_CHECKSUM")" >/dev/null) &&
+   php "$PKG/staging_verify.php" "$ROOT" >/dev/null; then
+    echo "AM212_EXISTING_BACKUP_AND_INSTALLED_UI_VERIFIED_NO_REPEAT_MIGRATION"
+else
+    bash "$PKG/staging_shell_backup.sh" "$ROOT"
+    echo "AM212_DEPLOY_BACKUP_GATE_PASSED"
+    python3 "$PKG/install.py" prepare "$ROOT"
+    (
+      cd "$ROOT"
+      php artisan migrate --path=database/migrations/2026_10_30_190000_add_work_procedure_to_labour_master.php --force
+    )
+    echo "AM212_DEPLOY_MIGRATION_EXECUTED"
+    python3 "$PKG/install.py" apply "$ROOT"
+    python3 "$PKG/approved_ui.py" check "$ROOT"
+    python3 "$PKG/approved_ui.py" apply "$ROOT"
+    php "$PKG/staging_verify.php" "$ROOT"
+    echo "AM212_DEPLOY_SOURCE_AND_DB_VERIFIED"
+fi
 if python3 "$AM214_DIR/install.py" check "$ROOT"; then
     python3 "$AM214_DIR/install.py" apply "$ROOT"
     echo "AM214_DEPLOY_NATIVE_OLD_STYLE_MASTER_MODALS_APPLIED"
