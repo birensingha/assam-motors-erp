@@ -27,6 +27,6 @@ jobs:
           assert "AM213_NATIVE_PART_ROT_DROPDOWNS_INSTALLED" in s
           assert "old_base=root.parent/'public_html/workshop'" in s
           assert "parser.options.get(field_id)" in s
-          assert "create')", in s if False else True
+          assert "AM213_STOP_NATIVE_SAVE_FORM_MISSING_" in s
           print('AM213_STATIC_PYTHON_AST_PASS_NO_DEPLOYMENT')
           PY
