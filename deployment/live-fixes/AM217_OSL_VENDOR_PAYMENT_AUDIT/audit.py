@@ -42,6 +42,43 @@ for f in files:
         print('FORM_INPUT_NAMES',','.join(names[:95]))
 print('AM217_SOURCE_STRUCTURE_END')
 
+print('AM217_FINANCE_METHOD_FEATURE_MAP_BEGIN')
+feature_map = {
+ 'app/Services/ExpensePaymentService.php':[
+   'vendors','payableSources','resolveSource','savePayment','createVoucher','voidPayment'],
+ 'app/Http/Controllers/Web/AdminPurchasePageController.php':[
+   'storeOsl','edit','update','show'],
+ 'app/Http/Controllers/Web/AdminWorkshopControlPageController.php':[
+   'editOsl','updateOsl'],
+ 'app/Http/Controllers/Web/AdminVendorPageController.php':[
+   'ledger','savePayment'],
+}
+tokens=['workshop_purchases','workshop_purchase_batches','workshop_payment_allocations',
+ 'workshop_payment_vouchers','workshop_vendor_payments','vendor_id','supplier_name',
+ 'supplier_invoice','source_type','source_reference','purchase_ref','OSL_JOB',
+ 'OSL_PURCHASE','OSL','PURCHASE','DB::transaction','lockForUpdate','request_key']
+for path,methods in feature_map.items():
+    file=root/path
+    if not file.is_file():
+        print('MISSING_FEATURE_SOURCE',path)
+        continue
+    source=file.read_text('utf8','replace')
+    chunks=re.split(r'(?m)^\s*(?:public|protected|private)\s+(?:static\s+)?function\s+(\w+)\s*\(',source)
+    available={}
+    for i in range(1,len(chunks),2):
+        available[chunks[i]]=chunks[i+1]
+    for method in methods:
+        block=available.get(method)
+        if block is None:
+            print('METHOD_NOT_FOUND',file.name,method)
+            continue
+        found=[name for name in tokens if name in block]
+        literals=sorted(set(v for v in re.findall(r"['\\\"]([a-zA-Z][\\w-]{1,36})['\\\"]",block)
+                            if any(k in v.lower() for k in ['osl','vendor','purchase','expense','job'])))
+        print('METHOD',file.name,method,'FEATURES',','.join(found),
+              'SOURCE_LITERAL_HINTS',','.join(literals[:28]))
+print('AM217_FINANCE_METHOD_FEATURE_MAP_END')
+
 php=r'''<?php
 $root=$argv[1];
 require $root.'/vendor/autoload.php';
