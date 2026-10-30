@@ -186,6 +186,32 @@ if(Schema::hasTable('workshop_vendors')) {
   foreach($matches as $v)echo "EXACT_NAME_VENDOR_ID ".$v->id."\n";
  }
 }
+// Existing payment vouchers can exclude an OSL reference because fully paid.
+if(Schema::hasTable('workshop_payment_vouchers')){
+ $cols=Schema::getColumnListing('workshop_payment_vouchers');
+ $sourceCandidates=array_values(array_intersect(
+  ['source_reference','reference_no','purchase_no','source_ref'], $cols));
+ if(count($sourceCandidates)){
+  $refs=[$no];
+  foreach($rows as $r){
+   foreach(['purchase_no','purchase_batch_no'] as $f)
+    if(isset($r->$f)&&trim((string)$r->$f)!=='')$refs[]=(string)$r->$f;
+  }
+  $refs=array_values(array_unique($refs));
+  $q=DB::table('workshop_payment_vouchers')->where(function($w)use($sourceCandidates,$refs){
+   foreach($sourceCandidates as $f)$w->orWhereIn($f,$refs);
+  });
+  $existing=$q->limit(25)->get();
+  echo "EXISTING_PAYMENT_VOUCHER_MATCH_COUNT ".$existing->count()."\n";
+  foreach($existing as $v){
+   $data=(array)$v;$out=[];
+   foreach(['id','voucher_no','payment_no','vendor_id','source_kind','source_type',
+     'source_reference','reference_no','amount','total_amount','status','record_status']
+     as $f)if(array_key_exists($f,$data))$out[$f]=$data[$f];
+   echo "EXISTING_PAYMENT_REFERENCE ".json_encode($out,JSON_UNESCAPED_UNICODE)."\n";
+  }
+ }
+}
 echo "AM213_DB_TARGET_READONLY_DONE\n";
 """
 print("AM213_DB_AUDIT_BEGIN")
