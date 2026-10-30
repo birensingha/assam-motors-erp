@@ -57,4 +57,8 @@ if(file_put_contents($out,implode("\n",$lines)."\n",LOCK_EX)===false){
 if((fileperms($out)&077)!==0){
     @unlink($out);fwrite(STDERR,"AM212_BACKUP_STOP_CONFIG_PERMISSIONS\n");exit(2);
 }
-$tables=(int)DB::selectOne("SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema=DATABASE() AND table_type=\'BASE TABLE\'")->n;\nif($tables<1){fwrite(STDERR,"AM212_BACKUP_STOP_EMPTY_SCHEMA\\n");exit(2);}\necho "AM212_BACKUP_TABLE_COUNT=".$tables."\n";\necho "AM212_BACKUP_DB_NAME=".$db."\n";\necho "AM212_BACKUP_TEMP_CONFIG_READY\n";
+$tables=(int)DB::selectOne("SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_schema=DATABASE() AND table_type='BASE TABLE'")->n;
+if($tables<1){fwrite(STDERR,"AM212_BACKUP_STOP_EMPTY_SCHEMA\n");exit(2);}
+echo "AM212_BACKUP_TABLE_COUNT=".$tables."\n";
+echo "AM212_BACKUP_DB_NAME=".$db."\n";
+echo "AM212_BACKUP_TEMP_CONFIG_READY\n";
