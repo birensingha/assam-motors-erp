@@ -1,0 +1,75 @@
+name: AM218 Staff Portal and ROT API Components STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-am218-staff-rot-components.yml'
+      - 'deployment/live-fixes/AM218_ROT_COMPONENTS_STAFF_VISIBILITY/apply.py'
+permissions: {contents: read, issues: write}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python source validation
+        id: qa
+        run: python3 -m py_compile deployment/live-fixes/AM218_ROT_COMPONENTS_STAFF_VISIBILITY/apply.py
+      - name: SSH setup
+        id: ssh
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$KEY" || test -n "$PASSWORD"
+          install -d -m 700 ~/.ssh
+          for n in 1 2 3 4;do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq;sudo apt-get install -qq -y sshpass
+          fi
+      - name: Guarded source-only STAGING apply
+        id: deploy
+        run: |
+          set -euo pipefail
+          REMOTE="$USERNAME@$HOST"
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT")
+            SCP=(sshpass -e scp -P "$PORT")
+          fi
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM218_ROT_COMPONENTS"'
+          "${SCP[@]}" deployment/live-fixes/AM218_ROT_COMPONENTS_STAFF_VISIBILITY/apply.py "$REMOTE:~/AM218_ROT_COMPONENTS/apply.py"
+          "${SSH[@]}" "$REMOTE" "python3 ~/AM218_ROT_COMPONENTS/apply.py check '$ROOT' && python3 ~/AM218_ROT_COMPONENTS/apply.py apply '$ROOT'" 2>&1 | tee "$RUNNER_TEMP/am218_deploy.log"
+      - name: Release status without private data
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QA: ${{ steps.qa.outcome }}
+          SSH_STATUS: ${{ steps.ssh.outcome }}
+          DEPLOY_STATUS: ${{ steps.deploy.outcome }}
+        run: |
+          marks=""
+          if [ -f "$RUNNER_TEMP/am218_deploy.log" ];then
+            marks="$(grep '^AM218_' "$RUNNER_TEMP/am218_deploy.log" | tail -10 | tr '\n' ';' | cut -c1-950 || true)"
+          fi
+          body="AM218 Staff Portal/API STAGING: source=$QA SSH=$SSH_STATUS deploy=$DEPLOY_STATUS. $marks. Link https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          gh api repos/"$GITHUB_REPOSITORY"/issues/124/comments -f body="$body" || true
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
