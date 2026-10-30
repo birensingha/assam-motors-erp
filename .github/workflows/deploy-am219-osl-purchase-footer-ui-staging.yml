@@ -5,9 +5,6 @@ on:
       - '.github/workflows/deploy-am219-osl-purchase-footer-ui-staging.yml'
       - 'deployment/live-fixes/AM219_OSL_BILLING_FOOTER_UI/apply.py'
       - 'deployment/live-fixes/AM219_OSL_BILLING_FOOTER_UI/verify.py'
-      - 'deployment/live-fixes/AM219_OSL_BILLING_FOOTER_UI/verify.php'
-      - 'deployment/live-fixes/AM219_OSL_BILLING_FOOTER_UI/master-search.js'
-      - 'deployment/live-fixes/AM219_OSL_BILLING_FOOTER_UI/master-search.css'
       - 'deployment/live-fixes/AM219_OSL_BILLING_FOOTER_UI/DEPLOY_STAGING.sh'
   workflow_dispatch:
 permissions: {contents: read}
@@ -32,8 +29,6 @@ jobs:
           set -euo pipefail
           python3 -m py_compile deployment/live-fixes/AM219_OSL_BILLING_FOOTER_UI/apply.py
           python3 -m py_compile deployment/live-fixes/AM219_OSL_BILLING_FOOTER_UI/verify.py
-          php -l deployment/live-fixes/AM219_OSL_BILLING_FOOTER_UI/verify.php
-          node --check deployment/live-fixes/AM219_OSL_BILLING_FOOTER_UI/master-search.js
           bash -n deployment/live-fixes/AM219_OSL_BILLING_FOOTER_UI/DEPLOY_STAGING.sh
           grep -q 'AM219_OSL_BILLING_FOOTER_UI' deployment/live-fixes/AM219_OSL_BILLING_FOOTER_UI/apply.py
       - name: Configure STAGING SSH
@@ -69,7 +64,7 @@ jobs:
             SCP=(sshpass -e scp -o ConnectTimeout=14 -P "$PORT")
           fi
           "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM219_DEPLOY"'
-          "${SCP[@]}" deployment/live-fixes/AM219_OSL_BILLING_FOOTER_UI/apply.py deployment/live-fixes/AM219_OSL_BILLING_FOOTER_UI/verify.py deployment/live-fixes/AM219_OSL_BILLING_FOOTER_UI/verify.php deployment/live-fixes/AM219_OSL_BILLING_FOOTER_UI/master-search.js deployment/live-fixes/AM219_OSL_BILLING_FOOTER_UI/master-search.css deployment/live-fixes/AM219_OSL_BILLING_FOOTER_UI/DEPLOY_STAGING.sh "$REMOTE:~/AM219_DEPLOY/"
+          "${SCP[@]}" deployment/live-fixes/AM219_OSL_BILLING_FOOTER_UI/apply.py deployment/live-fixes/AM219_OSL_BILLING_FOOTER_UI/verify.py deployment/live-fixes/AM219_OSL_BILLING_FOOTER_UI/DEPLOY_STAGING.sh "$REMOTE:~/AM219_DEPLOY/"
           "${SSH[@]}" "$REMOTE" "bash ~/AM219_DEPLOY/DEPLOY_STAGING.sh '$ROOT'"
       - name: Remove transient SSH key
         if: always()
