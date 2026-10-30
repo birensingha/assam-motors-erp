@@ -73,7 +73,7 @@ jobs:
           test -f "$ROOT/artisan"
           test -d "$ROOT/vendor"
           python3 -m py_compile "$HOME/AM217_OSL_VENDOR_PAYMENT_AUDIT/audit.py"
-          python3 "$HOME/AM217_OSL_VENDOR_PAYMENT_AUDIT/audit.py" "$ROOT"
+          python3 "$HOME/AM217_OSL_VENDOR_PAYMENT_AUDIT/audit.py" "$ROOT" 'OB-261030184631-517' 'SAHERA ENGINEERING WORKSHOP'
           echo AM217_STAGING_STRUCTURE_AUDIT_PASS_NO_DATA_WRITES
           REMOTE_SCRIPT
       - name: Delete temporary SSH key
