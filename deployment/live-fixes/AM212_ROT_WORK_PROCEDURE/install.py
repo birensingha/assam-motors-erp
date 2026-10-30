@@ -88,8 +88,13 @@ def patch_method(source,name):
     if len(hits)!=1:raise SystemExit('AM212_STOP_'+name+'_WRITE_ANCHOR_'+str(len(hits)))
     w=hits[0]
     part=part[:w.end()]+",'work_procedure'=>($data['work_procedure']??null)"+part[w.end():]
-    if part.count("'work_procedure'")!=2:
-        raise SystemExit('AM212_STOP_'+name+'_FIELD_COUNT')
+    # Three literal occurrences are expected: validation key, DB write key,
+    # and input access ($data['work_procedure']). The earlier guard expected
+    # only two, incorrectly rejecting a correctly generated Create/Update.
+    validation_keys=len(re.findall(r"'work_procedure'\s*=>\s*\[\s*'nullable'",part))
+    write_keys=len(re.findall(r"'work_procedure'\s*=>\s*\(\s*\$data\s*\[\s*'work_procedure'\s*\]",part))
+    if validation_keys!=1 or write_keys!=1:
+        raise SystemExit('AM212_STOP_'+name+'_FIELD_COUNT_VALIDATION_'+str(validation_keys)+'_WRITE_'+str(write_keys))
     return source[:start]+part+source[end:]
 new_controller=patch_method(current_controller,'createLabour')
 new_controller=patch_method(new_controller,'updateLabour')
