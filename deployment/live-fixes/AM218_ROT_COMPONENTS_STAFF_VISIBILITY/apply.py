@@ -87,6 +87,9 @@ with tempfile.TemporaryDirectory(prefix='am218check_') as d:
     pp.write_text(a2,encoding='utf8',errors='surrogateescape')
     jj.write_text(b2,encoding='utf8',errors='surrogateescape')
     for cmd in (['php','-l',str(pp)],['node','--check',str(jj)]):
+        if cmd[0]=='node' and shutil.which('node') is None:
+            print('AM218_HOSTINGER_NODE_UNAVAILABLE_RUNNER_JS_QA_REQUIRED')
+            continue
         r=subprocess.run(cmd,cwd=root,capture_output=True,text=True,timeout=30)
         if r.returncode:raise SystemExit('AM218_STOP_SYNTAX '+(r.stdout+r.stderr)[-450:])
 print('AM218_STAFF_AUTH_ROT_JSON_AND_WEB_COMPLETED_DETAILS_PREFLIGHT_PASS')
