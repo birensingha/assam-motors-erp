@@ -10,31 +10,36 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * AM210: minimal, authenticated, read-only staff GPS interval endpoint.
- * Route MUST inherit the existing POST /api/v1/staff/location authentication.
- * Does NOT expose geofence, workshop coordinates, or staff locations.
+ * Read-only, protected Staff GPS interval API. Route must inherit the same
+ * authentication and active-staff checks as POST /api/v1/staff/location.
+ * Does NOT expose GPS positions or workshop coordinates.
  */
 final class GpsReportingIntervalController extends Controller
 {
     public function show(Request $request): JsonResponse
     {
         abort_unless($request->user(), 401, 'Authenticated Staff session required.');
-
-        $minutes = 1;
+        $seconds = 60;
         if (Schema::hasTable('staff_location_settings')
             && Schema::hasColumn('staff_location_settings', 'sample_minutes')) {
-            $value = DB::table('staff_location_settings')
-                ->where('id', 1)->value('sample_minutes');
-            if (is_numeric($value)) {
-                $candidate = (int) $value;
-                if ($candidate >= 1 && $candidate <= 15) $minutes = $candidate;
+            $hasSeconds = Schema::hasColumn('staff_location_settings', 'sample_seconds');
+            $columns = $hasSeconds
+                ? ['sample_minutes', 'sample_seconds']
+                : ['sample_minutes'];
+            $row = DB::table('staff_location_settings')
+                ->where('id', 1)->first($columns);
+            if ($row) {
+                $exact = $hasSeconds && $row->sample_seconds !== null
+                    ? (int) $row->sample_seconds
+                    : (int) $row->sample_minutes * 60;
+                if ($exact >= 30 && $exact <= 900) $seconds = $exact;
             }
         }
         return response()->json([
             'ok' => true,
-            'interval_seconds' => $minutes * 60,
-            'sample_minutes' => $minutes,
+            'interval_seconds' => $seconds,
+            'sample_minutes' => (int) ceil($seconds / 60),
             'source' => 'STAFF_LOCATION_SETTINGS',
-        ])->header('Cache-Control','private, no-store');
+        ])->header('Cache-Control', 'private, no-store');
     }
 }
