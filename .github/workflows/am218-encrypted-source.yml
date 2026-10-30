@@ -1,7 +1,7 @@
 name: AM218 encrypted Payment sidebar source snapshot
 on:
   push:
-    branches: [fix/am218-osl-vendor-payment-audit-20261030]
+    branches: [fix/am217-osl-vendor-payment-audit-20261030]
     paths:
       - .github/workflows/am218-encrypted-source.yml
   workflow_dispatch:
