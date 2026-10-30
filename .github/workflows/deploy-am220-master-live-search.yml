@@ -1,0 +1,94 @@
+name: AM220 Parts ROT Master Live Search STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-am220-master-live-search.yml'
+      - 'deployment/live-fixes/AM220_MASTER_LIVE_SEARCH/**'
+permissions: {contents: read, issues: write}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static Python and live search JavaScript validation
+        id: qa
+        run: |
+          set -euo pipefail
+          PKG=deployment/live-fixes/AM220_MASTER_LIVE_SEARCH
+          python3 -m py_compile "$PKG/install.py"
+          python3 - <<'PY'
+          from pathlib import Path
+          import re,subprocess,tempfile
+          text=Path('deployment/live-fixes/AM220_MASTER_LIVE_SEARCH/live-search.blade.php').read_text()
+          m=re.search(r'<script>([\s\S]*?)</script>',text)
+          assert m
+          code=m.group(1)
+          assert 'new AbortController()' in code
+          assert "credentials:'same-origin'" in code
+          assert 'am220:rows-updated' in code
+          with tempfile.TemporaryDirectory() as td:
+              script=Path(td)/'search.js'
+              script.write_text(code)
+              subprocess.run(['node','--check',str(script)],check=True)
+          print('AM220_SEARCH_JAVASCRIPT_SYNTAX_PASS')
+          PY
+      - name: Configure STAGING SSH
+        id: ssh
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$KEY" || test -n "$PASSWORD"
+          install -d -m 700 ~/.ssh
+          for n in 1 2 3 4; do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq;sudo apt-get install -qq -y sshpass
+          fi
+      - name: STAGING read-only preflight then guarded Parts ROT view install
+        id: deploy
+        run: |
+          set -euo pipefail
+          REMOTE="$USERNAME@$HOST"
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -o ConnectTimeout=14 -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=14 -p "$PORT")
+            SCP=(sshpass -e scp -o ConnectTimeout=14 -P "$PORT")
+          fi
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM220_MASTER_LIVE_SEARCH"'
+          "${SCP[@]}" deployment/live-fixes/AM220_MASTER_LIVE_SEARCH/install.py deployment/live-fixes/AM220_MASTER_LIVE_SEARCH/live-search.blade.php "$REMOTE:~/AM220_MASTER_LIVE_SEARCH/"
+          "${SSH[@]}" "$REMOTE" "python3 ~/AM220_MASTER_LIVE_SEARCH/install.py check '$ROOT' && python3 ~/AM220_MASTER_LIVE_SEARCH/install.py apply '$ROOT'" 2>&1 | tee "$RUNNER_TEMP/am220_release.log"
+      - name: Post safe STAGING deployment result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QA: ${{ steps.qa.outcome }}
+          SSH_STATUS: ${{ steps.ssh.outcome }}
+          DEPLOY_STATUS: ${{ steps.deploy.outcome }}
+        run: |
+          details=""
+          if [ -f "$RUNNER_TEMP/am220_release.log" ];then
+            details="$(grep '^AM220_' "$RUNNER_TEMP/am220_release.log" | tail -12 | tr '\n' ';' | cut -c1-1350 || true)"
+          fi
+          body="AM220 Parts/ROT live server-side search STAGING: source=$QA SSH=$SSH_STATUS deployment=$DEPLOY_STATUS. $details. Browser type/clear/edit tests pending. Workflow: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          gh api repos/"$GITHUB_REPOSITORY"/issues/124/comments -f body="$body" || true
+      - name: Cleanup SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
