@@ -30,7 +30,8 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile deployment/live-fixes/AM217_OSL_VENDOR_PAYMENT_AUDIT/audit.py
-          python3 deployment/live-fixes/AM217_OSL_VENDOR_PAYMENT_AUDIT/audit.py /tmp/invalid-app 2>&1 | grep -F 'AM217_STOP_NOT_STAGING'
+          CHECK_OUTPUT="$(python3 deployment/live-fixes/AM217_OSL_VENDOR_PAYMENT_AUDIT/audit.py /tmp/invalid-app 2>&1 || true)"
+          printf '%s\n' "$CHECK_OUTPUT" | grep -F 'AM217_STOP_NOT_STAGING'
           echo AM217_SCRIPT_SYNTAX_AND_STAGING_GUARD_PASS
       - name: SSH setup
         shell: bash
