@@ -45,4 +45,30 @@ if(Schema::hasTable('workshop_purchases') && Schema::hasColumn('workshop_purchas
 }
 echo 'AM217_DB_INSPECTION_COMPLETE_NO_WRITES'."\n";
 PHP
+echo "=== ACTUAL LINKED OSL CUSTOMER LINE CHECK (SELECT only) ==="
+php <<'PHP'
+<?php
+declare(strict_types=1);
+require getcwd().'/vendor/autoload.php';
+$app=require getcwd().'/bootstrap/app.php';
+$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+use Illuminate\Support\Facades\DB;
+$purchase=DB::table('workshop_purchases')->where('purchase_no','OSL-261030184631-427')->first();
+if($purchase){
+ echo 'PURCHASE_47_LINE_ID='.(int)($purchase->labour_line_id??0)."\n";
+ $line=DB::table('job_card_labour')->where('id',(int)$purchase->labour_line_id)->first();
+ if(!$line)echo "PURCHASE_LINKED_LABOUR_NOT_FOUND\n";
+ else {
+  foreach(['id','job_card_id','rot_code','description','mechanic_name','billing_included','standard_hours','labour_rate','gst_percent','total','source_estimate_item_id'] as $key)
+   echo 'LINKED_BILLING_LINE_'.strtoupper($key).'='.(string)($line->{$key}??'')."\n";
+ }
+ $total=DB::table('job_card_labour')->where('job_card_id',$purchase->job_card_id)->count();
+ echo 'JC_LABOUR_TOTAL='.$total."\n";
+}
+PHP
+echo "=== EXACT OSL MASTER JS IN CURRENT STAGING SOURCE ==="
+sed -n '3585,3725p' "$view" | cut -c1-240
+echo "=== TEMPLATED PURCHASE SELECT JS CONTEXT ==="
+sed -n '2962,3008p' "$view" | cut -c1-240
+
 echo AM217_OSL_AUDIT_COMPLETE_NO_WRITES
