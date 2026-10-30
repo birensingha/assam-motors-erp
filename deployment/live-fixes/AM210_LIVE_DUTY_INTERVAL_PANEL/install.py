@@ -171,6 +171,29 @@ if shutil.which("node"):
         if result.returncode:raise SystemExit("AM210_JS_LINT_FAIL "+result.stderr[-500:])
     finally:test.unlink(missing_ok=True)
 
+# Confirm existing ERP GPS settings row is usable. This is read-only;
+# never create/overwrite workshop geofence settings in a patch preflight.
+probe = r"""
+require 'vendor/autoload.php';
+$app=require 'bootstrap/app.php';
+$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+$schema=\Illuminate\Support\Facades\Schema::class;
+if (!$schema::hasTable('staff_location_settings') ||
+    !$schema::hasColumn('staff_location_settings','sample_minutes')) {
+    fwrite(STDERR,"AM210_SAMPLE_MINUTES_SCHEMA_MISSING");exit(3);
+}
+$row=\Illuminate\Support\Facades\DB::table('staff_location_settings')->where('id',1)->first(['sample_minutes']);
+if (!$row || !is_numeric($row->sample_minutes) ||
+    (int)$row->sample_minutes<1 || (int)$row->sample_minutes>15) {
+    fwrite(STDERR,"AM210_SAMPLE_MINUTES_INVALID_OR_ROW_MISSING");exit(4);
+}
+echo "AM210_EXISTING_GPS_SETTING_READONLY_PASS\n";
+"""
+dbcheck=subprocess.run(["php","-r",probe],cwd=root,capture_output=True,text=True,timeout=45)
+if dbcheck.returncode:
+    raise SystemExit("AM210_DB_POLICY_PREFLIGHT_FAILED "+dbcheck.stderr[-300:])
+print(dbcheck.stdout.strip())
+
 print("AM210_PRECHECK_PASS_PHP_JS")
 print("AM210_PANEL_PLACEMENT=BELOW_STAFF_DETAILS_ABOVE_EXISTING_FOOTNOTE")
 print("AM210_SAVES_ONLY=staff_location_settings.sample_minutes")
