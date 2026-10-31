@@ -52,7 +52,7 @@ function attach(row){
   menu.hidden=false;filter.setAttribute('aria-expanded','true');
  }
  const col=master.parentElement;
- const match=document.createElement('select');match.type='button';match.className='am232-estimate-osl';
+ const match=document.createElement('select');match.className='am232-estimate-osl';
  match.setAttribute('aria-label','OSL job work from this Job Card');col.insertBefore(match,master);
  const note=document.createElement('div');note.className='am232-osl-note';col.append(note);
  const legacy=billing.closest('.am146-purchase-line-link');
@@ -79,6 +79,12 @@ function attach(row){
   }
   match.value=items.some(x=>String(x.id)===previous)?previous:'';
   if(!match.value && items.length===1)match.value=String(items[0].id);
+  // Never retain a prior vehicle's Master or JC billing reference.
+  if(!match.value){
+    master.value='';
+    billing.value='';
+    billing.dispatchEvent(new Event('change',{bubbles:true}));
+  }
   note.textContent='Only this Job Card’s transferred Estimate/OSL billing lines are selectable.';
   if(match.value)applyLine();
  }
