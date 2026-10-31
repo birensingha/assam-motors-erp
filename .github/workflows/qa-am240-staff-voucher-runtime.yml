@@ -57,7 +57,11 @@ jobs:
           fi
           "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM240_RENDER_QA"'
           "${SCP[@]}" deployment/live-fixes/AM240_STAFF_PAYMENT_VOUCHER/verify-runtime.php "$REMOTE:~/AM240_RENDER_QA/"
-          "${SSH[@]}" "$REMOTE" "cd '$ROOT' && php ~/AM240_RENDER_QA/verify-runtime.php"
+          OUT=$("${SSH[@]}" "$REMOTE" "cd '$ROOT' && php ~/AM240_RENDER_QA/verify-runtime.php" 2>&1) || { printf '%s\n' "$OUT"; exit 1; }
+          printf '%s\n' "$OUT"
+          printf '%s\n' "$OUT" | grep -Fq 'AM240_VIEW_QA_NO_FINANCIAL_WRITES_PASS'
+          printf '%s\n' "$OUT" | grep -Fq 'AM240_VIEW_QA_UNIVERSAL_PAYMENT_STAFF_OPTIONS_RENDER_PASS'
+          ! printf '%s\n' "$OUT" | grep -Fq 'AM240_VIEW_QA_FAIL_'
       - name: Remove temporary key
         if: always()
         shell: bash
