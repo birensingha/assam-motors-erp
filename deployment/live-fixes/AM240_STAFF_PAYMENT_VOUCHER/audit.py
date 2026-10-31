@@ -19,3 +19,20 @@ for key,(relative,ranges) in targets.items():
   for i in range(a-1,min(b,len(rows))):
    print('AM240_DETAIL_'+key+'_'+str(i+1)+' '+rows[i][:460])
 print('AM240_AUDIT_READONLY_COMPLETE')
+
+more={
+ 'PAYMENT_SERVICE':('app/Services/ExpensePaymentService.php',[(8,80),(210,265),(275,360),(390,455)]),
+ 'PAYMENT_MODEL':('app/Models/WorkshopPaymentVoucher.php',[(1,110)]),
+ 'PAYMENT_EDIT':('app/Http/Controllers/Web/AdminPaymentVoucherEditController.php',[(1,155)]),
+ 'PAYMENT_CONTROLLER':('app/Http/Controllers/Web/AdminExpensePaymentPageController.php',[(175,225)]),
+ 'STAFF_LEDGER':('app/Http/Controllers/Web/AdminStaffFinanceLedgerController.php',[(206,267)]),
+ 'PAYMENT_VIEW':('resources/views/payments/create.blade.php',[(335,382),(665,708)]),
+}
+for name,(relative,spans) in more.items():
+ p=root/relative
+ if not p.is_file():continue
+ lines=p.read_text('utf8',errors='surrogateescape').splitlines()
+ for a,b in spans:
+  print('AM240_MORE_'+name+'_'+str(a)+'_'+str(b))
+  for i in range(a-1,min(b,len(lines))):
+   print('AM240_LINE_'+name+'_'+str(i+1)+' '+lines[i][:420])
