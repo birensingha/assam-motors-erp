@@ -1,0 +1,16 @@
+/* AM238 vendor debit credit panel in same adjustable bill area */
+#am238-debit-panel{margin:12px 0 0;padding:12px;border:1px solid #c4d5e7;background:#f8fbff;border-radius:9px}
+#am238-debit-panel[hidden]{display:none!important}
+#am238-debit-panel h3{margin:0 0 4px;font-size:13px;color:#17486c;font-weight:800}
+#am238-debit-panel p{font-size:11px;line-height:1.5;color:#507187;margin:2px 0 7px}
+#am238-debit-options{max-height:220px;overflow-y:auto}
+.am238-debit-row{display:grid;grid-template-columns:minmax(0,1fr) 145px;gap:12px;padding:10px 8px;border-bottom:1px solid #d9e5f0;align-items:center;background:#fff}
+.am238-debit-desc{display:flex!important;flex-direction:row!important;align-items:center;gap:9px!important;font-size:12px!important;cursor:pointer}
+.am238-debit-desc input{width:17px;height:17px;flex:none;accent-color:#156fa9}
+.am238-debit-desc span{display:flex;flex-direction:column;gap:3px;min-width:0}
+.am238-debit-desc strong{font-size:12px;color:#154567}
+.am238-debit-desc small{font-size:11px;color:#57718a;font-weight:400}
+.am238-debit-amount{height:36px;width:100%;box-sizing:border-box;border:1px solid #abc5dc;border-radius:7px;font-size:13px;padding:5px 8px;text-align:right;background:white}
+.am238-debit-amount:disabled{background:#f2f5f8;color:#8395a3}
+#am238-debit-summary{padding:8px 10px;margin-top:8px;background:#eaf4fb;border-radius:6px;color:#163e5e;font-size:12px;font-weight:700;line-height:1.5}
+@media(max-width:580px){.am238-debit-row{grid-template-columns:minmax(0,1fr) 100px;gap:7px}}
