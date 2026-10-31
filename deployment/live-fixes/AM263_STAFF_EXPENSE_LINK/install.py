@@ -81,11 +81,11 @@ replace('view','<label>Oil / Coupon Company * <input',
 replace('view','<label>Coupon Number / Reference <input',
  '<label id="am263-coupon-no-label">Coupon Number / Reference <input',
  'COUPON_LABEL')
-replace('view','    pane.hidden=!isCoupon;',
+replace('view','pane.hidden=!isCoupon;',
  '    // AM263_STAFF_EXPENSE_LINK: optional staff selector for every expense category.\n    pane.hidden=false;\n    document.getElementById("am263-company-label").hidden=!isCoupon;\n    document.getElementById("am263-coupon-no-label").hidden=!isCoupon;',
  'VISIBLE_PANE')
-replace('view','    staff.disabled=!isCoupon;','    staff.disabled=false;','STAFF_ENABLED')
-replace('view','    staffSearch.disabled=!isCoupon;','    staffSearch.disabled=false;','STAFF_SEARCH_ENABLED')
+replace('view','staff.disabled=!isCoupon;','    staff.disabled=false;','STAFF_ENABLED')
+replace('view','staffSearch.disabled=!isCoupon;','    staffSearch.disabled=false;','STAFF_SEARCH_ENABLED')
 replace('view',"""  function syncEmployee(){
     if(category.value==='LUBRICASH_COUPON')payee.value=staffName();
   }""",
