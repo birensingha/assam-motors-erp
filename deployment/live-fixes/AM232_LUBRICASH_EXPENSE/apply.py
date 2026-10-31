@@ -84,8 +84,8 @@ once('service',
  "->leftJoin('job_cards as jc','jc.id','=','e.job_card_id')\n            ->leftJoin('workshop_vendors as v','v.id','=','e.vendor_id')\n            ->leftJoin('staff as am232s','am232s.id','=','e.staff_id')",
  'REGISTER_STAFF_JOIN')
 once('service',
- "'v.vendor_code','v.vendor_name']);",
- "'v.vendor_code','v.vendor_name','am232s.staff_code as am232_staff_code','am232s.name as am232_staff_name']);",
+ "->select(['e.*','jc.job_no','jc.customer_name','jc.vehicle_reg_no','jc.vehicle_make','jc.vehicle_model','v.vendor_code','v.vendor_name']);",
+ "->select(['e.*','jc.job_no','jc.customer_name','jc.vehicle_reg_no','jc.vehicle_make','jc.vehicle_model','v.vendor_code','v.vendor_name','am232s.staff_code as am232_staff_code','am232s.name as am232_staff_name']);",
  'REGISTER_STAFF_SELECT')
 once('service',
  "'orWhere('v.vendor_name','like',$like);",
