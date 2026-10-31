@@ -34,6 +34,7 @@ jobs:
               if isinstance(node,ast.Assign)
               and any(isinstance(t,ast.Name) and t.id=='js' for t in node.targets)
               and isinstance(node.value,ast.Constant))
+          js=js.split('>',1)[1].rsplit('</script>',1)[0]
           pathlib.Path('/tmp/AM230_PAYMENT_SELECTOR.js').write_text(js)
           print('AM230_GITHUB_JS_EXTRACTED')
           PY
