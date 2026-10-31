@@ -1,0 +1,73 @@
+name: AM224 Readonly Staff Portal Alerts and Check-In Audit
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/audit-am224-staff-portal-alerts.yml'
+      - 'deployment/live-fixes/AM224_STAFF_PORTAL_NOTIFICATIONS/audit.py'
+permissions: {contents: read, issues: write}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure STAGING SSH
+        id: ssh
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$KEY" || test -n "$PASSWORD"
+          install -d -m 700 ~/.ssh
+          for n in 1 2 3 4;do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq;sudo apt-get install -qq -y sshpass
+          fi
+      - name: Run source-only audit
+        id: audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE=deployment/live-fixes/AM224_STAFF_PORTAL_NOTIFICATIONS/audit.py
+          python3 -m py_compile "$FILE"
+          REMOTE="$USERNAME@$HOST"
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT")
+            SCP=(sshpass -e scp -P "$PORT")
+          fi
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM224_STAFF_AUDIT"'
+          "${SCP[@]}" "$FILE" "$REMOTE:~/AM224_STAFF_AUDIT/audit.py"
+          "${SSH[@]}" "$REMOTE" "python3 ~/AM224_STAFF_AUDIT/audit.py '$ROOT'" | tee "$RUNNER_TEMP/am224_audit.txt"
+          grep -Fq AM224_AUDIT_READONLY_PASS_NO_DB_CHANGES "$RUNNER_TEMP/am224_audit.txt"
+      - name: Report metadata-only status
+        if: always()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SSH_RESULT: ${{ steps.ssh.outcome }}
+          AUDIT_RESULT: ${{ steps.audit.outcome }}
+        run: |
+          body="AM224 Staff Portal alerts/Check-In source audit: SSH=$SSH_RESULT read-only audit=$AUDIT_RESULT; no attendance/master record modifications. Audit logs in https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          gh api repos/"$GITHUB_REPOSITORY"/issues/124/comments -f body="$body" || true
+      - name: SSH credential cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
