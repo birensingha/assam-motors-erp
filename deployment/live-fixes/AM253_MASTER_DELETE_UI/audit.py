@@ -21,4 +21,10 @@ for name in ['routes/web.php','routes/api.php']:
  for i,line in enumerate(p.read_text('utf8','replace').splitlines()):
   if re.search(r'(customer|vendor|expense|head|part|labour).*(delete|destroy)|(delete|destroy).*(customer|vendor|expense|head|part|labour)',line,re.I):
    print('AM253_ROUTE',name,i+1,line[:420])
+p=root/'app/Http/Controllers/Web/AdminNativeModuleController.php'
+lines=p.read_text('utf8','replace').splitlines()
+print('AM254_ROT_DELETE_SOURCE_BEGIN')
+for i in range(952,min(997,len(lines))):
+ print('AM254_LINE',i+1,lines[i][:1000])
+print('AM254_ROT_DELETE_SOURCE_END')
 print('AM253_READONLY_COMPLETE')
