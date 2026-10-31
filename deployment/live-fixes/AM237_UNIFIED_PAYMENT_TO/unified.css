@@ -1,0 +1,32 @@
+/* AM237 Payment Voucher compact SAP-style user layout. Retain original POST elements. */
+#payment-form.am237-ready .p133-body>div>section.p133-group:first-child{display:none!important}
+#payment-form.am237-ready .p133-body>div>section.p133-group:nth-child(2){display:block}
+#am237-layout{margin:10px 14px 15px;padding:15px;background:#f9fcff;border:1px solid #cadced;border-radius:11px;box-shadow:0 2px 8px #214c7110}
+#am237-layout .am237-head{display:flex;align-items:center;justify-content:space-between;gap:12px;border-bottom:1px solid #dce8f2;padding:0 0 12px;margin-bottom:11px}
+#am237-layout h2{margin:0;font-size:16px;color:#143d5e;font-weight:800}
+#am237-layout label{font-size:11px;font-weight:800;letter-spacing:.1px;color:#194568;display:flex;flex-direction:column;gap:5px}
+#am237-layout .am237-search-wrap{position:relative;flex:1}
+#am237-payee-search,#am237-mode{width:100%;box-sizing:border-box;min-height:39px;padding:8px 11px;border-radius:7px;background:#fff;border:1px solid #9fbdd7;color:#183d5c;font-size:13px}
+#am237-payee-search:focus,#am237-mode:focus,#am237-layout input:focus{border-color:#2176b4;outline:2px solid #2273ac22}
+#am237-payee-results{position:absolute;top:calc(100% + 3px);left:0;right:0;border:1px solid #8db0ce;background:white;z-index:3000;border-radius:8px;box-shadow:0 14px 30px #17436730;padding:5px;max-height:250px;overflow:auto}
+#am237-payee-results[hidden],#am237-reference-slot[hidden],#am237-bills-slot[hidden]{display:none!important}
+#am237-payee-results .am237-result{display:flex;width:100%;align-items:center;gap:12px;text-align:left;min-height:37px;padding:7px 10px;border:0;border-radius:5px;font:inherit;font-size:12px;color:#153e60;background:#fff;cursor:pointer}
+#am237-payee-results .am237-result:hover,#am237-payee-results .am237-result.is-focused{background:#eaf4ff}
+#am237-payee-results .am237-tag{font-size:10px;font-weight:750;color:#325d7e;background:#e9f2fa;border-radius:4px;padding:3px 6px;white-space:nowrap;min-width:65px;text-align:center}
+#am237-payee-results .am237-empty{font-size:12px;padding:10px;color:#657e91}
+#am237-payee-selected{margin:6px 0 0;color:#55748d;font-size:11px}
+#am237-layout .am237-fields{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:11px;align-items:start}
+#am237-layout .am237-payee{grid-column:1/-1}
+#am237-layout #am237-date-slot{width:160px}
+#am237-layout #am237-date-slot input{width:100%;box-sizing:border-box;min-height:36px;background:#fff;border:1px solid #aac2d7;border-radius:6px;padding:6px 9px}
+#am237-layout #am237-amount-slot .p133-label{margin:0}
+#am237-layout #am237-amount-slot input{width:100%;box-sizing:border-box;height:40px;background:#fff;border:1px solid #91b7d4;border-radius:7px;padding:7px 10px;color:#183d5c;font-size:15px;font-weight:750;text-align:right}
+#am237-layout #am237-reference-slot{grid-column:1/-1}
+#am237-layout #am237-reference-slot input{width:100%;box-sizing:border-box;min-height:38px;background:#edf5fb;border:1px solid #b7ccdd;border-radius:7px;padding:7px 10px;color:#274d66;font-weight:700}
+#am237-layout #am237-bills-slot{grid-column:1/-1;margin-top:4px}
+#am237-layout #p133-multi-area{padding:10px;background:#fff;border:1px solid #c3d8e8;border-radius:8px}
+#am237-layout #am237-ledger-status{font-size:11px;line-height:1.5;color:#345f7c;background:#eaf4fd;padding:9px 11px;border-radius:6px;border-left:3px solid #357cbb;margin-top:12px}
+#payment-form[data-am237-blocked="1"] #p133-save{opacity:.55;cursor:not-allowed}
+#payment-form.am237-ready .p133-preview{max-width:390px}
+#payment-form.am237-ready .p133-body>div>section.p133-group:nth-child(2) h2{font-size:14px}
+@media (max-width:750px){#am237-layout{margin:8px;padding:11px}#am237-layout .am237-fields{grid-template-columns:1fr}#am237-layout .am237-payee,#am237-layout #am237-reference-slot,#am237-layout #am237-bills-slot{grid-column:1}#payment-form.am237-ready .p133-preview{max-width:none}#am237-layout #am237-date-slot{width:100%}}
