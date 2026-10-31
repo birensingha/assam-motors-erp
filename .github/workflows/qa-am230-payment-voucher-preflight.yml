@@ -1,0 +1,79 @@
+name: AM230 Payment Voucher Payee Category Preflight (no writes)
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/qa-am230-payment-voucher-preflight.yml'
+      - 'deployment/live-fixes/AM230_PAYMENT_VOUCHER_IDENTITY/apply.py'
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency: {group: assam-motors-am230-payment-voucher-preflight, cancel-in-progress: false}
+jobs:
+  inspect:
+    name: Test financial UI identity guard and Blade PHP JS preflight with no writes
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate audit shell syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/AM230_PAYMENT_VOUCHER_IDENTITY/apply.py
+          python3 - <<'PY'
+          import ast,pathlib
+          p=pathlib.Path('deployment/live-fixes/AM230_PAYMENT_VOUCHER_IDENTITY/apply.py')
+          tree=ast.parse(p.read_text())
+          js=next(node.value.value for node in tree.body
+              if isinstance(node,ast.Assign)
+              and any(isinstance(t,ast.Name) and t.id=='js' for t in node.targets)
+              and isinstance(node.value,ast.Constant))
+          js=js.split('>',1)[1].rsplit('</script>',1)[0]
+          pathlib.Path('/tmp/AM230_PAYMENT_SELECTOR.js').write_text(js)
+          print('AM230_GITHUB_JS_EXTRACTED')
+          PY
+          node --check /tmp/AM230_PAYMENT_SELECTOR.js
+          echo AM230_GITHUB_INLINE_JS_SYNTAX_PASS
+      - name: SSH staging credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$KEY" || test -n "$PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4; do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then break; fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Read-only verify Vendor Payee separation, Expense deep link and server guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519 "$USERNAME@$HOST" 'mkdir -p "$HOME/AM230_PREFLIGHT"'
+            scp -o BatchMode=yes -o ConnectTimeout=14 -P "$PORT" -i ~/.ssh/id_ed25519 deployment/live-fixes/AM230_PAYMENT_VOUCHER_IDENTITY/apply.py "$USERNAME@$HOST:~/AM230_PREFLIGHT/apply.py"
+            ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519 "$USERNAME@$HOST" "cd '$ROOT' && python3 -m py_compile ~/AM230_PREFLIGHT/apply.py && python3 ~/AM230_PREFLIGHT/apply.py check '$ROOT'"
+          else
+            export SSHPASS="$PASSWORD"
+            sshpass -e ssh -o ConnectTimeout=14 -p "$PORT" "$USERNAME@$HOST" 'mkdir -p "$HOME/AM230_PREFLIGHT"'
+            sshpass -e scp -o ConnectTimeout=14 -P "$PORT" deployment/live-fixes/AM230_PAYMENT_VOUCHER_IDENTITY/apply.py "$USERNAME@$HOST:~/AM230_PREFLIGHT/apply.py"
+            sshpass -e ssh -o ConnectTimeout=14 -p "$PORT" "$USERNAME@$HOST" "cd '$ROOT' && python3 -m py_compile ~/AM230_PREFLIGHT/apply.py && python3 ~/AM230_PREFLIGHT/apply.py check '$ROOT'"
+          fi
+      - name: Remove transient key
+        if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519
