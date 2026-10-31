@@ -7,6 +7,9 @@ on:
       - 'deployment/live-fixes/AM238_VENDOR_DEBIT_SETTLEMENT/vendor-debit-ui.js'
       - 'deployment/live-fixes/AM238_VENDOR_DEBIT_SETTLEMENT/vendor-debit-ui.css'
       - 'deployment/live-fixes/AM238_VENDOR_DEBIT_SETTLEMENT/DEPLOY_STAGING.sh'
+      - 'deployment/live-fixes/AM238_VENDOR_DEBIT_SETTLEMENT/VendorDebitSettlementService.php'
+      - 'deployment/live-fixes/AM238_VENDOR_DEBIT_SETTLEMENT/2026_11_01_001200_create_workshop_vendor_debit_uses.php'
+      - 'deployment/live-fixes/AM238_VENDOR_DEBIT_SETTLEMENT/verify.php'
   workflow_dispatch:
 permissions: { contents: read }
 concurrency: { group: assam-motors-staging-control, cancel-in-progress: false }
