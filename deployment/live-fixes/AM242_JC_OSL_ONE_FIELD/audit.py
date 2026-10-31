@@ -5,7 +5,7 @@ import sys,re
 root=Path(sys.argv[1]).resolve()
 if root.name!='assam-erp-staging' or not (root/'artisan').is_file():raise SystemExit('AM242_STOP_NOT_STAGING')
 targets={
- 'resources/views/job-cards/show.blade.php':[(2850,3075),(3520,3695),(3695,3850)],
+ 'resources/views/job-cards/show.blade.php':[(2898,2927),(2940,3015),(3385,3690)],
  'app/Http/Controllers/Web/AdminJobCardOslLineController.php':[(1,110)]
 }
 for name,ranges in targets.items():
@@ -24,4 +24,13 @@ for i,line in enumerate(lines):
  if re.search(r'Select Linked OSL|OSL Jobs / Outside Services|am83-osl|am93-osl|am91-osl-dialog|am146-master|am241',line,re.I):
   print('AM242_HIT',i+1,line.strip()[:200])
 print('AM242_PANEL_INDEX_END')
+print('AM243_DOM_ANCHORS_BEGIN')
+v=(root/'resources/views/job-cards/show.blade.php').read_text('utf8','replace')
+for needle in [
+ 'am146-master-row',"select.name='osl_master_id'",'am146-master-row', "form.insertBefore",
+ "form.prepend", "form.appendChild", "masterRow", "am146-new-master", "new MutationObserver",
+ "am242-jc-osl-one-field.js", "am241-jc-osl-master-live"
+]:
+ print('AM243_ANCHOR',repr(needle),'COUNT',v.count(needle))
+print('AM243_DOM_ANCHORS_END')
 print('AM242_READONLY_DONE')
