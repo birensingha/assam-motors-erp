@@ -37,7 +37,8 @@ final class AdminStaffFinanceLedgerController extends Controller
             ->join('workshop_staff_finance_journals as j','j.id','=','l.journal_id')
             ->where('l.staff_id',$staff)->where('l.account_code',$code);
         if($month!==null)$q->where('j.salary_month',$month);
-        $value=(float)$q->selectRaw('COALESCE(SUM(l.debit-l.credit),0) as balance')->value('balance');
+        $sum=$q->selectRaw('COALESCE(SUM(l.debit-l.credit),0) as balance')->first();
+        $value=(float)($sum->balance ?? 0);
         return round($value,2);
     }
 
