@@ -51,6 +51,23 @@ $matchedOut=DB::table('staff_reminder_state as s')
  ->whereNotNull('a.check_in')->whereNotNull('a.check_out')->count();
 echo "AM226_VERIFY_VERIFIED_CHECKIN_STILL_OPEN ".$matchedIn."\n";
 echo "AM226_VERIFY_VERIFIED_CHECKOUT_STILL_OPEN ".$matchedOut."\n";
+$today=now('Asia/Kolkata')->toDateString();
+foreach(['CHECKIN_MISSED','CHECKOUT_PENDING'] as $type){
+ $q=DB::table('staff_reminder_state as r')
+    ->join('attendance as a',function($join){
+      $join->on('r.staff_id','=','a.staff_id')->on('r.target_key','=','a.date');
+    })
+    ->leftJoin('staff as s','s.id','=','r.staff_id')
+    ->where('r.reminder_type',$type)->whereNull('r.resolved_at')
+    ->where('r.target_key','<',$today)->whereNotNull('a.check_in');
+ if($type==='CHECKOUT_PENDING')$q->whereNotNull('a.check_out');
+ $rows=$q->selectRaw("CASE WHEN LOWER(COALESCE(s.status,''))='active' AND COALESCE(s.attendance_enabled,0)=1 THEN 'eligible' ELSE 'inactive' END AS bucket,COUNT(*) AS n")
+    ->groupBy('bucket')->get();
+ foreach($rows as $row){
+   echo "AM226_VERIFY_HISTORICAL_MATCH ".$type." BUCKET ".$row->bucket." COUNT ".(int)$row->n."\\n";
+ }
+}
+
 $identityDupes=(int)DB::table('staff_reminder_state')
  ->selectRaw('staff_id,reminder_type,target_key,COUNT(*) AS n')
  ->groupBy('staff_id','reminder_type','target_key')->havingRaw('COUNT(*) > 1')->get()->count();
