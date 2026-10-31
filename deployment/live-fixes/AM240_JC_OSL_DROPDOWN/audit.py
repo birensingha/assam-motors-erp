@@ -41,4 +41,21 @@ for p,lines,hits in candidates:
    if re.search(r'(?i)password|secret|bearer|authorization|api[_-]?key',line):continue
    print('AM240_LINE',j+1,line[:750])
  print('AM240_SNIPPET_END',str(p.relative_to(root)))
+
+print('AM241_EXACT_BEGIN')
+for name,spans in {
+ 'resources/views/job-cards/show.blade.php':[(3568,3676)],
+ 'app/Http/Controllers/Web/AdminOslQuickMasterController.php':[(1,145)],
+ 'routes/web.php':[(196,225)]
+}.items():
+ p=root/name
+ if not p.is_file():continue
+ lines=p.read_text('utf8','replace').splitlines()
+ for a,b in spans:
+  print('AM241_SECTION',name,a,b)
+  for i in range(a-1,min(b,len(lines))):
+   line=lines[i]
+   if re.search(r'(?i)password|secret|bearer|authorization',line):continue
+   print('AM241_LINE',i+1,line[:850])
+print('AM241_EXACT_END')
 print('AM240_READONLY_COMPLETE')
