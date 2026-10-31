@@ -103,9 +103,14 @@ with tempfile.TemporaryDirectory(prefix='am234_preflight_') as temp:
     candidate=td/'create.blade.php'
     compiled=td/'compiled.php'
     candidate.write_text(newview,encoding='utf8',errors='surrogateescape')
-    check=subprocess.run(['node','--check',str(script)],capture_output=True,text=True,timeout=20)
-    if check.returncode:
-        raise SystemExit('AM234_STOP_JS_SYNTAX '+check.stderr[-300:])
+    if shutil.which('node'):
+        check=subprocess.run(['node','--check',str(script)],capture_output=True,text=True,timeout=20)
+        if check.returncode:
+            raise SystemExit('AM234_STOP_JS_SYNTAX '+check.stderr[-300:])
+        print('AM234_STAGING_JS_SYNTAX_PASS')
+    else:
+        # CI ran node --check on the same checked-out asset before SSH.
+        print('AM234_STAGING_NODE_MISSING_GITHUB_CI_SYNTAX_CHECKED')
     code=r"""require 'vendor/autoload.php';
 $app=require 'bootstrap/app.php';
 $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
