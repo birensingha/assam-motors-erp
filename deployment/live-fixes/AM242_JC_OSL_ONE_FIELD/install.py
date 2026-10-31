@@ -4,7 +4,7 @@ Usage: install.py check|apply|rollback STAGING_ROOT.
 Changes source only (Job Card Blade + one JS asset), no DB writes, full guarded rollback.
 """
 from pathlib import Path
-import os,sys,hashlib,json,tempfile,subprocess,shutil
+import os,sys,hashlib,json,tempfile,subprocess,shutil,re
 if len(sys.argv)!=3 or sys.argv[1] not in ('check','apply','rollback'):raise SystemExit('AM242_USAGE')
 mode=sys.argv[1];root=Path(sys.argv[2]).expanduser().resolve()
 if root.name!='assam-erp-staging' or not (root/'artisan').is_file():raise SystemExit('AM242_STOP_NOT_STAGING')
