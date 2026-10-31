@@ -78,4 +78,33 @@ with tempfile.TemporaryDirectory(prefix='am221audit_') as temp:
     r=subprocess.run(['php',str(f),str(root)],cwd=root,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,timeout=45)
     if r.returncode:print('AM221_META_UNAVAILABLE',r.returncode)
     else:print(r.stdout[:18000])
+
+# AM221 Focused 2nd pass: Job Card relation and form controls only, never data rows.
+form=root/'resources/views/job-cards/form.blade.php'
+if form.is_file():
+    ll=form.read_text('utf8','replace').splitlines()
+    for j in range(119,min(230,len(ll))):
+        print('AM221_FORM_DETAIL',j+1,redact(ll[j]))
+jc=root/'app/Http/Controllers/Web/AdminJobCardPageController.php'
+if jc.is_file():
+    ll=jc.read_text('utf8','replace').splitlines()
+    for low,high in ((15,165),(347,432)):
+        for j in range(low-1,min(high,len(ll))):
+            print('AM221_JC_CONTROLLER',j+1,redact(ll[j]))
+php2=r"""<?php
+require $argv[1].'/vendor/autoload.php';
+$app=require $argv[1].'/bootstrap/app.php';
+$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+use Illuminate\Support\Facades\Schema;
+foreach(['am_customer_master','am_vehicle_master','customer_vehicles','customer_master','am_vehicle_catalog_master'] as $table){
+ if(!Schema::hasTable($table))continue;
+ echo "AM221_REAL_MASTER_TABLE ".$table." COLUMNS ".implode(',',Schema::getColumnListing($table))."\n";
+}
+"""
+with tempfile.TemporaryDirectory(prefix='am221rel_') as td:
+    p=Path(td)/'read.php';p.write_text(php2,encoding='utf8')
+    out=subprocess.run(['php',str(p),str(root)],cwd=root,text=True,capture_output=True,timeout=30)
+    if out.returncode:print('AM221_RELATION_SCHEMA_UNAVAILABLE')
+    else:print(out.stdout)
+
 print('AM221_READONLY_COMPLETE_NO_DB_WRITES')
