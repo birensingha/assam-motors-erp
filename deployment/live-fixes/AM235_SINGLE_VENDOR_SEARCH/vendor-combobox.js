@@ -1,5 +1,5 @@
 /* AM235 compact single searchable Vendor Master field.
- * Keeps ORIGINAL <select name="vendor_id" id="payment-vendor"> for all posting,
+ * Keeps the original vendor_id native select for all posting,
  * including AM226 multi-bill vendor selection and AM230 source-key autofill.
  * UI-only: no financial posting or ledger changes.
  */
