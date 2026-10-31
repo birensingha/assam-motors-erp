@@ -110,7 +110,7 @@ replace('service',
                 || (int)($billingLine->billing_included ?? 0)!==1)) {""",
  'BILLING_INCLUDED_VALIDATION')
 # Add one explicit marker to JS; remove misleading option to create new billing from Purchase.
-oldText="No OSL line transferred to this JC. Release approved Estimate → Send to JC, or select Master to create a new customer OSL line."
+oldText="No OSL line transferred to this JC. Release approved Estimate → Send to Job Card, or select Master to create a new customer OSL line."
 newText="No unpurchased JC OSL work available. Add a new OSL to Estimate/Job Card first; already-purchased OSL lines cannot be purchased twice."
 replace('picker',oldText,newText,'NO_OSL_LINE_MESSAGE')
 replace('picker',
