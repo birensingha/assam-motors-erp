@@ -10,6 +10,9 @@ use App\Http\Controllers\Web\AdminExpensePaymentPageController;
 use App\Http\Controllers\Web\AdminStaffFinanceLedgerController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\View;
+use Illuminate\Support\ViewErrorBag;
+View::share('errors',new ViewErrorBag());
 function checkView(bool $ok,string $label):void{
  if(!$ok)throw new RuntimeException('AM240_VIEW_QA_FAIL_'.$label);
 }
