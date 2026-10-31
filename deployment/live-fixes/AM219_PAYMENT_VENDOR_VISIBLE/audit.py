@@ -51,4 +51,21 @@ if j.is_file():
   if i>=230:break
   print('JS',i+1,line[:500])
  print('AM219_PRIMARY_JS_FULL_END')
+for tag,path,limit in [
+ ('MULTI_JS','public/js/payment-voucher-multi.js',190),
+ ('PAYMENT_VIEW','resources/views/payments/create.blade.php',176)]:
+ p=root/path
+ if p.is_file():
+  print('AM222_'+tag+'_FULL_BEGIN')
+  for i,line in enumerate(p.read_text('utf8','replace').splitlines()[:limit],1):
+   # Source code only; no customer or request data
+   print(tag,i,line[:700])
+  print('AM222_'+tag+'_FULL_END')
+print('AM222_PAYMENT_ALLOCATIONS_METHOD_MAP')
+p=root/'app/Services/ExpensePaymentService.php'
+if p.is_file():
+ lines=p.read_text('utf8','replace').splitlines()
+ for i,line in enumerate(lines):
+  if any(term in line for term in ('function savePayment','function createVoucher','function payableSources','multi_bill','allocations','source_type','allocation_amount')):
+   print('SERVICE_LINE',i+1,line.strip()[:360])
 print('AM219_AUDIT_COMPLETE_NO_DB_ACCESS')
