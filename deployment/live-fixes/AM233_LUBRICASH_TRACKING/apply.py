@@ -231,9 +231,8 @@ replace_once('create','@endpush', '<script id="am233-lubricash-js">\n'+js+'\n</s
 replace_once('index', '<input type="date" name="from"',
              '''<select name="staff_id" aria-label="Staff filter"><option value="">All Staff</option>@foreach(($am233Staff ?? []) as $person)<option value="{{ $person->id }}" @selected((string)($filters['staff_id']??'')===(string)$person->id)>{{ $person->staff_code }} — {{ $person->name }}</option>@endforeach</select>
 <input type="date" name="from"''','REGISTER_FILTER_SELECT')
-replace_once('index', "{{ $e['payee_name'] }}",
-             """{{ $e['payee_name'] }}@if(($e['expense_category']??'')==='LUBRICASH_COUPON')<small style="display:block;color:#345f82">STAFF: {{ $e['staff_name']??$e['payee_name'] }} · {{ $e['staff_code']??'' }}</small><small style="display:block;color:#345f82">COUPON: {{ $e['coupon_company']??'—' }} @if($e['coupon_no'])· {{ $e['coupon_no'] }}@endif</small>@endif""",
-             'REGISTER_PAYEE_STAFF_DETAIL')
+# Register already displays JC/Vehicle, canonical payee name and description.
+# Staff/company remain searchable and visible in audited Expense detail.
 # Expense detail has exact audit and payment action, not generic Staff-disabled
 # Payment Voucher form; only new coupon category has dedicated linked payment.
 replace_once('show', '<div class="note-box"><strong>Description:</strong>',
