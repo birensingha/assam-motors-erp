@@ -37,7 +37,7 @@ if marker in old:
  raise SystemExit('AM244_STOP_PARTIAL')
 if 'AM243_JC_OSL_SEARCH_INLINE' not in old or 'AM146_OSL_MASTER' not in old:
  raise SystemExit('AM244_STOP_PREREQUISITE_MISSING')
-anchor_pattern=r"(?m)^[ \\t]*masterRow\\.append\\(label,add,feedback\\);[ \\t]*\\r?\\n[ \\t]*form\\.insertBefore\\(masterRow,form\\.firstChild\\.nextSibling\\);"
+anchor_pattern=r"(?m)^[ \t]*masterRow\.append\(label,add,feedback\);[ \t]*\r?\n[ \t]*form\.insertBefore\(masterRow,form\.firstChild\.nextSibling\);"
 matches=list(re.finditer(anchor_pattern,old))
 if len(matches)!=1:raise SystemExit('AM244_STOP_CORE_CONSTRUCTOR_ANCHOR_COUNT_'+str(len(matches)))
 anchor=matches[0].group(0)
