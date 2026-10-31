@@ -49,4 +49,13 @@ echo 'JOB_TOTAL='.DB::table('job_cards')->count()."\n";
 echo 'EXISTING_LUBRICASH_CATEGORY_ROWS='.DB::table('workshop_expenses')->where('expense_category','STAFF_LUBRICASH')->count()."\n";
 PHP
 
+
+echo '== FULL EXACT EXPENSE REGISTER AND SHOW BLADE LINES =='
+for f in resources/views/expenses/index.blade.php resources/views/expenses/show.blade.php; do
+ echo "=== FULL $f ==="
+ cat "$f" | cut -c1-3400
+done
+echo '== FULL EXACT EXPENSE CREATE BLADE LINES =='
+cat resources/views/expenses/create.blade.php | cut -c1-1600
+
 echo AM232_AUDIT_COMPLETE_NO_WRITES
