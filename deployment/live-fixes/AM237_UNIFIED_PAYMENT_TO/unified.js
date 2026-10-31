@@ -196,6 +196,7 @@ function init(){
    if(mode.value==='ON_ACCOUNT'&&refInput.value){e.preventDefault();e.stopImmediatePropagation();status.textContent='On Account must not use a bill reference.';}
  },true);
  relocate();
+ form.classList.add('am237-ready');
  // Default: no hidden feature choice, no accidental vendor posting.
  form.dataset.am237Blocked='1';save.disabled=true;save.textContent='SELECT PAYMENT TO';
  refSlot.hidden=true;billSlot.hidden=true;
