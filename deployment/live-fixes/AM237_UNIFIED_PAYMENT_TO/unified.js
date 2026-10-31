@@ -185,6 +185,7 @@ function init(){
  });
  document.addEventListener('pointerdown',e=>{if(!results.contains(e.target)&&e.target!==search)close();});
  mode.addEventListener('change',syncMode);
+ date.addEventListener('change',()=>{if(active&&['NEW_REFERENCE','ADVANCE'].includes(mode.value))refInput.value=referenceNumber();});
  // Prevent accidental post of unsupported payees; server AM230 also guards.
  form.addEventListener('submit',e=>{
    if(!active||!['VENDOR','OSL_VENDOR'].includes(active.kind)||form.dataset.am237Blocked==='1'){
