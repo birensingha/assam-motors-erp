@@ -74,7 +74,7 @@ swap('payment_controller',"'am231Staff'=>\\Illuminate\\Support\\Facades\\DB::tab
                 ->where('e.record_status','ACTIVE')->whereNotNull('e.staff_id')
                 ->select(['e.id','e.staff_id','e.expense_no','jc.job_no'])
                 ->selectRaw('ROUND(e.total_amount-COALESCE(paid.paid,0),2) as outstanding')
-                ->havingRaw('e.total_amount-COALESCE(paid.paid,0)>0.009')
+                ->whereRaw('e.total_amount-COALESCE(paid.paid,0)>0.009')
                 ->orderByDesc('e.id')->limit(2500)->get(),
             'am231Staff'=>\\Illuminate\\Support\\Facades\\DB::table('staff')""",
 'CONTROLLER_STAFF_PAYABLE_AND_EXPENSE_SOURCES')
