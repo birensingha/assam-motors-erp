@@ -47,10 +47,13 @@ if 'AM241_JC_OSL_MASTER_LIVE' not in old or 'am241-jc-osl-master-live' not in ol
 if 'AM146_OSL_MASTER' not in old or 'am91-osl-dialog' not in old:
  raise SystemExit('AM242_STOP_MASTER_OR_DIALOG_MISSING')
 # Remove only previously purchased supplier panel from the NEW customer OSL form.
-begin="    if(!editing){\n      var toolsTemplate=document.getElementById('am93-osl-tools-template');"
-finish="    var form=document.createElement('form');form.className='am91-osl-form';"
-if old.count(begin)!=1 or old.count(finish)!=1:raise SystemExit('AM242_STOP_PURCHASE_INJECT_ANCHOR_COUNT')
-a=old.index(begin);b=old.index(finish,a)
+# Accept whitespace-indentation differences across the staged Blade patch history.
+begin_matches=list(re.finditer(r"(?m)^[ \t]*if\(!editing\)\{\r?\n[ \t]*var toolsTemplate=document\.getElementById\('am93-osl-tools-template'\);",old))
+finish_matches=list(re.finditer(r"(?m)^[ \t]*var form=document\.createElement\('form'\);form\.className='am91-osl-form';",old))
+if len(begin_matches)!=1 or len(finish_matches)!=1:
+ raise SystemExit('AM242_STOP_PURCHASE_INJECT_ANCHOR_COUNT_'+str(len(begin_matches))+'_'+str(len(finish_matches)))
+a=begin_matches[0].start();b=finish_matches[0].start()
+if b<=a:raise SystemExit('AM242_STOP_PURCHASE_INJECTION_ORDER')
 block=old[a:b]
 required=[
  "toolsBlock.className='am93-tools-in-dialog'",
