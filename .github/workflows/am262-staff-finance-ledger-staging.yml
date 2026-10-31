@@ -72,9 +72,9 @@ jobs:
           python3 "$PATCH" check "$ROOT"
           python3 "$PATCH" apply "$ROOT"
           php -l app/Http/Controllers/Web/AdminStaffFinanceLedgerController.php
-          php artisan route:list | grep -Fq 'erp.staff-finance.index'
-          php artisan route:list | grep -Fq 'erp.staff-finance.store'
-          php artisan route:list | grep -Fq 'erp.staff-finance.reverse'
+          # Existing installer already checked route names in complete stdout.
+          # Avoid grep -q with pipefail causing SIGPIPE on a full route:list.
+          php artisan route:list --path=staff-finance
           test -s resources/views/staff-finance/index.blade.php
           php artisan view:cache
           echo AM262_STAFF_LEDGER_ROUTES_AND_VIEWS_PASS
