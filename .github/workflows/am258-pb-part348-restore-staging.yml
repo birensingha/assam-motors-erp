@@ -1,0 +1,81 @@
+name: AM258 Restore Part Master ID 348 — Safe Reconciliation STAGING
+on:
+  push:
+    branches: [fix/am217-osl-vendor-payment-audit-20261030]
+    paths:
+      - deployment/live-fixes/AM255_PB_PART348_RECOVERY/install.py
+      - .github/workflows/am258-pb-part348-restore-staging.yml
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Audit syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -l deployment/live-fixes/AM255_PB_PART348_RECOVERY/recover.php
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          for i in 1 2 3;do
+            if ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 2
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: AM258 guarded canonical Parts Master reconciliation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -p "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=15)
+            SCP=(scp -P "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=15)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT" -o ConnectTimeout=15)
+            SCP=(sshpass -e scp -P "$PORT" -o ConnectTimeout=15)
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p -m 700 ~/AM255_PB_PART348_RECOVERY'
+          "${SCP[@]}" deployment/live-fixes/AM255_PB_PART348_RECOVERY/recover.php "$REMOTE:~/AM255_PB_PART348_RECOVERY/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          ROOT="$1"
+          SCRIPT="$HOME/AM255_PB_PART348_RECOVERY/recover.php"
+          cd "$ROOT"
+          php -l "$SCRIPT"
+          php "$SCRIPT" check "$ROOT"
+          php "$SCRIPT" apply "$ROOT"
+          php "$SCRIPT" verify "$ROOT"
+          echo AM258_RECOVERY_GUARDED_SERVER_VERIFY_PASS
+          for p in /erp/login /staff/login;do
+            STATUS="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$p")"
+            echo "AM258_HEALTH $p $STATUS"
+            test "$STATUS" = 200
+          done
+          REMOTE_SCRIPT
+      - name: Cleanup SSH credential
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
