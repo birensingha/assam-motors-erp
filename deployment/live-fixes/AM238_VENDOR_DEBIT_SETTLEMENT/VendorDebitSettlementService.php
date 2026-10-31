@@ -57,7 +57,7 @@ final class VendorDebitSettlementService
                 'voucher_id'=>(int)$p->id,
                 'vendor_id'=>(int)$p->vendor_id,
                 'vendor_name'=>(string)$p->vendor_name,
-                'reference'=>'OA-'.(string)$p->voucher_no,
+                'reference'=>str_starts_with((string)($p->source_reference??''),'OA-') ? (string)$p->source_reference : 'OA-'.(string)$p->voucher_no,
                 'original_reference'=>(string)($p->source_reference??''),
                 'date'=>(string)$p->payment_date,
                 'payment_type'=>(string)$p->source_type,
