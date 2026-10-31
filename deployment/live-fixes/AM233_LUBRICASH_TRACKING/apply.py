@@ -300,9 +300,15 @@ print('AM233_EXPENSES_PAYMENT_ROUTE_AND_GST_UNCHANGED=PASS')
 print('AM233_ALL_LARAVEL_BLADE_PHP_SYNTAX_PASS')
 if mode=='check':
  print('AM233_READONLY_PREFLIGHT_PASS');sys.exit(0)
-if backup.exists():raise SystemExit('AM233_STOP_BACKUP_ALREADY_EXISTS')
-backup.mkdir(parents=True,exist_ok=False)
-for k,p in paths.items():shutil.copy2(p,backup/(k+'.before_AM233'))
+if backup.exists():
+ for k,p in paths.items():
+  b=backup/(k+'.before_AM233')
+  if not b.is_file() or b.read_text('utf8',errors='surrogateescape') != p.read_text('utf8',errors='surrogateescape'):
+   raise SystemExit('AM233_STOP_PRIOR_DEPLOY_BACKUP_DIFFERS_FROM_CURRENT_'+k)
+ print('AM233_FAILED_DEPLOY_BACKUPS_MATCH_CURRENT_SAFE_RETRY')
+else:
+ backup.mkdir(parents=True,exist_ok=False)
+ for k,p in paths.items():shutil.copy2(p,backup/(k+'.before_AM233'))
 try:
  for k,p in paths.items():atomic(p,data[k])
 except BaseException:
