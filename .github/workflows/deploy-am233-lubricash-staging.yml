@@ -1,0 +1,77 @@
+name: AM233 Staff Lubricash Coupon Expense and Payment Audit STAGING
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/deploy-am233-lubricash-staging.yml'
+      - 'deployment/live-fixes/AM233_LUBRICASH_TRACKING/apply.py'
+      - 'deployment/live-fixes/AM233_LUBRICASH_TRACKING/2026_10_31_210000_am233_lubricash_tracking_fields.php'
+      - 'deployment/live-fixes/AM233_LUBRICASH_TRACKING/coupon.js'
+      - 'deployment/live-fixes/AM233_LUBRICASH_TRACKING/coupon.css'
+      - 'deployment/live-fixes/AM233_LUBRICASH_TRACKING/verify.php'
+      - 'deployment/live-fixes/AM233_LUBRICASH_TRACKING/DEPLOY_STAGING.sh'
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    name: Guarded Staff Lubricash Coupon expense+payment audit and additive DB columns
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate gated PHP source and deploy script
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/AM233_LUBRICASH_TRACKING/apply.py
+          node --check deployment/live-fixes/AM233_LUBRICASH_TRACKING/coupon.js
+          php -l deployment/live-fixes/AM233_LUBRICASH_TRACKING/2026_10_31_210000_am233_lubricash_tracking_fields.php
+          php -l deployment/live-fixes/AM233_LUBRICASH_TRACKING/verify.php
+          bash -n deployment/live-fixes/AM233_LUBRICASH_TRACKING/DEPLOY_STAGING.sh
+          grep -q 'AM233_STAFF_LUBRICASH_AUDIT' deployment/live-fixes/AM233_LUBRICASH_TRACKING/apply.py
+      - name: Configure STAGING SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$KEY" || test -n "$PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4; do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then break; fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Backup Expense views and Service, add linked staff fields, then runtime QA
+        shell: bash
+        run: |
+          set -euo pipefail
+          REMOTE="$USERNAME@$HOST"
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -o ConnectTimeout=14 -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=14 -p "$PORT")
+            SCP=(sshpass -e scp -o ConnectTimeout=14 -P "$PORT")
+          fi
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM233_DEPLOY"'
+          "${SCP[@]}" deployment/live-fixes/AM233_LUBRICASH_TRACKING/apply.py deployment/live-fixes/AM233_LUBRICASH_TRACKING/coupon.js deployment/live-fixes/AM233_LUBRICASH_TRACKING/coupon.css deployment/live-fixes/AM233_LUBRICASH_TRACKING/2026_10_31_210000_am233_lubricash_tracking_fields.php deployment/live-fixes/AM233_LUBRICASH_TRACKING/verify.php deployment/live-fixes/AM233_LUBRICASH_TRACKING/DEPLOY_STAGING.sh "$REMOTE:~/AM233_DEPLOY/"
+          "${SSH[@]}" "$REMOTE" "bash ~/AM233_DEPLOY/DEPLOY_STAGING.sh '$ROOT'"
+      - name: Remove transient SSH key
+        if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519
