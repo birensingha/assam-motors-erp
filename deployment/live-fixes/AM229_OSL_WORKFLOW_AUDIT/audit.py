@@ -72,4 +72,33 @@ with tempfile.TemporaryDirectory(prefix='am229_') as d:
  r=subprocess.run(['php',str(f),str(root)],cwd=root,capture_output=True,text=True,timeout=65)
  print(r.stdout[:24000])
  if r.returncode:raise SystemExit('AM229_PHP_AUDIT_FAILED '+r.stderr[-500:])
+
+print('AM229_TARGETED_SOURCE_BEGIN')
+ranges={
+ 'app/Http/Controllers/Web/AdminOslQuickMasterController.php':[(1,50)],
+ 'app/Http/Controllers/Web/AdminEstimatePageController.php':[(1,120)],
+ 'app/Services/EstimateService.php':[(1,175),(285,415)],
+ 'app/Services/PurchaseService.php':[(790,878),(889,972)],
+ 'app/Http/Controllers/Web/AdminJobCardOslLineController.php':[(1,195)],
+ 'resources/views/purchases/osl-create.blade.php':[(215,312),(313,415)],
+ 'routes/web.php':[(80,130),(190,212)]
+}
+for name,spans in ranges.items():
+ p=root/name
+ if not p.is_file():continue
+ content=p.read_text('utf8','replace').splitlines()
+ for a,b in spans:
+  print('AM229_TARGET',name,a,b)
+  for index in range(a-1,min(b,len(content))):
+   line=content[index]
+   if re.search(r'(?i)password|token|authorization|secret',line):continue
+   print('SOURCE',index+1,line[:600])
+print('AM229_ESTIMATE_VIEW_REFERENCES_BEGIN')
+for p in (root/'resources/views').rglob('*.blade.php'):
+ lines=p.read_text('utf8','replace').splitlines()
+ hits=[i for i,line in enumerate(lines) if re.search(r'(?i)osl|estimate item|estimate-line|estimateItems',line)]
+ if hits and ('estimate' in str(p).lower() or 'job-cards/show' in str(p)):
+  print('VIEW',p.relative_to(root),'HITS',len(hits),'LINES',','.join(str(i+1) for i in hits[:90]))
+print('AM229_ESTIMATE_VIEW_REFERENCES_END')
+print('AM229_TARGETED_SOURCE_END')
 print('AM229_AUDIT_PASS_NO_DB_WRITES')
