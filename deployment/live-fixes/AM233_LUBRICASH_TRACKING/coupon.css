@@ -1,0 +1,11 @@
+/* AM233 compact Staff Lubricash Coupon card for New Expense Voucher. */
+#am233-lubricash[hidden]{display:none!important}
+#am233-lubricash{box-sizing:border-box;margin:3px 0 12px;padding:13px;border:1px solid #9bc4e5;border-radius:10px;background:#f0f7fe}
+.am233-coupon-heading{font-size:13px;font-weight:900;color:#124f82;margin-bottom:3px}
+.am233-coupon-help,.am233-coupon-note{color:#416786;font-size:11px;line-height:1.5;margin:3px 0 10px}
+.am233-coupon-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.am233-coupon-grid label{display:flex;flex-direction:column;gap:4px;font-size:11px;font-weight:800;color:#194f7d}
+.am233-coupon-grid input,.am233-coupon-grid select,.am233-filter{width:100%;box-sizing:border-box;min-height:35px;border:1px solid #a9cbe0;border-radius:6px;background:#fff;padding:7px 9px;color:#153e5f}
+.am233-coupon-note{margin:10px 0 0}
+#am233-jc-search[hidden]{display:none!important}
+@media(max-width:670px){.am233-coupon-grid{grid-template-columns:1fr}}
