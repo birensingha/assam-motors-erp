@@ -214,6 +214,25 @@ file_put_contents($argv[2],$app->make('blade.compiler')->compileString(file_get_
     for cmd in (['php','-r',compiler,str(template),str(compiled)],['php','-l',str(compiled)]):
         test=subprocess.run(cmd,cwd=root,capture_output=True,text=True,timeout=60)
         if test.returncode:raise SystemExit('AM236_STOP_BLADE_LINT '+(test.stdout+test.stderr)[-380:])
+# Read-only DB contract: existing voucher columns must safely hold NEW_REFERENCE.
+schema_php=r"""require 'vendor/autoload.php';
+$app=require 'bootstrap/app.php';
+$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+foreach(['source_type','source_reference','vendor_id','request_key'] as $column){
+ if(!\Illuminate\Support\Facades\Schema::hasColumn('workshop_payment_vouchers',$column)){
+  fwrite(STDERR,'AM236_STOP_MISSING_VOUCHER_COLUMN_'.$column);exit(5);
+ }
+}
+$info=\Illuminate\Support\Facades\DB::selectOne("SHOW COLUMNS FROM workshop_payment_vouchers LIKE 'source_type'");
+$type=strtolower((string)($info->Type??''));
+if(str_contains($type,'enum(')&&!str_contains($type,"'new_reference'")){
+ fwrite(STDERR,'AM236_STOP_SOURCE_TYPE_ENUM_UNSUPPORTED');exit(6);
+}
+echo 'AM236_EXISTING_VOUCHER_SCHEMA_COMPATIBLE_PASS';"""
+schema_check=subprocess.run(['php','-r',schema_php],cwd=root,capture_output=True,text=True,timeout=60)
+if schema_check.returncode:
+    raise SystemExit('AM236_STOP_SCHEMA_CHECK '+(schema_check.stdout+schema_check.stderr)[-300:])
+print(schema_check.stdout.strip())
 print('AM236_NEW_REFERENCE_AND_ADVANCE_DISTINCT_TYPES_PASS')
 print('AM236_SERVER_SIDE_VENDOR_AND_NEW_REFERENCE_REQUIRED_PASS')
 print('AM236_NO_EXISTING_BILL_AUTOALLOCATED_TO_NEW_REFERENCE_PASS')
