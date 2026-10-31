@@ -68,4 +68,16 @@ if p.is_file():
  for i,line in enumerate(lines):
   if any(term in line for term in ('function savePayment','function createVoucher','function payableSources','multi_bill','allocations','source_type','allocation_amount')):
    print('SERVICE_LINE',i+1,line.strip()[:360])
+for tag,path,from_line,to_line in [
+ ('CONTROLLER_POST','app/Http/Controllers/Web/AdminExpensePaymentPageController.php',64,117),
+ ('MULTIPURCHASE_SERVICE','app/Services/MultiPurchasePaymentService.php',1,450),
+ ('PAYMENT_SERVICE','app/Services/ExpensePaymentService.php',137,236)]:
+ p=root/path
+ if p.is_file():
+  print('AM223_'+tag+'_BEGIN')
+  for index,line in enumerate(p.read_text('utf8','replace').splitlines(),1):
+   if from_line<=index<=to_line:
+    print(tag,index,line[:1000])
+  print('AM223_'+tag+'_END')
+ else: print('AM223_MISSING',tag)
 print('AM219_AUDIT_COMPLETE_NO_DB_ACCESS')
