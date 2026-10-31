@@ -16,18 +16,19 @@ BACKUP="$APP/storage/app/am-backups/AM238_GH_$(date +%Y%m%d_%H%M%S)_$$"
 FILES=(
  app/Services/MultiPurchasePaymentService.php
  app/Services/ExpensePaymentService.php
+ app/Services/VendorDebitSettlementService.php
  app/Http/Controllers/Web/AdminExpensePaymentPageController.php
  resources/views/payments/create.blade.php
  resources/views/payments/show.blade.php
 )
 mkdir -p "$BACKUP"
-for f in "${FILES[@]}";do mkdir -p "$BACKUP/$(dirname "$f")";cp -p "$APP/$f" "$BACKUP/$f";done
+for f in "${FILES[@]}";do mkdir -p "$BACKUP/$(dirname "$f")";if test -f "$APP/$f";then cp -p "$APP/$f" "$BACKUP/$f";else printf "__ABSENT__" > "$BACKUP/$f";fi;done
 ROLLBACK=1
 restore(){
  code="$?"
  trap - ERR
  if test "$ROLLBACK" = 1;then
-  for f in "${FILES[@]}";do cp -p "$BACKUP/$f" "$APP/$f" || true;done
+  for f in "${FILES[@]}";do if test "$(wc -c < "$BACKUP/$f")" -eq 10 && grep -Fqx "__ABSENT__" "$BACKUP/$f";then rm -f "$APP/$f";else cp -p "$BACKUP/$f" "$APP/$f" || true;fi;done
   php artisan view:clear >/dev/null 2>&1 || true
   php artisan view:cache >/dev/null 2>&1 || true
   # Do not drop potentially posted financial allocations. Unused table is harmless.
@@ -37,6 +38,11 @@ restore(){
 }
 trap restore ERR
 python3 "$HERE/apply.py" apply "$APP"
+# Critical hotfix: even on already-applied installations, replace the service
+# with the latest audited version that EXCLUDES directly paid invoices.
+cp -p "$HERE/VendorDebitSettlementService.php" "$APP/app/Services/VendorDebitSettlementService.php"
+php -l "$APP/app/Services/VendorDebitSettlementService.php"
+grep -Fq "Paid purchase invoices and OSL bills are ALREADY settled" "$APP/app/Services/VendorDebitSettlementService.php"
 php artisan migrate --path=database/migrations/2026_11_01_001200_create_workshop_vendor_debit_uses.php --force
 php artisan view:clear
 php artisan view:cache
