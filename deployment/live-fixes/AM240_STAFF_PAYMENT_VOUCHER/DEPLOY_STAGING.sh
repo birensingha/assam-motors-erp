@@ -41,7 +41,14 @@ python3 "$HERE/hotfix.py" check "$APP"
 python3 "$HERE/hotfix.py" apply "$APP"
 php artisan view:clear
 php artisan view:cache
-php "$HERE/verify-runtime.php"
+VERIFY_OUTPUT="$(php "$HERE/verify-runtime.php" 2>&1)" || {
+ echo "$VERIFY_OUTPUT"
+ echo 'AM240_RUNTIME_SMOKE_PHP_PROCESS_FAILED'
+ exit 9
+}
+printf '%s\n' "$VERIFY_OUTPUT"
+printf '%s\n' "$VERIFY_OUTPUT" | grep -Fq 'AM240_VIEW_QA_NO_FINANCIAL_WRITES_PASS'
+printf '%s\n' "$VERIFY_OUTPUT" | grep -Fq 'AM240_VIEW_QA_UNIVERSAL_PAYMENT_STAFF_OPTIONS_RENDER_PASS'
 grep -Fq 'AM240_STAFF_PAYMENT_VOUCHER' app/Http/Controllers/Web/AdminExpensePaymentPageController.php
 grep -Fq 'am240-staff-panel' resources/views/payments/create.blade.php
 grep -Fq 'StaffPaymentVoucherService' app/Services/StaffPaymentVoucherService.php
