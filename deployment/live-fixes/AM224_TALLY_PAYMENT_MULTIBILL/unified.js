@@ -1,4 +1,4 @@
-/* AM224 Tally-style single + multi vendor bill adjustment: Parts and OSL.
+/* AM224_TALLY_PAYMENT_MULTIBILL: Tally-style single + multi vendor bill adjustment: Parts and OSL.
    Real Laravel payableSources / allocations; never posts without server validation. */
 (function(){
 'use strict';
