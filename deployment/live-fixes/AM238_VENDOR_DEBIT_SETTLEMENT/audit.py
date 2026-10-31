@@ -19,7 +19,7 @@ for name,file in {
  if name in ('MULTI','MODEL','PAYMENT_CONTROLLER','PAYMENT_SHOW'):
   positions=list(range(len(lines))) if name!='PAYMENT_SHOW' else [i for i,l in enumerate(lines) if re.search('source_reference|allocation|on.account|amount|voucher',l,re.I)]
  elif name=='PAYMENT_SERVICE':
-  positions=list(range(206,min(265,len(lines))))+list(range(329,min(384,len(lines))))
+  positions=list(range(0,min(218,len(lines))))+list(range(260,min(354,len(lines))))+list(range(384,min(460,len(lines))))
  elif name=='VIEW':
   positions=list(range(335,min(389,len(lines))))+list(range(710,min(770,len(lines))))
  else:
