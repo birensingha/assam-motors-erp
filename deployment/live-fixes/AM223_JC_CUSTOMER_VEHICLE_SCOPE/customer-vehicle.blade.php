@@ -98,6 +98,7 @@
     const hide=()=>popup.style.display='none';
     function choose(row){
       cs.value=row.id;
+      lastCustomerName=String(row.name||'');
       window.amFillCustomer();
       hide();name.focus();
     }
