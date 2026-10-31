@@ -27,10 +27,11 @@ check240($fakeUser instanceof ErpAuthUser && $fakeUser->isAdmin() && $fakeUser->
 echo "AM240_QA_ADMIN_USER_MODEL_READONLY_PASS\n";
 function makeRequest(array $data,ErpAuthUser $user): Request {
  $request=Request::create('/erp/payments','POST',$data);
- $request->setUserResolver(static fn()=>$user);
  $request->setLaravelSession(app('session')->driver());
  app()->instance('request',$request);
  \Illuminate\Support\Facades\Request::swap($request);
+ // Container re-binding can install the default auth resolver; override AFTER swap.
+ $request->setUserResolver(static fn()=>$user);
  return $request;
 }
 $month='2010-01';$date=now('Asia/Kolkata')->toDateString();
