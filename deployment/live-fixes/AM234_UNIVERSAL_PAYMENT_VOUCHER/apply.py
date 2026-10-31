@@ -42,9 +42,9 @@ if source.count(marker)==1:
 required=[
  ('AM230_PAYEE_ANCHOR',anchor),
  ('AM231_RECIPIENT_CONTEXT','AM231_PAYMENT_TO_ACCOUNTING_CONTEXT'),
- ('AM230_IDENTITY','am230-payee-type'),
- ('AM231_PURPOSE','am231-payment-purpose'),
- ('AM231_SCRIPT','am231-accounting-script'),
+ ('AM230_IDENTITY','<select id="am230-payee-type" name="payee_category">'),
+ ('AM231_PURPOSE','<select id="am231-payment-purpose"'),
+ ('AM231_SCRIPT','<script id="am231-accounting-script">'),
  ('MAIN_PAYMENT_FORM','id="payment-form"'),
  ('BACKEND_SOURCE_TYPE','id="source-type"'),
  ('POST_BUTTON','id="p133-save"'),
