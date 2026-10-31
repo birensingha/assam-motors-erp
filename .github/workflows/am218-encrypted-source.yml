@@ -1,0 +1,97 @@
+name: AM218 encrypted Payment sidebar source snapshot
+on:
+  push:
+    branches: [fix/am217-osl-vendor-payment-audit-20261030]
+    paths:
+      - .github/workflows/am218-encrypted-source.yml
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          for attempt in 1 2 3;do
+            if ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Encrypt selected source without printing contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -p "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=15)
+            SCP=(scp -P "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=15)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT" -o ConnectTimeout=15)
+            SCP=(sshpass -e scp -P "$PORT" -o ConnectTimeout=15)
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SCP[@]}" deployment/live-fixes/AM218_PAYMENT_SIDENAV_OSL/cert.pem "$REMOTE:~/am218_read_source_cert.pem"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          ROOT="$1"
+          test -f "$ROOT/artisan"
+          ARCHIVE="$(mktemp /tmp/am218src_XXXXXX.tgz)"
+          trap 'rm -f "$ARCHIVE"' EXIT
+          files=()
+          for p in \
+            app/Services/ExpensePaymentService.php \
+            app/Http/Controllers/Web/AdminExpensePaymentPageController.php \
+            app/Http/Controllers/Web/AdminPurchasePageController.php \
+            app/Http/Controllers/Web/AdminWorkshopControlPageController.php \
+            app/Http/Controllers/Web/AdminVendorPageController.php \
+            resources/views/payments/create.blade.php \
+            resources/views/purchases/show.blade.php \
+            resources/views/workshop-controls/osl-edit.blade.php \
+            public/js/payment-voucher.js \
+            public/js/payment-voucher-multi.js \
+            app/Services/VendorService.php \
+            app/Services/MultiPurchasePaymentService.php \
+            routes/web.php;do
+            if [ -f "$ROOT/$p" ];then files+=("$p");fi
+          done
+          test "${#files[@]}" -ge 7
+          tar -czf "$ARCHIVE" -C "$ROOT" "${files[@]}"
+          openssl cms -encrypt -binary -aes256 -in "$ARCHIVE" -out "$HOME/am218-source.cms" -outform DER "$HOME/am218_read_source_cert.pem"
+          chmod 600 "$HOME/am218-source.cms"
+          rm -f "$HOME/am218_read_source_cert.pem"
+          echo AM218_ENCRYPTED_SOURCE_PREPARED_NO_SOURCE_LOGGED
+          REMOTE_SCRIPT
+          "${SCP[@]}" "$REMOTE:~/am218-source.cms" ./am218-source.cms
+          "${SSH[@]}" "$REMOTE" 'rm -f ~/am218-source.cms ~/am218_read_source_cert.pem'
+          test -s ./am218-source.cms
+      - uses: actions/upload-artifact@v4
+        with:
+          name: am218-encrypted-source
+          path: ./am218-source.cms
+          retention-days: 1
+          if-no-files-found: error
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519

@@ -1,0 +1,100 @@
+name: AM233 OSL Master Register guarded STAGING deploy
+on:
+  push:
+    branches: [fix/am217-osl-vendor-payment-audit-20261030]
+    paths:
+      - deployment/live-fixes/AM233_OSL_MASTER_REGISTER/install.py
+      - deployment/live-fixes/AM233_OSL_MASTER_REGISTER/index.blade.php
+      - .github/workflows/am233-osl-master-register-staging.yml
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch syntax and guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/AM233_OSL_MASTER_REGISTER/install.py
+                    OUTPUT="$(python3 deployment/live-fixes/AM233_OSL_MASTER_REGISTER/install.py check /tmp/not-staging 2>&1 || true)"
+          printf '%s\n' "$OUTPUT" | grep -q 'AM233_STOP_NOT_STAGING'
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          for i in 1 2 3;do
+            if ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 2
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: AM233 guarded OSL Master Register deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -p "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=15)
+            SCP=(scp -P "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=15)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT" -o ConnectTimeout=15)
+            SCP=(sshpass -e scp -P "$PORT" -o ConnectTimeout=15)
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p -m 700 ~/AM233_OSL_MASTER_REGISTER'
+          "${SCP[@]}" deployment/live-fixes/AM233_OSL_MASTER_REGISTER/install.py deployment/live-fixes/AM233_OSL_MASTER_REGISTER/index.blade.php "$REMOTE:~/AM233_OSL_MASTER_REGISTER/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          ROOT="$1"
+          PATCH="$HOME/AM233_OSL_MASTER_REGISTER/install.py"
+          cd "$ROOT"
+          python3 -m py_compile "$PATCH"
+          python3 "$PATCH" check "$ROOT"
+          OUT="$(python3 "$PATCH" apply "$ROOT")"
+          printf '%s\n' "$OUT"
+          if ! echo "$OUT" | grep -Fxq AM233_ALREADY_INSTALLED;then
+            rollback(){
+              echo AM233_VERIFY_FAILED_ROLLBACK
+              python3 "$PATCH" rollback "$ROOT" || true
+            }
+            trap rollback ERR
+          fi
+          php -l app/Http/Controllers/Web/AdminOslQuickMasterController.php
+          php -l routes/web.php
+          test -s resources/views/osl-masters/index.blade.php
+          grep -Fq AM233_OSL_MASTER_REGISTER resources/views/osl-masters/index.blade.php
+          php artisan route:list | grep -Fq 'erp.osl-masters.index'
+          php artisan route:list | grep -Fq 'erp.osl-masters.update'
+          trap - ERR
+          echo AM233_REGISTER_SOURCE_AND_ROUTES_VERIFIED
+
+          for p in /erp/login /staff/login;do
+            STATUS="$(curl -sSL --max-time 25 -o /dev/null -w '%{http_code}' "https://staging.assammotors.com$p")"
+            echo "AM233_HEALTH $p $STATUS"
+            test "$STATUS" = 200
+          done
+          echo AM233_STAGING_DEPLOY_SOURCE_CHECK_PASS_NO_FINANCIAL_WRITES
+          REMOTE_SCRIPT
+      - name: Cleanup SSH credential
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519

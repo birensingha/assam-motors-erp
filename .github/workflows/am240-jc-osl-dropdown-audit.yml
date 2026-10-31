@@ -1,0 +1,75 @@
+name: AM240 JC Add OSL Billing Master Dropdown audit
+on:
+  push:
+    branches: [fix/am217-osl-vendor-payment-audit-20261030]
+    paths:
+      - deployment/live-fixes/AM240_JC_OSL_DROPDOWN/audit.py
+      - .github/workflows/am240-jc-osl-dropdown-audit.yml
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch syntax and guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/AM240_JC_OSL_DROPDOWN/audit.py
+                    OUTPUT="$(python3 deployment/live-fixes/AM240_JC_OSL_DROPDOWN/audit.py /tmp/not-staging 2>&1 || true)"
+          printf '%s\n' "$OUTPUT" | grep -q 'AM240_STOP_NOT_STAGING'
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          for i in 1 2 3;do
+            if ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 2
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: AM229 read-only OSL workflow staging audit
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -p "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=15)
+            SCP=(scp -P "$PORT" -i ~/.ssh/id_ed25519 -o BatchMode=yes -o ConnectTimeout=15)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT" -o ConnectTimeout=15)
+            SCP=(sshpass -e scp -P "$PORT" -o ConnectTimeout=15)
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p -m 700 ~/AM240_JC_OSL_DROPDOWN'
+          "${SCP[@]}" deployment/live-fixes/AM240_JC_OSL_DROPDOWN/audit.py "$REMOTE:~/AM240_JC_OSL_DROPDOWN/"
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          ROOT="$1"
+          PATCH="$HOME/AM240_JC_OSL_DROPDOWN/audit.py"
+          python3 -m py_compile "$PATCH"
+          python3 "$PATCH" "$ROOT"
+          echo AM240_READONLY_STAGING_AUDIT_PASS
+          REMOTE_SCRIPT
+      - name: Cleanup SSH credential
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
