@@ -40,22 +40,32 @@ if marker in raw:
   print('AM228_ALREADY_INSTALLED')
   sys.exit(0)
  raise SystemExit('AM228_STOP_PARTIAL_DEPLOY')
-button="""{{-- P31_COUNTER_PARTS_INVOICE: direct Parts Sale without any Job Card. --}}
-<div style="display:flex;justify-content:flex-end;gap:9px;margin:10px 0 12px">
-<a href="{{ route('erp.counter-sales.create') }}" class="btn primary" style="background:#10835e;color:#fff;padding:11px 16px;border-radius:9px;font-weight:800">🧾 + Direct Parts Sale Invoice</a>
-</div>"""
+button_lines=[
+ "{{-- P31_COUNTER_PARTS_INVOICE: direct Parts Sale without any Job Card. --}}",
+ '<div style="display:flex;justify-content:flex-end;gap:9px;margin:10px 0 12px">',
+ """<a href="{{ route('erp.counter-sales.create') }}" class="btn primary" style="background:#10835e;color:#fff;padding:11px 16px;border-radius:9px;font-weight:800">🧾 + Direct Parts Sale Invoice</a>""",
+ '</div>',
+]
+original_lines=raw.splitlines(keepends=True)
+matched=[i for i in range(len(original_lines)-3)
+ if [line.strip() for line in original_lines[i:i+4]]==button_lines]
+if len(matched)!=1:raise SystemExit('AM228_STOP_DIRECT_SALE_BUTTON_BLOCK_'+str(len(matched)))
+button_index=matched[0]
+
 select="""<select name="type"><option value="">All Types</option><option value="PART" @selected($filters['type']==='PART')>PART</option><option value="OSL" @selected($filters['type']==='OSL')>OSL</option></select>"""
 style=".p18-purchase-register .p18-filter select[name=\"type\"]{flex:0 1 175px;min-width:140px}"
 mobile=".p18-purchase-register .p18-filter select[name=\"type\"]{flex:1 1 140px}"
 # Exact strong source anchors to prevent any edits on an unexpected staging version.
-for label,anchor in [('DIRECT_SALE_BUTTON',button),('ALL_TYPES_FILTER',select),('TYPE_STYLE',style),('MOBILE_TYPE_STYLE',mobile)]:
+for label,anchor in [('ALL_TYPES_FILTER',select),('TYPE_STYLE',style),('MOBILE_TYPE_STYLE',mobile)]:
  if raw.count(anchor)!=1:
   raise SystemExit('AM228_STOP_ANCHOR_'+label+'_COUNT_'+str(raw.count(anchor)))
 for necessary in ['<h1>Purchase Register</h1>',"route('erp.purchases.osl.create')",
                   "route('erp.purchases.create')",'<input name="q"', '>Search</button>',
                   "route('erp.purchases.index')",'<table class="data-table">']:
  if necessary not in raw:raise SystemExit('AM228_STOP_REQUIRED_REGISTER_CONTROL_MISSING')
-new=raw.replace(button, '{{-- AM228_PURCHASE_REGISTER_CLEANUP: Direct Parts Sale CTA removed from Purchase Register only. --}}',1)
+newline='\r\n' if original_lines[button_index].endswith('\r\n') else '\n'
+replacement='{{-- AM228_PURCHASE_REGISTER_CLEANUP: Direct Parts Sale CTA removed from Purchase Register only. --}}'+newline
+new=''.join(original_lines[:button_index]+[replacement]+original_lines[button_index+4:])
 new=new.replace(select,'',1).replace(style,'',1).replace(mobile,'',1)
 # No re-routing/deletion of the counter-sale workflow elsewhere.
 if new.count(marker)!=1 or 'Direct Parts Sale Invoice' in new or 'All Types' in new:
