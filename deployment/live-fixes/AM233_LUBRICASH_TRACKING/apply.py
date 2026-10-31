@@ -143,8 +143,8 @@ replace_once('service', "->leftJoin('workshop_vendors as v','v.id','=','e.vendor
 replace_once('service', "'v.vendor_code','v.vendor_name']);\n        if ($q !== '') {",
              "'v.vendor_code','v.vendor_name','am233staff.name as staff_name','am233staff.staff_code']);\n        if ($q !== '') {",
              'REGISTER_SELECT_STAFF')
-replace_once('service', "->orWhere('v.vendor_name','like',$like);",
-             "->orWhere('v.vendor_name','like',$like)->orWhere('am233staff.name','like',$like)->orWhere('am233staff.staff_code','like',$like)->orWhere('e.coupon_company','like',$like)->orWhere('e.coupon_no','like',$like);",
+replace_once('service', "->orWhere('jc.vehicle_reg_no','like',$like)->orWhere('jc.customer_name','like',$like)->orWhere('v.vendor_name','like',$like);",
+             "->orWhere('jc.vehicle_reg_no','like',$like)->orWhere('jc.customer_name','like',$like)->orWhere('v.vendor_name','like',$like)->orWhere('am233staff.name','like',$like)->orWhere('am233staff.staff_code','like',$like)->orWhere('e.coupon_company','like',$like)->orWhere('e.coupon_no','like',$like);",
              'REGISTER_SEARCH_STAFF_COUPON')
 replace_once('service', "if ($category !== '') $query->where('e.expense_category',$category);",
              "if ($category !== '') $query->where('e.expense_category',$category);\n        if((int)($filters['staff_id']??0)>0)$query->where('e.staff_id',(int)$filters['staff_id']);",
