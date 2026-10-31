@@ -153,8 +153,8 @@ if backup.exists():
     bv=backup/'create.blade.php.before_AM231'
     bc=backup/'controller.php.before_AM231'
     if not (bv.is_file() and bc.is_file()
-            and bv.read_text('utf8',errors='surrogateescape')==v
-            and bc.read_text('utf8',errors='surrogateescape')==c):
+            and bv.read_text('utf8',errors='surrogateescape')==view.read_text('utf8',errors='surrogateescape')
+            and bc.read_text('utf8',errors='surrogateescape')==ctrl.read_text('utf8',errors='surrogateescape')):
         raise SystemExit('AM231_STOP_STALE_BACKUP_MISMATCH_OR_LATER_PAYMENT_EDITS')
     print('AM231_PRIOR_FAILED_DEPLOY_BACKUP_MATCHES_CURRENT_SAFE_RETRY')
 else:
