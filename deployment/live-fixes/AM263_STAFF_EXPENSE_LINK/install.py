@@ -86,10 +86,11 @@ replace('view','pane.hidden=!isCoupon;',
  'VISIBLE_PANE')
 replace('view','staff.disabled=!isCoupon;','    staff.disabled=false;','STAFF_ENABLED')
 replace('view','staffSearch.disabled=!isCoupon;','    staffSearch.disabled=false;','STAFF_SEARCH_ENABLED')
-replace('view',"""  function syncEmployee(){
-    if(category.value==='LUBRICASH_COUPON')payee.value=staffName();
-  }""",
- """  function syncEmployee(){
+# Match the existing JS function regardless of indentation differences.
+pattern=r"(?m)^[ \t]*function syncEmployee\(\)\{\s*\n[ \t]*if\(category.value==='LUBRICASH_COUPON'\)payee.value=staffName\(\);\s*\n[ \t]*\}"
+matches=list(re.finditer(pattern,new['view']))
+if len(matches)!=1:raise SystemExit('AM263_STOP_SYNC_STAFF_GENERIC_COUNT_'+str(len(matches)))
+new['view']=new['view'][:matches[0].start()]+"""  function syncEmployee(){
     const name=staffName();
     if(staff.value){
       payee.value=name;
@@ -100,18 +101,9 @@ replace('view',"""  function syncEmployee(){
       payee.readOnly=false;
       vendor.disabled=false;
     }else payee.value='';
-  }""",
- 'SYNC_STAFF_GENERIC')
-replace('view',"""      if(preCouponPayee && !payee.value)payee.value=preCouponPayee;
-    }
-  }
-  category.addEventListener('change',sync);""",
- """      if(preCouponPayee && !payee.value)payee.value=preCouponPayee;
-    }
-    // Reapply selected employee lock after conditional vendor/payee controls.
-    syncEmployee();
-  }
-  category.addEventListener('change',sync);""",
+  }"""+new['view'][matches[0].end():]
+replace('view',"if(preCouponPayee && !payee.value)payee.value=preCouponPayee;",
+ "if(preCouponPayee && !payee.value)payee.value=preCouponPayee;\n      syncEmployee();",
  'SYNC_AFTER_MODE')
 # Explicit link from normal Expenses page to the balanced salary journal.
 replace('view','<div class="page-head"><div><h1>New Expense Voucher</h1>',
