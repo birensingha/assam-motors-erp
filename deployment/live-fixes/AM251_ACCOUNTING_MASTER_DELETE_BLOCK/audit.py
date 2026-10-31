@@ -27,4 +27,14 @@ for name in ['routes/web.php','resources/views/dashboard/configuration.blade.php
  for i,line in enumerate(p.read_text('utf8','replace').splitlines()):
   if re.search(r'(part|customer|expense|vendor|head).*(delete|destroy)|(delete|destroy).*(part|customer|expense|vendor|head)',line,re.I):
    print('AM251_ROUTE',name,i+1,line[:650])
+
+for name in ['resources/views/admin/native/parts.blade.php','resources/views/admin/native/labour.blade.php']:
+ p=root/name
+ if not p.is_file():continue
+ print('AM252_VIEW_BEGIN',name)
+ for i,line in enumerate(p.read_text('utf8','replace').splitlines()):
+  if re.search(r'password|secret|bearer|authorization',line,re.I):continue
+  if re.search(r'delet|activ|edit|error|success|form|route',line,re.I):
+   print('AM252_VIEW_LINE',i+1,line[:800])
+ print('AM252_VIEW_END',name)
 print('AM251_NO_DB_CALLS')
