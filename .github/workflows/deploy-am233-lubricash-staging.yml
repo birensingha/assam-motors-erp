@@ -1,4 +1,5 @@
 name: AM233 Staff Lubricash Coupon Expense and Payment Audit STAGING
+# AM233_SAFE_RETRY_AFTER_VERIFIER_FIX: validate audited linked-payment PHP render after safe source rollback.
 on:
   pull_request:
     paths:
