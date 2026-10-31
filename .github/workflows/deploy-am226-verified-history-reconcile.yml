@@ -1,0 +1,85 @@
+name: AM226 Reconcile Only Verified Historical Attendance Alerts STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-am226-verified-history-reconcile.yml'
+      - 'deployment/live-fixes/AM226_MANDATORY_ALERTS_DEDUP/reconcile_verified.php'
+permissions: {contents: read, issues: write}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP CLI source lint
+        id: qa
+        run: php -l deployment/live-fixes/AM226_MANDATORY_ALERTS_DEDUP/reconcile_verified.php
+      - name: STAGING SSH
+        id: ssh
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$KEY" || test -n "$PASSWORD"
+          install -d -m 700 ~/.ssh
+          for n in 1 2 3 4;do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq;sudo apt-get install -qq -y sshpass
+          fi
+      - name: Verify private backup and reconcile ONLY recorded fulfilled actions
+        id: deploy
+        run: |
+          set -euo pipefail
+          REMOTE="$USERNAME@$HOST"
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -o ConnectTimeout=14 -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT")
+            SCP=(sshpass -e scp -P "$PORT")
+          fi
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM226_RECONCILE"'
+          "${SCP[@]}" deployment/live-fixes/AM226_MANDATORY_ALERTS_DEDUP/reconcile_verified.php "$REMOTE:~/AM226_RECONCILE/reconcile.php"
+          "${SSH[@]}" "$REMOTE" "set -e
+            DIR='$ROOT/storage/app/am-backups/AM212_ROT_WORK_PROCEDURE'
+            CHECK=\$(find \"\$DIR\" -maxdepth 1 -name 'staging_before_AM212_*.sql.sha256' -type f -mtime -2 2>/dev/null | sort | tail -1)
+            if [ -z \"\$CHECK\" ];then echo AM226_RECONCILE_STOP_RECENT_BACKUP_MISSING;exit 2;fi
+            (cd \"\$DIR\" && sha256sum -c \"\$(basename \"\$CHECK\")\" >/dev/null)
+            echo AM226_RECONCILE_RECENT_PRIVATE_BACKUP_VERIFIED
+            php -l ~/AM226_RECONCILE/reconcile.php
+            php ~/AM226_RECONCILE/reconcile.php check '$ROOT'
+            php ~/AM226_RECONCILE/reconcile.php apply '$ROOT'
+            php ~/AM226_RECONCILE/reconcile.php check '$ROOT'
+          " 2>&1 | tee "$RUNNER_TEMP/am226_reconcile.txt"
+      - name: Report aggregate-only result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QA: ${{ steps.qa.outcome }}
+          SSH_STATUS: ${{ steps.ssh.outcome }}
+          DEPLOY_STATUS: ${{ steps.deploy.outcome }}
+        run: |
+          marks=""
+          if [ -f "$RUNNER_TEMP/am226_reconcile.txt" ];then
+            marks="$(grep '^AM226_RECONCILE_' "$RUNNER_TEMP/am226_reconcile.txt" | tail -13 | tr '\n' ';' | cut -c1-1100 || true)"
+          fi
+          body="AM226 verified historical attendance reminder reconciliation: PHP source=$QA SSH=$SSH_STATUS apply=$DEPLOY_STATUS. $marks. No attendance records or job/finance data modified. Browser QA pending. https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          gh api repos/"$GITHUB_REPOSITORY"/issues/124/comments -f body="$body" || true
+      - name: Remove SSH material
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
