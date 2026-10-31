@@ -57,7 +57,7 @@ jobs:
           fi
           "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM238_ROLLBACK_QA"'
           "${SCP[@]}" deployment/live-fixes/AM238_VENDOR_DEBIT_SETTLEMENT/test-rollback.php "$REMOTE:~/AM238_ROLLBACK_QA/"
-          "${SSH[@]}" "$REMOTE" "cd '$ROOT' && php ~/AM238_ROLLBACK_QA/verify.php"
+          "${SSH[@]}" "$REMOTE" "cd '$ROOT' && php ~/AM238_ROLLBACK_QA/test-rollback.php"
       - name: Remove temporary key
         if: always()
         shell: bash
