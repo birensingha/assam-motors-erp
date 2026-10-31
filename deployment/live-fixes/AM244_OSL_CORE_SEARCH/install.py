@@ -4,7 +4,7 @@ check|apply|rollback STAGING_ROOT. Only alters Job Card Blade; no finance/DB wri
 The previously external AM242 script is removed from runtime to avoid racing the core.
 """
 from pathlib import Path
-import sys,os,tempfile,hashlib,json,subprocess,shutil
+import sys,os,tempfile,hashlib,json,subprocess,shutil,re
 if len(sys.argv)!=3 or sys.argv[1] not in ('check','apply','rollback'):raise SystemExit('AM244_USAGE')
 mode=sys.argv[1];root=Path(sys.argv[2]).expanduser().resolve()
 if root.name!='assam-erp-staging' or not (root/'artisan').is_file():raise SystemExit('AM244_STOP_NOT_STAGING')
@@ -37,9 +37,10 @@ if marker in old:
  raise SystemExit('AM244_STOP_PARTIAL')
 if 'AM243_JC_OSL_SEARCH_INLINE' not in old or 'AM146_OSL_MASTER' not in old:
  raise SystemExit('AM244_STOP_PREREQUISITE_MISSING')
-anchor="""   masterRow.append(label,add,feedback);
-   form.insertBefore(masterRow,form.firstChild.nextSibling);"""
-if old.count(anchor)!=1:raise SystemExit('AM244_STOP_CORE_CONSTRUCTOR_ANCHOR_COUNT_'+str(old.count(anchor)))
+anchor_pattern=r"(?m)^[ \\t]*masterRow\\.append\\(label,add,feedback\\);[ \\t]*\\r?\\n[ \\t]*form\\.insertBefore\\(masterRow,form\\.firstChild\\.nextSibling\\);"
+matches=list(re.finditer(anchor_pattern,old))
+if len(matches)!=1:raise SystemExit('AM244_STOP_CORE_CONSTRUCTOR_ANCHOR_COUNT_'+str(len(matches)))
+anchor=matches[0].group(0)
 # Use the source of truth already proven by the Create button visible on screen.
 code=r"""   // AM244_OSL_CORE_SEARCH: the Master search is created by the EXACT SAME
    // constructor that creates the Create OSL Master button. No async asset race.
