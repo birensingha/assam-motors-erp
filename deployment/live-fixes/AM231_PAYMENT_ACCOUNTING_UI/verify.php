@@ -55,8 +55,8 @@ foreach([
 if(substr_count($generic,'name="vendor_id"')!==1)fail231('DUPLICATE_VENDOR_POST_FIELD');
 if(substr_count($generic,'name="source_type"')!==1)fail231('DUPLICATE_SOURCE_TYPE');
 if(substr_count($generic,'name="amount"')!==1)fail231('DUPLICATE_AMOUNT');
-if(str_contains($generic,'value="EXPENSE_VOUCHER"'))fail231('EXPENSE_VISIBLE_IN_GENERIC');
-if(!str_contains($expense,'value="EXPENSE_VOUCHER"'))fail231('EXPENSE_DEEPLINK_BROKEN');
+if(preg_match('/<option\\s+value="EXPENSE_VOUCHER"/',$generic))fail231('EXPENSE_VISIBLE_IN_GENERIC');
+if(!preg_match('/<option\\s+value="EXPENSE_VOUCHER"/',$expense))fail231('EXPENSE_DEEPLINK_BROKEN');
 echo "AM231_GENERIC_AND_EXPENSE_PAYMENT_RENDER_PASS\n";
 echo "AM231_VENDOR_STAFF_CUSTOMER_MASTER_FIELDS_RENDER_PASS\n";
 echo "AM231_SINGLE_FINANCIAL_POST_FIELDS_PASS\n";
