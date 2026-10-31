@@ -8,7 +8,7 @@ const names=[
 ];
 assert.deepEqual(filterVendorNames(names,'s.k').map(x=>x[0]),['20']);
 assert.deepEqual(filterVendorNames(names,'SAHERA').map(x=>x[0]),['10']);
-assert.deepEqual(filterVendorNames(names,'engineering works').map(x=>x[0]),['20']);
+assert.deepEqual(filterVendorNames(names,'S.K. ENGINEERING').map(x=>x[0]),['20']);
 assert.deepEqual(filterVendorNames(names,'').map(x=>x[0]),['30','20','10']);
 assert.deepEqual(filterVendorNames(names,'OB-261030184631-517'),[]);
 assert.deepEqual(filterVendorNames(names,'₹2000'),[]);
