@@ -17,6 +17,13 @@ function init(){
  const sourceKey=$('source-key');
  if([form,category,purpose,source,ref,vendorSlot,staffArea,customerArea,
      staffSelect,customerSelect,vendor,payee,amount,save,notice,note,preview].some(v=>!v))return;
+ const oldSourceLabel=source.closest('label');
+ if(!oldSourceLabel)return;
+ // Move the original backend source_type SELECT rather than duplicating it.
+ const oldSourceText=Array.from(oldSourceLabel.childNodes).find(n=>n.nodeType===3);
+ if(oldSourceText)oldSourceText.nodeValue='Reference Type *\\n';
+ ref.appendChild(oldSourceLabel);
+ let previousCategory=category.value;
  let lastVendorSource='PURCHASE_INVOICE';
  let lastVendorPurpose='REFERENCE';
  const vendorSearch=$('am230-payee-box')?.querySelector('input[aria-label="Filter Vendor Master"]');
@@ -74,8 +81,8 @@ function init(){
   }else{
     notice.textContent='Select Vendor Master once. Changing Payment Against does not remove the selected vendor.';
     note.textContent='Vendor · Against Reference pays outstanding Parts / OSL bills; Advance and On Account remain unallocated pending adjustment.';
-    save.disabled=false;
-    save.textContent='✓ POST PAYMENT VOUCHER';
+    // Recompute original AM226 validity; never force-enable invalid allocations.
+    amount.dispatchEvent(new Event('input',{bubbles:true}));
     if(purpose.value==='REFERENCE'){
       if(!restoreReference()){
         source.value=lastVendorSource==='OSL_JOB'?'OSL_JOB':'PURCHASE_INVOICE';
@@ -130,6 +137,11 @@ function init(){
    if(restoreReference()){lastVendorSource=source.value;lastVendorPurpose='REFERENCE';}
  });
  category.addEventListener('change',function(){
+   if(category.value!==previousCategory){
+     amount.value='';
+     payee.value='';
+     previousCategory=category.value;
+   }
    if(category.value!=='VENDOR'){
      if(purpose.value==='REFERENCE')purpose.value='ADVANCE';
    }else if(lastVendorPurpose==='REFERENCE'){
