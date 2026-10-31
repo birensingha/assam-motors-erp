@@ -36,3 +36,8 @@ for name,(relative,spans) in more.items():
   print('AM240_MORE_'+name+'_'+str(a)+'_'+str(b))
   for i in range(a-1,min(b,len(lines))):
    print('AM240_LINE_'+name+'_'+str(i+1)+' '+lines[i][:420])
+
+p=root/'app/Models/ErpAuthUser.php'
+if p.is_file():
+ for i,l in enumerate(p.read_text('utf8',errors='surrogateescape').splitlines()):
+  if i<155:print('AM240_AUTH_MODEL_'+str(i+1)+' '+l[:380])
