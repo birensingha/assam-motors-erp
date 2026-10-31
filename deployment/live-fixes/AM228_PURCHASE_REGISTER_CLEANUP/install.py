@@ -86,7 +86,7 @@ file_put_contents($argv[3],$app->make('blade.compiler')->compileString(file_get_
  if proc.returncode:raise SystemExit('AM228_STOP_BLADE_COMPILE '+proc.stderr[-400:])
  proc=subprocess.run(['php','-l',str(compiled)],cwd=root,text=True,capture_output=True,timeout=30)
  if proc.returncode:raise SystemExit('AM228_STOP_COMPILED_PHP_LINT '+(proc.stdout+proc.stderr)[-400:])
- if marker not in read(compiled):raise SystemExit('AM228_STOP_RENDER_MARKER_MISSING')
+ if 'Purchase Register' not in read(compiled):raise SystemExit('AM228_STOP_COMPILED_REGISTER_HEADING_MISSING')
  print('AM228_BLADE_PHP_COMPILE_PASS')
 if mode=='check':
  print('AM228_CHECK_PASS_NO_FILE_OR_FINANCIAL_WRITES')
