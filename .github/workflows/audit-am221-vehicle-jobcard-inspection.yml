@@ -1,0 +1,62 @@
+name: AM221 Vehicle and JC Ownership and Inspection Readonly Audit
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/audit-am221-vehicle-jobcard-inspection.yml'
+      - 'deployment/live-fixes/AM221_VEHICLE_JC_RELATIONSHIP_AUDIT/audit.py'
+permissions: {contents: read, issues: write}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read-only sources and table metadata from STAGING
+        id: audit
+        run: |
+          set -euo pipefail
+          FILE=deployment/live-fixes/AM221_VEHICLE_JC_RELATIONSHIP_AUDIT/audit.py
+          python3 -m py_compile "$FILE"
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$KEY" || test -n "$PASSWORD"
+          install -d -m 700 ~/.ssh
+          for n in 1 2 3 4;do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+            SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            sudo apt-get update -qq;sudo apt-get install -qq -y sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT")
+            SCP=(sshpass -e scp -P "$PORT")
+          fi
+          REMOTE="$USERNAME@$HOST"
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM221_READONLY"'
+          "${SCP[@]}" "$FILE" "$REMOTE:~/AM221_READONLY/audit.py"
+          "${SSH[@]}" "$REMOTE" "python3 ~/AM221_READONLY/audit.py '$ROOT'" | tee "$RUNNER_TEMP/am221_audit.txt"
+          grep -Fq 'AM221_READONLY_COMPLETE_NO_DB_WRITES' "$RUNNER_TEMP/am221_audit.txt"
+      - name: Report completion no user records
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          AUDIT_STAGE: ${{ steps.audit.outcome }}
+        run: |
+          body="AM221 Vehicle Make Model Variant, JC customer-owned vehicle and Inspection read-only source audit=$AUDIT_STAGE. Inspect workflow logs; no customer/vehicle records or DB mutations. https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          gh api repos/"$GITHUB_REPOSITORY"/issues/124/comments -f body="$body" || true
+      - name: Remove SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
