@@ -189,8 +189,8 @@ replace('view',"'Unadjusted payment: '+money(remaining)+'. Select more bills or 
 replace('view','save.disabled=posting||!validPayment||!currentVendor||count<1||invalid||remaining!==0;',
                'save.disabled=posting||!validPayment||!currentVendor||count<1||invalid||remaining<0;',
 'AM225_PERMIT_EXCESS_ON_ACCOUNT')
-replace('view','const payment=paisa(amount.value);\n    if(!Number.isFinite(payment)||payment<=0)',
-               'const payment=paisa(amount.value)+(root.AM238Debit?.totalCents?.()||0);\n   if(!Number.isFinite(payment)||payment<=0)',
+replace('view','const payment=paisa(amount.value);',
+               'const payment=paisa(amount.value)+(root.AM238Debit?.totalCents?.()||0);',
 'AM225_AUTOADJUST_USES_CASH_PLUS_DEBIT')
 replace('view','const plan=allocateOldestFirst(amount.value,selected());',
                "const plan=allocateOldestFirst((payment/100).toFixed(2),selected());",
