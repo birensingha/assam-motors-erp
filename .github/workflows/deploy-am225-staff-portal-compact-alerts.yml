@@ -1,0 +1,83 @@
+name: AM225 Compact Staff Portal and Actionable Notifications STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-am225-staff-portal-compact-alerts.yml'
+      - 'deployment/live-fixes/AM225_STAFF_PORTAL_COMPACT_ALERTS/**'
+permissions: {contents: read, issues: write}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static Python and Blade source preflight
+        id: qa
+        run: |
+          set -euo pipefail
+          PKG=deployment/live-fixes/AM225_STAFF_PORTAL_COMPACT_ALERTS
+          python3 -m py_compile "$PKG/install.py"
+          grep -Fq 'AM225_STAFF_PORTAL_COMPACT_ALERTS' "$PKG/panel.blade.php"
+          grep -Fq 'AM225_STAFF_PORTAL_COMPACT_ALERTS' "$PKG/layout.blade.php"
+          grep -Fq 'Open Attendance' "$PKG/panel.blade.php"
+      - name: Prepare STAGING SSH
+        id: ssh
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$KEY" || test -n "$PASSWORD"
+          install -d -m 700 ~/.ssh
+          for n in 1 2 3 4; do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then break; fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Source-only STAGING deploy with Blade compiler gate and backup
+        id: deploy
+        run: |
+          set -euo pipefail
+          REMOTE="$USERNAME@$HOST"
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -o ConnectTimeout=14 -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=14 -p "$PORT")
+            SCP=(sshpass -e scp -o ConnectTimeout=14 -P "$PORT")
+          fi
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM225_STAFF_PORTAL"'
+          "${SCP[@]}" deployment/live-fixes/AM225_STAFF_PORTAL_COMPACT_ALERTS/install.py deployment/live-fixes/AM225_STAFF_PORTAL_COMPACT_ALERTS/layout.blade.php deployment/live-fixes/AM225_STAFF_PORTAL_COMPACT_ALERTS/panel.blade.php "$REMOTE:~/AM225_STAFF_PORTAL/"
+          "${SSH[@]}" "$REMOTE" "python3 ~/AM225_STAFF_PORTAL/install.py check '$ROOT' && python3 ~/AM225_STAFF_PORTAL/install.py apply '$ROOT'" 2>&1 | tee "$RUNNER_TEMP/am225_result.txt"
+      - name: Report stage without staff data
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QA_RESULT: ${{ steps.qa.outcome }}
+          SSH_RESULT: ${{ steps.ssh.outcome }}
+          DEPLOY_RESULT: ${{ steps.deploy.outcome }}
+        run: |
+          marks=""
+          if [ -f "$RUNNER_TEMP/am225_result.txt" ];then
+            marks="$(grep '^AM225_' "$RUNNER_TEMP/am225_result.txt" | tail -11 | tr '\n' ';' | cut -c1-1300 || true)"
+          fi
+          body="AM225 compact Staff Portal alerts and fixed Open Work targets: source=$QA_RESULT SSH=$SSH_RESULT deploy=$DEPLOY_RESULT. $marks. Browser click/scroll/attendance QA pending. Android untouched. https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          gh api repos/"$GITHUB_REPOSITORY"/issues/124/comments -f body="$body" || true
+      - name: Cleanup SSH credential
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
