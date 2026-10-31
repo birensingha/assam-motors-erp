@@ -251,7 +251,7 @@ function init(){
     const label=doc.createElement('strong');label.textContent=entry.label;
     button.append(label);
     // Pointerdown prevents blur from cancelling the selection.
-    button.addEventListener('pointerdown',event=>{event.preventDefault();chooseVendor(entry);});
+    button.addEventListener('pointerdown',event=>event.preventDefault());
     button.addEventListener('click',()=>chooseVendor(entry));
     menu.append(button);
   });
