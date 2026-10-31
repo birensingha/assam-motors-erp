@@ -34,4 +34,22 @@ for path,spans in ranges.items():
     if re.search(r'(?i)password|secret|token|authorization',line):continue
     print('AM237_LINE',i+1,line[:600])
   print('AM237_SOURCE_END',path)
+print('AM238_TARGETED_BEGIN')
+for name,ranges in {
+ 'resources/views/dashboard/configuration.blade.php':[(1,70)],
+ 'resources/views/layouts/erp.blade.php':[(150,340)],
+ 'app/Http/Controllers/Web/AdminDashboardPageController.php':[(115,160)],
+ 'resources/views/purchases/osl-create.blade.php':[(310,470)],
+ 'app/Services/PurchaseService.php':[(600,760)]
+}.items():
+ p=root/name
+ if not p.is_file():continue
+ lines=p.read_text('utf8','replace').splitlines()
+ for start,end in ranges:
+  print('AM238_SECTION',name,start,end)
+  for index in range(start-1,min(end,len(lines))):
+   text=lines[index]
+   if re.search(r'(?i)password|secret|authorization|token',text):continue
+   print('AM238_LINE',index+1,text[:800])
+print('AM238_TARGETED_END')
 print('AM237_READONLY_COMPLETE')
