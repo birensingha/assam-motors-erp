@@ -5,6 +5,8 @@
     const select = row.querySelector('.job-select');
     const wrap = row.querySelector('.job-filter-wrap');
     if (!filter || !select || !wrap || wrap.querySelector('.am248-job-menu')) return;
+    select.tabIndex=-1;select.setAttribute('aria-hidden','true');
+    select.style.setProperty('display','none','important');
     // Never mutate the select's full option list while searching.
     const source = [...select.options].filter(o => o.value)
       .map(o => ({value:o.value, text:String(o.textContent || '').trim()}));
@@ -15,7 +17,7 @@
     menu.className='am248-job-menu';menu.hidden=true;menu.setAttribute('role','listbox');
     const status = document.createElement('span');
     status.className='am248-sr-only';status.setAttribute('role','status');
-    wrap.append(menu,status);
+    document.body.appendChild(menu);wrap.appendChild(status);
     filter.setAttribute('role','combobox');
     filter.setAttribute('aria-autocomplete','list');
     filter.setAttribute('aria-expanded','false');
@@ -69,6 +71,18 @@
           menu.append(button);
         });
       }
+      // Render outside the horizontally scrollable purchase grid so options do
+      // not get clipped by line-scroll overflow.
+      const rect=filter.getBoundingClientRect();
+      const width=Math.max(240,Math.min(rect.width,window.innerWidth-18));
+      const left=Math.max(8,Math.min(rect.left,window.innerWidth-width-8));
+      const below=window.innerHeight-rect.bottom;
+      const maxH=Math.min(260,Math.max(140,window.innerHeight-24));
+      const openAbove=below<160 && rect.top>below;
+      menu.style.left=left+'px';
+      menu.style.width=width+'px';
+      menu.style.maxHeight=maxH+'px';
+      menu.style.top=openAbove ? Math.max(8,rect.top-Math.min(maxH,menu.scrollHeight||maxH)-5)+'px' : rect.bottom+4+'px';
       menu.hidden=false;filter.setAttribute('aria-expanded','true');
       status.textContent=matches.length+' matching Job Cards';
     }
@@ -111,6 +125,9 @@
       close();
     });
     select.addEventListener('change',sync);
-    document.addEventListener('pointerdown',e=>{if(!wrap.contains(e.target))close();});
+    document.addEventListener('pointerdown',e=>{
+      if(!wrap.contains(e.target)&&!menu.contains(e.target))close();
+      if(!filter.isConnected)menu.remove();
+    });
     sync();
   }
