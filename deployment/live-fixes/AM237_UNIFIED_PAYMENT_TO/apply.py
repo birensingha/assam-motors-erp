@@ -47,7 +47,7 @@ def swap(k,a,b,label):
 view=original['view']
 ctrl=original['controller']
 for name,needle,source in [
- ('AM236_AUTO_REFERENCE','AM236_VENDOR_NEW_REFERENCE',ctrl),
+ ('AM236_AUTO_REFERENCE','// AM236 vendor New Reference and Advance must have real vendor + reference identity.',ctrl),
  ('AM230_FAIL_CLOSED','AM230 no Staff/Customer ledger key',ctrl),
  ('AM234_FEATURE_SELECTOR','id="am234-feature-panel"',view),
  ('AM235_SINGLE_VENDOR','AM235_SINGLE_VENDOR_MASTER_COMBOBOX',view),
