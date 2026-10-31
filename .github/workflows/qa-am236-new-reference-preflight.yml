@@ -26,6 +26,20 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile deployment/live-fixes/AM236_PAYMENT_REFERENCE_FLOW/apply.py
+          python3 - <<'PY'
+          import ast
+          from pathlib import Path
+          source=Path('deployment/live-fixes/AM236_PAYMENT_REFERENCE_FLOW/apply.py').read_text()
+          parsed=ast.parse(source)
+          for node in ast.walk(parsed):
+              if isinstance(node,ast.Assign) and any(isinstance(t,ast.Name) and t.id=='js' for t in node.targets) and isinstance(node.value,ast.Constant):
+                  value=node.value.value
+                  assert '<script' in value and '</script>' in value
+                  Path('/tmp/am236-inline.js').write_text(value.split('>',1)[1].rsplit('</script>',1)[0])
+                  break
+          else:raise SystemExit('AM236 inline JS source not found')
+          PY
+          node --check /tmp/am236-inline.js
 
       - name: Configure SSH (no financial access)
         shell: bash
