@@ -97,6 +97,9 @@ border-radius:8px;padding:9px 13px;cursor:pointer}
 .am225-auto:hover{background:#d4eaff}
 .am225-summary{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:#28506c}
 .am225-summary strong{color:#164a78}
+#am225-amount-first-slot:not([hidden]){display:block;margin:0 0 12px;padding:10px 12px;border:1px solid #a8cde7;background:#f1f8ff;border-radius:9px}
+#am225-amount-first-slot .p133-label>input{min-height:44px;width:100%;box-sizing:border-box}
+#am225-amount-first-slot .p133-label{font-size:11px;font-weight:850;color:#174d78}
 </style>""",
  'PAYMENT_FIRST_CSS')
 for n in paths:
