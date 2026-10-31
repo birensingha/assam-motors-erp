@@ -97,7 +97,7 @@ panel='''{{-- AM237_UNIFIED_PAYMENT_TO: one Payment To, one Payment Against, amo
  <div id="am237-osl-vendor-ids" hidden>{{ implode(',', array_map('strval', $am237OslVendorIds ?? [])) }}</div>
 </section>
 '''
-swap('view','<div class="p133-body">',panel+'<div class="p133-body">','MAIN_PANEL_INSERT')
+swap('view','<div class="p133-body">',"@if(request('source')!=='EXPENSE_VOUCHER')\n"+panel+"@endif\n"+'<div class="p133-body">','MAIN_PANEL_INSERT')
 swap('view','@endpush','<script id="am237-unified-script">\n'+js+'\n</script>\n@endpush','SCRIPT_INSERT')
 # Controller: include OSL suppliers as Vendor Master participants (same vendor_id ledger).
 swap('controller',"->orderBy('name')->limit(5000)->get(['id','customer_code','name']),\n        ]);",
@@ -115,7 +115,7 @@ guard="""        // AM237: auto-generated references are derived server-side fro
                 return back()->withErrors(['request_key'=>'Invalid voucher request identity. No payment saved.'])->withInput();
             }
             $prefix=$request->input('source_type')==='ADVANCE'?'ADV-':'NR-';
-            $number=$prefix.now('Asia/Kolkata')->format('Ymd').'-'.strtoupper(substr(str_replace('-','',$requestKey),0,12));
+            $day=(string)$request->input('payment_date','');\n            $date=\\DateTimeImmutable::createFromFormat('!Y-m-d',$day);\n            $datePart=$date && $date->format('Y-m-d')===$day ? $date->format('Ymd') : now('Asia/Kolkata')->format('Ymd');\n            $number=$prefix.$datePart.'-'.strtoupper(substr(str_replace('-','',$requestKey),0,12));
             $request->merge(['source_reference'=>$number,'source_key'=>null]);
         }
         if (!$request->boolean('multi_bill') && (string)$request->input('source_type')==='ON_ACCOUNT') {
