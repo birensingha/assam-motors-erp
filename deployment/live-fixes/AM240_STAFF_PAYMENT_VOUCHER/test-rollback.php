@@ -19,9 +19,12 @@ function check240(bool $condition,string $message): void {
 $person=DB::table('staff')->where('status','Active')->first(['id','name']);
 if(!$person)$person=DB::table('staff')->first(['id','name']);
 if(!$person)throw new RuntimeException('AM240_QA_FAIL_NO_STAFF_MASTER_FOR_TRANSACTION_TEST');
-$fakeUser=new ErpAuthUser();
-$fakeUser->id=0;$fakeUser->role='admin';$fakeUser->active=true;
-$fakeUser->name='AM240 Finance QA Rollback';$fakeUser->email='am240-test@invalid.local';
+// Resolve a real authorized admin model from the ERP auth table, without reading credentials.
+// This identity is used ONLY for a fully rolled-back financial QA transaction.
+$fakeUser=ErpAuthUser::query()->whereRaw('LOWER(role) = ?', ['admin'])->where('active',1)->first();
+check240($fakeUser instanceof ErpAuthUser && $fakeUser->isAdmin() && $fakeUser->active,
+ 'AUTHENTIC_ADMIN_MODEL_MISSING');
+echo "AM240_QA_ADMIN_USER_MODEL_READONLY_PASS\n";
 function makeRequest(array $data,ErpAuthUser $user): Request {
  $request=Request::create('/erp/payments','POST',$data);
  $request->setUserResolver(static fn()=>$user);
@@ -41,6 +44,9 @@ try {
   'salary_month'=>$month,'amount'=>'75.00',
   'narration'=>'AM240 rollback staff provision only','request_key'=>$uuid0
  ],$fakeUser);
+ check240($provision->user() instanceof ErpAuthUser && $provision->user()->isAdmin() &&
+   strtolower((string)$provision->user()->role)==='admin','REQUEST_USER_RESOLVER_MISMATCH');
+ echo "AM240_QA_REQUEST_USER_AUTHORIZATION_PASS\n";
  app(AdminStaffFinanceLedgerController::class)->store($provision);
  check240(DB::table('workshop_staff_finance_journals')->where('request_key',$uuid0)->exists(),'PROVISION_NOT_POSTED_IN_ROLLBACK');
 
