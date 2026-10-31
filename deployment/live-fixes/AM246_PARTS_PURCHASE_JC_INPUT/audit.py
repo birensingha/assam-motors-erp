@@ -25,4 +25,21 @@ for dr in roots:
      seen.add(n)
      if re.search(r'(?i)password|token|secret|authorization|bearer',lines[n]):continue
      print('AM246_LINE',n+1,lines[n][:900])
+
+for name,ranges in {
+ 'public/js/purchase-entry.js':[(300,351),(380,465)],
+ 'public/js/purchase-edit.js':[(210,285),(360,435)],
+ 'resources/views/purchases/create.blade.php':[(388,442)],
+ 'resources/views/purchases/edit.blade.php':[(465,526)]
+}.items():
+ p=root/name
+ if not p.is_file():continue
+ source=p.read_text('utf8','replace').splitlines()
+ for start,end in ranges:
+  print('AM247_SECTION',name,start,end)
+  for i in range(start-1,min(end,len(source))):
+   line=source[i]
+   if re.search(r'(?i)password|secret|bearer|authorization',line):continue
+   print('AM247_LINE',i+1,line[:800])
+print('AM247_READONLY_DONE')
 print('AM246_READONLY_DONE')
