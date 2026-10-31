@@ -54,7 +54,7 @@ stylesheet=css.read_text('utf8')
 javascript=js.read_text('utf8')
 if 'AM235:' not in stylesheet or 'AM235 compact single searchable Vendor Master field' not in javascript:
     raise SystemExit('AM235_STOP_ASSETS_SIGNATURE_INVALID')
-style='<style id="am235-vendor-style">\n'+stylesheet+'\n</style>\n'
+style='{{-- AM235_SINGLE_VENDOR_MASTER_COMBOBOX --}}\n<style id="am235-vendor-style">\n'+stylesheet+'\n</style>\n'
 script='<script id="am235-vendor-script">\n'+javascript+'\n</script>\n'
 new=old.replace('<div id="am230-payee-box" class="p133-full am230-payee">',
     style+'<div id="am230-payee-box" class="p133-full am230-payee">',1)
