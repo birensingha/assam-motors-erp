@@ -22,7 +22,7 @@ $controller=file_get_contents('app/Http/Controllers/Web/AdminExpensePaymentPageC
 $impl=file_get_contents('app/Services/ExpensePaymentService.php');
 $routes=file_get_contents('routes/web.php');
 if(!str_contains($impl,'AM233_STAFF_LUBRICASH_AUDIT'))am233Fail('SERVICE_PATCH_MISSING');
-if(!str_contains($impl,'lockForUpdate()')||!str_contains($impl,"where('request_key',$requestKey)"))am233Fail('PAYMENT_LOCK_IDEMPOTENCY_MISSING');
+if(!str_contains($impl,'lockForUpdate()')||!str_contains($impl,'where(\'request_key\',$requestKey)'))am233Fail('PAYMENT_LOCK_IDEMPOTENCY_MISSING');
 if(!str_contains($controller,'payLubricashExpense('))am233Fail('STAFF_PAYOUT_POST_ACTION_MISSING');
 if(!str_contains($routes,'erp.expenses.lubricash-payment'))am233Fail('LINKED_EXPENSE_PAY_ROUTE_MISSING');
 try{
