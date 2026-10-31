@@ -116,11 +116,11 @@ replace('controller','    public function store(Request $request): JsonResponse'
 anchor="->name('erp.osl-masters.quick-create');"
 routes="""
     // AM233_OSL_MASTER_REGISTER: reusable OSL service register.
-    \\\\Illuminate\\\\Support\\\\Facades\\\\Route::get('/osl-masters',
-        [\\\\App\\\\Http\\\\Controllers\\\\Web\\\\AdminOslQuickMasterController::class,'index'])
+    \\Illuminate\\Support\\Facades\\Route::get('/osl-masters',
+        [\\App\\Http\\Controllers\\Web\\AdminOslQuickMasterController::class,'index'])
         ->name('erp.osl-masters.index');
-    \\\\Illuminate\\\\Support\\\\Facades\\\\Route::post('/osl-masters/{id}',
-        [\\\\App\\\\Http\\\\Controllers\\\\Web\\\\AdminOslQuickMasterController::class,'update'])
+    \\Illuminate\\Support\\Facades\\Route::post('/osl-masters/{id}',
+        [\\App\\Http\\Controllers\\Web\\AdminOslQuickMasterController::class,'update'])
         ->whereNumber('id')->name('erp.osl-masters.update');
 """
 replace('routes',anchor,anchor+'\n'+routes,'ROUTES')
