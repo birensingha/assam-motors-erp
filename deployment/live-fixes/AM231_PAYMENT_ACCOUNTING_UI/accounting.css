@@ -1,0 +1,30 @@
+/* AM231 Payment voucher accounting identity/purpose separation. */
+#am231-payment-purpose{width:100%;min-height:36px;border:1px solid #a8c3d9;border-radius:7px;padding:7px;background:#fff;color:#153f6a}
+#am231-purpose-wrap{border:1px solid #b5d1e7;border-radius:8px;padding:10px;margin:10px 0;background:#f7fbff}
+#am231-reference-choices{margin:8px 0 0}
+#am231-reference-choices[hidden],#am231-staff-area[hidden],#am231-customer-area[hidden]{display:none!important}
+.am231-recipient{padding:8px 0;display:flex;flex-direction:column;gap:5px}
+.am231-recipient>label{font-size:11px;color:#164b7d;font-weight:850}
+.am231-recipient input,.am231-recipient select{width:100%;min-height:36px;box-sizing:border-box;border:1px solid #abc7dc;border-radius:6px;background:#fff;padding:7px 10px}
+#am231-context-help{font-size:11px;color:#41627b;line-height:1.5;margin:5px 0}
+#am231-recipient-preview{font-size:11px;font-weight:800;color:#163e67;padding:6px 8px;border-radius:5px;background:#e9f2fb;margin:5px 0}
+#am230-payee-box .p133-label{font-size:11px}
+#am231-reference-choices .p133-label{margin:0!important}
+#am231-reference-choices select{width:100%}
+#payment-form.am231-non-vendor #am218-search-wrap,
+#payment-form.am231-non-vendor #p133-multi-toggle-wrap,
+#payment-form.am231-non-vendor #p133-multi-area,
+#payment-form.am231-non-vendor #known-source-field,
+#payment-form.am231-non-vendor #source-preview,
+#payment-form.am231-non-vendor #am226-vendor-master-select,
+#payment-form.am231-non-vendor #am231-reference-choices,
+#payment-form.am231-non-vendor #am225-amount-first-slot,
+#payment-form.am231-non-vendor #am230-vendor-slot{display:none!important}
+#payment-form.am231-non-vendor #p133-save{cursor:not-allowed;opacity:.60}
+#payment-form.am231-non-vendor .p133-guide{display:none}
+#payment-form.am231-non-vendor #manual-source-fields #payment-payee{background:#f1f6fc}
+#payment-form.am231-non-vendor .p133-label:has(>#payment-payee){display:none!important}
+#am231-posting-alert{display:block;padding:9px 10px;background:#fff5e7;border:1px solid #ebc490;border-radius:7px;color:#734813;font-size:11px;line-height:1.5}
+#payment-form.am231-category-vendor #am231-posting-alert{display:none}
+#payment-form.am231-non-vendor .p133-preview:before{content:'Staff / Customer accounting payout is not yet activated';display:block;background:#fff4e1;padding:8px;border:1px solid #ebcb8b;border-radius:7px;margin-bottom:7px;font-size:11px;color:#75400e}
+@media(max-width:700px){#am231-purpose-wrap{padding:8px}}
