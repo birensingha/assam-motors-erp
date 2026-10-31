@@ -88,10 +88,6 @@ once('service',
  "->select(['e.*','jc.job_no','jc.customer_name','jc.vehicle_reg_no','jc.vehicle_make','jc.vehicle_model','v.vendor_code','v.vendor_name','am232s.staff_code as am232_staff_code','am232s.name as am232_staff_name']);",
  'REGISTER_STAFF_SELECT')
 once('service',
- "'orWhere('v.vendor_name','like',$like);",
- "'orWhere('v.vendor_name','like',$like)->orWhere('am232s.name','like',$like)->orWhere('am232s.staff_code','like',$like);",
- 'REGISTER_SEARCH_STAFF')
-once('service',
  "if ($category !== '') $query->where('e.expense_category',$category);",
  "if ($category !== '') $query->where('e.expense_category',$category);\n        $staffFilter=(int)($filters['staff_id']??0);\n        if($staffFilter>0)$query->where('e.staff_id',$staffFilter);",
  'REGISTER_STAFF_FILTER')
