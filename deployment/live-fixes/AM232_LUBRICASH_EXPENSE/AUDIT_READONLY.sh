@@ -60,4 +60,19 @@ echo 'LUBRICASH_CATEGORY_EXISTS='.DB::table('workshop_expenses')->where('expense
 echo 'EXPENSES_UNPAID_COUNT='.DB::table('workshop_expenses')->where('record_status','ACTIVE')->where('payment_status','UNPAID')->count()."\n";
 PHP
 
+echo "=== EXPENSE MODEL AND MIGRATION ==="
+sed -n '1,105p' app/Models/WorkshopExpense.php | cut -c1-230
+sed -n '1,155p' database/migrations/2026_10_07_000002_create_expense_payment_voucher_module.php | cut -c1-230
+echo "=== EXPENSE SERVICE TOP & QUERIES ==="
+sed -n '1,38p' app/Services/ExpensePaymentService.php | cut -c1-230
+sed -n '120,132p' app/Services/ExpensePaymentService.php | cut -c1-230
+echo "=== ACTIVE UNPAID VOUCHERS NO IDENTIFIABLE PAYEE ==="
+php <<'PHP'
+<?php
+require getcwd().'/vendor/autoload.php';$app=require getcwd().'/bootstrap/app.php';$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+use Illuminate\Support\Facades\DB;
+$r=DB::table('workshop_expenses')->where('record_status','ACTIVE')->where('payment_status','UNPAID')->orderByDesc('id')->limit(3)->get(['expense_no','total_amount','paid_amount','expense_category']);
+foreach($r as $e)echo 'UNPAID_VOUCHER='.$e->expense_no.' CATEGORY='.$e->expense_category.' TOTAL='.$e->total_amount.' PAID='.$e->paid_amount."\n";
+PHP
+
 echo AM232_AUDIT_FINISHED_NO_WRITES
