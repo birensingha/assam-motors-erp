@@ -57,7 +57,15 @@ jobs:
           fi
           "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM240_ROLLBACK_QA"'
           "${SCP[@]}" deployment/live-fixes/AM240_STAFF_PAYMENT_VOUCHER/test-rollback.php "$REMOTE:~/AM240_ROLLBACK_QA/"
-          "${SSH[@]}" "$REMOTE" "cd '$ROOT' && php ~/AM240_ROLLBACK_QA/test-rollback.php"
+          OUTPUT=$("${SSH[@]}" "$REMOTE" "cd '$ROOT' && php ~/AM240_ROLLBACK_QA/test-rollback.php" 2>&1) || {
+            printf '%s\n' "$OUTPUT"
+            echo 'AM240_QA_BLOCKED_PHP_PROCESS_FAILED'
+            exit 1
+          }
+          printf '%s\n' "$OUTPUT"
+          printf '%s\n' "$OUTPUT" | grep -Fq 'AM240_QA_NO_PERSISTENT_FINANCIAL_RECORDS_PASS'
+          printf '%s\n' "$OUTPUT" | grep -Fq 'AM240_QA_STAFF_VOUCHER_VOID_AND_SALARY_LEDGER_REVERSAL_PASS'
+          ! printf '%s\n' "$OUTPUT" | grep -Fq 'AM240_QA_ERROR='
       - name: Remove temporary key
         if: always()
         shell: bash
