@@ -37,8 +37,11 @@ restore(){
 }
 trap restore ERR
 python3 "$HERE/apply.py" apply "$APP"
+python3 "$HERE/hotfix.py" check "$APP"
+python3 "$HERE/hotfix.py" apply "$APP"
 php artisan view:clear
 php artisan view:cache
+php "$HERE/verify-runtime.php"
 grep -Fq 'AM240_STAFF_PAYMENT_VOUCHER' app/Http/Controllers/Web/AdminExpensePaymentPageController.php
 grep -Fq 'am240-staff-panel' resources/views/payments/create.blade.php
 grep -Fq 'StaffPaymentVoucherService' app/Services/StaffPaymentVoucherService.php
