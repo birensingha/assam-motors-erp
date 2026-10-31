@@ -63,6 +63,9 @@ replace('service',serviceAnchor,serviceAdd,'STAFF_EXPENSE_SERVICE')
 replace('service',"'payee_type'=>$isCoupon?'STAFF':($vendorId>0?'VENDOR':'OTHER')",
  "'payee_type'=>$staffId>0?'STAFF':($vendorId>0?'VENDOR':'OTHER')",'STAFF_PAYMENT_KIND')
 # For non-Coupon expenses the existing employee selector becomes optional but visible.
+replace('view','#am233-lubricash[hidden]{display:none!important}',
+ '#am233-lubricash[hidden]{display:none!important} #am263-company-label[hidden],#am263-coupon-no-label[hidden]{display:none!important}',
+ 'HIDE_NON_COUPON_FIELDS')
 replace('view','<div class="am233-coupon-heading">Staff Lubricash Coupon — Oil Sale</div>',
  '<div class="am233-coupon-heading" id="am263-expense-staff-title">Staff Expense / Reimbursement (Optional Staff Link)</div>',
  'STAFF_EXPENSE_TITLE')
