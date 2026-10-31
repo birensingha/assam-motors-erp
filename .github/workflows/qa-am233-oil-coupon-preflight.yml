@@ -45,18 +45,21 @@ jobs:
             sudo apt-get update -qq
             sudo apt-get install -qq -y sshpass
           fi
-      - name: Compile expense coupon user-interface and posting validations
+      - name: Inspect existing AM233 source and DB columns read only
         shell: bash
         run: |
           set -euo pipefail
           if [ -n "$KEY" ]; then
-            ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519 "$USERNAME@$HOST" 'mkdir -p "$HOME/AM233_PREFLIGHT"'
-            ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519 "$USERNAME@$HOST" "cd '$ROOT' && python3 -m py_compile ~/AM233_PREFLIGHT/apply.py && python3 ~/AM233_PREFLIGHT/apply.py check '$ROOT'"
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -o ConnectTimeout=14 -P "$PORT" -i ~/.ssh/id_ed25519)
           else
             export SSHPASS="$PASSWORD"
-            sshpass -e ssh -o ConnectTimeout=14 -p "$PORT" "$USERNAME@$HOST" 'mkdir -p "$HOME/AM233_PREFLIGHT"'
-            sshpass -e ssh -o ConnectTimeout=14 -p "$PORT" "$USERNAME@$HOST" "cd '$ROOT' && python3 -m py_compile ~/AM233_PREFLIGHT/apply.py && python3 ~/AM233_PREFLIGHT/apply.py check '$ROOT'"
+            SSH=(sshpass -e ssh -o ConnectTimeout=14 -p "$PORT")
+            SCP=(sshpass -e scp -o ConnectTimeout=14 -P "$PORT")
           fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'mkdir -p "$HOME/AM233_PREFLIGHT"'
+          "${SCP[@]}" deployment/live-fixes/AM233_OIL_COUPON_AUDIT/verify_readonly.sh "$USERNAME@$HOST:~/AM233_PREFLIGHT/verify_readonly.sh"
+          "${SSH[@]}" "$USERNAME@$HOST" "bash ~/AM233_PREFLIGHT/verify_readonly.sh '$ROOT'"
       - name: Remove transient key
         if: always()
         shell: bash
