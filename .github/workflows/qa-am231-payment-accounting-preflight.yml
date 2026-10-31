@@ -53,13 +53,13 @@ jobs:
           set -euo pipefail
           if [ -n "$KEY" ]; then
             ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519 "$USERNAME@$HOST" 'mkdir -p "$HOME/AM231_PREFLIGHT"'
-            scp -o BatchMode=yes -o ConnectTimeout=14 -P "$PORT" -i ~/.ssh/id_ed25519 deployment/live-fixes/AM231_PAYMENT_ACCOUNTING_UI/apply.py deployment/live-fixes/AM231_PAYMENT_ACCOUNTING_UI/accounting.js deployment/live-fixes/AM231_PAYMENT_ACCOUNTING_UI/accounting.css "$USERNAME@$HOST:~/AM231_PREFLIGHT/"
-            ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519 "$USERNAME@$HOST" "cd '$ROOT' && python3 -m py_compile ~/AM231_PREFLIGHT/apply.py && python3 ~/AM231_PREFLIGHT/apply.py check '$ROOT'"
+            scp -o BatchMode=yes -o ConnectTimeout=14 -P "$PORT" -i ~/.ssh/id_ed25519 deployment/live-fixes/AM231_PAYMENT_ACCOUNTING_UI/apply.py deployment/live-fixes/AM231_PAYMENT_ACCOUNTING_UI/accounting.js deployment/live-fixes/AM231_PAYMENT_ACCOUNTING_UI/accounting.css deployment/live-fixes/AM231_PAYMENT_ACCOUNTING_UI/diagnose.py "$USERNAME@$HOST:~/AM231_PREFLIGHT/"
+            ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519 "$USERNAME@$HOST" "cd '$ROOT' && python3 -m py_compile ~/AM231_PREFLIGHT/apply.py && python3 ~/AM231_PREFLIGHT/apply.py check '$ROOT' && python3 ~/AM231_PREFLIGHT/diagnose.py '$ROOT'"
           else
             export SSHPASS="$PASSWORD"
             sshpass -e ssh -o ConnectTimeout=14 -p "$PORT" "$USERNAME@$HOST" 'mkdir -p "$HOME/AM231_PREFLIGHT"'
-            sshpass -e scp -o ConnectTimeout=14 -P "$PORT" deployment/live-fixes/AM231_PAYMENT_ACCOUNTING_UI/apply.py deployment/live-fixes/AM231_PAYMENT_ACCOUNTING_UI/accounting.js deployment/live-fixes/AM231_PAYMENT_ACCOUNTING_UI/accounting.css "$USERNAME@$HOST:~/AM231_PREFLIGHT/"
-            sshpass -e ssh -o ConnectTimeout=14 -p "$PORT" "$USERNAME@$HOST" "cd '$ROOT' && python3 -m py_compile ~/AM231_PREFLIGHT/apply.py && python3 ~/AM231_PREFLIGHT/apply.py check '$ROOT'"
+            sshpass -e scp -o ConnectTimeout=14 -P "$PORT" deployment/live-fixes/AM231_PAYMENT_ACCOUNTING_UI/apply.py deployment/live-fixes/AM231_PAYMENT_ACCOUNTING_UI/accounting.js deployment/live-fixes/AM231_PAYMENT_ACCOUNTING_UI/accounting.css deployment/live-fixes/AM231_PAYMENT_ACCOUNTING_UI/diagnose.py "$USERNAME@$HOST:~/AM231_PREFLIGHT/"
+            sshpass -e ssh -o ConnectTimeout=14 -p "$PORT" "$USERNAME@$HOST" "cd '$ROOT' && python3 -m py_compile ~/AM231_PREFLIGHT/apply.py && python3 ~/AM231_PREFLIGHT/apply.py check '$ROOT' && python3 ~/AM231_PREFLIGHT/diagnose.py '$ROOT'"
           fi
       - name: Remove transient key
         if: always()
