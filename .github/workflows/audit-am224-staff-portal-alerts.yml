@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/audit-am224-staff-portal-alerts.yml'
       - 'deployment/live-fixes/AM224_STAFF_PORTAL_NOTIFICATIONS/audit.py'
+      - 'deployment/live-fixes/AM224_STAFF_PORTAL_NOTIFICATIONS/detail.py'
 permissions: {contents: read, issues: write}
 concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
 jobs:
@@ -44,7 +45,7 @@ jobs:
         run: |
           set -euo pipefail
           FILE=deployment/live-fixes/AM224_STAFF_PORTAL_NOTIFICATIONS/audit.py
-          python3 -m py_compile "$FILE"
+          python3 -m py_compile "$FILE" deployment/live-fixes/AM224_STAFF_PORTAL_NOTIFICATIONS/detail.py
           REMOTE="$USERNAME@$HOST"
           if [ -n "$KEY" ];then
             SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
@@ -56,8 +57,11 @@ jobs:
           fi
           "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM224_STAFF_AUDIT"'
           "${SCP[@]}" "$FILE" "$REMOTE:~/AM224_STAFF_AUDIT/audit.py"
+          "${SCP[@]}" deployment/live-fixes/AM224_STAFF_PORTAL_NOTIFICATIONS/detail.py "$REMOTE:~/AM224_STAFF_AUDIT/detail.py"
           "${SSH[@]}" "$REMOTE" "python3 ~/AM224_STAFF_AUDIT/audit.py '$ROOT'" | tee "$RUNNER_TEMP/am224_audit.txt"
           grep -Fq AM224_AUDIT_READONLY_PASS_NO_DB_CHANGES "$RUNNER_TEMP/am224_audit.txt"
+          "${SSH[@]}" "$REMOTE" "python3 ~/AM224_STAFF_AUDIT/detail.py '$ROOT'" | tee "$RUNNER_TEMP/am224_detail.txt"
+          grep -Fq AM224_DETAIL_DONE_READONLY "$RUNNER_TEMP/am224_detail.txt"
       - name: Report metadata-only status
         if: always()
         shell: bash
