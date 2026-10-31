@@ -59,12 +59,12 @@ foreach(['CHECKIN_MISSED','CHECKOUT_PENDING'] as $type){
     })
     ->leftJoin('staff as s','s.id','=','r.staff_id')
     ->where('r.reminder_type',$type)->whereNull('r.resolved_at')
-    ->where('r.target_key','<',$today)->whereNotNull('a.check_in');
+    ->whereNotNull('a.check_in');
  if($type==='CHECKOUT_PENDING')$q->whereNotNull('a.check_out');
- $rows=$q->selectRaw("CASE WHEN LOWER(COALESCE(s.status,''))='active' AND COALESCE(s.attendance_enabled,0)=1 THEN 'eligible' ELSE 'inactive' END AS bucket,COUNT(*) AS n")
-    ->groupBy('bucket')->get();
+ $rows=$q->selectRaw("CASE WHEN LOWER(COALESCE(s.status,''))='active' AND COALESCE(s.attendance_enabled,0)=1 THEN 'eligible' ELSE 'inactive' END AS bucket, CASE WHEN r.target_key < ? THEN 'historical' WHEN r.target_key = ? THEN 'today' ELSE 'other' END AS age_bucket, COUNT(*) AS n",[$today,$today])
+    ->groupBy('bucket','age_bucket')->get();
  foreach($rows as $row){
-   echo "AM226_VERIFY_HISTORICAL_MATCH ".$type." BUCKET ".$row->bucket." COUNT ".(int)$row->n."\\n";
+   echo "AM226_VERIFY_HISTORICAL_MATCH ".$type." BUCKET ".$row->bucket." AGE ".$row->age_bucket." COUNT ".(int)$row->n."\n";
  }
 }
 
