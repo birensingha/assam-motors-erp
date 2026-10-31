@@ -124,6 +124,42 @@ try {
   throw new RuntimeException('AM240_QA_FAIL_DIRECT_LEDGER_PAYMENT_NOT_BLOCKED');
  } catch(ValidationException $e){}
  echo "AM240_QA_STAFF_LEDGER_DIRECT_SALARY_CASH_POSTING_BLOCKED_PASS\n";
+
+ // Expense reimbursement settles only an existing Staff Expense payable,
+ // without generating a second salary journal/expense.
+ $expenseNo='AM240QA-'.strtoupper(substr(str_replace('-','',(string)Str::uuid()),0,15));
+ $expenseId=(int)DB::table('workshop_expenses')->insertGetId([
+  'expense_no'=>$expenseNo,'expense_date'=>$date,
+  'expense_category'=>'STAFF_REIMBURSEMENT','expense_against'=>'STAFF',
+  'staff_id'=>$id,'vendor_id'=>null,'payee_name'=>(string)$person->name,
+  'description'=>'AM240 rollback only Staff Expense',
+  'taxable_amount'=>30.00,'gst_percent'=>0,'gst_amount'=>0,
+  'total_amount'=>30.00,'paid_amount'=>0,'payment_status'=>'UNPAID',
+  'record_status'=>'ACTIVE','created_by'=>'AM240_ROLLBACK_QA',
+  'created_at'=>now()
+ ]);
+ $uuidE=(string)Str::uuid();
+ $expenseReq=makeRequest($base+[
+  'staff_payment_against'=>'AGAINST','staff_payment_kind'=>'EXPENSE_REIMBURSEMENT',
+  'staff_expense_id'=>$expenseId,'amount'=>'20.00','request_key'=>$uuidE,
+ ],$fakeUser);
+ $service->post($expenseReq);
+ $staffExpensePay=DB::table('workshop_payment_vouchers')->where('request_key',$uuidE)->first();
+ $expenseAfter=DB::table('workshop_expenses')->where('id',$expenseId)->first();
+ check240($staffExpensePay && $staffExpensePay->source_type==='EXPENSE_VOUCHER' &&
+  (int)$staffExpensePay->source_id===$expenseId && $staffExpensePay->payee_type==='STAFF' &&
+  (int)$staffExpensePay->staff_id===$id,'EXPENSE_PAYMENT_VOUCHER_WRONG_PAYEE_OR_SOURCE');
+ check240($expenseAfter && abs((float)$expenseAfter->paid_amount-20.0)<0.009 &&
+  $expenseAfter->payment_status==='PARTIAL','EXPENSE_PAYMENT_DID_NOT_CREATE_PARTIAL_SETTLEMENT');
+ check240(!DB::table('workshop_staff_finance_journals')->where('request_key',$uuidE)->exists(),
+  'EXPENSE_REIMBURSEMENT_DUPLICATED_AS_SALARY_JOURNAL');
+ app(ExpensePaymentService::class)->voidPayment((int)$staffExpensePay->id,
+  'AM240 Expense Reimbursement reversal QA','AM240_QA');
+ $expenseReversed=DB::table('workshop_expenses')->where('id',$expenseId)->first();
+ check240($expenseReversed && (float)$expenseReversed->paid_amount<0.009 &&
+  $expenseReversed->payment_status==='UNPAID','EXPENSE_REVERSAL_NOT_RELEASED');
+ echo "AM240_QA_STAFF_EXPENSE_REIMBURSEMENT_PARTIAL_AND_VOID_PASS\n";
+
 } catch(\Throwable $e) {
  echo 'AM240_QA_ERROR='.get_class($e).' '.substr($e->getMessage(),0,240)."\n";
  throw $e;
