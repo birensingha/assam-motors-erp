@@ -130,7 +130,7 @@ file_put_contents($argv[3],$app->make('blade.compiler')->compileString(file_get_
  if result.returncode:raise SystemExit('AM241_STOP_BLADE_COMPILE '+result.stderr[-550:])
  result=subprocess.run(['php','-l',str(compiled)],cwd=root,capture_output=True,text=True,timeout=35)
  if result.returncode:raise SystemExit('AM241_STOP_COMPILED_PHP_LINT '+(result.stdout+result.stderr)[-550:])
- if marker not in read(compiled):raise SystemExit('AM241_STOP_COMPILED_MARKER_MISSING')
+ if 'am241-jc-osl-master-live' not in read(compiled):raise SystemExit('AM241_STOP_COMPILED_LIVE_SCRIPT_MISSING')
 print('AM241_PHP_BLADE_JS_PREFLIGHT_PASS')
 if mode=='check':
  print('AM241_CHECK_ONLY_NO_SOURCE_OR_DB_WRITES');sys.exit(0)
