@@ -1,0 +1,56 @@
+/* AM235: one SAP-style searchable Vendor Master input.
+   Original vendor_id SELECT is preserved in DOM for real ledger posting. */
+#am230-vendor-slot select.am235-source-select{display:none!important}
+#payment-form.am235-compact-payee.am231-category-vendor #am230-payee-box{
+  background:transparent!important;border:0!important;box-shadow:none!important;
+  padding:0!important;margin:2px 0 10px!important;gap:0!important;
+}
+#payment-form.am235-compact-payee.am231-category-vendor #am230-payee-box>label[for="am230-payee-type"],
+#payment-form.am235-compact-payee.am231-category-vendor #am230-payee-type,
+#payment-form.am235-compact-payee.am231-category-vendor #am230-payee-info,
+#payment-form.am235-compact-payee.am231-category-vendor #am231-recipient-preview{
+  display:none!important;
+}
+#payment-form.am235-compact-payee.am231-category-vendor #am230-vendor-slot{
+  display:block!important;
+}
+#payment-form.am235-compact-payee.am231-category-vendor #am230-vendor-slot>label{
+  display:flex!important;flex-direction:column;gap:5px;
+  font-size:11px;font-weight:800;color:#17496d;
+}
+#am235-combobox{position:relative;display:block;width:100%}
+#am235-combobox input[type=search]{
+  display:block;width:100%;height:40px;padding:8px 12px;
+  border:1px solid #9dbbd5;border-radius:8px;background:#fff;
+  font-size:13px;font-weight:500;color:#153a5a;outline:none;
+  box-sizing:border-box;
+}
+#am235-combobox input[type=search]:focus{
+  border-color:#2276bb;box-shadow:0 0 0 2px rgba(34,118,187,.12);
+}
+#am235-vendor-options{
+  position:absolute;left:0;right:0;top:calc(100% + 3px);z-index:2200;
+  max-height:232px;overflow-y:auto;overscroll-behavior:contain;
+  border:1px solid #9bb9d4;border-radius:8px;background:#fff;
+  box-shadow:0 12px 30px rgba(18,54,82,.20);padding:4px;
+}
+#am235-vendor-options[hidden]{display:none!important}
+#am235-vendor-options .am235-option{
+  display:block;width:100%;text-align:left;font:inherit;font-size:12px;line-height:1.4;
+  border:none;border-radius:5px;color:#163c59;background:#fff;
+  padding:9px 10px;cursor:pointer;min-height:36px;
+}
+#am235-vendor-options .am235-option:hover,
+#am235-vendor-options .am235-option.am235-focused{
+  background:#e8f3fd;color:#113f69;
+}
+#am235-vendor-options .am235-option[aria-selected=true]{
+  font-weight:700;
+}
+#am235-vendor-options .am235-no-match{
+  padding:10px;font-size:12px;color:#607a90;
+}
+@media (max-width:560px){
+ #am235-vendor-options{max-height:200px}
+ #am235-combobox input[type=search]{font-size:14px}
+}
