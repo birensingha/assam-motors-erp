@@ -2,9 +2,13 @@
 """AM245 read-only syntax/structural test of rendered OSL master constructor JS."""
 from pathlib import Path
 import subprocess,tempfile,sys,re
-root=Path(sys.argv[1]).resolve()
-if root.name!='assam-erp-staging' or not (root/'artisan').is_file():raise SystemExit('AM245_STOP_NOT_STAGING')
-v=(root/'resources/views/job-cards/show.blade.php').read_text('utf8','replace')
+if len(sys.argv)==3 and sys.argv[1]=='--blade':
+ v=Path(sys.argv[2]).read_text('utf8','replace')
+else:
+ root=Path(sys.argv[1]).resolve()
+ if root.name!='assam-erp-staging' or not (root/'artisan').is_file():
+  raise SystemExit('AM245_STOP_NOT_STAGING')
+ v=(root/'resources/views/job-cards/show.blade.php').read_text('utf8','replace')
 start='<script id="am146-osl-calculations">'
 if v.count(start)!=1:raise SystemExit('AM245_STOP_EXPECTED_SCRIPT_COUNT')
 source=v.split(start,1)[1].split('</script>',1)[0]
