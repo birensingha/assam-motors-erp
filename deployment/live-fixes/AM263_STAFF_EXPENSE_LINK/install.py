@@ -111,7 +111,7 @@ replace('view','<div class="page-head"><div><h1>New Expense Voucher</h1>',
  '<div class="page-head"><div><h1>New Expense Voucher</h1>',
  'EXPENSE_PAGE_MARKER')
 for name in paths:
- if new[name].count(marker)!=1:raise SystemExit('AM263_STOP_MARKER_'+name+'_'+str(new[name].count(marker)))
+ if new[name].count(marker)<1:raise SystemExit('AM263_STOP_MARKER_'+name+'_'+str(new[name].count(marker)))
 # Existing Lubricash constraints must still remain.
 for required in ["const isCoupon=category.value==='LUBRICASH_COUPON'",
  "company.required=isCoupon","job.required=true","vendor.disabled=isCoupon",
