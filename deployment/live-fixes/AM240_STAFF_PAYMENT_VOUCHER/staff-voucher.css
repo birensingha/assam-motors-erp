@@ -1,0 +1,15 @@
+/* AM240 Staff Payment — single voucher entry, existing salary ledger posts once. */
+#am240-staff-panel{grid-column:1/-1;margin-top:6px;padding:13px;border:1px solid #c0d7e9;background:#f6faff;border-radius:8px}
+#am240-staff-panel[hidden],#am240-kind-box[hidden],#am240-expense-box[hidden],#am240-month-box[hidden]{display:none!important}
+#am240-staff-panel h3{font-size:13px;font-weight:800;margin:0 0 10px;color:#15496c}
+#am240-staff-panel .am240-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+#am240-staff-panel label{display:flex;flex-direction:column;gap:5px;font-size:11px;font-weight:800;color:#1b5477}
+#am240-staff-panel select,#am240-staff-panel input{height:37px;border:1px solid #9fbed5;border-radius:7px;background:#fff;color:#174463;padding:6px 9px;font-size:13px;width:100%}
+#am240-staff-notice{font-size:11px;line-height:1.5;color:#345d7c;background:#e5f2fe;padding:9px 10px;border-radius:6px;margin-top:10px}
+#am240-balance{font-size:12px;color:#164771;font-weight:800;margin-top:8px}
+#payment-form.am240-staff-active .p133-preview:before{display:none!important;content:none!important}
+#payment-form.am240-staff-active #am231-posting-alert{display:none!important}
+#payment-form.am240-staff-active #p133-save{opacity:1;cursor:pointer}
+#payment-form.am240-staff-active #p133-save:disabled{opacity:.55;cursor:not-allowed}
+#payment-form.am240-staff-active #am237-reference-slot,#payment-form.am240-staff-active #am237-bills-slot{display:none!important}
+@media(max-width:650px){#am240-staff-panel .am240-grid{grid-template-columns:1fr}}
