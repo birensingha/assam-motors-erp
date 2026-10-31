@@ -56,7 +56,7 @@ jobs:
           fi
           "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM238_AUDIT"'
           "${SCP[@]}" deployment/live-fixes/AM238_VENDOR_DEBIT_SETTLEMENT/audit.py "$REMOTE:~/AM238_AUDIT/"
-          "${SSH[@]}" "$REMOTE" "python3 ~/AM238_AUDIT/inspect.py '$ROOT'"
+          "${SSH[@]}" "$REMOTE" "python3 ~/AM238_AUDIT/audit.py '$ROOT'"
       - name: Remove transient key
         if: always()
         shell: bash
