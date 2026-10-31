@@ -1,0 +1,87 @@
+name: AM226 Attendance Reminder Date Match Follow-up STAGING
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/deploy-am226-reminder-date-fix.yml'
+      - 'deployment/live-fixes/AM226_MANDATORY_ALERTS_DEDUP/date_cast_fix.py'
+permissions: {contents: read, issues: write}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static Python syntax
+        id: qa
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/AM226_MANDATORY_ALERTS_DEDUP/date_cast_fix.py
+      - name: STAGING SSH access
+        id: ssh
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$KEY" || test -n "$PASSWORD"
+          install -d -m 700 ~/.ssh
+          for n in 1 2 3 4;do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq; sudo apt-get install -qq -y sshpass
+          fi
+      - name: Reuse verified recent STAGING database backup then apply PHP date-key fix
+        id: deploy
+        run: |
+          set -euo pipefail
+          REMOTE="$USERNAME@$HOST"
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -o ConnectTimeout=14 -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=14 -p "$PORT")
+            SCP=(sshpass -e scp -P "$PORT")
+          fi
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM226_DATE_FIX"'
+          "${SCP[@]}" deployment/live-fixes/AM226_MANDATORY_ALERTS_DEDUP/date_cast_fix.py "$REMOTE:~/AM226_DATE_FIX/fix.py"
+          "${SSH[@]}" "$REMOTE" "set -e
+            B='$ROOT/storage/app/am-backups/AM212_ROT_WORK_PROCEDURE'
+            CHECK=\$(find \"\$B\" -maxdepth 1 -name 'staging_before_AM212_*.sql.sha256' -type f -mtime -2 2>/dev/null | sort | tail -1)
+            if [ -z \"\$CHECK\" ];then echo AM226_DATE_STOP_VERIFIED_BACKUP_MISSING;exit 2;fi
+            (cd \"\$B\" && sha256sum -c \"\$(basename \"\$CHECK\")\" >/dev/null)
+            echo AM226_DATE_RECENT_DB_BACKUP_CHECKSUM_VERIFIED
+            python3 ~/AM226_DATE_FIX/fix.py check '$ROOT'
+            python3 ~/AM226_DATE_FIX/fix.py apply '$ROOT'
+            php -l '$ROOT/app/Services/StaffReminderEngine.php'
+          " 2>&1 | tee "$RUNNER_TEMP/am226_date_fix.log"
+      - name: Report safe result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          QA: ${{ steps.qa.outcome }}
+          SSH_STATUS: ${{ steps.ssh.outcome }}
+          DEPLOY_STATUS: ${{ steps.deploy.outcome }}
+        run: |
+          marks=""
+          if [ -f "$RUNNER_TEMP/am226_date_fix.log" ];then
+            marks="$(grep '^AM226_DATE_' "$RUNNER_TEMP/am226_date_fix.log" | tail -16 | tr '\n' ';' | cut -c1-850 || true)"
+          fi
+          body="AM226 date cast fix STAGING: static=$QA ssh=$SSH_STATUS source deploy=$DEPLOY_STATUS. $marks. Browser and next scheduled reminder reconciliation still require verification. Workflow: https://github.com/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          gh api repos/"$GITHUB_REPOSITORY"/issues/124/comments -f body="$body" || true
+      - name: Remove SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
