@@ -129,7 +129,7 @@ resolve_new="""    private function resolve(int $staffId,string $type,string $ta
                     ->selectRaw('DATE(login_at) AS duty_day')->distinct()
                     ->pluck('duty_day')->mapWithKeys(fn($d)=>[(string)$d=>true])->all();
             }
-        } catch (\\Throwable $error) {
+        } catch (\Throwable $error) {
             // Missing login event source must NEVER be treated as proof of login.
         }
         foreach ($valid as $state) {
