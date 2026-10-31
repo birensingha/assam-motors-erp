@@ -101,4 +101,24 @@ for p in (root/'resources/views').rglob('*.blade.php'):
   print('VIEW',p.relative_to(root),'HITS',len(hits),'LINES',','.join(str(i+1) for i in hits[:90]))
 print('AM229_ESTIMATE_VIEW_REFERENCES_END')
 print('AM229_TARGETED_SOURCE_END')
+
+print('AM230_EXACT_VIEWS_BEGIN')
+ranges={
+ 'resources/views/estimates/create.blade.php':[(85,315),(315,465)],
+ 'resources/views/purchases/osl-create.blade.php':[(313,415)],
+ 'app/Services/PurchaseService.php':[(888,1055)],
+ 'app/Services/EstimateService.php':[(342,410)],
+ 'routes/web.php':[(48,100),(210,240)],
+}
+for name,spans in ranges.items():
+ p=root/name
+ if not p.is_file():continue
+ lines=p.read_text('utf8','replace').splitlines()
+ for a,b in spans:
+  print('AM230_EXACT',name,a,b)
+  for i in range(a-1,min(b,len(lines))):
+   line=lines[i]
+   if re.search(r'(?i)password|secret|authorization',line):continue
+   print('EXACT',i+1,line[:850])
+print('AM230_EXACT_VIEWS_END')
 print('AM229_AUDIT_PASS_NO_DB_WRITES')
