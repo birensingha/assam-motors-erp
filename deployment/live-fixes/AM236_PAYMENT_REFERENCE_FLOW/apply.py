@@ -185,9 +185,6 @@ swap('service',sv_old,sv_new,'SERVICE_VENDOR_REFERENCE_GUARD')
 swap('service',"'account_name'=>$data['account_name'] ?? null,'reference_no'=>$data['reference_no'] ?? null,'notes'=>$data['notes'] ?? null,",
     "'account_name'=>$data['account_name'] ?? null,'reference_no'=>$data['reference_no'] ?? null,'notes'=>$data['notes'] ?? null,'request_key'=>$data['request_key'] ?? null,",
     'SERVICE_SAVEPAYMENT_REQUEST_KEY')
-swap('service',"'reference_no'=>mb_substr(trim((string)($data['reference_no'] ?? '')),0,150) ?: null,'notes'=>mb_substr(trim((string)($data['notes'] ?? '')),0,2000) ?: null,'record_status'=>'ACTIVE','created_by'=>$actor,",
-    "'reference_no'=>mb_substr(trim((string)($data['reference_no'] ?? '')),0,150) ?: null,'notes'=>mb_substr(trim((string)($data['notes'] ?? '')),0,2000) ?: null,'request_key'=>$data['request_key']??null,'record_status'=>'ACTIVE','created_by'=>$actor,",
-    'SERVICE_PERSIST_REQUEST_KEY')
 swap('service',"""        if($type==='ON_ACCOUNT' && $vendorId<=0) throw ValidationException::withMessages(['vendor_id'=>'Select a Vendor for On Account payment.']);""",
     """        if(in_array($type,['ON_ACCOUNT','NEW_REFERENCE','ADVANCE'],true) && $vendorId<=0) throw ValidationException::withMessages(['vendor_id'=>'Select a Vendor Master for this payment.']);""",
     'SERVICE_VENDOR_VALIDATION')
