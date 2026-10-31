@@ -66,7 +66,7 @@ new=old[:a]+"    // AM242_JC_OSL_ONE_FIELD: supplier purchases are NOT part of A
 # routines continue to work without changes to any Purchase, JC or ledger records.
 anchor='<style id="am146-osl-styles">'
 style="""<style id="am242-osl-one-field-style">
-/* AM242_JC_OSL_ONE_FIELD: show one OSL search input + adjacent create button. */
+/* Single searchable OSL service and adjacent create button. */
 .am91-osl-dialog form.am91-osl-form>label:has(>input[name="description"]){display:none!important}
 .am91-osl-dialog .am146-master-row>label:has(>select[name="osl_master_id"]){display:none!important}
 .am91-osl-dialog .am146-master-row{display:flex!important;flex-wrap:wrap!important;align-items:flex-end!important;gap:8px!important}
