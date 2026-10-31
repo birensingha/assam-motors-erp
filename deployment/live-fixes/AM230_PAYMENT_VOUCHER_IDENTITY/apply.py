@@ -152,6 +152,10 @@ file_put_contents($argv[2],$app->make('blade.compiler')->compileString(file_get_
  for cmd in (['php','-r',compile_script,str(candidate),str(compiled)],['php','-l',str(compiled)],['php','-l',str(php)]):
   r=subprocess.run(cmd,cwd=root,capture_output=True,text=True,timeout=65)
   if r.returncode:raise SystemExit('AM230_STOP_BLADE_OR_PHP_LINT '+(r.stdout+r.stderr)[-320:])
+# Validate the new inline client JS separately from Blade/PHP.
+node=subprocess.run(['node','--check'],input=js,cwd=root,capture_output=True,text=True,timeout=25)
+if node.returncode:raise SystemExit('AM230_STOP_INLINE_JAVASCRIPT_SYNTAX '+node.stderr[-220:])
+print('AM230_CLIENT_JS_SYNTAX_PASS')
 print('AM230_VENDOR_MASTER_PERSISTENT=PASS')
 print('AM230_EXPENSE_DEEPLINK_STILL_ALLOWED=PASS')
 print('AM230_STAFF_CUSTOMER_POST_BLOCKED=PASS')
