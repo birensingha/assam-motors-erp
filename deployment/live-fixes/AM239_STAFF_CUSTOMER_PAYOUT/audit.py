@@ -54,3 +54,15 @@ print(result.stdout[:28000])
 print('AM239_DB_AUDIT_EXIT='+str(result.returncode))
 if result.returncode:print('AM239_DB_ERROR='+result.stderr[:350])
 print('AM239_READONLY_FINANCIAL_AUDIT_COMPLETE')
+
+for name,relative,ranges in [
+ ('STAFF_LEDGER','app/Http/Controllers/Web/AdminStaffFinanceLedgerController.php',[(1,55),(122,208)]),
+ ('PAYMENT_CONTROLLER','app/Http/Controllers/Web/AdminExpensePaymentPageController.php',[(92,176)]),
+ ('PAYMENT_VIEW','resources/views/payments/create.blade.php',[(280,335),(382,419)]),
+]:
+ p=root/relative
+ if not p.is_file():continue
+ rows=p.read_text('utf8',errors='surrogateescape').splitlines()
+ for a,b in ranges:
+  print('AM239_RANGE_'+name+'_'+str(a)+'_'+str(b))
+  for i in range(a-1,min(b,len(rows))):print('AM239_DETAIL_'+name+'_'+str(i+1)+' '+rows[i][:550])
