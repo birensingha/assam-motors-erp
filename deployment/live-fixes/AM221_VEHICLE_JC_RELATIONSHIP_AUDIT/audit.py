@@ -107,4 +107,10 @@ with tempfile.TemporaryDirectory(prefix='am221rel_') as td:
     if out.returncode:print('AM221_RELATION_SCHEMA_UNAVAILABLE')
     else:print(out.stdout)
 
+# Targeted ownership verification in actual Save/Update controller source
+if jc.is_file():
+    lines=jc.read_text('utf8','replace').splitlines()
+    for low,high in ((156,248),(395,462)):
+        for j in range(low-1,min(high,len(lines))):
+            print('AM221_SAVE_DETAIL',j+1,redact(lines[j]))
 print('AM221_READONLY_COMPLETE_NO_DB_WRITES')
