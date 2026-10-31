@@ -94,7 +94,7 @@ with tempfile.TemporaryDirectory(prefix='am236_qa_') as t:
  helper.write_text(r"""<?php
 require $argv[1].'/vendor/autoload.php';
 $app=require $argv[1].'/bootstrap/app.php';
-$app->make(\\Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
+$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 file_put_contents($argv[3],$app->make('blade.compiler')->compileString(file_get_contents($argv[2])));
 """,encoding='utf8')
  r=subprocess.run(['php',str(helper),str(root),str(view),str(comp)],cwd=root,text=True,capture_output=True,timeout=55)
