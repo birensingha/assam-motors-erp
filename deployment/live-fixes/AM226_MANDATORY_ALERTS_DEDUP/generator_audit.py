@@ -7,6 +7,7 @@ if root.name!='assam-erp-staging' or not (root/'artisan').is_file():
     raise SystemExit('AM226_GEN_STOP_NOT_STAGING')
 files=[
  root/'app/Console/Commands/SyncStaffReminders.php',
+ root/'app/Services/StaffReminderEngine.php',
  root/'app/Models/StaffReminderState.php',
  root/'app/Models/NotificationOutbox.php',
 ]
@@ -23,7 +24,7 @@ require $argv[1].'/vendor/autoload.php';
 $app=require $argv[1].'/bootstrap/app.php';
 $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 use Illuminate\Support\Facades\Schema;
-foreach(['staff_reminder_states','notification_outbox','staff_devices','attendance','staff','hr_audit_logs'] as $table){
+foreach(['staff_reminder_state','staff_reminder_states','notification_outbox','staff_devices','attendance','staff','hr_audit_logs'] as $table){
  if(Schema::hasTable($table)){
   echo "AM226_GEN_TABLE ".$table." COLUMNS ".implode(',',Schema::getColumnListing($table))."\n";
   $indexes=Schema::getIndexes($table);
