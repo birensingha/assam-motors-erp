@@ -7,6 +7,7 @@ on:
       - 'deployment/live-fixes/AM226_MANDATORY_ALERTS_DEDUP/audit.py'
       - 'deployment/live-fixes/AM226_MANDATORY_ALERTS_DEDUP/generator_audit.py'
       - 'deployment/live-fixes/AM226_MANDATORY_ALERTS_DEDUP/aggregate_audit.php'
+      - 'deployment/live-fixes/AM226_MANDATORY_ALERTS_DEDUP/post_verify.php'
 permissions: {contents: read, issues: write}
 concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
 jobs:
@@ -47,6 +48,7 @@ jobs:
           FILE=deployment/live-fixes/AM226_MANDATORY_ALERTS_DEDUP/audit.py
           python3 -m py_compile "$FILE" deployment/live-fixes/AM226_MANDATORY_ALERTS_DEDUP/generator_audit.py
           php -l deployment/live-fixes/AM226_MANDATORY_ALERTS_DEDUP/aggregate_audit.php
+          php -l deployment/live-fixes/AM226_MANDATORY_ALERTS_DEDUP/post_verify.php
           REMOTE="$USERNAME@$HOST"
           if [ -n "$KEY" ]; then
             SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
@@ -60,12 +62,15 @@ jobs:
           "${SCP[@]}" "$FILE" "$REMOTE:~/AM226_ALERT_AUDIT/audit.py"
           "${SCP[@]}" deployment/live-fixes/AM226_MANDATORY_ALERTS_DEDUP/generator_audit.py "$REMOTE:~/AM226_ALERT_AUDIT/generator_audit.py"
           "${SCP[@]}" deployment/live-fixes/AM226_MANDATORY_ALERTS_DEDUP/aggregate_audit.php "$REMOTE:~/AM226_ALERT_AUDIT/aggregate_audit.php"
+          "${SCP[@]}" deployment/live-fixes/AM226_MANDATORY_ALERTS_DEDUP/post_verify.php "$REMOTE:~/AM226_ALERT_AUDIT/post_verify.php"
           "${SSH[@]}" "$REMOTE" "python3 ~/AM226_ALERT_AUDIT/audit.py '$ROOT'" | tee "$RUNNER_TEMP/am226.txt"
           grep -Fq AM226_AUDIT_READ_ONLY_COMPLETE "$RUNNER_TEMP/am226.txt"
           "${SSH[@]}" "$REMOTE" "python3 ~/AM226_ALERT_AUDIT/generator_audit.py '$ROOT'" | tee "$RUNNER_TEMP/am226_gen.txt"
           grep -Fq AM226_GEN_AUDIT_READ_ONLY_COMPLETE "$RUNNER_TEMP/am226_gen.txt"
           "${SSH[@]}" "$REMOTE" "php ~/AM226_ALERT_AUDIT/aggregate_audit.php '$ROOT'" | tee "$RUNNER_TEMP/am226_aggregate.txt"
           grep -Fq AM226_AGG_READ_ONLY_COMPLETE "$RUNNER_TEMP/am226_aggregate.txt"
+          "${SSH[@]}" "$REMOTE" "php ~/AM226_ALERT_AUDIT/post_verify.php '$ROOT'" | tee "$RUNNER_TEMP/am226_verify.txt"
+          grep -Fq AM226_VERIFY_AGGREGATE_READ_ONLY_COMPLETE "$RUNNER_TEMP/am226_verify.txt"
       - name: Log audit status
         if: always()
         env:
