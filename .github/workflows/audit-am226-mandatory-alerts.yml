@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/audit-am226-mandatory-alerts.yml'
       - 'deployment/live-fixes/AM226_MANDATORY_ALERTS_DEDUP/audit.py'
+      - 'deployment/live-fixes/AM226_MANDATORY_ALERTS_DEDUP/generator_audit.py'
 permissions: {contents: read, issues: write}
 concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
 jobs:
@@ -43,7 +44,7 @@ jobs:
         run: |
           set -euo pipefail
           FILE=deployment/live-fixes/AM226_MANDATORY_ALERTS_DEDUP/audit.py
-          python3 -m py_compile "$FILE"
+          python3 -m py_compile "$FILE" deployment/live-fixes/AM226_MANDATORY_ALERTS_DEDUP/generator_audit.py
           REMOTE="$USERNAME@$HOST"
           if [ -n "$KEY" ]; then
             SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
@@ -55,8 +56,11 @@ jobs:
           fi
           "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM226_ALERT_AUDIT"'
           "${SCP[@]}" "$FILE" "$REMOTE:~/AM226_ALERT_AUDIT/audit.py"
+          "${SCP[@]}" deployment/live-fixes/AM226_MANDATORY_ALERTS_DEDUP/generator_audit.py "$REMOTE:~/AM226_ALERT_AUDIT/generator_audit.py"
           "${SSH[@]}" "$REMOTE" "python3 ~/AM226_ALERT_AUDIT/audit.py '$ROOT'" | tee "$RUNNER_TEMP/am226.txt"
           grep -Fq AM226_AUDIT_READ_ONLY_COMPLETE "$RUNNER_TEMP/am226.txt"
+          "${SSH[@]}" "$REMOTE" "python3 ~/AM226_ALERT_AUDIT/generator_audit.py '$ROOT'" | tee "$RUNNER_TEMP/am226_gen.txt"
+          grep -Fq AM226_GEN_AUDIT_READ_ONLY_COMPLETE "$RUNNER_TEMP/am226_gen.txt"
       - name: Log audit status
         if: always()
         env:
