@@ -3,7 +3,7 @@ on:
   pull_request:
     paths:
       - '.github/workflows/qa-am233-oil-coupon-preflight.yml'
-      - 'deployment/live-fixes/AM233_OIL_COUPON_AUDIT/apply.py'
+      - 'deployment/live-fixes/AM233_OIL_COUPON_AUDIT/verify_readonly.sh'
   workflow_dispatch:
 permissions: {contents: read}
 concurrency: {group: assam-motors-am231-payment-accounting-preflight, cancel-in-progress: false}
@@ -25,7 +25,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 -m py_compile deployment/live-fixes/AM233_OIL_COUPON_AUDIT/apply.py
+          bash -n deployment/live-fixes/AM233_OIL_COUPON_AUDIT/verify_readonly.sh
       - name: SSH staging credentials
         shell: bash
         run: |
