@@ -145,7 +145,7 @@
       button.type='button';button.className='am222-choice';
       button.setAttribute('role','option');
       button.setAttribute('aria-selected',index===0?'true':'false');
-      button.textContent=item[key];
+      button.textContent=item[key];button.dataset.value=item[key];
       if(key==='variant'&&(item.fuel||item.from)){
         const sub=document.createElement('span');
         sub.className='am222-sub';
@@ -183,7 +183,7 @@
       options.forEach((b,i)=>b.setAttribute('aria-selected',i===active?'true':'false'));
       options[active].scrollIntoView({block:'nearest'});
     }else if(event.key==='Enter'&&options.length&&popup.style.display==='block'){
-      event.preventDefault();apply(options[active].textContent.replace(/\s{2,}/g,' ').trim().split('\n')[0]);
+      event.preventDefault();apply(options[active].dataset.value||'');
     }
   }
   fields.forEach(f=>{
