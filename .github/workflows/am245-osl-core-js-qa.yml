@@ -47,7 +47,7 @@ jobs:
             sudo apt-get update -qq
             sudo apt-get install -qq -y sshpass
           fi
-      - name: AM229 read-only OSL workflow staging audit
+      - name: AM245 runner Node read-only OSL core JS QA
         shell: bash
         run: |
           set -euo pipefail
@@ -60,16 +60,12 @@ jobs:
             SCP=(sshpass -e scp -P "$PORT" -o ConnectTimeout=15)
           fi
           REMOTE="$USERNAME@$HOST"
-          "${SSH[@]}" "$REMOTE" 'mkdir -p -m 700 ~/AM245_OSL_CORE_JS_QA'
-          "${SCP[@]}" deployment/live-fixes/AM245_OSL_CORE_JS_QA/audit.py "$REMOTE:~/AM245_OSL_CORE_JS_QA/"
-          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE_SCRIPT'
-          set -euo pipefail
-          ROOT="$1"
-          PATCH="$HOME/AM245_OSL_CORE_JS_QA/audit.py"
-          python3 -m py_compile "$PATCH"
-          python3 "$PATCH" "$ROOT"
-          echo AM245_READONLY_STAGING_AUDIT_PASS
-          REMOTE_SCRIPT
+          # Fetch source read-only, then use Node already installed on GitHub runner.
+          "${SCP[@]}" "$REMOTE:$ROOT/resources/views/job-cards/show.blade.php" "$RUNNER_TEMP/am245-staging-show.blade.php"
+          node --version
+          python3 deployment/live-fixes/AM245_OSL_CORE_JS_QA/audit.py --blade "$RUNNER_TEMP/am245-staging-show.blade.php"
+          echo AM245_RUNNER_NODE_SYNTAX_AND_SOURCE_INTEGRITY_PASS
+
       - name: Cleanup SSH credential
         if: always()
         run: rm -f ~/.ssh/id_ed25519
