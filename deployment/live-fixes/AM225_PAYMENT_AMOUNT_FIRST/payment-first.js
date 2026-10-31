@@ -42,6 +42,9 @@ function init(){
  const search=$('am218-source-search'),menu=$('am218-source-results'),searchWrap=$('am218-search-wrap'),help=$('am218-source-choice');
  const amount=$('payment-value'),known=$('known-source-field'),save=$('p133-save'),mode=$('p133-payment-mode');
  const preview=$('source-preview'),previewTotal=$('p133-preview-total'),previewCount=$('p133-preview-count'),previewMode=$('p133-preview-mode');
+ const amountLabel=amount?.closest('label'),originalParent=amountLabel?.parentNode,originalNext=amountLabel?.nextSibling;
+ const amountSlot=doc.createElement('div');amountSlot.id='am225-amount-first-slot';
+ if(searchWrap.parentNode)searchWrap.parentNode.insertBefore(amountSlot,searchWrap);amountSlot.hidden=true;
  if([form,type,key,multi,area,vendor,rows,error,search,menu,searchWrap,amount,known,save,mode].some(v=>!v))return;
  const types=new Set(['PURCHASE_INVOICE','OSL_JOB']);
  const all=Array.isArray(root.AM_PAYMENT_SOURCES)?root.AM_PAYMENT_SOURCES:[];
@@ -188,6 +191,16 @@ function init(){
   key.required=!m&&['PURCHASE_INVOICE','OSL_JOB','EXPENSE_VOUCHER'].includes(type.value);
   key.disabled=m;
   amount.readOnly=false;
+  // In multi mode, move the ORIGINAL payment input to the top, preserving its
+  // value/name/validation (not a second amount input).
+  if(amountLabel&&originalParent){
+    if(m){amountSlot.hidden=false;amountSlot.append(amountLabel);}
+    else {
+      if(originalNext&&originalNext.parentNode===originalParent)originalParent.insertBefore(amountLabel,originalNext);
+      else originalParent.append(amountLabel);
+      amountSlot.hidden=true;
+    }
+  }
   if(m&&type.value==='OSL_JOB'){
     internalType=true;type.value='PURCHASE_INVOICE';type.dispatchEvent(new Event('change',{bubbles:true}));internalType=false;
   }
