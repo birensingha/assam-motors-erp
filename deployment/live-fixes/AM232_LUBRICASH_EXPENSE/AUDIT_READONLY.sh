@@ -26,4 +26,27 @@ foreach(['staff','job_cards','workshop_job_cards','workshop_expenses','workshop_
 }
 echo 'AM232_SCHEMA_READONLY_PASS'."\n";
 PHP
+
+echo '== EXPENSE CREATE JS =='
+sed -n '1,230p' public/js/expense-entry.js | cut -c1-245
+echo '== EXPENSE REGISTER & SHOW =='
+for f in resources/views/expenses/index.blade.php resources/views/expenses/show.blade.php;do
+ echo "FILE=$f";echo "LINES=$(wc -l < "$f")";sed -n '1,155p' "$f" | cut -c1-235
+done
+echo '== EXPENSE MODEL FILLABLE & REGISTER QUERIES =='
+cat app/Models/WorkshopExpense.php | head -140 | cut -c1-235
+sed -n '31,70p' app/Services/ExpensePaymentService.php | cut -c1-235
+sed -n '116,138p' app/Services/ExpensePaymentService.php | cut -c1-235
+echo '== EXPENSE LAYOUT CSS =='
+grep -RniE -m 24 'expense-grid|expense-wide|job-preview|expense-form|payment-now-card' resources/views/layouts public/css | head -55 | cut -c1-235 || true
+echo '== DB CURRENT STAFF CATEGORY VOLUME (AGG ONLY) =='
+php <<'PHP'
+<?php
+require getcwd().'/vendor/autoload.php';$a=require getcwd().'/bootstrap/app.php';$a->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+use Illuminate\Support\Facades\DB;
+echo 'STAFF_TOTAL='.DB::table('staff')->count()."\n";
+echo 'JOB_TOTAL='.DB::table('job_cards')->count()."\n";
+echo 'EXISTING_LUBRICASH_CATEGORY_ROWS='.DB::table('workshop_expenses')->where('expense_category','STAFF_LUBRICASH')->count()."\n";
+PHP
+
 echo AM232_AUDIT_COMPLETE_NO_WRITES
