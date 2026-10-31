@@ -54,4 +54,33 @@ foreach(['payment_vouchers','payments','vendors','customers','staff','supplier_p
 }
 PHP
 
+
+echo "=== PAYMENT SERVICE HEADER / VENDOR LIST ==="
+sed -n '1,35p' app/Services/ExpensePaymentService.php | cut -c1-245
+echo "=== PAYMENT RESOLVE MANUAL / VENDOR PAYEE ==="
+sed -n '225,251p' app/Services/ExpensePaymentService.php | cut -c1-270
+echo "=== PAYMENT SOURCE TYPE OPTIONS ==="
+sed -n '115,145p' resources/views/payments/create.blade.php | cut -c1-280
+echo "=== PAYMENT INLINE AM226 MODE SWITCH ==="
+grep -n -E 'function setMode|function chooseVendor|function buildRows|searchWrap.hidden|type.value=' resources/views/payments/create.blade.php | cut -c1-270
+echo "=== EXPENSE MODULE CREATE / SHOW PAYMENT ENTRY ==="
+for file in resources/views/expenses/create.blade.php resources/views/expenses/show.blade.php;do
+ if test -f "$file";then
+  echo "EXPENSE_VIEW=$file"
+  grep -nEi -C 3 -m 45 'Pay Now|pay_now|New Payment|Payment Voucher|payment|create|expense|settle|payable' "$file" | head -110 | cut -c1-245
+ fi
+done
+echo "=== REAL PAYMENT VOUCHER AND MASTER COLUMN SCHEMAS ==="
+php <<'PHP'
+<?php
+require getcwd().'/vendor/autoload.php';
+$app=require getcwd().'/bootstrap/app.php';
+$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+foreach(['workshop_payment_vouchers','workshop_vendors','workshop_customers','workshop_expenses','workshop_payment_allocations'] as $tbl){
+ if(\Illuminate\Support\Facades\Schema::hasTable($tbl)){
+   echo $tbl.'_COLUMNS='.implode(',',\Illuminate\Support\Facades\Schema::getColumnListing($tbl))."\n";
+ }else echo $tbl.'_MISSING'."\n";
+}
+PHP
+
 echo AM220_READONLY_AUDIT_COMPLETE_NO_WRITES
