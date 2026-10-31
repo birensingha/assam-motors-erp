@@ -81,6 +81,7 @@ jobs:
           echo AM219_AUDIT_BEGIN
           python3 "$HOME/AM219_PAYMENT_VENDOR_VISIBLE/audit.py" "$ROOT"
           echo AM219_AUDIT_END
+          echo AM222_MULTIBILL_AUDIT_DONE
           AM220="$HOME/AM220_PAYMENT_SINGLE_VENDOR_SEARCH/install.py"
           python3 -m py_compile "$AM220"
           python3 "$AM220" check "$ROOT"
