@@ -120,7 +120,7 @@ resolve_new="""    private function resolve(int $staffId,string $type,string $ta
         if ($valid->isEmpty())return;
         $dates=$valid->pluck('target_key')->unique()->values()->all();
         $attendance=Attendance::query()->where('staff_id',$staffId)
-            ->whereIn('date',$dates)->get()->keyBy(fn($a)=>(string)$a->date);
+            ->whereIn('date',$dates)->get()->keyBy(fn($a)=>substr((string)$a->getRawOriginal('date'),0,10));
         $logins=[];
         try {
             if (DB::getSchemaBuilder()->hasTable('staff_login_events')) {
