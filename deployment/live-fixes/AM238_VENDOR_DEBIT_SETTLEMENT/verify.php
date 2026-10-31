@@ -20,7 +20,7 @@ $osl=DB::table('workshop_purchases')->where('purchase_type','OSL')->whereNotNull
   ->distinct()->limit(3)->pluck('vendor_id')->all();
 $base=['sources'=>[],'vendors'=>$vendor,'jobs'=>[],'am231Staff'=>$staff,
  'am231Customers'=>$customers,'am237OslVendorIds'=>$osl,
- 'am238DebitSources'=>app(\\App\\Services\\VendorDebitSettlementService::class)->sources(),
+ 'am238DebitSources'=>app(\App\Services\VendorDebitSettlementService::class)->sources(),
  'errors'=>new \Illuminate\Support\ViewErrorBag()];
 function renderFor(string $path,array $vars): string{
  $r=Request::create($path,'GET');
