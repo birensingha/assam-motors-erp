@@ -47,3 +47,14 @@ foreach($rows as $r){
 except Exception as err:
  print('AM237_SCHEMA_EXCEPTION='+str(err))
 print('AM237_READONLY_SOURCE_AND_SCHEMA_AUDIT_COMPLETE')
+
+for name,path,spans in [
+ ('VIEW',root/'resources/views/payments/create.blade.php',[(130,178),(229,344),(673,709)]),
+ ('CONTROLLER',root/'app/Http/Controllers/Web/AdminExpensePaymentPageController.php',[(90,165)]),
+ ('SERVICE',root/'app/Services/ExpensePaymentService.php',[(11,70),(222,261)]),
+]:
+ if not path.is_file():continue
+ rows=path.read_text('utf8',errors='surrogateescape').splitlines()
+ for a,b in spans:
+  print('AM237_RANGE_'+name+'_'+str(a)+'_'+str(b))
+  for i in range(a-1,min(b,len(rows))):print('AM237_CODE_'+name+'_'+str(i+1)+' '+rows[i][:500])
