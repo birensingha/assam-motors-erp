@@ -121,4 +121,17 @@ for name,spans in ranges.items():
    if re.search(r'(?i)password|secret|authorization',line):continue
    print('EXACT',i+1,line[:850])
 print('AM230_EXACT_VIEWS_END')
+
+print('AM231_ESTIMATE_EDITOR_BEGIN')
+for name,a,b in [('resources/views/estimates/create.blade.php',280,322),
+                   ('public/js/estimate-entry.js',1,405),
+                   ('resources/views/purchases/osl-create.blade.php',138,170),
+                   ('app/Services/PurchaseService.php',889,949)]:
+ p=root/name
+ if not p.is_file():continue
+ lines=p.read_text('utf8','replace').splitlines()
+ print('AM231_FILE',name,'LINES',len(lines))
+ for i in range(a-1,min(b,len(lines))):
+  print('AM231_LINE',i+1,lines[i][:850])
+print('AM231_ESTIMATE_EDITOR_END')
 print('AM229_AUDIT_PASS_NO_DB_WRITES')
