@@ -59,7 +59,7 @@ jobs:
           else
             export SSHPASS="$PASSWORD"
             SSH=(sshpass -e ssh -o ConnectTimeout=14 -p "$PORT")
-            SCP=(scp -e ssh -o ConnectTimeout=14 -P "$PORT")
+            SCP=(sshpass -e scp -o ConnectTimeout=14 -P "$PORT")
           fi
           "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM237_PREFLIGHT"'
           "${SCP[@]}" deployment/live-fixes/AM237_UNIFIED_PAYMENT_TO/apply.py deployment/live-fixes/AM237_UNIFIED_PAYMENT_TO/unified.js deployment/live-fixes/AM237_UNIFIED_PAYMENT_TO/unified.css "$REMOTE:~/AM237_PREFLIGHT/"
