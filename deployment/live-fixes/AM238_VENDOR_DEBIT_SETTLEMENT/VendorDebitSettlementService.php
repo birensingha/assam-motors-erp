@@ -43,7 +43,11 @@ final class VendorDebitSettlementService
             ->leftJoinSub($applied,'a','a.payment_voucher_id','=','p.id')
             ->leftJoinSub($used,'u','u.source_payment_voucher_id','=','p.id')
             ->where('p.record_status','ACTIVE')->where('p.payee_type','VENDOR')
-            ->where('p.vendor_id','>',0);
+            ->where('p.vendor_id','>',0)
+            // Paid purchase invoices and OSL bills are ALREADY settled and are never credits.
+            ->where(function($q){$q->whereIn('p.source_type',['ON_ACCOUNT','ADVANCE','NEW_REFERENCE'])
+                ->orWhere(function($mix){$mix->where('p.source_type','PURCHASE_INVOICE')
+                    ->where('p.source_reference','like','OA-%');});});
         if($vendorId!==null)$query->where('p.vendor_id',$vendorId);
         return $query->orderBy('p.id')->get([
             'p.id','p.voucher_no','p.source_reference','p.source_type','p.payment_date',
@@ -97,7 +101,10 @@ final class VendorDebitSettlementService
             $source=DB::table('workshop_payment_vouchers')
                 ->where('id',$sourceId)->lockForUpdate()->first();
             if(!$source || $source->record_status!=='ACTIVE' ||
-                (int)$source->vendor_id!==$vendorId || $source->payee_type!=='VENDOR')
+                (int)$source->vendor_id!==$vendorId || $source->payee_type!=='VENDOR' ||
+                !(in_array($source->source_type,['ON_ACCOUNT','ADVANCE','NEW_REFERENCE'],true) ||
+                  ($source->source_type==='PURCHASE_INVOICE' &&
+                   str_starts_with((string)$source->source_reference,'OA-'))))
                 $this->reject('Selected Debit reference is invalid, voided or belongs to another Vendor.');
             $allocated=(int)round((float)DB::table('workshop_payment_allocations')
                 ->where('payment_voucher_id',$sourceId)->sum('amount')*100);
