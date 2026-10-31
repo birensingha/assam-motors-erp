@@ -10,6 +10,7 @@ files=[
  root/'app/Services/StaffReminderEngine.php',
  root/'app/Models/StaffReminderState.php',
  root/'app/Models/NotificationOutbox.php',
+ root/'app/Models/Attendance.php',
 ]
 for p in files:
  if not p.is_file():continue
