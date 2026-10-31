@@ -7,6 +7,8 @@ on:
       - 'deployment/live-fixes/AM240_STAFF_PAYMENT_VOUCHER/staff-voucher.js'
       - 'deployment/live-fixes/AM240_STAFF_PAYMENT_VOUCHER/staff-voucher.css'
       - 'deployment/live-fixes/AM240_STAFF_PAYMENT_VOUCHER/DEPLOY_STAGING.sh'
+      - 'deployment/live-fixes/AM240_STAFF_PAYMENT_VOUCHER/hotfix.py'
+      - 'deployment/live-fixes/AM240_STAFF_PAYMENT_VOUCHER/verify-runtime.php'
   workflow_dispatch:
 permissions: { contents: read }
 concurrency: { group: assam-motors-staging-control, cancel-in-progress: false }
@@ -64,7 +66,7 @@ jobs:
             SCP=(sshpass -e scp -o ConnectTimeout=14 -P "$PORT")
           fi
           "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM240_DEPLOY"'
-          "${SCP[@]}" deployment/live-fixes/AM240_STAFF_PAYMENT_VOUCHER/apply.py deployment/live-fixes/AM240_STAFF_PAYMENT_VOUCHER/staff-voucher.js deployment/live-fixes/AM240_STAFF_PAYMENT_VOUCHER/staff-voucher.css deployment/live-fixes/AM240_STAFF_PAYMENT_VOUCHER/StaffPaymentVoucherService.php deployment/live-fixes/AM240_STAFF_PAYMENT_VOUCHER/DEPLOY_STAGING.sh "$REMOTE:~/AM240_DEPLOY/"
+          "${SCP[@]}" deployment/live-fixes/AM240_STAFF_PAYMENT_VOUCHER/apply.py deployment/live-fixes/AM240_STAFF_PAYMENT_VOUCHER/staff-voucher.js deployment/live-fixes/AM240_STAFF_PAYMENT_VOUCHER/staff-voucher.css deployment/live-fixes/AM240_STAFF_PAYMENT_VOUCHER/StaffPaymentVoucherService.php deployment/live-fixes/AM240_STAFF_PAYMENT_VOUCHER/hotfix.py deployment/live-fixes/AM240_STAFF_PAYMENT_VOUCHER/verify-runtime.php deployment/live-fixes/AM240_STAFF_PAYMENT_VOUCHER/DEPLOY_STAGING.sh "$REMOTE:~/AM240_DEPLOY/"
           "${SSH[@]}" "$REMOTE" "bash ~/AM240_DEPLOY/DEPLOY_STAGING.sh '$ROOT'"
       - name: Remove temporary SSH key
         if: always()
