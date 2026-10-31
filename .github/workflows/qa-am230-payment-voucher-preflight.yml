@@ -26,6 +26,19 @@ jobs:
         run: |
           set -euo pipefail
           python3 -m py_compile deployment/live-fixes/AM230_PAYMENT_VOUCHER_IDENTITY/apply.py
+          python3 - <<'PY'
+          import ast,pathlib
+          p=pathlib.Path('deployment/live-fixes/AM230_PAYMENT_VOUCHER_IDENTITY/apply.py')
+          tree=ast.parse(p.read_text())
+          js=next(node.value.value for node in tree.body
+              if isinstance(node,ast.Assign)
+              and any(isinstance(t,ast.Name) and t.id=='js' for t in node.targets)
+              and isinstance(node.value,ast.Constant))
+          pathlib.Path('/tmp/AM230_PAYMENT_SELECTOR.js').write_text(js)
+          print('AM230_GITHUB_JS_EXTRACTED')
+          PY
+          node --check /tmp/AM230_PAYMENT_SELECTOR.js
+          echo AM230_GITHUB_INLINE_JS_SYNTAX_PASS
       - name: SSH staging credentials
         shell: bash
         run: |
