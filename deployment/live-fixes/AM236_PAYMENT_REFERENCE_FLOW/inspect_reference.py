@@ -43,3 +43,15 @@ for name,file in files.items():
    emitted+=1
  print('AM236_FILE_'+name+'_MATCH_GROUPS='+str(len(merged)))
 print('AM236_READONLY_PAYMENT_REFERENCE_SOURCE_AUDIT_COMPLETE')
+
+# Extra targeted UI JS/source visibility contract for NEW_REFERENCE implementation.
+for title,path,ranges in [
+ ('VIEW_JS',files['VIEW'],[(385,470),(475,560),(595,670)]),
+ ('CONTROLLER',files['CONTROLLER'],[(103,145)]),
+ ('SERVICE',files['SERVICE'],[(258,278),(308,327)])
+]:
+ if not path.is_file():continue
+ lines=path.read_text('utf8',errors='surrogateescape').splitlines()
+ for a,b in ranges:
+  print(f'AM236_RANGED_{title}_{a}_{b}')
+  for i in range(a-1,min(b,len(lines))):print(f'AM236_LINE_{title}_{i+1}: {lines[i][:450]}')
