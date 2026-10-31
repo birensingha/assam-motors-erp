@@ -40,4 +40,24 @@ foreach(['workshop_expenses','workshop_payment_vouchers','workshop_payment_alloc
 }
 echo "AM232_SCHEMA_READONLY_PASS\n";
 PHP
+echo "=== EXPENSE INDEX/SHOW COMPLETE SHORT VIEWS ==="
+sed -n '1,90p' resources/views/expenses/index.blade.php | cut -c1-250
+sed -n '1,70p' resources/views/expenses/show.blade.php | cut -c1-250
+echo "=== EXPENSE FRONT JS ==="
+sed -n '1,300p' public/js/expense-entry.js | cut -c1-240
+echo "=== EXPENSE PAGE SERVICE QUERY AND STATUS ==="
+sed -n '34,67p' app/Services/ExpensePaymentService.php | cut -c1-235
+sed -n '296,325p' app/Services/ExpensePaymentService.php | cut -c1-240
+echo "=== EXISTING EXPENSE MIGRATIONS ==="
+find database/migrations -type f | grep -Ei 'expense|payment' | tail -20
+echo "=== STAFF/JOB ACTIVE STATUS DISTRIBUTION COUNTS ==="
+php <<'PHP'
+<?php
+require getcwd().'/vendor/autoload.php';$app=require getcwd().'/bootstrap/app.php';$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+use Illuminate\Support\Facades\DB;
+foreach(['staff','job_cards'] as $table){ echo strtoupper($table).'_COUNT='.DB::table($table)->count()."\n";}
+echo 'LUBRICASH_CATEGORY_EXISTS='.DB::table('workshop_expenses')->where('expense_category','LUBRICASH_COUPON')->exists()."\n";
+echo 'EXPENSES_UNPAID_COUNT='.DB::table('workshop_expenses')->where('record_status','ACTIVE')->where('payment_status','UNPAID')->count()."\n";
+PHP
+
 echo AM232_AUDIT_FINISHED_NO_WRITES
