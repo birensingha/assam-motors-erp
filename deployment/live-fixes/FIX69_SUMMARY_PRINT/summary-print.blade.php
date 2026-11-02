@@ -1,6 +1,6 @@
 <!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{{ $job->job_no }} — One-Page Job Card Summary — Assam Motors</title>
+<title>{{ $job->job_no }} — Full Job Card Summary — Assam Motors</title>
 <style>
 @page{size:A4 portrait;margin:8mm 10mm}
 *{box-sizing:border-box}
@@ -30,7 +30,10 @@ html,body{margin:0;color:var(--text);background:#edf3f9;font:9.1px/1.32 Arial,He
 table{width:100%;border-collapse:collapse;table-layout:fixed}
 th{background:#ebf2f9;color:#244c74;font-size:7.65px;text-transform:uppercase;text-align:left;border:1px solid #dce7ef;padding:5px 4px}
 td{font-size:8.1px;border-bottom:1px solid #e7edf4;padding:4px;vertical-align:top;overflow-wrap:anywhere}
-tr{break-inside:avoid}
+tr{break-inside:avoid;page-break-inside:avoid}
+thead{display:table-header-group}
+tfoot{display:table-footer-group}
+.section h3{break-after:avoid;page-break-after:avoid}
 .num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
 .desc{font-weight:700;line-height:1.25}
 .note{color:#63768a;font-size:7.5px;line-height:1.2}
@@ -46,14 +49,19 @@ tr{break-inside:avoid}
 html,body{background:#fff!important;width:190mm;height:auto}
 .toolbar{display:none!important}
 .page{width:190mm;min-height:0;height:auto;box-shadow:none;margin:0;padding:0}
+.section{break-inside:auto;page-break-inside:auto}
+.section table{break-inside:auto;page-break-inside:auto}
+.section thead{display:table-header-group}
+.section tr{break-inside:avoid;page-break-inside:avoid}
+.money,.totals,.footer{break-inside:avoid;page-break-inside:avoid}
 }
 @media screen and (max-width:760px){.page{width:100%;min-height:0;padding:9px}.brand{grid-template-columns:1fr}.doc-head{text-align:left}.summary-grid{grid-template-columns:1fr}.toolbar{margin:7px}.money{justify-content:stretch}.totals{width:100%}}
 </style></head><body>
 @php
  $allParts=$parts;
  $billableLabour=$labour->filter(fn($l)=>!isset($l->billing_included)||(int)$l->billing_included===1)->values();
- $headParts=$allParts->take(9);$restParts=$allParts->skip(9);
- $headLabour=$billableLabour->take(9);$restLabour=$billableLabour->skip(9);
+ $headParts=$allParts;
+ $headLabour=$billableLabour;
  $printPartMoney=static fn($x)=>number_format((float)$x,2);
  $partTotal=(float)($job->parts_total??0);
  $labourTotal=(float)($job->labour_total??0);
@@ -63,7 +71,7 @@ html,body{background:#fff!important;width:190mm;height:auto}
  $calc=\App\Services\JobCardTaxTotals::forJob((int)$job->id);
  $amMismatch=abs((float)$calc['grand_total']-$grand)>0.02 || abs((float)$calc['gst_total']-$gstTotal)>0.02;
 @endphp
-<div class="toolbar"><b>ASSAM MOTORS · One-page Job Card Summary (not a Tax Invoice)</b><span>
+<div class="toolbar"><b>ASSAM MOTORS · Job Card Summary · Full Line Details (not a Tax Invoice)</b><span>
 <a href="{{ route('erp.job-cards.show',$job->id) }}">← Job Card</a>
 <button type="button" onclick="window.print()">Print / Save as PDF</button></span></div>
 <main class="page">
@@ -109,7 +117,7 @@ html,body{background:#fff!important;width:190mm;height:auto}
 <td class="num">{{ $printPartMoney($part->rate??0) }}</td><td class="num">{{ number_format((float)($part->discount_percent??0),1) }}</td>
 <td class="num">{{ $printPartMoney($part->total??0) }}</td></tr>
 @empty <tr><td colspan="7" class="note">No Parts entered.</td></tr>@endforelse
-@if($restParts->count())<tr class="more"><td colspan="6">Other {{ $restParts->count() }} Part line(s) (condensed for one-page summary; full JC retains item details)</td><td class="num">{{ $printPartMoney($restParts->sum(fn($p)=>(float)($p->total??0))) }}</td></tr>@endif
+
 </tbody></table></section>
 <section class="section"><h3>Labour / ROT & OSL ({{ $billableLabour->count() }} billable)</h3>
 <table><thead><tr><th style="width:5%">#</th><th>Labour / Work</th><th style="width:15%">ROT Code</th><th class="num" style="width:9%">Std Hrs</th><th class="num" style="width:14%">Rate</th><th class="num" style="width:9%">GST %</th><th class="num" style="width:15%">Taxable</th></tr></thead>
@@ -122,7 +130,7 @@ html,body{background:#fff!important;width:190mm;height:auto}
 <td class="num">{{ $printPartMoney($line->labour_rate??0) }}</td><td class="num">{{ number_format((float)($line->gst_percent??0),1) }}</td>
 <td class="num">{{ $printPartMoney($line->total??0) }}</td></tr>
 @empty <tr><td colspan="7" class="note">No Labour / ROT added.</td></tr>@endforelse
-@if($restLabour->count())<tr class="more"><td colspan="6">Other {{ $restLabour->count() }} Labour line(s) (condensed; full JC retains item details)</td><td class="num">{{ $printPartMoney($restLabour->sum(fn($l)=>(float)($l->total??0))) }}</td></tr>@endif
+
 </tbody></table></section>
 <div class="money"><div class="totals">
 <div><span>Parts Taxable</span><b>₹{{ $printPartMoney($partTotal) }}</b></div>
