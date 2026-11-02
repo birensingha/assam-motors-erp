@@ -24,10 +24,15 @@ try {
     $expectedLabour=$labour->filter(fn($l)=>!isset($l->billing_included)||(int)$l->billing_included===1)->count();
     $html=view('job-cards.summary-print',$data)->render();
     if (!str_contains($html,'AM_JC_ALL_LINES_FULL_SUMMARY_20261102')) failAllLines('MARKER_MISSING');
-    if (!preg_match('~Parts & Consumables.*?<tbody>(.*?)</tbody>~s',$html,$pm)) failAllLines('PARTS_TABLE_MISSING');
-    if (!preg_match('~Labour / ROT & OSL.*?<tbody>(.*?)</tbody>~s',$html,$lm)) failAllLines('LABOUR_TABLE_MISSING');
-    $actualParts=preg_match_all('~<tr\b~',$pm[1]);
-    $actualLabour=preg_match_all('~<tr\b~',$lm[1]);
+    // Inspect the actual two itemized table bodies, not heading text (the
+    // active Blade may HTML-escape ampersands or add badges/spans to headings).
+    if ($expectedParts<1 || $expectedLabour<1) failAllLines('EXPECTED_ITEMS_MISSING');
+    if (!preg_match_all('~<section\\b[^>]*class=["\\x27][^"\\x27]*\\bsection\\b[^"\\x27]*["\\x27][^>]*>.*?<tbody\\b[^>]*>(.*?)</tbody>~is',$html,$bodies)) {
+        failAllLines('ITEM_TABLE_BODIES_MISSING');
+    }
+    if (count($bodies[1])!==2) failAllLines('ITEM_TABLE_COUNT_'.count($bodies[1]));
+    $actualParts=preg_match_all('~<tr\\b~',$bodies[1][0]);
+    $actualLabour=preg_match_all('~<tr\\b~',$bodies[1][1]);
     if ($expectedParts!==$actualParts) failAllLines('PARTS_ROWS_'.$actualParts.'_EXPECTED_'.$expectedParts);
     if ($expectedLabour!==$actualLabour) failAllLines('LABOUR_ROWS_'.$actualLabour.'_EXPECTED_'.$expectedLabour);
     if (str_contains($html,'condensed for one-page') || str_contains($html,'Other 9 Part line') || str_contains($html,'Other 10 Labour line')) {
