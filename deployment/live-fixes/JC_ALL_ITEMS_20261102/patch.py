@@ -48,8 +48,10 @@ out=replace_exact_regex(
     "", "LABOUR_CONDENSED_ROW")
 if out.count("@forelse($headParts as $part)")!=1 or out.count("@forelse($headLabour as $line)")!=1:
     raise SystemExit("AM_ALL_LINES_STOP_DATA_LOOP_CHANGED")
-if out.count("@media print{")!=1:
-    raise SystemExit("AM_ALL_LINES_STOP_PRINT_CSS_CHANGED")
+# Staging uses different whitespace and added discount print rules; append our
+# independent style rules without assuming any particular @media print spelling.
+if out.count("</style>")<1:
+    raise SystemExit("AM_ALL_LINES_STOP_STYLE_BLOCK_MISSING")
 css = """/* AM_JC_ALL_LINES_FULL_SUMMARY_20261102: all saved items, A4 flow */
 @media screen {
   .page {height:auto!important;max-height:none!important;overflow:visible!important}
@@ -71,7 +73,6 @@ if out.count(marker)!=1:
 # Never write a template that fails Blade compile or PHP syntax.
 with tempfile.TemporaryDirectory(prefix="am_all_lines_") as temp:
     compiled=Path(temp)/"compiled.php"
-    runner=String=None
     php=r"""require 'vendor/autoload.php';
 $app=require 'bootstrap/app.php';
 $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
