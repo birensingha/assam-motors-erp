@@ -25,7 +25,7 @@ final class Am288InspectionAssignment
     }
 
     public function configure(
-        int $jobId, int $adminId, string $mode, ?array $customPoints
+        int $jobId, int $adminId, string $mode, ?array $customPoints, string $reason
     ): array {
         $this->ready();
         if ($jobId < 1 || $adminId < 1) abort(422, 'Valid Job Card and Admin required.');
@@ -34,7 +34,10 @@ final class Am288InspectionAssignment
                 'mode' => 'Expected STANDARD or CUSTOM.',
             ]);
         }
-        return DB::transaction(function () use ($jobId, $adminId, $mode, $customPoints): array {
+        $reason = trim($reason);
+        if (mb_strlen($reason) < 8 || mb_strlen($reason) > 1000)
+            throw ValidationException::withMessages(['reason' => 'Audit reason must be 8-1000 characters.']);
+        return DB::transaction(function () use ($jobId, $adminId, $mode, $customPoints, $reason): array {
             $job = DB::table('job_cards')->where('id', $jobId)->lockForUpdate()->first();
             if (!$job) abort(404, 'Job Card not found.');
             $this->assertCanConfigure($job, $jobId);
@@ -76,6 +79,7 @@ final class Am288InspectionAssignment
             }
             $this->audit($jobId, $adminId, 'CONFIGURED', [
                 'source' => $mode,
+                'reason' => $reason,
                 'master_version' => (int)$master['version'],
                 'points_count' => count($points),
                 'old_version_id' => $existing ? (int)$existing->master_version_id : null,
