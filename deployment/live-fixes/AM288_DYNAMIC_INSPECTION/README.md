@@ -16,6 +16,8 @@ Only inside existing authenticated mobile /api/v1 middleware group:
     GET  staff/inspections/dynamic/assigned -> Am288DynamicInspectionController@mine
     GET  staff/inspections/{job}/dynamic -> Am288DynamicInspectionController@show
     POST staff/inspections/{job}/dynamic -> Am288DynamicInspectionController@submit
+    POST admin/mobile/job-cards/{job}/inspection-defects/{defect}/repair -> Am288DynamicInspectionController@repair
+    POST admin/mobile/job-cards/{job}/inspection-defects/{defect}/verify -> Am288DynamicInspectionController@verify
 
 On the same deployment add Am288BlockLegacyInspection to POST staff/inspections/{job} (legacy), with correct route parameter and existing bearer auth. Lock the job_cards row through the old submission.
 
@@ -36,3 +38,6 @@ All exact ordered keys, optional/required and condition/yes_no/availability/fuel
 - Fresh verified staging DB+code backups, explicit approval, rollback and on-phone QA required. Existing v6.3.20 with unsynced inspection draft must remain untouched.
 
 This source package intentionally has NO automatic installer or production release.
+
+### Native repair / independent re-inspection
+Admin-only repair and verify API wrappers call the existing AM189 InspectionQcGuard::repair() and ::verify() service; no direct defect status writes. Each route checks exact defect/job ownership and validates repairer ID plus 8-2000 character work observations. AM189 independently enforces safety repair/reinspection separation and append-only audit. Native app does a fresh read of the AM287 audited defect register before and after a single POST; no optimistic success or automatic retry. These routes must be added only under existing Sanctum + EnsureErpAdmin middleware after the AM189 live guard version is reconciled.
