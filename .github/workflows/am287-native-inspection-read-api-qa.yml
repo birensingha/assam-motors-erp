@@ -19,6 +19,13 @@ jobs:
           set -euo pipefail
           FILE=deployment/live-fixes/AM287_NATIVE_INSPECTION_READ_API/files/app/Http/Controllers/Api/V1/Am287InspectionReadController.php
           php -l "$FILE"
+          php -l deployment/live-fixes/AM288_LOCKED_INSPECTION_ASSIGNMENT/files/app/Services/Am288InspectionAssignment.php
+          php -l deployment/live-fixes/AM288_LOCKED_INSPECTION_ASSIGNMENT/files/app/Http/Controllers/Api/V1/Am288InspectionAssignmentController.php
+          php -l deployment/live-fixes/AM288_LOCKED_INSPECTION_ASSIGNMENT/files/database/migrations/2026_11_03_183500_create_am288_inspection_assignment_audits.php
+          grep -Fq 'lockForUpdate()' deployment/live-fixes/AM288_LOCKED_INSPECTION_ASSIGNMENT/files/app/Services/Am288InspectionAssignment.php
+          grep -Fq "'state' => 'ASSIGNED'" deployment/live-fixes/AM288_LOCKED_INSPECTION_ASSIGNMENT/files/app/Services/Am288InspectionAssignment.php
+          grep -Fq 'Audit reason' deployment/live-fixes/AM288_LOCKED_INSPECTION_ASSIGNMENT/files/app/Services/Am288InspectionAssignment.php
+          grep -Fq 'isAdmin()' deployment/live-fixes/AM288_LOCKED_INSPECTION_ASSIGNMENT/files/app/Http/Controllers/Api/V1/Am288InspectionAssignmentController.php
           grep -Fq 'ErpAuthUser' "$FILE"
           grep -Fq 'isAdmin()' "$FILE"
           grep -Fq 'InspectionQcGuard' "$FILE"
