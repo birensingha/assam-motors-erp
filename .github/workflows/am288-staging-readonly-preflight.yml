@@ -61,7 +61,7 @@ jobs:
           echo AM288_READONLY_ROUTE_METADATA
           php artisan route:list --json 2>/dev/null | python3 -c 'import sys,json;d=json.load(sys.stdin);[print(x.get("method",""),x.get("uri",""),str(x.get("action",""))[:110],str(x.get("middleware",[]))[:150]) for x in d if "inspect" in str(x.get("uri","")).lower() or "qc" in str(x.get("uri","")).lower()][:80]' || true
           echo AM288_READONLY_TABLE_EXISTENCE
-          php artisan tinker --execute='foreach(["job_cards","staff","job_card_inspection","am189_inspection_defects","am189_inspection_defect_audits","am206_inspection_master_versions","am206_job_inspection_forms","am288_inspection_answers","am288_inspection_events"] as $t){echo $t."=".(\Illuminate\Support\Facades\Schema::hasTable($t)?"YES":"NO")."\n";}' 2>/dev/null || true
+          php -r 'require "vendor/autoload.php"; $app=require "bootstrap/app.php"; $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap(); foreach(["job_cards","staff","job_card_inspection","am189_inspection_defects","am189_inspection_defect_audits","am206_inspection_master_versions","am206_job_inspection_forms","am288_inspection_answers","am288_inspection_events"] as $t){echo $t."=".(\Illuminate\Support\Facades\Schema::hasTable($t)?"YES":"NO")."\n";}' 2>/dev/null || { echo "AM288_SCHEMA_READONLY_CHECK_UNAVAILABLE"; exit 2; }
           echo AM288_STAGING_READONLY_PREFLIGHT_FINISHED_NO_MUTATIONS
           REMOTE
       - if: always()
