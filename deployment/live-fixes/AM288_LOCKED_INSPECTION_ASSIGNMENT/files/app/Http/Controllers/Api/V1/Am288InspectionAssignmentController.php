@@ -71,7 +71,7 @@ final class Am288InspectionAssignmentController extends Controller
             ], 503);
         }
         $result = $service->configure($job, (int)$admin->id, (string)$data['mode'],
-            $data['points'] ?? null);
+            $data['points'] ?? null, (string)$data['reason']);
         return response()->json(['ok' => true, 'form' => $result], 200);
     }
 
