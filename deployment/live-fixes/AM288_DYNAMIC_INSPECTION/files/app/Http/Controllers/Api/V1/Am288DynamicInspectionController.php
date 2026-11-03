@@ -208,6 +208,52 @@ final class Am288DynamicInspectionController extends Controller
         },3);
     }
 
+    /**
+     * GET /api/v1/staff/inspections/dynamic/assigned
+     * Assigned forms are independent from legacy technician_id inspection
+     * lists, so the correct Staff can find the Job Card without changing its
+     * mechanic assignment. Read-only and protected by Sanctum + actor().
+     */
+    public function mine(Request $request): JsonResponse
+    {
+        $user=$this->actor($request);
+        $this->tables();
+        $staffId=(int)($user->staff_id??0);
+        if (!$user->isAdmin() && $staffId<=0)
+            abort(403,'This mobile login is not linked to a Staff ID.');
+        $query=DB::table('am206_job_inspection_forms as f')
+            ->join('job_cards as j','j.id','=','f.job_card_id')
+            ->whereIn('f.state',['ASSIGNED','COMPLETED']);
+        if (!$user->isAdmin()) $query->where('f.assigned_staff_id',$staffId);
+        $rows=$query->orderByDesc('f.updated_at')->limit(100)
+            ->get([
+                'f.job_card_id','f.assigned_staff_id','f.state','f.source',
+                'f.updated_at','f.points_json',
+                'j.job_no','j.vehicle_reg_no','j.customer_name',
+                'j.status as job_status','j.inspection_status'
+            ]);
+        $items=[];
+        foreach ($rows as $row) {
+            $points=json_decode((string)$row->points_json,true);
+            $items[]=[
+                'job_card_id'=>(int)$row->job_card_id,
+                'job_no'=>(string)($row->job_no??''),
+                'vehicle_reg_no'=>(string)($row->vehicle_reg_no??''),
+                'customer_name'=>(string)($row->customer_name??''),
+                'assigned_staff_id'=>(int)$row->assigned_staff_id,
+                'state'=>(string)$row->state,'mode'=>(string)$row->source,
+                'point_count'=>is_array($points)?count($points):0,
+                'job_status'=>(string)$row->job_status,
+                'inspection_status'=>(string)$row->inspection_status,
+                'updated_at'=>(string)$row->updated_at
+            ];
+        }
+        return response()->json([
+            'ok'=>true,'contract'=>'AM288_DYNAMIC_V1','items'=>$items,
+            'count'=>count($items)
+        ]);
+    }
+
     /** GET /api/v1/staff/inspections/{job}/dynamic */
     public function show(Request $request,int $job): JsonResponse
     {
