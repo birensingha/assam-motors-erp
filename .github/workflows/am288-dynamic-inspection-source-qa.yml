@@ -1,0 +1,65 @@
+name: AM288 Dynamic Inspection staged source QA (no deploy)
+on:
+  push:
+    branches: [feature/am288-dynamic-inspection-assignment]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  am288-static-security:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP lint all staged service/controller/migration/middleware files
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=deployment/live-fixes/AM288_DYNAMIC_INSPECTION/files
+          find "$BASE" -name '*.php' -print0 | xargs -0 -r -n 1 php -l
+      - name: Fail-closed source contracts (NOT integration tests)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          base=Path('deployment/live-fixes/AM288_DYNAMIC_INSPECTION/files')
+          controller=(base/'app/Http/Controllers/Api/V1/Am288DynamicInspectionController.php').read_text()
+          middleware=(base/'app/Http/Middleware/Am288BlockLegacyInspection.php').read_text()
+          guard=(base/'app/Services/InspectionQcGuard.php').read_text()
+          migration=next((base/'database/migrations').glob('*am288*.php')).read_text()
+          required=[
+            "private function admin(Request $request)",
+            "abort_unless($user->isAdmin(), 403",
+            "private function canView(",
+            "assigned_staff_id",
+            "STANDARD", "CUSTOM", "point_keys",
+            "validateDefinition", "lockForUpdate()",
+            "hash_equals($this->fingerprint($form)",
+            "am288_inspection_answers",
+            "am288_inspection_events",
+            "am189_inspection_defects",
+            "am189_inspection_defect_audits",
+            "'status'=>'OPEN'",
+            "'state'=>'COMPLETED'",
+            "return DB::transaction",
+            "Inspection already completed",
+            "Existing legacy inspection must not be overwritten",
+          ]
+          for literal in required:
+            assert literal in controller, ('Missing controller safety invariant', literal)
+          for literal in ["lockForUpdate()", "DB::transaction", "'POST'", "409", "am206_job_inspection_forms"]:
+            assert literal in middleware, ('Missing legacy route middleware safeguard', literal)
+          for literal in ["am288_inspection_answers", "ORIGINAL_INSPECTION_CHANGED",
+                          "VERIFIED", "assertQcReady(int $jobId)", "mixed legacy and dynamic"]:
+            assert literal in guard, ('Missing AM189 typed QC guard', literal)
+          for literal in ["am288_inspection_answers", "am288_inspection_events",
+                          "unique(['job_card_id','point_key']",
+                          "unique(['job_card_id','position']"]:
+            assert literal in migration, ('Missing uniqueness/audit invariant', literal)
+          assert "Schema::drop" not in migration
+          assert not (Path('routes')/'api.php').exists() # staged package repo, no direct live route edit
+          print('AM288_STAGING_SOURCE_SECURITY_PASS - no Hostinger deploy or DB integration claimed')
+          PY
