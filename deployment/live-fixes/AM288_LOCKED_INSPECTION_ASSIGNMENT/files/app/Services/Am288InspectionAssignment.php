@@ -16,7 +16,8 @@ final class Am288InspectionAssignment
     private function ready(): void
     {
         foreach (['am206_inspection_master_versions', 'am206_job_inspection_forms',
-                   'job_cards', 'staff', 'job_card_inspection'] as $table) {
+                   'job_cards', 'staff', 'job_card_inspection',
+                   'am288_inspection_assignment_audits'] as $table) {
             if (!Schema::hasTable($table)) {
                 abort(503, "AM288 dependency missing: {$table}");
             }
@@ -73,6 +74,13 @@ final class Am288InspectionAssignment
                 $data['created_at'] = now();
                 DB::table('am206_job_inspection_forms')->insert($data);
             }
+            $this->audit($jobId, $adminId, 'CONFIGURED', [
+                'source' => $mode,
+                'master_version' => (int)$master['version'],
+                'points_count' => count($points),
+                'old_version_id' => $existing ? (int)$existing->master_version_id : null,
+                'new_points_sha256' => hash('sha256', json_encode($points, JSON_THROW_ON_ERROR)),
+            ]);
             return [
                 'job_card_id' => $jobId, 'state' => 'DRAFT',
                 'source' => $mode, 'master_version' => (int)$master['version'],
