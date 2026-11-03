@@ -254,6 +254,62 @@ final class Am288DynamicInspectionController extends Controller
         ]);
     }
 
+    /**
+     * Admin-only existing AM189 repair workflow for the SAME Job Card.
+     * The AM189 service owns transaction locks, staff validation, safety
+     * independence and append-only defect audit. No bespoke status update.
+     */
+    public function repair(Request $request,int $job,int $defect,
+                           \App\Services\InspectionQcGuard $guard): JsonResponse
+    {
+        $admin=$this->admin($request);
+        $this->tables();
+        $record=DB::table('am189_inspection_defects')
+            ->where('job_card_id',$job)->where('id',$defect)->first();
+        abort_unless($record,404,'Defect does not belong to this Job Card.');
+        $v=$request->validate([
+            'repair_staff_id'=>['required','integer','min:1'],
+            'repair_note'=>['required','string','min:8','max:2000']
+        ]);
+        $actualJob=$guard->repair($defect,(int)$admin->id,
+            (int)$v['repair_staff_id'],(string)$v['repair_note']);
+        abort_unless($actualJob===$job,409,'AM189 repair Job Card mismatch.');
+        return response()->json([
+            'ok'=>true,'contract'=>'AM288_DYNAMIC_V1','job_card_id'=>$job,
+            'defect_id'=>$defect,'status'=>'RECTIFIED',
+            'message'=>'AM189 repair recorded. Independent verification still required.'
+        ]);
+    }
+
+    /**
+     * Admin-only independent AM189 verification; FAIL -> OPEN, PASS -> VERIFIED.
+     * Existing AM189 service blocks the repair technician or same safety
+     * repair Admin from self-verifying where independent safety review applies.
+     */
+    public function verify(Request $request,int $job,int $defect,
+                           \App\Services\InspectionQcGuard $guard): JsonResponse
+    {
+        $admin=$this->admin($request);
+        $this->tables();
+        $record=DB::table('am189_inspection_defects')
+            ->where('job_card_id',$job)->where('id',$defect)->first();
+        abort_unless($record,404,'Defect does not belong to this Job Card.');
+        $v=$request->validate([
+            'result'=>['required','in:PASS,FAIL'],
+            'verification_note'=>['required','string','min:8','max:2000']
+        ]);
+        $pass=$v['result']==='PASS';
+        $actualJob=$guard->verify($defect,(int)$admin->id,
+            (int)($admin->staff_id??0),$pass,(string)$v['verification_note']);
+        abort_unless($actualJob===$job,409,'AM189 verification Job Card mismatch.');
+        return response()->json([
+            'ok'=>true,'contract'=>'AM288_DYNAMIC_V1','job_card_id'=>$job,
+            'defect_id'=>$defect,'status'=>$pass?'VERIFIED':'OPEN',
+            'message'=>$pass?'Independent AM189 verification recorded.':
+                'AM189 verification FAILED; defect returned to OPEN.'
+        ]);
+    }
+
     /** GET /api/v1/staff/inspections/{job}/dynamic */
     public function show(Request $request,int $job): JsonResponse
     {
