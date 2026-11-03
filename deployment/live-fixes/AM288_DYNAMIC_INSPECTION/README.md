@@ -13,6 +13,7 @@
 Only inside existing authenticated mobile /api/v1 middleware group:
 
     POST admin/mobile/job-cards/{job}/inspection-form/assign -> Am288DynamicInspectionController@assign
+    GET  staff/inspections/dynamic/assigned -> Am288DynamicInspectionController@mine
     GET  staff/inspections/{job}/dynamic -> Am288DynamicInspectionController@show
     POST staff/inspections/{job}/dynamic -> Am288DynamicInspectionController@submit
 
@@ -21,7 +22,7 @@ On the same deployment add Am288BlockLegacyInspection to POST staff/inspections/
 ## Contract
 Admin assign: {"staff_id":123,"mode":"CUSTOM","point_keys":["p01","p03"],"reason":"Select critical reception checks"}. STANDARD has all published points, CUSTOM selects a unique published subset (types and defect answers immutable). Locked snapshot and Staff assignment are separate from JC mechanic. Only open/inspection-pending JC, no previous results/defects.
 
-GET response: {"ok":true,"contract":"AM288_DYNAMIC_V1","job":{"id":42,"status":"open","inspection_status":"pending"},"form":{"state":"ASSIGNED","form_hash":"64 hex","points":[...]}}. Only Admin or assigned Staff may read.
+GET response: {"ok":true,"contract":"AM288_DYNAMIC_V1","job":{"id":42,"status":"open","inspection_status":"pending"},"form":{"state":"ASSIGNED","form_hash":"64 hex","points":[...]}}. Only Admin or assigned Staff may read. The separate GET /staff/inspections/dynamic/assigned lists locked Job Cards for that Staff ID (Admin may review); the legacy technician/inspection register is unchanged.
 
 POST: {"form_hash":"64 hex","items":[{"point_key":"p01","value":"yes","remarks":""}]}.
 All exact ordered keys, optional/required and condition/yes_no/availability/fuel/reading types checked, mandatory defect remarks. Job Card and form row locks, no duplicate writes, stale form check, append-only audit; AM189 defect OPEN rows created atomically. Android must reconcile by GET after network uncertainty; no POST auto retry.
