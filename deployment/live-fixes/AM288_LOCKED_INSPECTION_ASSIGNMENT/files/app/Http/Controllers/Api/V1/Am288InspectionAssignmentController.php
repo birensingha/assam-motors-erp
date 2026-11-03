@@ -57,6 +57,10 @@ final class Am288InspectionAssignmentController extends Controller
         Request $request, int $job, Am288InspectionAssignment $service
     ): JsonResponse {
         $admin = $this->admin($request);
+        // Do not lock a custom checklist while old Staff API still requires
+        // exactly 30 Good/Fair/Poor. Explicit feature gate defaults OFF.
+        abort_unless(config('features.am288_typed_submission_ready', false) === true,
+            503, 'AM288 assignment disabled until typed Staff submission and QC audit are deployed.');
         $data = $request->validate([
             'mode' => ['required', 'in:STANDARD,CUSTOM'],
             'points' => ['required_if:mode,CUSTOM', 'nullable', 'array', 'min:1', 'max:100'],
@@ -79,6 +83,8 @@ final class Am288InspectionAssignmentController extends Controller
         Request $request, int $job, Am288InspectionAssignment $service
     ): JsonResponse {
         $admin = $this->admin($request);
+        abort_unless(config('features.am288_typed_submission_ready', false) === true,
+            503, 'AM288 assignment disabled until typed Staff submission and QC audit are deployed.');
         $data = $request->validate([
             'staff_id' => ['required', 'integer', 'min:1'],
             'reason' => ['required', 'string', 'min:8', 'max:1000'],
