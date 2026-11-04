@@ -2,7 +2,7 @@ name: AM244 Expense Against Reference READONLY Audit
 on:
   push:
     branches: [feature/am244-lubricash-expense-payment-link]
-    paths: ['.github/workflows/am244-expense-payment-audit.yml']
+    paths: ['.github/workflows/am244-expense-payment-audit.yml','deployment/live-fixes/AM244_EXPENSE_PAYMENT/audit_ui.py']
 permissions: {contents: read}
 concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
 jobs:
@@ -18,7 +18,7 @@ jobs:
       ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
     steps:
       - uses: actions/checkout@v4
-      - run: python3 -m py_compile deployment/live-fixes/AM244_EXPENSE_PAYMENT/audit.py
+      - run: python3 -m py_compile deployment/live-fixes/AM244_EXPENSE_PAYMENT/audit.py deployment/live-fixes/AM244_EXPENSE_PAYMENT/audit_ui.py
       - name: SSH
         shell: bash
         run: |
@@ -48,7 +48,10 @@ jobs:
           fi
           "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM244_EXPENSE_PAYMENT"'
           "${SCP[@]}" deployment/live-fixes/AM244_EXPENSE_PAYMENT/audit.py "$REMOTE:~/AM244_EXPENSE_PAYMENT/audit.py"
+          "${SCP[@]}" deployment/live-fixes/AM244_EXPENSE_PAYMENT/audit_ui.py "$REMOTE:~/AM244_EXPENSE_PAYMENT/audit_ui.py"
           "${SSH[@]}" "$REMOTE" "python3 ~/AM244_EXPENSE_PAYMENT/audit.py '$ROOT'" | tee "$RUNNER_TEMP/am244-audit.log"
           grep -q AM244_READONLY_DONE "$RUNNER_TEMP/am244-audit.log"
+          "${SSH[@]}" "$REMOTE" "python3 ~/AM244_EXPENSE_PAYMENT/audit_ui.py '$ROOT'" | tee "$RUNNER_TEMP/am244-ui.log"
+          grep -q AM244_UI_AUDIT_PASS "$RUNNER_TEMP/am244-ui.log"
       - if: always()
         run: rm -f ~/.ssh/id_ed25519
