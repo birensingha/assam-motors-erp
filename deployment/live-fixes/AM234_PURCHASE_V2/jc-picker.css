@@ -1,0 +1,9 @@
+/* AM234_PURCHASE_JC_PICKER_V2: scoped to Parts Purchase. */
+#purchase-form .job-filter-wrap .job-filter {display:block!important;width:100%!important;min-width:0!important}
+#purchase-form .job-filter-wrap .job-filter:disabled{background:#eef2f7;cursor:not-allowed}
+.am234-jc-menu[hidden]{display:none!important}
+.am234-jc-menu{z-index:2147483000;background:#fff;border:1px solid #9ebad5;box-shadow:0 9px 25px rgba(15,33,61,.19);border-radius:7px;overflow-y:auto;overflow-x:hidden;box-sizing:border-box;font:inherit}
+.am234-jc-option{display:block;width:100%;padding:10px 12px;border:0;border-bottom:1px solid #edf1f5;text-align:left;background:#fff;color:#173957;cursor:pointer;font:600 12px/1.35 Arial,sans-serif;white-space:normal}
+.am234-jc-option:last-child{border-bottom:0}
+.am234-jc-option:hover,.am234-jc-option:focus,.am234-jc-option.active{background:#eaf3ff;outline:none}
+.am234-jc-empty{padding:12px;color:#63748a;font:12px/1.4 Arial,sans-serif}
