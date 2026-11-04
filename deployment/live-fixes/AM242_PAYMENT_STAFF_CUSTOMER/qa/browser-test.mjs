@@ -9,13 +9,18 @@ fs.mkdirSync(out,{recursive:true});
 if(!email||!password)throw new Error('Missing staging Admin QA credentials');
 const browser=await chromium.launch({headless:true});
 const page=await browser.newPage({viewport:{width:1440,height:920}});
-const errors=[];page.on('pageerror',e=>errors.push(e.message));
+const errors=[];let currentStage='login';
+page.on('pageerror',e=>{
+ const info={stage:currentStage,url:page.url(),message:e.message,stack:String(e.stack||'').slice(0,700)};
+ errors.push(info);console.log('AM242_BROWSER_JS_ERROR '+JSON.stringify(info));
+});
 try{
  await page.goto(base+loginPath,{waitUntil:'domcontentloaded',timeout:45000});
  await page.locator('input[type="email"],input[name="email"],input[name="username"]').first().fill(email);
  await page.locator('input[type="password"]').first().fill(password);
  await page.locator('button[type="submit"],input[type="submit"]').first().click();
  await page.waitForLoadState('networkidle').catch(()=>{});
+ currentStage='payment';
  const res=await page.goto(base+'/erp/payments/create',{waitUntil:'networkidle',timeout:45000});
  if(!res||res.status()!==200)throw new Error('Payment Voucher HTTP '+res?.status());
  const search=page.locator('#am237-payee-search'),options=page.locator('#am237-payee-results');
@@ -68,13 +73,14 @@ try{
  const credit=await page.locator('#am242-credit').innerText();
  if(!credit.includes('Customer Ledger'))throw new Error('Customer refund balance display missing');
  await page.screenshot({path:out+'/customer-refund-credit-check.png',fullPage:false});
+ currentStage='expenses';
  const exp=await page.goto(base+'/erp/expenses/create',{waitUntil:'networkidle',timeout:45000});
  if(!exp||exp.status()!==200)throw new Error('Expense create HTTP '+exp?.status());
  const travel=page.locator('select[name="expense_category"] option[value="TRAVEL"]');
  if(!(await travel.innerText()).includes('LOCAL CONVEYANCE'))throw new Error('Tour / Local Conveyance option not clear');
  if(!(await page.locator('#am233-staff-id option[value]:not([value=""])').count()>=6))throw new Error('Expense Staff Master incomplete');
  await page.screenshot({path:out+'/staff-tour-local-conveyance-entry.png',fullPage:false});
- if(errors.length)throw new Error('Browser JavaScript errors: '+errors.slice(0,5).join(' | '));
+ if(errors.length)throw new Error('Browser JavaScript errors by stage: '+JSON.stringify(errors.slice(0,5)));
  console.log('AM242_STAFF_CUSTOMER_PICKERS_AND_EXPENSE_UI_BROWSER_PASS_NO_PAYMENT_POST');
  fs.writeFileSync(out+'/result.json',JSON.stringify({ok:true,staffOptions,customerOptions,staffAdvanceReady:true,customerAdvanceReady:true,noMoneyPosted:true,checked:new Date().toISOString()},null,2));
 }catch(e){
