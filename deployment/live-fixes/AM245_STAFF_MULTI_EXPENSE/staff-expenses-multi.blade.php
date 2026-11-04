@@ -171,6 +171,13 @@ function auto(){
    const allocate=Math.min(remaining,Number(r.dataset.due));
    input.value=(Math.max(0,allocate)/100).toFixed(2);
    remaining=Math.max(0,remaining-allocate);
+   if(allocate===0){
+     const tick=r.querySelector('.am245-check');
+     if(tick)tick.checked=false;
+     input.disabled=true;
+     const hidden=r.querySelector('input[type=hidden]');
+     if(hidden)hidden.disabled=true;
+   }
  }
  refresh();
 }
