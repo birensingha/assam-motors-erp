@@ -32,3 +32,10 @@ User request: **Staff ko multiple unpaid Expense Vouchers ka payment karna ho to
 - Salary advances/provision still use separate Staff Financial Ledger rules.
 - Customer payouts and vendor payments remain on their own audited paths.
 - Payment Voucher direct editing of a posted multi-share allocation is intentionally blocked; Void and re-post with reason is required.
+
+## Staging verification completed — 4 November 2026
+
+- [Guarded staging deployment + Chrome browser verification PASS](https://github.com/birensingha/assam-motors-erp/actions/runs/41868528406). Source backup created, PHP lint, Laravel routes and Blade compilation passed. Browser verified actual staff selector and real unpaid state; the selected staff had no currently outstanding references during the test. A **browser-only three-reference fixture** verified ₹420 allocated across three expenses, ₹300 partial allocation, and rejection of over-allocation. No payment was posted by Chrome.
+- [InnoDB rollback-only accounting integration PASS](https://github.com/birensingha/assam-motors-erp/actions/runs/41869262532). The actual posting service generated ONE Payment Voucher with TWO linked expenses, validated ₹100 PAID + ₹150 PARTIAL against a ₹250 allocation, then audited Void restored both UNPAID amounts. **All synthetic business rows were rolled back** by an outer transaction; no real staff payment or expense was committed.
+
+Caveat: These are staging integration checks, not evidence that every possible historic ledger edge case or browser workflow has been tested. In particular, a zero-outstanding Staff will correctly show an empty list.
