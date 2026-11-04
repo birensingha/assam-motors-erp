@@ -1,7 +1,6 @@
 # AM234 — Assam Motors Parts Purchase V2: new Job Card picker
 
-Status: **feature branch / candidate only**. Not deployed to Hostinger staging.
-Do **not** report the purchase page fixed until the browser and purchase flow pass.
+Status: **deployed to Hostinger STAGING on 2026-11-04**. Automated read-only browser search / selection PASS (workflow #41800281485). A real Purchase Save/financial posting has NOT been tested.
 
 ## What is verified
 - The user's staging Laravel service returned 33 Job Cards via `searchJobs('',200)`.
@@ -26,9 +25,12 @@ Do **not** report the purchase page fixed until the browser and purchase flow pa
 
 ## Source / deployment limitation
 The live Hostinger Laravel application **is not checked into this GitHub repository**.
-This PR is the prepared fix, **not** a live repair. Applying to staging still requires
-a trusted deploy workflow with access to its current `purchase-entry.js` and Blade view.
-The user's existing GitHub staging workflow is dispatch-only; this PR does not trigger it.
+The actual website serves JS from `public_html/staging/js/purchase-entry.js`, not
+`assam-erp-staging/public/js/purchase-entry.js`. The guarded AM234 workflow
+applied the new picker to both the Laravel source and the actual served asset,
+verified the public HTTP JS marker, then completed browser acceptance without
+creating a purchase. Previous failed attempts auto-rolled back. The branch
+remains draft because financial posting and reconciliation require separate QA.
 
 ## Rebuild after JC selection
 The next distinct backend feature is mandatory reconciliation:
