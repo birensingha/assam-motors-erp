@@ -1,0 +1,59 @@
+name: AM240 OSL Purchase Source Audit
+on:
+  push:
+    branches: [feature/am240-osl-purchase-edit]
+    paths: ['.github/workflows/am240-osl-audit.yml','deployment/live-fixes/AM240_OSL_PURCHASE_EDIT/audit2.py','deployment/live-fixes/AM240_OSL_PURCHASE_EDIT/audit3.py']
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check syntax
+        run: python3 -m py_compile deployment/live-fixes/AM240_OSL_PURCHASE_EDIT/audit.py deployment/live-fixes/AM240_OSL_PURCHASE_EDIT/audit2.py deployment/live-fixes/AM240_OSL_PURCHASE_EDIT/audit3.py
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$KEY" || test -n "$PASSWORD"
+          install -d -m 700 ~/.ssh
+          for n in 1 2 3 4; do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else sudo apt-get update -qq; sudo apt-get install -qq -y sshpass;fi
+      - name: Read OSL purchase source
+        shell: bash
+        run: |
+          set -euo pipefail
+          REMOTE="$USERNAME@$HOST"
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -p "$PORT")
+            SCP=(sshpass -e scp -P "$PORT")
+          fi
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM240_OSL_AUDIT"'
+          "${SCP[@]}" deployment/live-fixes/AM240_OSL_PURCHASE_EDIT/audit.py deployment/live-fixes/AM240_OSL_PURCHASE_EDIT/audit2.py deployment/live-fixes/AM240_OSL_PURCHASE_EDIT/audit3.py "$REMOTE:~/AM240_OSL_AUDIT/"
+          "${SSH[@]}" "$REMOTE" "python3 ~/AM240_OSL_AUDIT/audit.py '$ROOT'" | tee "$RUNNER_TEMP/am240-audit.log"
+          grep -q AM240_READ_ONLY_AUDIT_FINISHED "$RUNNER_TEMP/am240-audit.log"
+          "${SSH[@]}" "$REMOTE" "python3 ~/AM240_OSL_AUDIT/audit2.py '$ROOT'" | tee "$RUNNER_TEMP/am240-detail.log"
+          grep -q AM240_DETAIL_AUDIT_FINISHED "$RUNNER_TEMP/am240-detail.log"
+          "${SSH[@]}" "$REMOTE" "python3 ~/AM240_OSL_AUDIT/audit3.py '$ROOT'" | tee "$RUNNER_TEMP/am240-route.log"
+          grep -q AM240_OSL_ROUTE_READ_ONLY_PASS "$RUNNER_TEMP/am240-route.log"
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
