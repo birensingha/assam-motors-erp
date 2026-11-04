@@ -78,17 +78,7 @@
   font-size:16px!important;
   line-height:1!important;
 }
-/* Percentages total 100%; prevent misaligned narrow flex/auto columns. */
-#purchase-form .line-table th:nth-child(1){width:2.5%!important}
-#purchase-form .line-table th:nth-child(2){width:27%!important}
-#purchase-form .line-table th:nth-child(3){width:6%!important}
-#purchase-form .line-table th:nth-child(4){width:8%!important}
-#purchase-form .line-table th:nth-child(5){width:6%!important}
-#purchase-form .line-table th:nth-child(6){width:6%!important}
-#purchase-form .line-table th:nth-child(7){width:12%!important}
-#purchase-form .line-table th:nth-child(8){width:21%!important}
-#purchase-form .line-table th:nth-child(9){width:8%!important}
-#purchase-form .line-table th:nth-child(10){width:3.5%!important}
+/* Retain the original working column widths / responsive behavior. */
 #purchase-form .line-scroll{
   min-height:198px!important;
   padding:4px 5px 11px!important;
