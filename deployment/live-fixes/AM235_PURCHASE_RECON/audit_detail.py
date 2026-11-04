@@ -8,8 +8,8 @@ targets={
  'app/Services/PurchaseService.php':[(270,325),(322,445),(1090,1160)],
  'app/Http/Controllers/Web/AdminJobCardPartIssueController.php':[(1,350)],
  'app/Http/Controllers/Web/AdminJobCardPartsBatchController.php':[(1,260)],
- 'app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php':[(1,115)],
- 'resources/views/purchases/index.blade.php':[(1,100)],
+ 'app/Http/Controllers/Web/AdminJobCardLifecyclePageController.php':[(195,620)],
+ 'resources/views/purchases/index.blade.php':[(41,105)],
  'resources/views/purchases/create.blade.php':[(310,410)],
  'routes/web.php':[(1,1)]
 }
