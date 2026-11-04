@@ -80,6 +80,24 @@ jobs:
           BACKUP=$(printf '%s\n' "$RESULT" | sed -n 's/^Backup: //p' | tail -1)
           test -n "$BACKUP"
           echo "BACKUP_PATH=$BACKUP" >> "$GITHUB_ENV"
+          # The actual web-served JS lives outside Laravel's public/ directory.
+          # Source vs browser SHA audit proved this exact resolved staging path.
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT' '$BACKUP'" <<'REMOTE_ASSET'
+          set -euo pipefail
+          root="$1"; backup="$2"
+          test "$root" = "$HOME/domains/assammotors.com/assam-erp-staging"
+          case "$backup" in "$root"/storage/app/am-backups/AM234_PURCHASE_JC_*) ;; *) exit 2 ;; esac
+          served="$HOME/domains/assammotors.com/public_html/staging/js/purchase-entry.js"
+          test -f "$served" && test -f "$root/public/js/purchase-entry.js"
+          cp -p "$served" "$backup/served-purchase-entry.js"
+          cp -p "$root/public/js/purchase-entry.js" "$served.am234_tmp"
+          chmod --reference="$served" "$served.am234_tmp"
+          mv -f "$served.am234_tmp" "$served"
+          cmp -s "$root/public/js/purchase-entry.js" "$served"
+          echo AM234_WEB_SERVED_ASSET_SYNC_PASS
+          REMOTE_ASSET
+          curl -fsSL --max-time 25 -H 'Cache-Control: no-cache' "https://staging.assammotors.com/js/purchase-entry.js?am234=$(date +%s)" | grep -q 'AM234_PURCHASE_JC_PICKER_V2'
+          echo AM234_PUBLIC_HTTP_ASSET_PROOF_PASS
 
       - name: Install Playwright Chromium
         run: |
@@ -111,6 +129,12 @@ jobs:
           test -f "$backup/purchase-entry.js" && test -f "$backup/create.blade.php"
           cp -p "$backup/purchase-entry.js" "$root/public/js/purchase-entry.js"
           cp -p "$backup/create.blade.php" "$root/resources/views/purchases/create.blade.php"
+          if [ -f "$backup/served-purchase-entry.js" ]; then
+            served="$HOME/domains/assammotors.com/public_html/staging/js/purchase-entry.js"
+            test -f "$served"
+            cp -p "$backup/served-purchase-entry.js" "$served"
+            echo AM234_WEB_ASSET_ROLLED_BACK
+          fi
           cd "$root"
           php artisan view:clear
           echo AM234_ROLLBACK_COMPLETE
