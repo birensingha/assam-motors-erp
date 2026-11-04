@@ -2,7 +2,7 @@ name: AM243 Expense Voucher Delete READONLY Audit
 on:
   push:
     branches: [audit/am243-expense-delete-control-20261104]
-    paths: ['.github/workflows/am243-expense-delete-audit.yml']
+    paths: ['.github/workflows/am243-expense-delete-audit.yml','deployment/audits/AM243_expense_page_audit.py']
 permissions: {contents: read}
 concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
 jobs:
@@ -18,7 +18,7 @@ jobs:
       ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
     steps:
       - uses: actions/checkout@v4
-      - run: python3 -m py_compile deployment/audits/AM243_expense_delete_audit.py
+      - run: python3 -m py_compile deployment/audits/AM243_expense_delete_audit.py deployment/audits/AM243_expense_page_audit.py
       - name: Configure SSH
         shell: bash
         run: |
@@ -48,7 +48,10 @@ jobs:
           fi
           "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM243_EXPENSE_AUDIT"'
           "${SCP[@]}" deployment/audits/AM243_expense_delete_audit.py "$REMOTE:~/AM243_EXPENSE_AUDIT/audit.py"
+          "${SCP[@]}" deployment/audits/AM243_expense_page_audit.py "$REMOTE:~/AM243_EXPENSE_AUDIT/page.py"
           "${SSH[@]}" "$REMOTE" "python3 ~/AM243_EXPENSE_AUDIT/audit.py '$ROOT'" | tee "$RUNNER_TEMP/am243-audit.log"
           grep -q AM243_EXPENSE_READONLY_AUDIT_PASS "$RUNNER_TEMP/am243-audit.log"
+          "${SSH[@]}" "$REMOTE" "python3 ~/AM243_EXPENSE_AUDIT/page.py '$ROOT'" | tee "$RUNNER_TEMP/am243-page.log"
+          grep -q AM243_VIEW_INSPECT_PASS "$RUNNER_TEMP/am243-page.log"
       - if: always()
         run: rm -f ~/.ssh/id_ed25519
