@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/am242-payment-staging.yml'
       - 'deployment/live-fixes/AM242_PAYMENT_STAFF_CUSTOMER/apply.py'
+      - 'deployment/live-fixes/AM242_PAYMENT_STAFF_CUSTOMER/qa/browser-test.mjs'
 permissions: {contents: read}
 concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
 jobs:
