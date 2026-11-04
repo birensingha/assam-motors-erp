@@ -2,7 +2,7 @@ name: AM244 Staff Expense Against Reference STAGING guarded
 on:
   push:
     branches: [feature/am244-lubricash-expense-payment-link]
-    paths: ['.github/workflows/am244-staff-expense-staging.yml']
+    paths: ['.github/workflows/am244-staff-expense-staging.yml','deployment/live-fixes/AM244_EXPENSE_PAYMENT/apply.py','deployment/live-fixes/AM244_EXPENSE_PAYMENT/qa/browser-test.mjs']
 permissions: {contents: read}
 concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
 jobs:
