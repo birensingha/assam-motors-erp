@@ -60,7 +60,7 @@ final class AdminMasterItemLedgerController extends Controller
             'date'=>self::dateOf($date),'sort_time'=>$order,'sort_id'=>$rowId,
             'type'=>$type,'reference'=>$reference,'detail'=>$detail,
             'party'=>$party,'vehicle'=>$vehicle,'in'=>$inQty,'out'=>$outQty,
-            'amount'=>$amount,'url'=>$url,'status'=>$status,'notes'=>$notes,
+            'amount'=>$amount,'url'=>$url,'status'=>$status,'notes'=>$notes,'balance'=>null,
         ];
     }
 
@@ -98,6 +98,7 @@ final class AdminMasterItemLedgerController extends Controller
                 'Inventory movement; recorded balance '.number_format((float)$m->balance_after,3),
                 (string)($m->customer_name?:''),(string)($m->vehicle_reg_no?:''),
                 $in,$out,null,$url,'STOCK POSTED',(string)($m->note?:''));
+            $timeline[array_key_last($timeline)]['balance']=$running;
         }
 
         $purchaseQuery=DB::table('workshop_purchases as p')
