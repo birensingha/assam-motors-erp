@@ -4,6 +4,7 @@ on:
     branches: [feature/am235-purchase-reconciliation]
     paths:
       - '.github/workflows/am235-purchase-audit.yml'
+      - 'deployment/live-fixes/AM235_PURCHASE_RECON/audit_detail.py'
 permissions: {contents: read}
 concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
 jobs:
@@ -49,9 +50,11 @@ jobs:
             SCP=(sshpass -e scp -o ConnectTimeout=14 -P "$PORT")
           fi
           "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/am235-audit"'
-          "${SCP[@]}" deployment/live-fixes/AM235_PURCHASE_RECON/audit.py "$REMOTE:~/am235-audit/audit.py"
+          "${SCP[@]}" deployment/live-fixes/AM235_PURCHASE_RECON/audit.py deployment/live-fixes/AM235_PURCHASE_RECON/audit_detail.py "$REMOTE:~/am235-audit/"
           "${SSH[@]}" "$REMOTE" "python3 ~/am235-audit/audit.py '$ROOT'" | tee "$RUNNER_TEMP/am235-audit.txt"
           grep -q AM235_AUDIT_END "$RUNNER_TEMP/am235-audit.txt"
+          "${SSH[@]}" "$REMOTE" "python3 ~/am235-audit/audit_detail.py '$ROOT'" | tee "$RUNNER_TEMP/am235-detail.txt"
+          grep -q AM235_DETAIL_COMPLETE_NO_WRITES "$RUNNER_TEMP/am235-detail.txt"
       - name: Remove key
         if: always()
         run: rm -f ~/.ssh/id_ed25519
