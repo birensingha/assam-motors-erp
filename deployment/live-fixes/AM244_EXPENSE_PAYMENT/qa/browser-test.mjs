@@ -43,7 +43,7 @@ try{
  const src=await page.locator('#am240-expense option:checked').innerText();
  if(!src.includes('EXP-20261104-000016'))throw new Error('Expense reference number not in selected option');
  if(!await page.locator('#am240-expense-box').isVisible())throw new Error('Against Reference selector not visible');
- const summary=(await page.locator('#am240-staff-notice').innerText()).trim();
+ const summary=(await page.locator('#am244-selected-reference').innerText()).trim();
  if(!summary.includes('EXP-20261104-000016'))throw new Error('Payee outstanding notice missing expected reference');
  await page.screenshot({path:out+'/staff-expense-220-selected-payment-voucher.png',fullPage:true});
  // From a blank payment form the same expense must be discoverable manually.
