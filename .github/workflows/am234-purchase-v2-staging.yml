@@ -5,6 +5,7 @@ on:
       - feature/am234-purchase-entry-v2
     paths:
       - '.github/workflows/am234-purchase-v2-staging.yml'
+      - 'deployment/live-fixes/AM234_PURCHASE_V2/qa/staging-browser-test.mjs'
 permissions: { contents: read }
 concurrency: { group: assam-motors-staging-control, cancel-in-progress: false }
 jobs:
