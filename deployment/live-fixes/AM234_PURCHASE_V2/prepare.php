@@ -30,7 +30,7 @@ $lines=preg_split('/(?<=\n)/',$newView);
 $versionCount=0;
 foreach ($lines as &$line) {
  if (str_contains($line,'purchase-entry.js')) {
-  $line=preg_replace_callback('/\?v=(\d+)/',static fn($m)=>'?v='.((int)$m[1]+1),$line,1,$incremented);
+  $line=preg_replace_callback('/\?v=(\d+)/',static fn($m)=>'?v=234'.gmdate('YmdHis'),$line,1,$incremented);
   $versionCount+=$incremented;
  }
 }
