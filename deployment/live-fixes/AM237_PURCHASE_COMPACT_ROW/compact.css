@@ -34,13 +34,22 @@
   min-height:0!important;
   align-self:center;
 }
+#purchase-form .line-table tbody tr.purchase-line .am60-box{
+  width:100%!important;
+  min-width:0!important;
+  max-width:100%!important;
+  height:var(--am237-field-h)!important;
+  min-height:var(--am237-field-h)!important;
+  margin:0!important;
+  padding:0!important;
+}
 #purchase-form .line-table tbody tr.purchase-line input.part-search,
 #purchase-form .line-table tbody tr.purchase-line input.qty,
 #purchase-form .line-table tbody tr.purchase-line input.rate,
 #purchase-form .line-table tbody tr.purchase-line input.disc,
 #purchase-form .line-table tbody tr.purchase-line input.gst,
 #purchase-form .line-table tbody tr.purchase-line input.job-filter,
-#purchase-form .line-table tbody tr.purchase-line select.allocation{
+#purchase-form .line-table tbody tr.purchase-line input.am60-input{
   display:block!important;
   width:100%!important;
   min-width:0!important;
