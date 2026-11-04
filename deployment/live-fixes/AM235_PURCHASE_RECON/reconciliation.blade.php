@@ -1,3 +1,4 @@
+{{-- AM235_PURCHASE_RECONCILIATION: read-only JC and STOCK report --}}
 @extends('layouts.erp')
 @section('title','Parts Purchase Reconciliation · ASSAM MOTORS ERP')
 @push('styles')
@@ -84,7 +85,7 @@
     <div class="am235-stat"><strong>{{ $counts['LEDGER_REVIEW'] }}</strong><span>Purchase Receipt / Stock Ledger Difference</span></div>
   </div>
   <p class="am235-note">
-    **Quantity method:** Records are grouped by linked JC + Part (or STOCK + Part). Purchased and ledger quantities reflect all-time records for matching groups even when a date filter is used.
+    <strong>Quantity method:</strong> Records are grouped by linked JC + Part (or STOCK + Part). Purchased and ledger quantities reflect all-time records for matching groups even when a date filter is used.
     Invoice Linked means the JC has an active invoice; item-wise billed quantity is not independently proven by the current invoice schema.
     @if($limited) The latest 10,000 matching purchase lines were inspected; narrow the filters for complete coverage. @endif
   </p>
