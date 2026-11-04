@@ -51,9 +51,9 @@ verbose='<span class="muted">PART search is connected to Parts Master. STOCK is 
 if verbose in create:
  create=once(create,verbose,'','trim_purchase_toolbar')
 register=old['resources/views/purchases/index.blade.php']
-anchor='   </nav>\n  </header>'
+anchor='New Parts Purchase</a>'
 register=once(register,anchor,
-    '   <a class="btn ghost" style="grid-column:1/-1;display:block;text-align:center;border:1px solid #b8cde5;border-radius:10px;padding:9px;background:#fff;color:#184675;font-weight:800;text-decoration:none" href="{{ route(\'erp.purchases.reconciliation\') }}">AM235_PURCHASE_RECONCILIATION · Parts Purchase Reconciliation</a>\n'+anchor,'register_report_link')
+    anchor+'\\n   <a class="btn ghost" style="grid-column:1/-1;display:block;text-align:center;border:1px solid #b8cde5;border-radius:10px;padding:9px;background:#fff;color:#184675;font-weight:800;text-decoration:none" href="{{ route(\\'erp.purchases.reconciliation\\') }}">AM235_PURCHASE_RECONCILIATION · Parts Purchase Reconciliation</a>','register_report_link')
 
 updates={
  'routes/web.php':route,
