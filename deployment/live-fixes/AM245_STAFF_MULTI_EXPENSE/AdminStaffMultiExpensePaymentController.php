@@ -9,6 +9,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\View\View;
 
+/** AM245_STAFF_MULTI_EXPENSE — payment form and POST use one audited Staff Payment Voucher. */
 final class AdminStaffMultiExpensePaymentController extends Controller
 {
     public function create(Request $request, StaffMultiExpensePaymentService $service): View
