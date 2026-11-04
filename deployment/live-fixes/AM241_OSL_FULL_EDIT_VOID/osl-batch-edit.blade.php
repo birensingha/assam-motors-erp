@@ -1,6 +1,9 @@
 @extends('layouts.erp')
 @section('title','Edit OSL Purchase · ASSAM MOTORS ERP')
 @section('content')
+@php
+$labourForJs=$labour->map(static fn($x)=>['id'=>$x->id,'job'=>$x->job_card_id,'description'=>$x->description,'rate'=>$x->labour_rate,'gst'=>$x->gst_percent])->values()->all();
+@endphp
 <style>
 /* AM241_OSL_FULL_EDIT_VOID: styled to match Parts Purchase Edit. */
 .am241-wrap{max-width:100%;margin:0 auto;color:#183751}
@@ -216,7 +219,7 @@ const body=document.getElementById('am241-lines');
 const add=document.getElementById('am241-add-line');
 if(!form||!body)return;
 let next=1000;
-const labour=@json($labour->map(fn($x)=>['id'=>$x->id,'job'=>$x->job_card_id,'description'=>$x->description,'rate'=>$x->labour_rate,'gst'=>$x->gst_percent])->values());
+const labour=@json($labourForJs);
 const find=(line,cls)=>line.querySelector(cls);
 const n=(line,cls)=>Number(find(line,cls)?.value)||0;
 const r2=x=>Math.round((x+Number.EPSILON)*100)/100;
