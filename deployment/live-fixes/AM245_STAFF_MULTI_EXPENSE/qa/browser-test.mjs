@@ -13,8 +13,12 @@ try{
  await page.goto(base+(process.env.STAGING_LOGIN_PATH||'/erp/login'),{waitUntil:'domcontentloaded',timeout:45000});
  await page.locator('input[type="email"],input[name="email"],input[name="username"]').first().fill(email);
  await page.locator('input[type="password"]').first().fill(password);
- await page.locator('button[type="submit"],input[type="submit"]').first().click();
- await page.waitForLoadState('networkidle').catch(()=>{});
+ // Hostinger's login redirect sometimes leaves a long-running navigation.
+ // Confirm the POST response and session cookie without waiting for unrelated assets.
+ const posted=page.waitForResponse(r=>r.request().method()==='POST'&&r.url().includes('/erp/login'),{timeout:35000});
+ await page.locator('button[type="submit"],input[type="submit"]').first().click({noWaitAfter:true,timeout:12000});
+ const loginResponse=await posted;
+ if(loginResponse.status()>=400)throw new Error('Staging login POST failed HTTP '+loginResponse.status());
  let r=await page.goto(base+'/erp/payments/create',{waitUntil:'networkidle',timeout:45000});
  if(!r||r.status()!==200)throw new Error('Universal Payment Voucher HTTP '+r?.status());
  const link=page.locator('#am245-staff-multi-link');
