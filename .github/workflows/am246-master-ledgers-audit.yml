@@ -2,7 +2,9 @@ name: AM246 Master Ledgers READONLY Staging Audit
 on:
   push:
     branches: [feature/am246-master-item-ledgers]
-    paths: ['.github/workflows/am246-master-ledgers-audit.yml']
+    paths:
+      - '.github/workflows/am246-master-ledgers-audit.yml'
+      - 'deployment/audits/AM246_master_detail.py'
 permissions: {contents: read}
 concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
 jobs:
@@ -18,7 +20,7 @@ jobs:
       ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
     steps:
       - uses: actions/checkout@v4
-      - run: python3 -m py_compile deployment/audits/AM246_master_item_ledgers_audit.py
+      - run: python3 -m py_compile deployment/audits/AM246_master_item_ledgers_audit.py deployment/audits/AM246_master_detail.py
       - name: Configure SSH
         shell: bash
         run: |
@@ -42,8 +44,11 @@ jobs:
           else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT");SCP=(sshpass -e scp -P "$PORT");fi
           "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM246_MASTER_AUDIT"'
           "${SCP[@]}" deployment/audits/AM246_master_item_ledgers_audit.py "$REMOTE:~/AM246_MASTER_AUDIT/audit.py"
+          "${SCP[@]}" deployment/audits/AM246_master_detail.py "$REMOTE:~/AM246_MASTER_AUDIT/detail.py"
           "${SSH[@]}" "$REMOTE" "python3 ~/AM246_MASTER_AUDIT/audit.py '$ROOT'" | tee "$RUNNER_TEMP/am246-master-ledgers.log"
           grep -q AM246_AUDIT_COMPLETE_READONLY "$RUNNER_TEMP/am246-master-ledgers.log"
           grep -q AM246_TABLE "$RUNNER_TEMP/am246-master-ledgers.log"
+          "${SSH[@]}" "$REMOTE" "python3 ~/AM246_MASTER_AUDIT/detail.py '$ROOT'" | tee "$RUNNER_TEMP/am246-detail.log"
+          grep -q AM246_DETAIL_DONE "$RUNNER_TEMP/am246-detail.log"
       - if: always()
         run: rm -f ~/.ssh/id_ed25519
