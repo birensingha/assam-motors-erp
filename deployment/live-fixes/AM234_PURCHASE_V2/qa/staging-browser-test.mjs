@@ -25,6 +25,24 @@ try {
  await row.waitFor({state:'attached',timeout:15000});
  if (!await row.locator('.part-search').count()) throw new Error('Original Part Search missing');
  const input=row.locator('.job-filter'),select=row.locator('.job-select'),against=row.locator('.allocation');
+ const probe = await page.evaluate(async () => {
+   const row = document.querySelector('#purchase-lines tr');
+   const host = row?.querySelector('.job-filter-wrap');
+   const input = row?.querySelector('.job-filter');
+   const allocation = row?.querySelector('.allocation');
+   const select = row?.querySelector('.job-select');
+   const scripts = Array.from(document.scripts).filter(s => s.src.includes('purchase-entry.js')).map(s => s.src);
+   const served = scripts.length ? await fetch(scripts[scripts.length-1], {cache:'no-store'}).then(r=>r.text()).catch(()=> '') : '';
+   return {
+     against:allocation?.value, initialDisabled:input?.disabled,
+     pickerInitialized:host?.dataset?.am234Ready || '',
+     jobOptions:select?.options?.length ?? -1,
+     purchaseScriptUrls:scripts, servedScriptContainsAM234:served.includes('AM234_PURCHASE_JC_PICKER_V2')
+   };
+ });
+ console.log('AM234_RUNTIME_PROBE',JSON.stringify(probe));
+ if (!probe.servedScriptContainsAM234 || probe.pickerInitialized!=='1')
+   throw new Error('AM234 JavaScript not served or initialization missing: '+JSON.stringify(probe));
  if (!await input.isDisabled()) throw new Error('STOCK mode should disable Job Card input');
  await against.selectOption('JOB');
  if (await input.isDisabled()) throw new Error('JOB mode did not enable JC lookup');
