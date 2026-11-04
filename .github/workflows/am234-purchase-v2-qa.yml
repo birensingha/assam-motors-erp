@@ -1,0 +1,27 @@
+name: AM234 Purchase JC Picker V2 QA
+on:
+  push:
+    branches:
+      - feature/am234-purchase-entry-v2
+    paths:
+      - 'deployment/live-fixes/AM234_PURCHASE_V2/**'
+      - '.github/workflows/am234-purchase-v2-qa.yml'
+  pull_request:
+    paths:
+      - 'deployment/live-fixes/AM234_PURCHASE_V2/**'
+      - '.github/workflows/am234-purchase-v2-qa.yml'
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP syntax
+        run: php -l deployment/live-fixes/AM234_PURCHASE_V2/prepare.php
+      - name: Picker JavaScript syntax
+        run: |
+          (echo '(()=>{'; cat deployment/live-fixes/AM234_PURCHASE_V2/jc-picker-function.js; echo '})();') > /tmp/am234-syntax.js
+          node --check /tmp/am234-syntax.js
+      - name: Purchase JC regression tests
+        run: node deployment/live-fixes/AM234_PURCHASE_V2/qa/picker-node-test.js
