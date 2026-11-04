@@ -1,0 +1,85 @@
+name: AM234 STAGING served-assets read-only map
+on:
+  push:
+    branches:
+      - feature/am234-purchase-entry-v2
+    paths:
+      - '.github/workflows/am234-served-assets-map.yml'
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - name: Configure read-only SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$KEY" || test -n "$PASSWORD"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Source vs webroot inventory — NO WRITES
+        shell: bash
+        run: |
+          set -euo pipefail
+          REMOTE="$USERNAME@$HOST"
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT")
+          fi
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          root="$1"
+          echo AM234_SOURCE_ROOT="$(readlink -f "$root")"
+          echo AM234_SOURCE_JS="$(readlink -f "$root/public/js/purchase-entry.js")"
+          echo AM234_SOURCE_SHA="$(sha256sum "$root/public/js/purchase-entry.js" | cut -d' ' -f1)"
+          echo AM234_SOURCE_VIEW_VERSION
+          grep -n 'purchase-entry.js' "$root/resources/views/purchases/create.blade.php" | head -3
+          echo AM234_POSSIBLE_WEBROOTS
+          for d in "$HOME/domains/assammotors.com/public_html" "$HOME/domains/staging.assammotors.com/public_html" "$HOME/domains/assammotors.com/assam-erp-staging/public"; do
+            if [ -d "$d" ]; then ls -ld "$d"; readlink -f "$d"; fi
+          done
+          echo AM234_ALL_JS_COPIES
+          find "$HOME/domains" -maxdepth 10 -type f -name purchase-entry.js 2>/dev/null | head -25 | while IFS= read -r file; do
+            printf '%s SHA=' "$file"
+            sha256sum "$file" | cut -d' ' -f1
+            stat -c 'SIZE=%s MTIME=%y' "$file"
+          done
+          echo AM234_VIEW_COPIES
+          find "$HOME/domains" -maxdepth 10 -path '*/purchases/create.blade.php' -type f 2>/dev/null | head -15
+          echo AM234_APP_PUBLIC_PATH
+          cd "$root"
+          php -r 'require "vendor/autoload.php"; $app=require "bootstrap/app.php"; echo $app->publicPath(),PHP_EOL;' 2>/dev/null || true
+          REMOTE_SCRIPT
+      - name: Public JS hash, no source printed
+        shell: bash
+        run: |
+          for url in 'https://staging.assammotors.com/js/purchase-entry.js' 'https://staging.assammotors.com/erp/js/purchase-entry.js'; do
+            printf '%s HTTP=' "$url"
+            curl -L -s --max-time 20 -o /tmp/am234-js -w '%{http_code}' "$url"
+            printf ' SIZE='
+            wc -c </tmp/am234-js
+            printf 'SHA='
+            sha256sum /tmp/am234-js | cut -d' ' -f1
+          done
+      - name: Cleanup temporary key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
