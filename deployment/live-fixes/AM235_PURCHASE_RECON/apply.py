@@ -52,8 +52,8 @@ if verbose in create:
  create=once(create,verbose,'','trim_purchase_toolbar')
 register=old['resources/views/purchases/index.blade.php']
 anchor='New Parts Purchase</a>'
-register=once(register,anchor,
-    anchor+'\\n   <a class="btn ghost" style="grid-column:1/-1;display:block;text-align:center;border:1px solid #b8cde5;border-radius:10px;padding:9px;background:#fff;color:#184675;font-weight:800;text-decoration:none" href="{{ route(\\'erp.purchases.reconciliation\\') }}">AM235_PURCHASE_RECONCILIATION · Parts Purchase Reconciliation</a>','register_report_link')
+report_link = """\n   <a class="btn ghost" style="grid-column:1/-1;display:block;text-align:center;border:1px solid #b8cde5;border-radius:10px;padding:9px;background:#fff;color:#184675;font-weight:800;text-decoration:none" href="{{ route('erp.purchases.reconciliation') }}">AM235_PURCHASE_RECONCILIATION · Parts Purchase Reconciliation</a>"""
+register=once(register,anchor,anchor+report_link,'register_report_link')
 
 updates={
  'routes/web.php':route,
