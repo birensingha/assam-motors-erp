@@ -101,6 +101,26 @@ pay=once(pay,'<div id="am240-staff-notice" role="status"></div>',
     <a href="{{ route('erp.expenses.create') }}" style="color:#155e99;font-weight:800">+ Staff Tour / Local Conveyance Expense</a>
     <a href="{{ route('erp.staff-finance.index') }}" style="color:#155e99;font-weight:800">Staff Finance Ledger</a>
   </div>""",'staff_expense_links')
+# AM242_LEGACY_JS_TOKEN_REPAIR: baseline staging had literal backslash-n
+# outside strings inside existing AM238 Vendor Debit script. Browser reported
+# "Invalid or unexpected token" before any AM242 change. Only delimiters below
+# are repaired; logic and finance posting inside AM238 are unchanged.
+pay=once(pay,
+    '<script id="am238-debit-script">\\n',
+    '<script id="am238-debit-script">\n/* AM242_LEGACY_JS_TOKEN_REPAIR */\n',
+    'existing_am238_script_open')
+pay=once(pay,
+    '\\n</script>\\n<script id="am240-staff-script">',
+    '\n</script>\n<script id="am240-staff-script">',
+    'existing_am238_script_close')
+pay=once(pay,
+    '<style id="am238-debit-css">\\n',
+    '<style id="am238-debit-css">\n',
+    'existing_am238_css_open')
+pay=once(pay,
+    '\\n</style>\\n<script id="am238-debit-script">',
+    '\n</style>\n<script id="am238-debit-script">',
+    'existing_am238_css_close')
 pay=once(pay,"@endpush",customer_script+'\n@endpush','customer_script')
 sources['resources/views/payments/create.blade.php']=pay
 
