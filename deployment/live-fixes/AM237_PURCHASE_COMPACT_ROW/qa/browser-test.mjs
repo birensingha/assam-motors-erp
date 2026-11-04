@@ -30,7 +30,11 @@ try {
     return {sel,height:box.height,top:box.top,bottom:box.bottom,center:(box.top+box.bottom)/2,width:box.width,display:getComputedStyle(el).display};
    });
    const tbl=r.closest('table').getBoundingClientRect(),sc=r.closest('.line-scroll').getBoundingClientRect();
-   return {items,tableWidth:tbl.width,linePanelHeight:sc.height};
+   const tds=Array.from(r.cells).map((c,i)=>{const b=c.getBoundingClientRect();return {i:i+1,x:b.x,width:b.width,top:b.top,height:b.height,html:c.innerHTML.slice(0,180)};});
+   const headers=Array.from(r.closest('table').querySelectorAll('thead th')).map((c,i)=>{const b=c.getBoundingClientRect();return {i:i+1,width:b.width,x:b.x};});
+   const a=r.querySelector('.allocation'),astyle=getComputedStyle(a),acell=a.closest('td');
+   const elInfo={html:a.outerHTML.slice(0,350),computedWidth:astyle.width,computedMinWidth:astyle.minWidth,display:astyle.display,position:astyle.position,transform:astyle.transform,offsetWidth:a.offsetWidth,scrollWidth:a.scrollWidth,cellWidth:acell.getBoundingClientRect().width,tableLayout:getComputedStyle(r.closest('table')).tableLayout};
+   return {items,tableWidth:tbl.width,linePanelHeight:sc.height,tds,headers,elInfo};
   },inputs);
   console.log('AM237_DIMENSIONS_'+label,JSON.stringify(measurements));
   const h=measurements.items.map(x=>x.height),c=measurements.items.map(x=>x.center);
