@@ -25,7 +25,7 @@ for rel in dict.fromkeys(exact):
  elif 'views/' in rel:
   indices=[i for i,s in enumerate(a) if re.search(r'@section|<h1|<h2|part|labour|osl|Master|search|<table|name=|</form>|@endsection|active',s,re.I)]
  else:
-  indices=[i for i,s in enumerate(a) if re.search(r'function (parts|labour|createPart|updatePart|createLabour|updateLabour|master|index)|stock_movements|inventory_movements|workshop_purchases|job_card_parts|invoice_lines|job_card_labour|osl_master|movement_type|->insert\\(|DB::table',s,re.I)]
+  indices=[i for i,s in enumerate(a) if re.search(r'function (parts|labour|createPart|updatePart|createLabour|updateLabour|master|index)|stock_movements|inventory_movements|workshop_purchases|job_card_parts|invoice_lines|job_card_labour|osl_master|movement_type|->insert|DB::table',s,re.I)]
  seen=set()
  for n in indices[:140]:
   start=max(0,n-(1 if 'views/' not in rel else 0))
