@@ -1,0 +1,96 @@
+name: AM237 Parts Purchase Compact Row STAGING guarded
+on:
+  push:
+    branches: [feature/am237-purchase-compact-row]
+    paths:
+      - '.github/workflows/am237-purchase-compact-staging.yml'
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  compact-row:
+    runs-on: ubuntu-latest
+    timeout-minutes: 27
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+      STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL || 'https://staging.assammotors.com' }}
+      STAGING_LOGIN_PATH: ${{ vars.STAGING_LOGIN_PATH || '/erp/login' }}
+      STAGING_ADMIN_LOGIN: ${{ secrets.STAGING_ADMIN_LOGIN }}
+      STAGING_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+      SMOKE_OUTPUT_DIR: am237-browser-proof
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static checks
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/AM237_PURCHASE_COMPACT_ROW/apply.py
+          node --check deployment/live-fixes/AM237_PURCHASE_COMPACT_ROW/qa/browser-test.mjs
+          grep -q AM237_PURCHASE_COMPACT_ROW deployment/live-fixes/AM237_PURCHASE_COMPACT_ROW/compact.css
+      - name: Configure staging SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$KEY" || test -n "$PASSWORD"
+          install -d -m 700 ~/.ssh
+          for n in 1 2 3 4; do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Apply CSS only with backup, preserve all business code
+        shell: bash
+        run: |
+          set -euo pipefail
+          REMOTE="$USERNAME@$HOST"
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -o ConnectTimeout=14 -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=14 -p "$PORT")
+            SCP=(sshpass -e scp -o ConnectTimeout=14 -P "$PORT")
+          fi
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM237_PURCHASE_ROW"'
+          "${SCP[@]}" deployment/live-fixes/AM237_PURCHASE_COMPACT_ROW/apply.py deployment/live-fixes/AM237_PURCHASE_COMPACT_ROW/compact.css "$REMOTE:~/AM237_PURCHASE_ROW/"
+          CHECK=$("${SSH[@]}" "$REMOTE" "python3 ~/AM237_PURCHASE_ROW/apply.py check '$ROOT'")
+          printf '%s\n' "$CHECK"
+          grep -q AM237_PREFLIGHT_PASS <<<"$CHECK"
+          RESULT=$("${SSH[@]}" "$REMOTE" "python3 ~/AM237_PURCHASE_ROW/apply.py apply '$ROOT' && cd '$ROOT' && php artisan view:clear")
+          printf '%s\n' "$RESULT"
+          grep -q AM237_APPLIED <<<"$RESULT"
+          BACKUP=$(printf '%s\n' "$RESULT" | sed -n 's/^AM237_BACKUP=//p' | tail -1)
+          test -n "$BACKUP"
+          echo "AM237_BACKUP_PATH=$BACKUP" >> "$GITHUB_ENV"
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Verify row alignment and existing JC/Part search, no business writes
+        run: node deployment/live-fixes/AM237_PURCHASE_COMPACT_ROW/qa/browser-test.mjs
+      - name: Roll back style change if browser QA fails
+        if: failure() && env.AM237_BACKUP_PATH != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          REMOTE="$USERNAME@$HOST"
+          if [ -n "$KEY" ];then SSH=(ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -o ConnectTimeout=14 -p "$PORT");fi
+          "${SSH[@]}" "$REMOTE" "python3 ~/AM237_PURCHASE_ROW/apply.py rollback '$ROOT' '$AM237_BACKUP_PATH' && cd '$ROOT' && php artisan view:clear"
+      - name: Upload screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: am237-compact-row-browser-proof
+          path: am237-browser-proof/
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Remove SSH key
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
