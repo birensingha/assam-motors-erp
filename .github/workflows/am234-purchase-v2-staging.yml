@@ -96,7 +96,8 @@ jobs:
           cmp -s "$root/public/js/purchase-entry.js" "$served"
           echo AM234_WEB_SERVED_ASSET_SYNC_PASS
           REMOTE_ASSET
-          curl -fsSL --max-time 25 -H 'Cache-Control: no-cache' "https://staging.assammotors.com/js/purchase-entry.js?am234=$(date +%s)" | grep -q 'AM234_PURCHASE_JC_PICKER_V2'
+          curl -fsSL --max-time 25 -H 'Cache-Control: no-cache' -o "$RUNNER_TEMP/am234-served.js" "https://staging.assammotors.com/js/purchase-entry.js?am234=$(date +%s)"
+          grep -q 'AM234_PURCHASE_JC_PICKER_V2' "$RUNNER_TEMP/am234-served.js"
           echo AM234_PUBLIC_HTTP_ASSET_PROOF_PASS
 
       - name: Install Playwright Chromium
