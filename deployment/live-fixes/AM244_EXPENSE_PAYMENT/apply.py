@@ -88,6 +88,8 @@ script='''{{-- AM244_STAFF_EXPENSE_PAYMENT_AGAINST_REFERENCE: verified Staff exp
    amount.value=Number(due.outstanding).toFixed(2);amount.dispatchEvent(new Event('input',{bubbles:true}));
    if(notes && !notes.value.trim())notes.value='Staff expense payment against '+due.expense_no;
    if(notes)notes.dispatchEvent(new Event('input',{bubbles:true}));
+   const referenceStatus=$('am244-selected-reference');
+   if(referenceStatus)referenceStatus.textContent=due.expense_no+' · '+Number(due.outstanding).toLocaleString('en-IN',{style:'currency',currency:'INR'})+' outstanding · Staff '+lookup;
    notice.textContent='Expense '+due.expense_no+' selected: '+Number(due.outstanding).toLocaleString('en-IN',{style:'currency',currency:'INR'})+
      ' due. Choose Cash/Bank Account and payment mode, then review and post. No extra expense will be created.';
    const box=$('am240-staff-panel');if(box)box.scrollIntoView({block:'nearest'});
@@ -104,6 +106,9 @@ if p.count('id="am240-staff-script"')!=1 or p.count('id="am237-unified-script"')
  raise SystemExit('AM244_STOP_EXISTING_STAFF_PICKER_NOT_FOUND')
 p=p.replace(anchor,script+anchor,1)
 p=p.replace('Approved Staff Expense Reference *','Outstanding Staff Expense Voucher / Against Reference *',1)
+refStatus='<div id="am240-staff-notice" role="status"></div>'
+if p.count(refStatus)!=1:raise SystemExit('AM244_STOP_STAFF_STATUS_NOT_FOUND')
+p=p.replace(refStatus,refStatus+'<div id="am244-selected-reference" role="status" style="font-size:12px;font-weight:800;color:#145b85;margin-top:8px"></div>',1)
 if p.count(marker)!=1 or p.count('id="am244-staff-expense-prefill"')!=1:
  raise SystemExit('AM244_STOP_BAD_OUTPUT')
 print('AM244_PREFLIGHT_PASS')
