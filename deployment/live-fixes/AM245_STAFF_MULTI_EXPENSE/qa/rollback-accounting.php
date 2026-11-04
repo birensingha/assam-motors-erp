@@ -7,6 +7,12 @@
  * No purchases/expenses/payment vouchers are committed.
  */
 declare(strict_types=1);
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Illuminate\Http\Request;
+use App\Models\ErpAuthUser;
+use App\Services\StaffMultiExpensePaymentService;
+
 
 $root=realpath($argv[1]??'');
 if(!$root || basename($root)!=='assam-erp-staging' || !is_file($root.'/artisan'))
@@ -15,11 +21,6 @@ require $root.'/vendor/autoload.php';
 $app=require $root.'/bootstrap/app.php';
 $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
-use Illuminate\Http\Request;
-use App\Models\ErpAuthUser;
-use App\Services\StaffMultiExpensePaymentService;
 
 foreach(['staff','workshop_expenses','workshop_payment_vouchers','workshop_payment_allocations'] as $name){
     $engine=DB::selectOne('SELECT ENGINE AS engine FROM information_schema.tables WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=?',[$name]);
