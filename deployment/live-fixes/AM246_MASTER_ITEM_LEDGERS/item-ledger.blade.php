@@ -154,6 +154,7 @@
             <th style="width:104px">Vehicle</th>
             <th class="num" style="width:90px">Stock In</th>
             <th class="num" style="width:90px">Stock Out</th>
+            <th class="num" style="width:90px">Balance</th>
             <th class="num" style="width:100px">Saved Amount</th>
             <th style="width:128px">Status</th>
           </tr></thead>
@@ -171,11 +172,12 @@
                 <td>{{ $event['vehicle'] ?: '—' }}</td>
                 <td class="num">{{ $event['in']===null?'—':number_format((float)$event['in'],3) }}</td>
                 <td class="num">{{ $event['out']===null?'—':number_format((float)$event['out'],3) }}</td>
+                <td class="num">{{ ($event['balance']??null)===null?'—':number_format((float)$event['balance'],3) }}</td>
                 <td class="num">{{ $event['amount']===null?'—':'₹'.number_format((float)$event['amount'],2) }}</td>
                 <td><span class="am246-status">{{ $event['status'] ?: 'RECORDED' }}</span></td>
               </tr>
             @empty
-              <tr><td colspan="10" class="am246-empty">No linked transactions found for this master item within the selected dates.</td></tr>
+              <tr><td colspan="11" class="am246-empty">No linked transactions found for this master item within the selected dates.</td></tr>
             @endforelse
           </tbody>
         </table>
