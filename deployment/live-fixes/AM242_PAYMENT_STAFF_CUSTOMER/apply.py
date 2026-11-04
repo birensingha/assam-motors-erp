@@ -104,7 +104,7 @@ expense=once(expense,
   (or Job Card when applicable), enter Amount and Description. Save unpaid and use Payment Voucher →
   Staff → Against Reference → Expense Reimbursement, or Record Payment Now for immediate settlement.
 </div>
-<form method="post" action="{{ route('erp.expenses.store') }}""",
+<form method="post" action="{{ route('erp.expenses.store') }}" """,
     'expense_instruction')
 sources['resources/views/expenses/create.blade.php']=expense
 for k,v in sources.items():
