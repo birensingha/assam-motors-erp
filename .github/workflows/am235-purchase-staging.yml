@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/am235-purchase-staging.yml'
       - 'deployment/live-fixes/AM235_PURCHASE_RECON/reconciliation.blade.php'
+      - 'deployment/live-fixes/AM235_PURCHASE_RECON/apply.py'
 permissions: {contents: read}
 concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
 jobs:
