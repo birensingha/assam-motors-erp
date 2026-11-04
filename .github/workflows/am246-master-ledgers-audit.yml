@@ -1,0 +1,58 @@
+name: AM246 Master Ledgers READONLY Staging Audit
+on:
+  push:
+    branches: [feature/am246-master-item-ledgers]
+    paths:
+      - '.github/workflows/am246-master-ledgers-audit.yml'
+      - 'deployment/audits/AM246_master_detail.py'
+      - 'deployment/audits/AM246_source_spot.py'
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m py_compile deployment/audits/AM246_master_item_ledgers_audit.py deployment/audits/AM246_master_detail.py
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$KEY" || test -n "$PASSWORD"
+          install -d -m 700 ~/.ssh
+          for n in 1 2 3 4;do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Inspect master routes and financial source schemas
+        shell: bash
+        run: |
+          set -euo pipefail
+          REMOTE="$USERNAME@$HOST"
+          if [ -n "$KEY" ];then SSH=(ssh -o BatchMode=yes -p "$PORT" -i ~/.ssh/id_ed25519);SCP=(scp -o BatchMode=yes -P "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$PASSWORD";SSH=(sshpass -e ssh -p "$PORT");SCP=(sshpass -e scp -P "$PORT");fi
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM246_MASTER_AUDIT"'
+          "${SCP[@]}" deployment/audits/AM246_master_item_ledgers_audit.py "$REMOTE:~/AM246_MASTER_AUDIT/audit.py"
+          "${SCP[@]}" deployment/audits/AM246_master_detail.py "$REMOTE:~/AM246_MASTER_AUDIT/detail.py"
+          "${SCP[@]}" deployment/audits/AM246_source_spot.py "$REMOTE:~/AM246_MASTER_AUDIT/spot.py"
+          "${SSH[@]}" "$REMOTE" "python3 ~/AM246_MASTER_AUDIT/audit.py '$ROOT'" | tee "$RUNNER_TEMP/am246-master-ledgers.log"
+          grep -q AM246_AUDIT_COMPLETE_READONLY "$RUNNER_TEMP/am246-master-ledgers.log"
+          grep -q AM246_TABLE "$RUNNER_TEMP/am246-master-ledgers.log"
+          "${SSH[@]}" "$REMOTE" "python3 ~/AM246_MASTER_AUDIT/detail.py '$ROOT'" | tee "$RUNNER_TEMP/am246-detail.log"
+          grep -q AM246_DETAIL_DONE "$RUNNER_TEMP/am246-detail.log"
+          "${SSH[@]}" "$REMOTE" "python3 ~/AM246_MASTER_AUDIT/spot.py '$ROOT'" | tee "$RUNNER_TEMP/am246-spot.log"
+          grep -q AM246_SPOT_DONE "$RUNNER_TEMP/am246-spot.log"
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
