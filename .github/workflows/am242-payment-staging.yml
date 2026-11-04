@@ -4,6 +4,7 @@ on:
     branches: [feature/am242-payment-staff-customer-master]
     paths:
       - '.github/workflows/am242-payment-staging.yml'
+      - 'deployment/live-fixes/AM242_PAYMENT_STAFF_CUSTOMER/apply.py'
 permissions: {contents: read}
 concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
 jobs:
