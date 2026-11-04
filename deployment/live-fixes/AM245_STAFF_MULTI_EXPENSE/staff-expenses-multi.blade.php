@@ -107,8 +107,8 @@
     <label>Payment Mode *
       <select name="payment_mode" required><option value="Cash">Cash</option><option value="UPI">UPI</option><option value="Bank Transfer">Bank Transfer</option><option value="Cheque">Cheque</option><option value="Card">Card</option></select>
     </label>
-    <label>Account / Cash Book
-      <input name="account_name" maxlength="120" placeholder="Cash / HDFC / UPI">
+    <label>Account / Cash Book *
+      <input name="account_name" maxlength="120" minlength="2" placeholder="Cash Counter / HDFC / UPI" required>
     </label>
     <label>Bank / UPI Reference
       <input name="reference_no" maxlength="140" placeholder="Optional transaction reference">
