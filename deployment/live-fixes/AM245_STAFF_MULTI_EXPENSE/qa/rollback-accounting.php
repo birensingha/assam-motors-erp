@@ -33,8 +33,6 @@ if(!$admin)throw new RuntimeException('AM245_STOP_NO_ADMIN_TEST_CONTEXT');
 
 function qaRequest(array $values,ErpAuthUser $admin): Request {
     $req=Request::create('/erp/payments/staff-expenses/multi','POST',$values);
-    $req->setContainer(app());
-    $req->setRedirector(app('redirect'));
     $req->setUserResolver(static fn()=>$admin);
     return $req;
 }
