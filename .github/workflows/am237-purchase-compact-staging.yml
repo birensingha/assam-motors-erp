@@ -4,6 +4,8 @@ on:
     branches: [feature/am237-purchase-compact-row]
     paths:
       - '.github/workflows/am237-purchase-compact-staging.yml'
+      - 'deployment/live-fixes/AM237_PURCHASE_COMPACT_ROW/compact.css'
+      - 'deployment/live-fixes/AM237_PURCHASE_COMPACT_ROW/qa/browser-test.mjs'
 permissions: {contents: read}
 concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
 jobs:
