@@ -1,0 +1,155 @@
+name: AM234 Parts Purchase JC Picker STAGING guarded
+on:
+  push:
+    branches:
+      - feature/am234-purchase-entry-v2
+    paths:
+      - '.github/workflows/am234-purchase-v2-staging.yml'
+      - 'deployment/live-fixes/AM234_PURCHASE_V2/qa/staging-browser-test.mjs'
+permissions: { contents: read }
+concurrency: { group: assam-motors-staging-control, cancel-in-progress: false }
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+      STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL || 'https://staging.assammotors.com' }}
+      STAGING_LOGIN_PATH: ${{ vars.STAGING_LOGIN_PATH || '/erp/login' }}
+      STAGING_ADMIN_LOGIN: ${{ secrets.STAGING_ADMIN_LOGIN }}
+      STAGING_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+      SMOKE_OUTPUT_DIR: am234-browser-proof
+    steps:
+      - uses: actions/checkout@v4
+      - name: Local source and regression tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          P=deployment/live-fixes/AM234_PURCHASE_V2
+          php -l "$P/prepare.php"
+          node "$P/qa/picker-node-test.js"
+          node --check "$P/qa/staging-browser-test.mjs"
+
+      - name: Configure staging SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$KEY" || test -n "$PASSWORD"
+          install -d -m 700 ~/.ssh
+          for n in 1 2 3 4; do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then break; fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+
+      - name: Guarded staging preflight, backup and picker activation
+        shell: bash
+        run: |
+          set -euo pipefail
+          P=deployment/live-fixes/AM234_PURCHASE_V2
+          REMOTE="$USERNAME@$HOST"
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -o ConnectTimeout=14 -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=14 -p "$PORT")
+            SCP=(sshpass -e scp -o ConnectTimeout=14 -P "$PORT")
+          fi
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM234_PURCHASE_V2"'
+          "${SCP[@]}" "$P/prepare.php" "$P/jc-picker-function.js" "$P/jc-picker.css" "$REMOTE:~/AM234_PURCHASE_V2/"
+          CHECK=$("${SSH[@]}" "$REMOTE" "cd '$ROOT' && php ~/AM234_PURCHASE_V2/prepare.php '$ROOT' check")
+          printf '%s\n' "$CHECK"
+          grep -q AM234_PREFLIGHT_PASS <<<"$CHECK"
+          RESULT=$("${SSH[@]}" "$REMOTE" "cd '$ROOT' && php ~/AM234_PURCHASE_V2/prepare.php '$ROOT' apply && php artisan view:clear")
+          printf '%s\n' "$RESULT"
+          grep -q AM234_INSTALLED <<<"$RESULT"
+          BACKUP=$(printf '%s\n' "$RESULT" | sed -n 's/^Backup: //p' | tail -1)
+          test -n "$BACKUP"
+          echo "BACKUP_PATH=$BACKUP" >> "$GITHUB_ENV"
+          # The actual web-served JS lives outside Laravel's public/ directory.
+          # Source vs browser SHA audit proved this exact resolved staging path.
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT' '$BACKUP'" <<'REMOTE_ASSET'
+          set -euo pipefail
+          root="$1"; backup="$2"
+          test "$root" = "$HOME/domains/assammotors.com/assam-erp-staging"
+          case "$backup" in "$root"/storage/app/am-backups/AM234_PURCHASE_JC_*) ;; *) exit 2 ;; esac
+          served="$HOME/domains/assammotors.com/public_html/staging/js/purchase-entry.js"
+          test -f "$served" && test -f "$root/public/js/purchase-entry.js"
+          cp -p "$served" "$backup/served-purchase-entry.js"
+          cp -p "$root/public/js/purchase-entry.js" "$served.am234_tmp"
+          chmod --reference="$served" "$served.am234_tmp"
+          mv -f "$served.am234_tmp" "$served"
+          cmp -s "$root/public/js/purchase-entry.js" "$served"
+          echo AM234_WEB_SERVED_ASSET_SYNC_PASS
+          REMOTE_ASSET
+          curl -fsSL --max-time 25 -H 'Cache-Control: no-cache' -o "$RUNNER_TEMP/am234-served.js" "https://staging.assammotors.com/js/purchase-entry.js?am234=$(date +%s)"
+          grep -q 'AM234_PURCHASE_JC_PICKER_V2' "$RUNNER_TEMP/am234-served.js"
+          echo AM234_PUBLIC_HTTP_ASSET_PROOF_PASS
+
+      - name: Install Playwright Chromium
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+
+      - name: Browser verify search and linked ID without posting purchase
+        run: node deployment/live-fixes/AM234_PURCHASE_V2/qa/staging-browser-test.mjs
+
+      - name: Roll back if browser QA fails
+        if: failure() && env.BACKUP_PATH != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          REMOTE="$USERNAME@$HOST"
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=14 -p "$PORT")
+          fi
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT' '$BACKUP_PATH'" <<'REMOTE_SCRIPT'
+          set -euo pipefail
+          root="$1"; backup="$2"
+          case "$backup" in
+            "$root"/storage/app/am-backups/AM234_PURCHASE_JC_*) ;;
+            *) echo 'Unsafe backup path — no rollback'; exit 2 ;;
+          esac
+          test -f "$backup/purchase-entry.js" && test -f "$backup/create.blade.php"
+          cp -p "$backup/purchase-entry.js" "$root/public/js/purchase-entry.js"
+          cp -p "$backup/create.blade.php" "$root/resources/views/purchases/create.blade.php"
+          if [ -f "$backup/served-purchase-entry.js" ]; then
+            served="$HOME/domains/assammotors.com/public_html/staging/js/purchase-entry.js"
+            test -f "$served"
+            cp -p "$backup/served-purchase-entry.js" "$served"
+            echo AM234_WEB_ASSET_ROLLED_BACK
+          fi
+          cd "$root"
+          php artisan view:clear
+          echo AM234_ROLLBACK_COMPLETE
+          REMOTE_SCRIPT
+
+      - name: Upload browser proof
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: am234-purchase-picker-browser-proof
+          path: am234-browser-proof/
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Cleanup SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
