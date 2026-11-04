@@ -27,6 +27,9 @@ try{
  await check('/erp/purchases/reconciliation');
  await page.locator('.am235-page h1',{hasText:'Parts Purchase Reconciliation'}).waitFor({state:'visible'});
  await page.locator('table.am235-table').waitFor({state:'visible'});
+ const layoutStyle=await page.locator('.am235-filters').evaluate(el=>getComputedStyle(el).display);
+ if(layoutStyle!=='flex')throw new Error('AM235 report stylesheet missing; filters display='+layoutStyle);
+
  await page.screenshot({path:out+'/reconciliation-overview.png',fullPage:true});
  // Read-only filtering; never submit a purchase or modify financial records.
  await page.locator('select[name=against]').selectOption('JOB');
