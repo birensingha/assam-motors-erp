@@ -2,7 +2,9 @@ name: AM245 Multiple Staff Expenses One Payment Voucher STAGING guarded
 on:
   push:
     branches: [feature/am245-staff-multi-expense-payment]
-    paths: ['.github/workflows/am245-staff-multi-staging.yml']
+    paths:
+      - '.github/workflows/am245-staff-multi-staging.yml'
+      - 'deployment/live-fixes/AM245_STAFF_MULTI_EXPENSE/qa/browser-test.mjs'
 permissions: {contents: read}
 concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
 jobs:
