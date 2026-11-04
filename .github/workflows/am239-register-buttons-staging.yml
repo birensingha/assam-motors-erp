@@ -1,0 +1,100 @@
+name: AM239 Purchase Register Three Buttons STAGING guarded
+on:
+  push:
+    branches: [feature/am239-purchase-register-action-buttons]
+    paths:
+      - '.github/workflows/am239-register-buttons-staging.yml'
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  staging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 26
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+      STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL || 'https://staging.assammotors.com' }}
+      STAGING_LOGIN_PATH: ${{ vars.STAGING_LOGIN_PATH || '/erp/login' }}
+      STAGING_ADMIN_LOGIN: ${{ secrets.STAGING_ADMIN_LOGIN }}
+      STAGING_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+      SMOKE_OUTPUT_DIR: am239-browser-proof
+    steps:
+      - uses: actions/checkout@v4
+      - name: Static checks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/AM239_REGISTER_BUTTONS/apply.py
+          node --check deployment/live-fixes/AM239_REGISTER_BUTTONS/qa/browser-test.mjs
+          grep -q 'AM239_RECON_BUTTON_ONE_ROW' deployment/live-fixes/AM239_REGISTER_BUTTONS/apply.py
+      - name: Setup staging SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$KEY" || test -n "$PASSWORD"
+          install -d -m 700 ~/.ssh
+          for n in 1 2 3 4;do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ];then printf '%s\n' "$KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Backup and apply only Purchase Register header UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          REMOTE="$USERNAME@$HOST"
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519)
+            SCP=(scp -o BatchMode=yes -o ConnectTimeout=14 -P "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=14 -p "$PORT")
+            SCP=(sshpass -e scp -o ConnectTimeout=14 -P "$PORT")
+          fi
+          "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM239_REGISTER_BUTTONS"'
+          "${SCP[@]}" deployment/live-fixes/AM239_REGISTER_BUTTONS/apply.py "$REMOTE:~/AM239_REGISTER_BUTTONS/apply.py"
+          CHECK=$("${SSH[@]}" "$REMOTE" "python3 ~/AM239_REGISTER_BUTTONS/apply.py check '$ROOT'")
+          printf '%s\n' "$CHECK"
+          grep -q AM239_PREFLIGHT_PASS <<<"$CHECK"
+          RESULT=$("${SSH[@]}" "$REMOTE" "python3 ~/AM239_REGISTER_BUTTONS/apply.py apply '$ROOT' && cd '$ROOT' && php artisan view:clear")
+          printf '%s\n' "$RESULT"
+          grep -q AM239_APPLIED <<<"$RESULT"
+          BACKUP=$(printf '%s\n' "$RESULT" | sed -n 's/^AM239_BACKUP=//p' | tail -1)
+          test -n "$BACKUP"
+          echo "AM239_BACKUP_PATH=$BACKUP" >> "$GITHUB_ENV"
+      - name: Prepare headless Chrome
+        run: |
+          npm install --no-save playwright@1.55.0
+          npx playwright install --with-deps chromium
+      - name: Verify 3 buttons in same row and report route
+        run: node deployment/live-fixes/AM239_REGISTER_BUTTONS/qa/browser-test.mjs
+      - name: Rollback header changes if browser test fails
+        if: failure() && env.AM239_BACKUP_PATH != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          REMOTE="$USERNAME@$HOST"
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=14 -p "$PORT")
+          fi
+          "${SSH[@]}" "$REMOTE" "python3 ~/AM239_REGISTER_BUTTONS/apply.py rollback '$ROOT' '$AM239_BACKUP_PATH' && cd '$ROOT' && php artisan view:clear"
+      - name: Upload browser screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: am239-purchase-register-buttons-browser-proof
+          path: am239-browser-proof/
+          if-no-files-found: warn
+          retention-days: 14
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
