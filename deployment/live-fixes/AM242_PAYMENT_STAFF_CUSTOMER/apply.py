@@ -12,6 +12,7 @@ if root.name!='assam-erp-staging' or not (root/'artisan').is_file():
 pkg=Path(__file__).resolve().parent
 tracked={
  'app/Http/Controllers/Web/AdminExpensePaymentPageController.php':root/'app/Http/Controllers/Web/AdminExpensePaymentPageController.php',
+ 'app/Services/ExpensePaymentService.php':root/'app/Services/ExpensePaymentService.php',
  'resources/views/payments/create.blade.php':root/'resources/views/payments/create.blade.php',
  'resources/views/expenses/create.blade.php':root/'resources/views/expenses/create.blade.php'
 }
@@ -75,6 +76,18 @@ ctrl=once(ctrl,"        $voucher=\\App\\Models\\WorkshopPaymentVoucher::query()-
             return app(\\App\\Services\\CustomerPayoutVoucherService::class)->void($request,$payment);
         }""",'customer_void_routing')
 sources['app/Http/Controllers/Web/AdminExpensePaymentPageController.php']=ctrl
+
+# AM242 fail-closed: generic Vendor/Expense void must never void a Customer
+# Voucher without reversing its Customer Ledger Debit.
+general=sources['app/Services/ExpensePaymentService.php']
+general=once(general,
+    "            if(in_array($p->source_type,['STAFF_SALARY_ADVANCE','STAFF_SALARY_PAYMENT'],true))",
+    """            // AM242_CUSTOMER_PAYOUT_LEDGER: only dedicated customer reversal may Void this.
+            if(in_array($p->source_type,['CUSTOMER_REFUND','CUSTOMER_ADVANCE'],true))
+                throw ValidationException::withMessages(['payment'=>'Customer payout must use audited Customer Ledger reversal; generic void denied.']);
+            if(in_array($p->source_type,['STAFF_SALARY_ADVANCE','STAFF_SALARY_PAYMENT'],true))""",
+    'generic_void_customer_guard')
+sources['app/Services/ExpensePaymentService.php']=general
 
 pay=sources['resources/views/payments/create.blade.php']
 customer_panel=(pkg/'customer-panel.blade.php').read_text('utf8')
