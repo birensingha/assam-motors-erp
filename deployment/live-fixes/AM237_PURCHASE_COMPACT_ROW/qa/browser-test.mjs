@@ -21,7 +21,8 @@ try {
  await page.locator('#am237-purchase-compact-row').waitFor({state:'attached'});
  const row=page.locator('#purchase-lines tr').first();
  await row.waitFor({state:'visible'});
- const inputs=['.part-search','.qty','.rate','.disc','.gst','.allocation','.job-filter'];
+ const inputs=['.part-search','.qty','.rate','.disc','.gst','.am60-input','.job-filter'];
+ if(await row.locator('.am60-input').count()!==1)throw new Error('Custom AM60 allocation picker missing');
  const audit=async label=>{
   await page.waitForTimeout(250); // allow scale/local-storage repaint to settle
   const measurements=await row.evaluate((r,selectors)=>{
