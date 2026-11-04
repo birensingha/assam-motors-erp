@@ -98,7 +98,7 @@ script='''{{-- AM244_STAFF_EXPENSE_PAYMENT_AGAINST_REFERENCE: verified Staff exp
 })();
 </script>
 '''
-anchor='<script id="am242-customer-script">'
+anchor='<script id="am240-staff-script">'
 if p.count(anchor)!=1:raise SystemExit('AM244_STOP_STAFF_SCRIPT_AFTER_ANCHOR_NOT_FOUND')
 if p.count('id="am240-staff-script"')!=1 or p.count('id="am237-unified-script"')!=1:
  raise SystemExit('AM244_STOP_EXISTING_STAFF_PICKER_NOT_FOUND')
