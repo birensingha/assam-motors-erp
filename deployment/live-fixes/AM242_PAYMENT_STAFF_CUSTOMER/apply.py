@@ -94,7 +94,7 @@ customer_panel=(pkg/'customer-panel.blade.php').read_text('utf8')
 customer_script=(pkg/'customer-script.blade.php').read_text('utf8')
 pay=once(pay,'  <div id="am237-bills-slot"',
     customer_panel+'\n  <div id="am237-bills-slot"','customer_panel_insertion')
-pay=once(pay,'  <div id="am240-staff-notice" role="status"></div>',
+pay=once(pay,'<div id="am240-staff-notice" role="status"></div>',
     """  <div id="am240-staff-notice" role="status"></div>
   {{-- AM242 Staff expense source quick links; expense booked only through Expense Voucher. --}}
   <div style="display:flex;flex-wrap:wrap;gap:12px;margin-top:9px;font-size:12px">
