@@ -1,0 +1,101 @@
+/* AM237_PURCHASE_COMPACT_ROW — visual-only, Parts Purchase CREATE. */
+#purchase-form{
+  --am237-field-h:30px;
+}
+#purchase-form.am-readable-115{--am237-field-h:32px}
+#purchase-form.am-readable-125{--am237-field-h:34px}
+
+/* Keep each line a single compact row, including at 115% and 125% view. */
+#purchase-form .line-table{
+  table-layout:fixed!important;
+  border-spacing:0 3px!important;
+}
+#purchase-form .line-table thead th{
+  height:29px!important;
+  line-height:16px!important;
+  padding:5px 3px!important;
+  font-size:10.5px!important;
+  vertical-align:middle!important;
+}
+#purchase-form .line-table tbody tr.purchase-line > td{
+  vertical-align:middle!important;
+  padding:3px 3px!important;
+  height:36px;
+  box-sizing:border-box;
+}
+#purchase-form.am-readable-115 .line-table tbody tr.purchase-line > td,
+#purchase-form.am-readable-125 .line-table tbody tr.purchase-line > td{
+  padding:3px 3px!important;
+}
+#purchase-form .line-table tbody tr.purchase-line .part-combo,
+#purchase-form .line-table tbody tr.purchase-line .job-filter-wrap{
+  margin:0!important;
+  padding:0!important;
+  min-height:0!important;
+  align-self:center;
+}
+#purchase-form .line-table tbody tr.purchase-line input.part-search,
+#purchase-form .line-table tbody tr.purchase-line input.qty,
+#purchase-form .line-table tbody tr.purchase-line input.rate,
+#purchase-form .line-table tbody tr.purchase-line input.disc,
+#purchase-form .line-table tbody tr.purchase-line input.gst,
+#purchase-form .line-table tbody tr.purchase-line input.job-filter,
+#purchase-form .line-table tbody tr.purchase-line select.allocation{
+  display:block!important;
+  width:100%!important;
+  min-width:0!important;
+  height:var(--am237-field-h)!important;
+  min-height:var(--am237-field-h)!important;
+  max-height:var(--am237-field-h)!important;
+  line-height:normal!important;
+  padding:3px 6px!important;
+  margin:0!important;
+  border-radius:6px!important;
+  box-sizing:border-box!important;
+  font-size:11.5px!important;
+  vertical-align:middle!important;
+}
+#purchase-form .line-table tbody tr.purchase-line input.job-filter:disabled{
+  opacity:.65;
+}
+#purchase-form .line-table tbody tr.purchase-line .line-total{
+  text-align:right;
+  white-space:nowrap;
+  vertical-align:middle!important;
+  font-variant-numeric:tabular-nums;
+  font-size:11.5px!important;
+}
+#purchase-form .line-table tbody tr.purchase-line .remove-line{
+  display:inline-flex!important;
+  justify-content:center;
+  align-items:center;
+  height:23px!important;
+  min-height:23px!important;
+  width:23px!important;
+  min-width:23px!important;
+  padding:0!important;
+  margin:0!important;
+  font-size:16px!important;
+  line-height:1!important;
+}
+/* Percentages total 100%; prevent misaligned narrow flex/auto columns. */
+#purchase-form .line-table th:nth-child(1){width:2.5%!important}
+#purchase-form .line-table th:nth-child(2){width:27%!important}
+#purchase-form .line-table th:nth-child(3){width:6%!important}
+#purchase-form .line-table th:nth-child(4){width:8%!important}
+#purchase-form .line-table th:nth-child(5){width:6%!important}
+#purchase-form .line-table th:nth-child(6){width:6%!important}
+#purchase-form .line-table th:nth-child(7){width:12%!important}
+#purchase-form .line-table th:nth-child(8){width:21%!important}
+#purchase-form .line-table th:nth-child(9){width:8%!important}
+#purchase-form .line-table th:nth-child(10){width:3.5%!important}
+#purchase-form .line-scroll{
+  min-height:198px!important;
+  padding:4px 5px 11px!important;
+}
+/* On narrow screens keep one row with horizontal movement instead of wrapping
+   fields into different lines. Preserve existing Part Search suggestion panel. */
+@media(max-width:1000px){
+ #purchase-form .line-table{min-width:1060px!important;table-layout:fixed!important}
+ #purchase-form .line-scroll{overflow-x:auto!important}
+}
