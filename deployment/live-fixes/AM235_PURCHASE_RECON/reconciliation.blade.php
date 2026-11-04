@@ -1,7 +1,8 @@
 {{-- AM235_PURCHASE_RECONCILIATION: read-only JC and STOCK report --}}
 @extends('layouts.erp')
 @section('title','Parts Purchase Reconciliation · ASSAM MOTORS ERP')
-@push('styles')
+@section('content')
+{{-- AM235_STYLE_INLINE_FOR_ERP_LAYOUT --}}
 <style>
 .am235-page{--navy:#17385f;--border:#dae4f0;--pale:#f5f8fd;color:#17324f}
 .am235-head{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;margin:0 0 14px}
@@ -37,8 +38,7 @@
 .am235-footer{padding:13px 4px;font-size:12px}
 @media(max-width:700px){.am235-head h1{font-size:19px}.am235-filters label{width:calc(50% - 8px)}.am235-filters label:first-child{width:100%}.am235-filters input,.am235-filters select{width:100%;min-width:0}}
 </style>
-@endpush
-@section('content')
+
 <div class="am235-page">
   <div class="am235-head">
     <div>
