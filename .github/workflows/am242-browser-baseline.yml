@@ -1,0 +1,23 @@
+name: AM242 Payment UI baseline JS READONLY
+on:
+  push:
+    branches: [feature/am242-payment-staff-customer-master]
+    paths: ['.github/workflows/am242-browser-baseline.yml']
+permissions: {contents: read}
+jobs:
+  baseline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      STAGING_BASE_URL: ${{ vars.STAGING_BASE_URL || 'https://staging.assammotors.com' }}
+      STAGING_LOGIN_PATH: ${{ vars.STAGING_LOGIN_PATH || '/erp/login' }}
+      STAGING_ADMIN_LOGIN: ${{ secrets.STAGING_ADMIN_LOGIN }}
+      STAGING_ADMIN_PASSWORD: ${{ secrets.STAGING_ADMIN_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install JS parser and browser
+        run: |
+          npm install --no-save playwright@1.55.0 acorn@8.14.1
+          npx playwright install --with-deps chromium
+      - name: Parse baseline Payment Voucher inline scripts, no business action
+        run: node deployment/live-fixes/AM242_PAYMENT_STAFF_CUSTOMER/qa/browser-baseline.mjs
