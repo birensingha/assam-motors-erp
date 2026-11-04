@@ -111,16 +111,16 @@ final class StaffMultiExpensePaymentService
             'staff_id'=>['required','integer','min:1'],
             'staff_payment_kind'=>['required','in:EXPENSE_REIMBURSEMENT'],
             'staff_payment_against'=>['required','in:AGAINST'],
-            'payment_date'=>['required','date_format:Y-m-d'],
-            'amount'=>['required','numeric','gt:0','max:99999999'],
+            'payment_date'=>['required','date_format:Y-m-d','before_or_equal:today'],
+            'amount'=>['required','numeric','gt:0','max:99999999.99','decimal:0,2'],
             'payment_mode'=>['required','in:Cash,UPI,Bank Transfer,Cheque,Card'],
-            'account_name'=>['nullable','string','max:120'],
+            'account_name'=>['required','string','min:2','max:120'],
             'reference_no'=>['nullable','string','max:140'],
             'notes'=>['required','string','min:6','max:600'],
             'request_key'=>['required','uuid'],
             'allocations'=>['required','array','min:1','max:100'],
             'allocations.*.expense_id'=>['required','integer','min:1'],
-            'allocations.*.amount'=>['required'],
+            'allocations.*.amount'=>['required','numeric','gt:0','decimal:0,2'],
         ]);
         $staffId=(int)$data['staff_id'];
         $requestKey=(string)$data['request_key'];
