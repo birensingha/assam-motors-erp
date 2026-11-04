@@ -86,9 +86,10 @@ final class CustomerPayoutVoucherService
             if($mode==='AGAINST'){
                 // Only refund a provable credit balance, not an invoice outstanding
                 // or a fabricated customer payable.
-                $credit=(float)DB::table('customer_ledger')->where('customer_id',$cid)
+                $available=DB::table('customer_ledger')->where('customer_id',$cid)
                     ->selectRaw('COALESCE(SUM(COALESCE(credit,0)-COALESCE(debit,0)),0) AS credit_balance')
-                    ->value('credit_balance');
+                    ->first();
+                $credit=(float)($available->credit_balance??0);
                 $credit=round($credit,2);
                 if($credit+0.009<$amount)
                     $this->fail('amount','Refund exceeds Customer Ledger net credit. Verified available credit ₹'.number_format(max(0,$credit),2).'. Use Advance for a separate receivable payout.');
