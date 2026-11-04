@@ -23,6 +23,7 @@ try {
  await row.waitFor({state:'visible'});
  const inputs=['.part-search','.qty','.rate','.disc','.gst','.allocation','.job-filter'];
  const audit=async label=>{
+  await page.waitForTimeout(250); // allow scale/local-storage repaint to settle
   const measurements=await row.evaluate((r,selectors)=>{
    const items=selectors.map(sel=>{
     const el=r.querySelector(sel);const box=el.getBoundingClientRect();
@@ -39,6 +40,7 @@ try {
   if(measurements.items.some(x=>x.width<25))throw new Error(label+' a field is collapsed');
   if(measurements.linePanelHeight>315)throw new Error(label+' the empty line panel is still oversized');
  };
+ await page.locator('[data-am-scale="100"]').click();
  await audit('100');
  await page.locator('[data-am-scale="115"]').click();await audit('115');
  await page.locator('[data-am-scale="125"]').click();await audit('125');
