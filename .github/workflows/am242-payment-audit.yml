@@ -2,7 +2,7 @@ name: AM242 Payment Staff and Customer source audit READONLY
 on:
   push:
     branches: [feature/am242-payment-staff-customer-master]
-    paths: ['.github/workflows/am242-payment-audit.yml','deployment/live-fixes/AM242_PAYMENT_STAFF_CUSTOMER/audit2.py','deployment/live-fixes/AM242_PAYMENT_STAFF_CUSTOMER/audit3.py']
+    paths: ['.github/workflows/am242-payment-audit.yml','deployment/live-fixes/AM242_PAYMENT_STAFF_CUSTOMER/audit2.py','deployment/live-fixes/AM242_PAYMENT_STAFF_CUSTOMER/audit3.py','deployment/live-fixes/AM242_PAYMENT_STAFF_CUSTOMER/audit4.py']
 permissions: {contents: read}
 concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
 jobs:
@@ -19,7 +19,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Syntax
-        run: python3 -m py_compile deployment/live-fixes/AM242_PAYMENT_STAFF_CUSTOMER/audit.py deployment/live-fixes/AM242_PAYMENT_STAFF_CUSTOMER/audit2.py deployment/live-fixes/AM242_PAYMENT_STAFF_CUSTOMER/audit3.py
+        run: python3 -m py_compile deployment/live-fixes/AM242_PAYMENT_STAFF_CUSTOMER/audit.py deployment/live-fixes/AM242_PAYMENT_STAFF_CUSTOMER/audit2.py deployment/live-fixes/AM242_PAYMENT_STAFF_CUSTOMER/audit3.py deployment/live-fixes/AM242_PAYMENT_STAFF_CUSTOMER/audit4.py
       - name: Configure SSH
         shell: bash
         run: |
@@ -48,12 +48,14 @@ jobs:
             SCP=(sshpass -e scp -P "$PORT")
           fi
           "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM242_PAYMENT_AUDIT"'
-          "${SCP[@]}" deployment/live-fixes/AM242_PAYMENT_STAFF_CUSTOMER/audit.py deployment/live-fixes/AM242_PAYMENT_STAFF_CUSTOMER/audit2.py deployment/live-fixes/AM242_PAYMENT_STAFF_CUSTOMER/audit3.py "$REMOTE:~/AM242_PAYMENT_AUDIT/"
+          "${SCP[@]}" deployment/live-fixes/AM242_PAYMENT_STAFF_CUSTOMER/audit.py deployment/live-fixes/AM242_PAYMENT_STAFF_CUSTOMER/audit2.py deployment/live-fixes/AM242_PAYMENT_STAFF_CUSTOMER/audit3.py deployment/live-fixes/AM242_PAYMENT_STAFF_CUSTOMER/audit4.py "$REMOTE:~/AM242_PAYMENT_AUDIT/"
           "${SSH[@]}" "$REMOTE" "python3 ~/AM242_PAYMENT_AUDIT/audit.py '$ROOT'" | tee "$RUNNER_TEMP/am242-audit.log"
           grep -q AM242_AUDIT_FINISHED "$RUNNER_TEMP/am242-audit.log"
           "${SSH[@]}" "$REMOTE" "python3 ~/AM242_PAYMENT_AUDIT/audit2.py '$ROOT'" | tee "$RUNNER_TEMP/am242-focused.log"
           grep -q AM242_FOCUSED_AUDIT_FINISHED "$RUNNER_TEMP/am242-focused.log"
           "${SSH[@]}" "$REMOTE" "python3 ~/AM242_PAYMENT_AUDIT/audit3.py '$ROOT'" | tee "$RUNNER_TEMP/am242-customer.log"
           grep -q AM242_DETAIL_FINISHED "$RUNNER_TEMP/am242-customer.log"
+          "${SSH[@]}" "$REMOTE" "python3 ~/AM242_PAYMENT_AUDIT/audit4.py '$ROOT'" | tee "$RUNNER_TEMP/am242-ledger.log"
+          grep -q AM242_LEDGER_AUDIT_FINISHED "$RUNNER_TEMP/am242-ledger.log"
       - if: always()
         run: rm -f ~/.ssh/id_ed25519
