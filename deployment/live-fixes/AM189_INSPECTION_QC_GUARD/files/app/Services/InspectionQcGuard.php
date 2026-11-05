@@ -229,6 +229,77 @@ final class InspectionQcGuard
         });
     }
 
+    /** Record customer refusal without falsely completing repair or QC. */
+    public function decline(int $id, int $adminId, string $reason, string $ack, ?string $evidence): int
+    {
+        $this->tables();
+        $reason=trim($reason);
+        $evidence=trim((string)$evidence);
+        if (mb_strlen($reason)<12 || mb_strlen($reason)>2000) {
+            throw ValidationException::withMessages(['decline_reason'=>'Enter the actual customer refusal details (12–2000 characters).']);
+        }
+        if (!in_array($ack,['WRITTEN','VERBAL','REFUSED_TO_SIGN','PENDING'],true)) {
+            throw ValidationException::withMessages(['decline_acknowledgement'=>'Select a valid acknowledgement status.']);
+        }
+        if ($ack==='WRITTEN' && $evidence==='') {
+            throw ValidationException::withMessages(['decline_evidence_ref'=>'Enter the signed customer acknowledgement reference.']);
+        }
+        return DB::transaction(function () use ($id,$adminId,$reason,$ack,$evidence): int {
+            $item=DB::table('am189_inspection_defects')->where('id',$id)->first();
+            if (!$item) abort(404);
+            $card=DB::table('job_cards')->where('id',$item->job_card_id)->lockForUpdate()->first();
+            if (!$card) abort(404);
+            $this->assertEditable($card);
+            $item=DB::table('am189_inspection_defects')->where('id',$id)->lockForUpdate()->first();
+            if (!in_array($item->status,['OPEN','RECTIFIED'],true)) {
+                throw ValidationException::withMessages(['status'=>'Only OPEN or RECTIFIED defects can be marked customer declined.']);
+            }
+            foreach (['decline_reason','decline_acknowledgement','decline_evidence_ref','declined_by_admin_id','declined_at'] as $column) {
+                if (!Schema::hasColumn('am189_inspection_defects',$column)) {
+                    abort(503,'Customer decline database migration is required.');
+                }
+            }
+            DB::table('am189_inspection_defects')->where('id',$id)->update([
+                'status'=>'DECLINED','decline_reason'=>$reason,
+                'decline_acknowledgement'=>$ack,'decline_evidence_ref'=>$evidence ?: null,
+                'declined_by_admin_id'=>$adminId,'declined_at'=>now(),'updated_at'=>now(),
+            ]);
+            $this->audit($id,(int)$item->job_card_id,$adminId,'DECLINED',$item,[
+                'status'=>'DECLINED','reason'=>$reason,'acknowledgement'=>$ack,
+                'evidence_ref'=>$evidence ?: null,'repaired'=>false,'verified'=>false,
+            ]);
+            return (int)$item->job_card_id;
+        });
+    }
+
+    /** Resume the repair workflow after a customer reverses an earlier refusal. */
+    public function reopenDeclined(int $id, int $adminId, string $reason): int
+    {
+        $this->tables();
+        $reason=trim($reason);
+        if (mb_strlen($reason)<8 || mb_strlen($reason)>2000) {
+            throw ValidationException::withMessages(['reopen_reason'=>'Provide a reason (8–2000 characters).']);
+        }
+        return DB::transaction(function () use ($id,$adminId,$reason): int {
+            $item=DB::table('am189_inspection_defects')->where('id',$id)->first();
+            if (!$item) abort(404);
+            $card=DB::table('job_cards')->where('id',$item->job_card_id)->lockForUpdate()->first();
+            if (!$card) abort(404);
+            $this->assertEditable($card);
+            $item=DB::table('am189_inspection_defects')->where('id',$id)->lockForUpdate()->first();
+            if ($item->status!=='DECLINED') {
+                throw ValidationException::withMessages(['status'=>'Only customer-declined defects can be reopened here.']);
+            }
+            DB::table('am189_inspection_defects')->where('id',$id)->update([
+                'status'=>'OPEN','updated_at'=>now(),
+            ]);
+            $this->audit($id,(int)$item->job_card_id,$adminId,'DECLINE_REOPENED',$item,[
+                'status'=>'OPEN','reason'=>$reason,
+            ]);
+            return (int)$item->job_card_id;
+        });
+    }
+
     private function assertEditable(object $card): void
     {
         if (in_array(strtolower(trim((string)$card->status)),['invoiced','closed','cancelled'],true)) {
