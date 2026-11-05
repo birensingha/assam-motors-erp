@@ -7,6 +7,7 @@ on:
       - 'deployment/audits/AM440_NATIVE_FINANCE_READONLY.sh'
       - 'deployment/audits/AM444_FINANCE_ENDPOINT_SHAPES_READONLY.sh'
       - 'deployment/audits/AM449_STAFF_NATIVE_ROUTE_READONLY.sh'
+      - 'deployment/audits/AM454_INSPECTION_NATIVE_CONTRACT_READONLY.sh'
 permissions:
   contents: read
 concurrency:
@@ -34,6 +35,7 @@ jobs:
           bash -n deployment/audits/AM440_NATIVE_FINANCE_READONLY.sh
           bash -n deployment/audits/AM444_FINANCE_ENDPOINT_SHAPES_READONLY.sh
           bash -n deployment/audits/AM449_STAFF_NATIVE_ROUTE_READONLY.sh
+          bash -n deployment/audits/AM454_INSPECTION_NATIVE_CONTRACT_READONLY.sh
           test "$(grep -c 'AM440_AUDIT_NO_WRITES_COMPLETE' deployment/audits/AM440_NATIVE_FINANCE_READONLY.sh)" = 1
       - name: Configure SSH to the existing STAGING host
         shell: bash
@@ -68,6 +70,7 @@ jobs:
           "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" < deployment/audits/AM440_NATIVE_FINANCE_READONLY.sh
           "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" < deployment/audits/AM444_FINANCE_ENDPOINT_SHAPES_READONLY.sh
           "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" < deployment/audits/AM449_STAFF_NATIVE_ROUTE_READONLY.sh
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" < deployment/audits/AM454_INSPECTION_NATIVE_CONTRACT_READONLY.sh
       - name: Remove transient SSH authentication material
         if: always()
         shell: bash
