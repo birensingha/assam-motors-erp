@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import ssl
 import sys
 from urllib.error import HTTPError, URLError
@@ -115,8 +116,10 @@ def verify(admin: str, staff: str | None, staff_id: str | None) -> None:
              and all(str(x.get("payee_id")) == staff_id
                      and x.get("payee_type") == "STAFF"
                      and isinstance(x.get("outstanding_amount"), str)
-                     and x["outstanding_amount"].endswith(
-                         tuple(f".{i:02d}" for i in range(100)))
+                     and bool(re.fullmatch(
+                         r"(?:0|[1-9][0-9]{0,14})\\.[0-9]{2}",
+                         x["outstanding_amount"]))
+                     and x["outstanding_amount"] != "0.00"
                      for x in references),
              "Outstanding references are bounded, unique, exact-string and Staff-scoped")
     else:
