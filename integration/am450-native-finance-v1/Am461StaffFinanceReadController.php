@@ -41,4 +41,10 @@ final class Am461StaffFinanceReadController extends Controller
         $this->loadBridge();
         return \AssamMotors\FinanceV1\LaravelStaffFinanceReadBridge::outstanding($request);
     }
+
+    public function masterItems(Request $request): JsonResponse
+    {
+        $this->loadBridge();
+        return \AssamMotors\FinanceV1\LaravelStaffFinanceReadBridge::masterItems($request);
+    }
 }
