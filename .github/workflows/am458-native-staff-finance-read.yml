@@ -1,0 +1,33 @@
+name: AM458 Native Staff Finance Read API — PHP Contract QA
+on:
+  push:
+    branches:
+      - feature/am458-native-staff-finance-read-api
+  pull_request:
+    paths:
+      - "integration/am450-native-finance-v1/**"
+      - ".github/workflows/am458-native-staff-finance-read.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  php-contract:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP runtime and source validation
+        run: |
+          php -v
+          set -e
+          ROOT=integration/am450-native-finance-v1
+          php -l "$ROOT/FinanceReadContract.php"
+          php -l "$ROOT/StaffExpenseFinanceProvider.php"
+          php -l "$ROOT/LaravelStaffFinanceReadBridge.php"
+          php -l "$ROOT/Am461StaffFinanceReadController.php"
+          php -l "$ROOT/test.php"
+          php -l "$ROOT/test-staff-provider.php"
+      - name: Original Finance v1 synthetic invariants
+        run: php integration/am450-native-finance-v1/test.php
+      - name: New Staff outstanding synthetic invariants
+        run: php integration/am450-native-finance-v1/test-staff-provider.php
