@@ -27,9 +27,12 @@ jobs:
           php -l "$ROOT/Am461StaffFinanceReadController.php"
           php -l "$ROOT/test.php"
           php -l "$ROOT/test-staff-provider.php"
+          php -l "$ROOT/test-master-provider.php"
       - name: Original Finance v1 synthetic invariants
         run: php integration/am450-native-finance-v1/test.php
       - name: New Staff outstanding synthetic invariants
         run: php integration/am450-native-finance-v1/test-staff-provider.php
+      - name: Native Part Labour OSL Master search synthetic invariants
+        run: php integration/am450-native-finance-v1/test-master-provider.php
       - name: Source-only staging install and rollback safety (synthetic)
         run: python3 integration/am450-native-finance-v1/test-staging-script.py
