@@ -27,6 +27,8 @@ SOURCES = {
     "LaravelStaffFinanceReadBridge.php": "app/Services/NativeFinanceV1/LaravelStaffFinanceReadBridge.php",
     "Am461StaffFinanceReadController.php":
         "app/Http/Controllers/Api/V1/Am461StaffFinanceReadController.php",
+    "finance-read-routes.inc.php":
+        "app/Services/NativeFinanceV1/finance-read-routes.inc.php",
 }
 
 
