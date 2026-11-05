@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/am440-native-finance-readonly.yml'
       - 'deployment/audits/AM440_NATIVE_FINANCE_READONLY.sh'
+      - 'deployment/audits/AM444_FINANCE_ENDPOINT_SHAPES_READONLY.sh'
 permissions:
   contents: read
 concurrency:
@@ -30,6 +31,7 @@ jobs:
         run: |
           set -euo pipefail
           bash -n deployment/audits/AM440_NATIVE_FINANCE_READONLY.sh
+          bash -n deployment/audits/AM444_FINANCE_ENDPOINT_SHAPES_READONLY.sh
           test "$(grep -c 'AM440_AUDIT_NO_WRITES_COMPLETE' deployment/audits/AM440_NATIVE_FINANCE_READONLY.sh)" = 1
       - name: Configure SSH to the existing STAGING host
         shell: bash
@@ -62,6 +64,7 @@ jobs:
             SSH=(sshpass -e ssh -o ConnectTimeout=14 -p "$PORT")
           fi
           "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" < deployment/audits/AM440_NATIVE_FINANCE_READONLY.sh
+          "${SSH[@]}" "$REMOTE" "bash -s -- '$ROOT'" < deployment/audits/AM444_FINANCE_ENDPOINT_SHAPES_READONLY.sh
       - name: Remove transient SSH authentication material
         if: always()
         shell: bash
