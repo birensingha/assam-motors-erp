@@ -31,3 +31,5 @@ jobs:
         run: php integration/am450-native-finance-v1/test.php
       - name: New Staff outstanding synthetic invariants
         run: php integration/am450-native-finance-v1/test-staff-provider.php
+      - name: Source-only staging install and rollback safety (synthetic)
+        run: python3 integration/am450-native-finance-v1/test-staging-script.py
