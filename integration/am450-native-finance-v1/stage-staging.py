@@ -48,7 +48,9 @@ def preflight(root: Path) -> None:
     if not (root / "app/Services/StaffMultiExpensePaymentService.php").is_file():
         fail("AM245 Staff multi-expense accounting service not installed")
     source = (root / "routes/api.php").read_text(encoding="utf8")
-    if "/finance/v1/payees" in source or "/finance/v1/open-references" in source:
+    if ("/finance/v1/payees" in source or
+        "/finance/v1/open-references" in source or
+        "/finance/v1/master-items" in source):
         fail("Finance read routes already present; inspect existing runtime before changing")
     php = shutil.which("php")
     if php is None:
