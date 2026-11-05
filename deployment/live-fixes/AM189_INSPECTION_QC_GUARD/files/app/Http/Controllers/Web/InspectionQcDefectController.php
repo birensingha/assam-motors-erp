@@ -164,9 +164,13 @@ final class InspectionQcDefectController extends Controller
         $data=$request->validate([
             'result'=>['required','in:PASS,FAIL'],
             'verification_note'=>['required','string','min:8','max:2000'],
+            'reviewer_staff_id'=>['nullable','integer','min:1'],
+            'independent_attestation'=>['nullable','accepted'],
         ]);
         $job=$guard->verify($defect,(int)$admin->id,(int)($admin->staff_id??0),
-            $data['result']==='PASS',(string)$data['verification_note']);
+            $data['result']==='PASS',(string)$data['verification_note'],
+            isset($data['reviewer_staff_id']) ? (int)$data['reviewer_staff_id'] : null,
+            $request->boolean('independent_attestation'));
         return redirect()->route('erp.job-cards.inspection-defects',$job)
             ->with('success',$data['result']==='PASS'
                 ?'Re-inspection VERIFIED. Original defect and audit preserved.'
