@@ -20,6 +20,8 @@ Route::get('finance/v1/payees',
     [\App\Http\Controllers\Api\V1\Am461StaffFinanceReadController::class, 'payees']);
 Route::get('finance/v1/open-references',
     [\App\Http\Controllers\Api\V1\Am461StaffFinanceReadController::class, 'outstanding']);
+Route::get('finance/v1/master-items',
+    [\App\Http\Controllers\Api\V1\Am461StaffFinanceReadController::class, 'masterItems']);
 ```
 
 The actual normalized routes MUST become:
@@ -27,6 +29,7 @@ The actual normalized routes MUST become:
 ```text
 GET api/v1/admin/mobile/finance/v1/payees?type=STAFF
 GET api/v1/admin/mobile/finance/v1/open-references?payee_type=STAFF&payee_id=<StaffID>
+GET api/v1/admin/mobile/finance/v1/master-items?type=PART&q=<search>&limit=40
 ```
 
 The controller independently checks authenticated, active
@@ -80,6 +83,16 @@ The data loader delegates to
 calculates unpaid balances from `workshop_expenses`, ACTIVE direct
 `workshop_payment_vouchers`, and ACTIVE multi-bill
 `workshop_payment_allocations`. It only queries the chosen Staff ID.
+The AM246 audited Master schema mappings are reused for the new read-only
+Master search route. Authorized Admin can search `PART` (`parts_master`),
+`LABOUR` (`labour_master`) and `OSL` (`workshop_osl_master`) by name
+or code. SQL table/column names are hardcoded whitelist values. Each
+response has `contract: "am-finance-v1"`, `resource: "master-items"` and
+an `items` array of `id`, `type`, `name`, `code`. Missing tables
+or wrong columns fail closed. This is **master lookup only**; the
+per-item transaction ledger route remains blocked pending verified
+snapshot/stock versus invoice billing reconciliation.
+
 The response is capped at 100; overflow is a **failure** rather than an
 incomplete list that falsely appears paid. INR amounts are formatted
 by strict integer-paise conversion, with no floating-point
