@@ -26,7 +26,7 @@ jobs:
           set -euo pipefail
           php -l integration/am450-native-finance-v1/FinanceReadContract.php
           php -l integration/am450-native-finance-v1/test.php
-      - name: Run 17 read-only fake-data regression cases
+      - name: Run 18 read-only fake-data regression cases
         shell: bash
         run: |
           set -euo pipefail
