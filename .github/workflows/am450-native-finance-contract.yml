@@ -1,0 +1,33 @@
+name: AM450 Native Finance PHP Contract Unit Tests
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'integration/am450-native-finance-v1/**'
+      - '.github/workflows/am450-native-finance-contract.yml'
+permissions:
+  contents: read
+jobs:
+  finance-read-contract:
+    name: Validate read-only Finance API invariants (no database)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirm PHP 8.2+ is available
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -r 'if (PHP_VERSION_ID < 80200) { fwrite(STDERR, "PHP >= 8.2 required\n"); exit(1); }'
+          php -v | head -n 1
+      - name: PHP syntax lint
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -l integration/am450-native-finance-v1/FinanceReadContract.php
+          php -l integration/am450-native-finance-v1/test.php
+      - name: Run 18 read-only fake-data regression cases
+        shell: bash
+        run: |
+          set -euo pipefail
+          php integration/am450-native-finance-v1/test.php
