@@ -176,4 +176,28 @@ final class InspectionQcDefectController extends Controller
                 ?'Re-inspection VERIFIED. Original defect and audit preserved.'
                 :'Re-inspection failed. Defect returned to OPEN.');
     }
+    public function decline(Request $request,int $defect,InspectionQcGuard $guard)
+    {
+        $admin=$this->admin($request);
+        $data=$request->validate([
+            'decline_reason'=>['required','string','min:12','max:2000'],
+            'decline_acknowledgement'=>['required','in:WRITTEN,VERBAL,REFUSED_TO_SIGN,PENDING'],
+            'decline_evidence_ref'=>['nullable','string','max:500'],
+        ]);
+        $job=$guard->decline($defect,(int)$admin->id,
+            (string)$data['decline_reason'],(string)$data['decline_acknowledgement'],
+            $data['decline_evidence_ref']??null);
+        return redirect()->route('erp.job-cards.inspection-defects',$job)
+            ->with('success','Customer refusal recorded with audit. Defect remains unrepaired; Full QC PASS stays blocked.');
+    }
+
+    public function reopenDeclined(Request $request,int $defect,InspectionQcGuard $guard)
+    {
+        $admin=$this->admin($request);
+        $data=$request->validate(['reopen_reason'=>['required','string','min:8','max:2000']]);
+        $job=$guard->reopenDeclined($defect,(int)$admin->id,(string)$data['reopen_reason']);
+        return redirect()->route('erp.job-cards.inspection-defects',$job)
+            ->with('success','Customer-declined defect reopened as OPEN. Previous refusal preserved in audit.');
+    }
+
 }
