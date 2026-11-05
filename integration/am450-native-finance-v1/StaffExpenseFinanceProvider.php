@@ -19,10 +19,12 @@ final class StaffExpenseFinanceProvider implements FinanceReadProvider
     /**
      * @param \Closure(int):list<array<string,mixed>> $staffLoader
      * @param \Closure(string,int):list<array<string,mixed>> $expenseLoader
+     * @param ?\Closure(string,string,int):list<array<string,mixed>> $masterLoader
      */
     public function __construct(
         private readonly \Closure $staffLoader,
-        private readonly \Closure $expenseLoader
+        private readonly \Closure $expenseLoader,
+        private readonly ?\Closure $masterLoader = null
     ) {}
 
     /** @return list<array<string,mixed>> */
@@ -104,9 +106,36 @@ final class StaffExpenseFinanceProvider implements FinanceReadProvider
     /** @return list<array<string,mixed>> */
     public function masters(string $type, string $query, int $limit): array
     {
-        throw new FinanceContractFailure(
-            'Master source must use the independently verified AM246 ledger'
-        );
+        if (!in_array($type, ['PART', 'LABOUR', 'OSL'], true)) {
+            throw new FinanceContractFailure('Unrecognized ERP Master type');
+        }
+        if ($limit < 1 || $limit > 40 || strlen($query) > 120) {
+            throw new FinanceContractFailure('Invalid ERP Master query/limit');
+        }
+        if ($this->masterLoader === null) {
+            throw new FinanceContractFailure('AM246 Master search has not been mapped');
+        }
+        $rows = ($this->masterLoader)($type, $query, $limit);
+        if (!is_array($rows) || !array_is_list($rows) || count($rows) > $limit) {
+            throw new FinanceContractFailure('ERP Master search incomplete/oversized');
+        }
+        $normalized = [];
+        foreach ($rows as $row) {
+            if (!is_array($row) || !self::positiveId($row['id'] ?? null) ||
+                ($row['type'] ?? null) !== $type ||
+                !is_string($row['name'] ?? null) ||
+                trim($row['name']) === '') {
+                throw new FinanceContractFailure('Cross-type or invalid ERP Master');
+            }
+            $normalized[] = [
+                'id' => (string)$row['id'],
+                'type' => $type,
+                'name' => trim($row['name']),
+                'code' => is_string($row['code'] ?? null) ?
+                    trim($row['code']) : '',
+            ];
+        }
+        return $normalized;
     }
 
     /** @return array<string,mixed> */
