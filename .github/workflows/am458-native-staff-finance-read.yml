@@ -36,3 +36,5 @@ jobs:
         run: php integration/am450-native-finance-v1/test-master-provider.php
       - name: Source-only staging install and rollback safety (synthetic)
         run: python3 integration/am450-native-finance-v1/test-staging-script.py
+      - name: Strict STAGING GET probe safety (synthetic, no network)
+        run: python3 integration/am450-native-finance-v1/test-staging-api-probe.py
