@@ -19,7 +19,7 @@ interface FinanceReadProvider
     /** @return list<array<string,mixed>> */
     public function outstanding(string $type, string $payeeId, int $limit): array;
 
-    /** @return array{records:list<array<string,mixed>>,next_cursor?:string,total_count?:int} */
+    /** @return array{snapshot_id:string,records:list<array<string,mixed>>,next_cursor?:string,total_count?:int} */
     public function register(string $resource, string $query, int $limit, ?string $cursor): array;
 
     /** @return list<array<string,mixed>> */
@@ -106,6 +106,7 @@ final class FinanceReadContract
         self::query($query);
         self::page($limit, $cursor, 30);
         $result = $this->provider->register($resource, $query, $limit, $cursor);
+        self::nonblank($result['snapshot_id'] ?? null);
         $rows = $result['records'] ?? null;
         if (!is_array($rows) || !array_is_list($rows)) {
             throw new FinanceContractFailure('Register rows missing');
@@ -118,6 +119,7 @@ final class FinanceReadContract
             throw new FinanceContractFailure('Register total_count invalid');
         }
         return ['contract' => self::CONTRACT, 'resource' => $resource,
+            'snapshot_id' => (string) $result['snapshot_id'],
             'records' => $rows, 'next_cursor' => $next] +
             (isset($result['total_count']) ? ['total_count' => $result['total_count']] : []);
     }
