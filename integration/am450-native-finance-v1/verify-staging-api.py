@@ -117,7 +117,7 @@ def verify(admin: str, staff: str | None, staff_id: str | None) -> None:
                      and x.get("payee_type") == "STAFF"
                      and isinstance(x.get("outstanding_amount"), str)
                      and bool(re.fullmatch(
-                         r"(?:0|[1-9][0-9]{0,14})\\.[0-9]{2}",
+                         r"(?:0|[1-9][0-9]{0,14})\.[0-9]{2}",
                          x["outstanding_amount"]))
                      and x["outstanding_amount"] != "0.00"
                      for x in references),
