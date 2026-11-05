@@ -195,11 +195,12 @@ final class InspectionQcGuard
             if ($item->status!=='RECTIFIED') {
                 throw ValidationException::withMessages(['status'=>'Repair must be RECTIFIED before re-inspection.']);
             }
-            if ($item->severity==='safety' && $actorStaffId>0
+            // Failed re-inspection reopens the defect; only PASS needs independent verification.
+            if ($pass && $item->severity==='safety' && $actorStaffId>0
                 && $actorStaffId===(int)$item->repair_staff_id) {
                 throw ValidationException::withMessages(['verification_note'=>'Safety repair must be verified by someone other than its repair technician.']);
             }
-            if ($item->severity==='safety' && $actorAdmin===(int)$item->repair_admin_id
+            if ($pass && $item->severity==='safety' && $actorAdmin===(int)$item->repair_admin_id
                 && $actorStaffId<=0) {
                 throw ValidationException::withMessages(['verification_note'=>'Safety verification must be independently reviewed by a different Admin or mapped inspector.']);
             }
