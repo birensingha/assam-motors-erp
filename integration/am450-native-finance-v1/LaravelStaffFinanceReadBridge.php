@@ -11,6 +11,7 @@ use App\Services\StaffMultiExpensePaymentService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * AM460: read-only API bridge for existing Assam Motors Staff Expense ledgers.
@@ -83,6 +84,48 @@ final class LaravelStaffFinanceReadBridge
                     );
                 }
                 return $data;
+            },
+            static function (string $type, string $query, int $limit): array {
+                // Whitelist mirrors the already-audited AM246 Parts/ROT/OSL
+                // master sources, never a request-supplied table/column name.
+                $mapping = [
+                    'PART' => ['parts_master', 'part_code', 'part_name'],
+                    'LABOUR' => ['labour_master', 'rot_code', 'rot_description'],
+                    'OSL' => ['workshop_osl_master', 'osl_code', 'osl_name'],
+                ];
+                if (!isset($mapping[$type]) || $limit < 1 || $limit > 40) {
+                    throw new FinanceContractFailure('Invalid Master search resource');
+                }
+                [$table, $code, $name] = $mapping[$type];
+                if (!Schema::hasTable($table) ||
+                    !Schema::hasColumn($table, 'id') ||
+                    !Schema::hasColumn($table, $code) ||
+                    !Schema::hasColumn($table, $name)) {
+                    throw new FinanceContractFailure(
+                        'AM246 ERP master table or verified columns are missing'
+                    );
+                }
+                $builder = DB::table($table);
+                if (trim($query) !== '') {
+                    $escaped = str_replace(
+                        ['\\', '%', '_'], ['\\\\', '\\%', '\\_'],
+                        trim($query)
+                    );
+                    $like = '%'.$escaped.'%';
+                    $builder->where(static function ($q) use ($code, $name, $like): void {
+                        $q->where($code, 'like', $like)
+                          ->orWhere($name, 'like', $like);
+                    });
+                }
+                $records = $builder->orderBy($name)->orderBy('id')
+                    ->limit($limit + 1)
+                    ->get(['id', $code.' as code', $name.' as name']);
+                return $records->map(static fn($row) => [
+                    'id' => (string)$row->id,
+                    'type' => $type,
+                    'name' => (string)$row->name,
+                    'code' => (string)($row->code ?? ''),
+                ])->all();
             }
         );
     }
@@ -126,6 +169,29 @@ final class LaravelStaffFinanceReadBridge
             return response()->json(
                 (new FinanceReadContract(self::provider()))
                     ->outstanding(true, $type, $payeeId)
+            );
+        } catch (FinanceContractFailure $e) {
+            return self::blocked($e);
+        }
+    }
+
+    public static function masterItems(Request $request): JsonResponse
+    {
+        self::authorize($request);
+        try {
+            $type = (string)$request->query('type', '');
+            $query = (string)$request->query('q', '');
+            $limit = filter_var(
+                $request->query('limit', '40'),
+                FILTER_VALIDATE_INT,
+                ['options' => ['min_range' => 1, 'max_range' => 40]]
+            );
+            if (strlen($type) > 15 || strlen($query) > 120 || $limit === false) {
+                throw new FinanceContractFailure('Invalid ERP Master query');
+            }
+            return response()->json(
+                (new FinanceReadContract(self::provider()))
+                    ->masters(true, $type, $query, (int)$limit)
             );
         } catch (FinanceContractFailure $e) {
             return self::blocked($e);
