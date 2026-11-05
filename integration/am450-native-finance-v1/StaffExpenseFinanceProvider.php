@@ -175,8 +175,13 @@ final class StaffExpenseFinanceProvider implements FinanceReadProvider
      */
     public static function moneyToCents(mixed $amount): int
     {
-        if (!is_string($amount) && !is_int($amount) && !is_float($amount)) {
-            throw new FinanceContractFailure('Outstanding amount not numeric');
+        // Floating point does not preserve INR paise exactly. DECIMAL from
+        // MariaDB must arrive as a string, never a PHP float or calculated
+        // approximate value. Reject instead of silently accepting rounding.
+        if (!is_string($amount) && !is_int($amount)) {
+            throw new FinanceContractFailure(
+                'Outstanding INR must be an exact DECIMAL string or integer'
+            );
         }
         $value = trim((string)$amount);
         if (!preg_match('/^(0|[1-9][0-9]{0,11})(?:\.([0-9]{1,2}))?$/D', $value, $m)) {
