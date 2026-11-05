@@ -178,14 +178,14 @@ final class InspectionQcGuard
         });
     }
 
-    public function verify(int $id, int $actorAdmin, int $actorStaffId, bool $pass, string $note): int
+    public function verify(int $id, int $actorAdmin, int $actorStaffId, bool $pass, string $note, ?int $reviewerStaffId=null, bool $attested=false): int
     {
         $this->tables();
         $note=trim($note);
         if (mb_strlen($note)<8 || mb_strlen($note)>2000) {
             throw ValidationException::withMessages(['verification_note'=>'Re-inspection observation must be 8 to 2000 characters.']);
         }
-        return DB::transaction(function () use ($id,$actorAdmin,$actorStaffId,$pass,$note): int {
+        return DB::transaction(function () use ($id,$actorAdmin,$actorStaffId,$pass,$note,$reviewerStaffId,$attested): int {
             $original=DB::table('am189_inspection_defects')->where('id',$id)->first();
             if (!$original) abort(404);
             $card=DB::table('job_cards')->where('id',$original->job_card_id)->lockForUpdate()->first();
@@ -195,23 +195,35 @@ final class InspectionQcGuard
             if ($item->status!=='RECTIFIED') {
                 throw ValidationException::withMessages(['status'=>'Repair must be RECTIFIED before re-inspection.']);
             }
-            // Failed re-inspection reopens the defect; only PASS needs independent verification.
-            if ($pass && $item->severity==='safety' && $actorStaffId>0
-                && $actorStaffId===(int)$item->repair_staff_id) {
-                throw ValidationException::withMessages(['verification_note'=>'Safety repair must be verified by someone other than its repair technician.']);
-            }
-            if ($pass && $item->severity==='safety' && $actorAdmin===(int)$item->repair_admin_id
-                && $actorStaffId<=0) {
-                throw ValidationException::withMessages(['verification_note'=>'Safety verification must be independently reviewed by a different Admin or mapped inspector.']);
+            if ($pass && $item->severity==='safety') {
+                if (!$reviewerStaffId || !$attested) {
+                    throw ValidationException::withMessages(['reviewer_staff_id'=>'Select the independent reviewer who personally performed the test and confirm the attestation.']);
+                }
+                if ($reviewerStaffId===(int)$item->repair_staff_id) {
+                    throw ValidationException::withMessages(['reviewer_staff_id'=>'Safety reviewer cannot be the repairing technician.']);
+                }
+                if (!DB::table('staff')->where('id',$reviewerStaffId)
+                    ->whereRaw("LOWER(COALESCE(status,'active'))='active'")->exists()) {
+                    throw ValidationException::withMessages(['reviewer_staff_id'=>'Select an active, qualified independent reviewer.']);
+                }
+                if (!Schema::hasColumn('am189_inspection_defects','verified_by_staff_id')) {
+                    abort(503,'Independent QC reviewer database migration is required before PASS.');
+                }
             }
             $newStatus=$pass?'VERIFIED':'OPEN';
-            DB::table('am189_inspection_defects')->where('id',$id)->update([
+            $updates=[
                 'status'=>$newStatus,'verification_result'=>$pass?'PASS':'FAIL',
                 'verification_note'=>$note,'verified_by_admin_id'=>$actorAdmin,
                 'verified_at'=>now(),'updated_at'=>now(),
-            ]);
+            ];
+            if (Schema::hasColumn('am189_inspection_defects','verified_by_staff_id')) {
+                $updates['verified_by_staff_id']=$pass ? $reviewerStaffId : null;
+            }
+            DB::table('am189_inspection_defects')->where('id',$id)->update($updates);
             $this->audit($id,(int)$item->job_card_id,$actorAdmin,$pass?'VERIFIED':'REOPENED',$item,[
                 'status'=>$newStatus,'result'=>$pass?'PASS':'FAIL','verification_note'=>$note,
+                'reviewer_staff_id'=>$pass ? $reviewerStaffId : null,
+                'independent_review_attested'=>$pass && $item->severity==='safety' ? $attested : false,
             ]);
             return (int)$item->job_card_id;
         });
