@@ -24,6 +24,7 @@ final class StubFinanceProvider implements FinanceReadProvider
             'reference_no' => 'EXP-EXAMPLE-2', 'outstanding_amount' => '1942.00'],
     ];
     public array $registerPage = [
+        'snapshot_id' => 'snapshot-example-1',
         'records' => [['id' => '11', 'reference_no' => 'PB-EXAMPLE-11']],
         'next_cursor' => '',
         'total_count' => 1,
@@ -118,6 +119,11 @@ shouldFail(fn() => $read->register(true, 'purchase-bills', '', 30, 'cursor123'),
 $provider->registerPage['next_cursor'] = '';
 shouldFail(fn() => $read->register(true, 'purchase-bills', '', 31),
     'oversized requested limit'); $tests++;
+$originalRegister = $provider->registerPage;
+unset($provider->registerPage['snapshot_id']);
+shouldFail(fn() => $read->register(true, 'purchase-bills', '', 30),
+    'missing register snapshot'); $tests++;
+$provider->registerPage = $originalRegister;
 
 confirm(count($read->masters(true, 'PART', '')['items']) === 1,
     'valid Parts master'); $tests++;
