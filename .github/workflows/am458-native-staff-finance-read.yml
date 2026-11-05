@@ -25,6 +25,7 @@ jobs:
           php -l "$ROOT/StaffExpenseFinanceProvider.php"
           php -l "$ROOT/LaravelStaffFinanceReadBridge.php"
           php -l "$ROOT/Am461StaffFinanceReadController.php"
+          php -l "$ROOT/finance-read-routes.inc.php"
           php -l "$ROOT/test.php"
           php -l "$ROOT/test-staff-provider.php"
           php -l "$ROOT/test-master-provider.php"
@@ -38,3 +39,5 @@ jobs:
         run: python3 integration/am450-native-finance-v1/test-staging-script.py
       - name: Strict STAGING GET probe safety (synthetic, no network)
         run: python3 integration/am450-native-finance-v1/test-staging-api-probe.py
+      - name: Route activation and rollback safety (synthetic, no Hostinger)
+        run: python3 integration/am450-native-finance-v1/test-finance-route-activation.py
