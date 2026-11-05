@@ -102,6 +102,18 @@ p{line-height:1.6}
 <h2>2 · Independent Re-inspection</h2>
 <label>Test result</label>
 <select name="result" required><option value="PASS">PASS — Defect resolved</option><option value="FAIL">FAIL — Reopen defect</option></select>
+@if($f['severity']==='safety')
+<label>Independent Reviewer (actual person who checked repair)</label>
+<select name="reviewer_staff_id">
+<option value="">Choose reviewer — different from repair technician</option>
+@foreach($staff as $person)
+@if((int)$person->id !== (int)($f['record']->repair_staff_id ?? 0))
+<option value="{{ $person->id }}">{{ $person->name }} ({{ $person->staff_code ?? '' }})</option>
+@endif
+@endforeach
+</select>
+<label style="font-weight:normal"><input type="checkbox" name="independent_attestation" value="1" style="width:auto"> I confirm the named reviewer personally performed an independent test, and I am recording their actual findings as the responsible Admin. Required for PASS only.</label>
+@endif
 <label>Re-inspection and test findings</label>
 <textarea name="verification_note" rows="3" minlength="8" maxlength="2000" required placeholder="Describe actual recheck: test performed, results and observations"></textarea>
 <button type="submit">Save Re-inspection Result</button>
