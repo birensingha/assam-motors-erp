@@ -65,6 +65,14 @@ $expenses = $original;
 $expenses[0]['outstanding'] = '2000.001';
 mustReject(fn()=> $finance->outstanding(true, 'STAFF', '42'), '3 decimal places');
 $expenses = $original;
+$expenses[0]['outstanding'] = 2000.00;
+mustReject(fn()=> $finance->outstanding(true, 'STAFF', '42'),
+    'reject non-exact PHP float for rupee/paise outstanding');
+$expenses = $original;
+$expenses[0]['outstanding'] = 0.1 + 0.2;
+mustReject(fn()=> $finance->outstanding(true, 'STAFF', '42'),
+    'reject float-calculated paise rather than rounding');
+$expenses = $original;
 $expenses[0]['outstanding'] = '0.00';
 mustReject(fn()=> $finance->outstanding(true, 'STAFF', '42'), 'paid expense');
 $expenses = $original;
