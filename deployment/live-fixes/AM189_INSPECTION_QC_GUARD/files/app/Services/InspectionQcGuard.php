@@ -178,14 +178,14 @@ final class InspectionQcGuard
         });
     }
 
-    public function verify(int $id, int $actorAdmin, int $actorStaffId, bool $pass, string $note): int
+    public function verify(int $id, int $actorAdmin, int $actorStaffId, bool $pass, string $note, ?int $reviewerStaffId=null, bool $attested=false): int
     {
         $this->tables();
         $note=trim($note);
         if (mb_strlen($note)<8 || mb_strlen($note)>2000) {
             throw ValidationException::withMessages(['verification_note'=>'Re-inspection observation must be 8 to 2000 characters.']);
         }
-        return DB::transaction(function () use ($id,$actorAdmin,$actorStaffId,$pass,$note): int {
+        return DB::transaction(function () use ($id,$actorAdmin,$actorStaffId,$pass,$note,$reviewerStaffId,$attested): int {
             $original=DB::table('am189_inspection_defects')->where('id',$id)->first();
             if (!$original) abort(404);
             $card=DB::table('job_cards')->where('id',$original->job_card_id)->lockForUpdate()->first();
@@ -195,22 +195,106 @@ final class InspectionQcGuard
             if ($item->status!=='RECTIFIED') {
                 throw ValidationException::withMessages(['status'=>'Repair must be RECTIFIED before re-inspection.']);
             }
-            if ($item->severity==='safety' && $actorStaffId>0
-                && $actorStaffId===(int)$item->repair_staff_id) {
-                throw ValidationException::withMessages(['verification_note'=>'Safety repair must be verified by someone other than its repair technician.']);
-            }
-            if ($item->severity==='safety' && $actorAdmin===(int)$item->repair_admin_id
-                && $actorStaffId<=0) {
-                throw ValidationException::withMessages(['verification_note'=>'Safety verification must be independently reviewed by a different Admin or mapped inspector.']);
+            if ($pass && $item->severity==='safety') {
+                if (!$reviewerStaffId || !$attested) {
+                    throw ValidationException::withMessages(['reviewer_staff_id'=>'Select the independent reviewer who personally performed the test and confirm the attestation.']);
+                }
+                if ($reviewerStaffId===(int)$item->repair_staff_id) {
+                    throw ValidationException::withMessages(['reviewer_staff_id'=>'Safety reviewer cannot be the repairing technician.']);
+                }
+                if (!DB::table('staff')->where('id',$reviewerStaffId)
+                    ->whereRaw("LOWER(COALESCE(status,'active'))='active'")->exists()) {
+                    throw ValidationException::withMessages(['reviewer_staff_id'=>'Select an active, qualified independent reviewer.']);
+                }
+                if (!Schema::hasColumn('am189_inspection_defects','verified_by_staff_id')) {
+                    abort(503,'Independent QC reviewer database migration is required before PASS.');
+                }
             }
             $newStatus=$pass?'VERIFIED':'OPEN';
-            DB::table('am189_inspection_defects')->where('id',$id)->update([
+            $updates=[
                 'status'=>$newStatus,'verification_result'=>$pass?'PASS':'FAIL',
                 'verification_note'=>$note,'verified_by_admin_id'=>$actorAdmin,
                 'verified_at'=>now(),'updated_at'=>now(),
-            ]);
+            ];
+            if (Schema::hasColumn('am189_inspection_defects','verified_by_staff_id')) {
+                $updates['verified_by_staff_id']=$pass ? $reviewerStaffId : null;
+            }
+            DB::table('am189_inspection_defects')->where('id',$id)->update($updates);
             $this->audit($id,(int)$item->job_card_id,$actorAdmin,$pass?'VERIFIED':'REOPENED',$item,[
                 'status'=>$newStatus,'result'=>$pass?'PASS':'FAIL','verification_note'=>$note,
+                'reviewer_staff_id'=>$pass ? $reviewerStaffId : null,
+                'independent_review_attested'=>$pass && $item->severity==='safety' ? $attested : false,
+            ]);
+            return (int)$item->job_card_id;
+        });
+    }
+
+    /** Record customer refusal without falsely completing repair or QC. */
+    public function decline(int $id, int $adminId, string $reason, string $ack, ?string $evidence): int
+    {
+        $this->tables();
+        $reason=trim($reason);
+        $evidence=trim((string)$evidence);
+        if (mb_strlen($reason)<12 || mb_strlen($reason)>2000) {
+            throw ValidationException::withMessages(['decline_reason'=>'Enter the actual customer refusal details (12–2000 characters).']);
+        }
+        if (!in_array($ack,['WRITTEN','VERBAL','REFUSED_TO_SIGN','PENDING'],true)) {
+            throw ValidationException::withMessages(['decline_acknowledgement'=>'Select a valid acknowledgement status.']);
+        }
+        if ($ack==='WRITTEN' && $evidence==='') {
+            throw ValidationException::withMessages(['decline_evidence_ref'=>'Enter the signed customer acknowledgement reference.']);
+        }
+        return DB::transaction(function () use ($id,$adminId,$reason,$ack,$evidence): int {
+            $item=DB::table('am189_inspection_defects')->where('id',$id)->first();
+            if (!$item) abort(404);
+            $card=DB::table('job_cards')->where('id',$item->job_card_id)->lockForUpdate()->first();
+            if (!$card) abort(404);
+            $this->assertEditable($card);
+            $item=DB::table('am189_inspection_defects')->where('id',$id)->lockForUpdate()->first();
+            if (!in_array($item->status,['OPEN','RECTIFIED'],true)) {
+                throw ValidationException::withMessages(['status'=>'Only OPEN or RECTIFIED defects can be marked customer declined.']);
+            }
+            foreach (['decline_reason','decline_acknowledgement','decline_evidence_ref','declined_by_admin_id','declined_at'] as $column) {
+                if (!Schema::hasColumn('am189_inspection_defects',$column)) {
+                    abort(503,'Customer decline database migration is required.');
+                }
+            }
+            DB::table('am189_inspection_defects')->where('id',$id)->update([
+                'status'=>'DECLINED','decline_reason'=>$reason,
+                'decline_acknowledgement'=>$ack,'decline_evidence_ref'=>$evidence ?: null,
+                'declined_by_admin_id'=>$adminId,'declined_at'=>now(),'updated_at'=>now(),
+            ]);
+            $this->audit($id,(int)$item->job_card_id,$adminId,'DECLINED',$item,[
+                'status'=>'DECLINED','reason'=>$reason,'acknowledgement'=>$ack,
+                'evidence_ref'=>$evidence ?: null,'repaired'=>false,'verified'=>false,
+            ]);
+            return (int)$item->job_card_id;
+        });
+    }
+
+    /** Resume the repair workflow after a customer reverses an earlier refusal. */
+    public function reopenDeclined(int $id, int $adminId, string $reason): int
+    {
+        $this->tables();
+        $reason=trim($reason);
+        if (mb_strlen($reason)<8 || mb_strlen($reason)>2000) {
+            throw ValidationException::withMessages(['reopen_reason'=>'Provide a reason (8–2000 characters).']);
+        }
+        return DB::transaction(function () use ($id,$adminId,$reason): int {
+            $item=DB::table('am189_inspection_defects')->where('id',$id)->first();
+            if (!$item) abort(404);
+            $card=DB::table('job_cards')->where('id',$item->job_card_id)->lockForUpdate()->first();
+            if (!$card) abort(404);
+            $this->assertEditable($card);
+            $item=DB::table('am189_inspection_defects')->where('id',$id)->lockForUpdate()->first();
+            if ($item->status!=='DECLINED') {
+                throw ValidationException::withMessages(['status'=>'Only customer-declined defects can be reopened here.']);
+            }
+            DB::table('am189_inspection_defects')->where('id',$id)->update([
+                'status'=>'OPEN','updated_at'=>now(),
+            ]);
+            $this->audit($id,(int)$item->job_card_id,$adminId,'DECLINE_REOPENED',$item,[
+                'status'=>'OPEN','reason'=>$reason,
             ]);
             return (int)$item->job_card_id;
         });

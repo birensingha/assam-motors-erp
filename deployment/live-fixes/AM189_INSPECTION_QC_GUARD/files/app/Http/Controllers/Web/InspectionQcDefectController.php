@@ -164,12 +164,40 @@ final class InspectionQcDefectController extends Controller
         $data=$request->validate([
             'result'=>['required','in:PASS,FAIL'],
             'verification_note'=>['required','string','min:8','max:2000'],
+            'reviewer_staff_id'=>['nullable','integer','min:1'],
+            'independent_attestation'=>['sometimes','accepted'],
         ]);
         $job=$guard->verify($defect,(int)$admin->id,(int)($admin->staff_id??0),
-            $data['result']==='PASS',(string)$data['verification_note']);
+            $data['result']==='PASS',(string)$data['verification_note'],
+            isset($data['reviewer_staff_id']) ? (int)$data['reviewer_staff_id'] : null,
+            $request->boolean('independent_attestation'));
         return redirect()->route('erp.job-cards.inspection-defects',$job)
             ->with('success',$data['result']==='PASS'
                 ?'Re-inspection VERIFIED. Original defect and audit preserved.'
                 :'Re-inspection failed. Defect returned to OPEN.');
     }
+    public function decline(Request $request,int $defect,InspectionQcGuard $guard)
+    {
+        $admin=$this->admin($request);
+        $data=$request->validate([
+            'decline_reason'=>['required','string','min:12','max:2000'],
+            'decline_acknowledgement'=>['required','in:WRITTEN,VERBAL,REFUSED_TO_SIGN,PENDING'],
+            'decline_evidence_ref'=>['nullable','string','max:500'],
+        ]);
+        $job=$guard->decline($defect,(int)$admin->id,
+            (string)$data['decline_reason'],(string)$data['decline_acknowledgement'],
+            $data['decline_evidence_ref']??null);
+        return redirect()->route('erp.job-cards.inspection-defects',$job)
+            ->with('success','Customer refusal recorded with audit. Defect remains unrepaired; Full QC PASS stays blocked.');
+    }
+
+    public function reopenDeclined(Request $request,int $defect,InspectionQcGuard $guard)
+    {
+        $admin=$this->admin($request);
+        $data=$request->validate(['reopen_reason'=>['required','string','min:8','max:2000']]);
+        $job=$guard->reopenDeclined($defect,(int)$admin->id,(string)$data['reopen_reason']);
+        return redirect()->route('erp.job-cards.inspection-defects',$job)
+            ->with('success','Customer-declined defect reopened as OPEN. Previous refusal preserved in audit.');
+    }
+
 }

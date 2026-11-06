@@ -83,6 +83,36 @@ p{line-height:1.6}
 <p class="success">Verified after repair. Historical defect and audit are retained.</p>
 @else
 <div class="forms">
+@if(in_array($f['record']->status,['OPEN','RECTIFIED'],true))
+<form method="post" action="{{ route('erp.job-cards.inspection-defects.decline',$f['record']->id) }}" style="border:1px solid #e8c987;border-radius:9px;padding:12px;margin:10px 0;background:#fffbf0">
+@csrf
+<h2>Customer Declined Repair — separate from QC PASS</h2>
+<p class="muted">Document an actual refusal. This does not mean the problem was fixed and will not release the Full QC PASS safety block.</p>
+<label>Customer decision / refusal reason</label>
+<textarea name="decline_reason" rows="3" minlength="12" maxlength="2000" required placeholder="What work was advised, what did customer decline, how and when were risks explained?"></textarea>
+<label>Customer Acknowledgement</label>
+<select name="decline_acknowledgement" required>
+<option value="PENDING">Pending</option>
+<option value="WRITTEN">Signed / documented written acknowledgement</option>
+<option value="VERBAL">Verbal only</option>
+<option value="REFUSED_TO_SIGN">Customer refused to sign</option>
+</select>
+<label>Evidence reference (required for written acknowledgement)</label>
+<textarea name="decline_evidence_ref" rows="2" maxlength="500" placeholder="Customer signed form reference / date, if available"></textarea>
+<button type="submit">Save Customer Declined — Keep QC Hold</button>
+</form>
+@endif
+@if($f['record']->status==='DECLINED')
+<div class="notice"><strong>Customer Declined — Unrepaired.</strong> Full QC PASS remains blocked. Safety release requires a separate authorised risk decision and customer disclosure.</div>
+<p><strong>Recorded refusal:</strong> {{ $f['record']->decline_reason ?? '' }}</p>
+<p><strong>Customer acknowledgement:</strong> {{ $f['record']->decline_acknowledgement ?? 'PENDING' }}</p>
+<form method="post" action="{{ route('erp.job-cards.inspection-defects.reopen-declined',$f['record']->id) }}">
+@csrf
+<label>Reopen reason / customer changed decision</label>
+<textarea name="reopen_reason" minlength="8" maxlength="2000" required rows="2"></textarea>
+<button type="submit">Reopen for Repair — OPEN</button>
+</form>
+@endif
 @if($f['record']->status==='OPEN')
 <form method="post" action="{{ route('erp.job-cards.inspection-defects.repair',$f['record']->id) }}">
 @csrf
@@ -102,10 +132,26 @@ p{line-height:1.6}
 <h2>2 · Independent Re-inspection</h2>
 <label>Test result</label>
 <select name="result" required><option value="PASS">PASS — Defect resolved</option><option value="FAIL">FAIL — Reopen defect</option></select>
+@if($f['severity']==='safety')
+<label>Independent Reviewer (actual person who checked repair)</label>
+<select name="reviewer_staff_id">
+<option value="">Choose reviewer — different from repair technician</option>
+@foreach($staff as $person)
+@if((int)$person->id !== (int)($f['record']->repair_staff_id ?? 0))
+<option value="{{ $person->id }}">{{ $person->name }} ({{ $person->staff_code ?? '' }})</option>
+@endif
+@endforeach
+</select>
+<label style="font-weight:normal"><input type="checkbox" name="independent_attestation" value="1" style="width:auto"> I confirm the named reviewer personally performed an independent test, and I am recording their actual findings as the responsible Admin. Required for PASS only.</label>
+@endif
 <label>Re-inspection and test findings</label>
 <textarea name="verification_note" rows="3" minlength="8" maxlength="2000" required placeholder="Describe actual recheck: test performed, results and observations"></textarea>
 <button type="submit">Save Re-inspection Result</button>
+@if($f['severity']==='safety')
 <p class="muted">Safety repairs need an independent reviewer, not the same repairing technician.</p>
+@else
+<p class="muted">Record actual re-inspection findings. Safety reviewer attestation is not required for this normal defect.</p>
+@endif
 </form>
 @endif
 </div>
