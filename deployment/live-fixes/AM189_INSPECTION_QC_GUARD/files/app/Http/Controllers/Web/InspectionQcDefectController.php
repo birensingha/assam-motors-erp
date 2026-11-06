@@ -165,7 +165,7 @@ final class InspectionQcDefectController extends Controller
             'result'=>['required','in:PASS,FAIL'],
             'verification_note'=>['required','string','min:8','max:2000'],
             'reviewer_staff_id'=>['nullable','integer','min:1'],
-            'independent_attestation'=>['nullable','accepted'],
+            'independent_attestation'=>['sometimes','accepted'],
         ]);
         $job=$guard->verify($defect,(int)$admin->id,(int)($admin->staff_id??0),
             $data['result']==='PASS',(string)$data['verification_note'],
