@@ -84,10 +84,19 @@ p{line-height:1.6}
 @else
 <div class="forms">
 @if(in_array($f['record']->status,['OPEN','RECTIFIED'],true))
+<div style="grid-column:1/-1" class="am-decision-panel">
+<label>Defect Decision</label>
+<select class="am-decision-picker" aria-label="Defect decision">
+<option value="fixed">FIXED — Repair / Re-inspection</option>
+<option value="declined">CUSTOMER DENIED TO WORK — Record Refusal</option>
+</select>
+<p class="muted">Select only the actual decision. Customer refusal stays unrepaired and is not a repair verification.</p>
+</div>
+<div class="am-decline-form" style="display:none">
 <form method="post" action="{{ route('erp.job-cards.inspection-defects.decline',$f['record']->id) }}" style="border:1px solid #e8c987;border-radius:9px;padding:12px;margin:10px 0;background:#fffbf0">
 @csrf
-<h2>Customer Declined Repair — separate from QC PASS</h2>
-<p class="muted">Document an actual refusal. This does not mean the problem was fixed and will not release the Full QC PASS safety block.</p>
+<h2>Customer Denied to Work</h2>
+<p class="muted">Customer did not approve this repair. Keep the original defect and refusal record; do not mark it repaired.</p>
 <label>Customer decision / refusal reason</label>
 <textarea name="decline_reason" rows="3" minlength="12" maxlength="2000" required placeholder="What work was advised, what did customer decline, how and when were risks explained?"></textarea>
 <label>Customer Acknowledgement</label>
@@ -99,8 +108,9 @@ p{line-height:1.6}
 </select>
 <label>Evidence reference (required for written acknowledgement)</label>
 <textarea name="decline_evidence_ref" rows="2" maxlength="500" placeholder="Customer signed form reference / date, if available"></textarea>
-<button type="submit">Save Customer Declined — Keep QC Hold</button>
+<button type="submit">Save Customer Denied — Unrepaired</button>
 </form>
+</div>
 @endif
 @if($f['record']->status==='DECLINED')
 <div class="notice"><strong>Customer Declined — Unrepaired.</strong> Full QC PASS remains blocked. Safety release requires a separate authorised risk decision and customer disclosure.</div>
@@ -114,6 +124,7 @@ p{line-height:1.6}
 </form>
 @endif
 @if($f['record']->status==='OPEN')
+<div class="am-fixed-form">
 <form method="post" action="{{ route('erp.job-cards.inspection-defects.repair',$f['record']->id) }}">
 @csrf
 <h2>1 · Record Repair</h2>
@@ -125,8 +136,10 @@ p{line-height:1.6}
 <textarea name="repair_note" rows="3" minlength="8" maxlength="2000" required placeholder="Which work was completed, when and on which component?"></textarea>
 <button type="submit">Save Repair — RECTIFIED</button>
 </form>
+</div>
 @endif
 @if($f['record']->status==='RECTIFIED')
+<div class="am-fixed-form">
 <form method="post" action="{{ route('erp.job-cards.inspection-defects.verify',$f['record']->id) }}">
 @csrf
 <h2>2 · Independent Re-inspection</h2>
@@ -153,6 +166,7 @@ p{line-height:1.6}
 <p class="muted">Record actual re-inspection findings. Safety reviewer attestation is not required for this normal defect.</p>
 @endif
 </form>
+</div>
 @endif
 </div>
 @endif
@@ -160,4 +174,18 @@ p{line-height:1.6}
 @empty
 <div class="panel success">No Fair/Poor inspection findings recorded for this Job Card. Existing QC workflow remains unchanged.</div>
 @endforelse
+<script>
+document.querySelectorAll('.am-decision-panel').forEach(function(panel){
+  var select=panel.querySelector('.am-decision-picker');
+  var parent=panel.parentElement;
+  var denied=parent.querySelector('.am-decline-form');
+  var fixed=parent.querySelector('.am-fixed-form');
+  function update(){
+    if(denied) denied.style.display=select.value==='declined'?'block':'none';
+    if(fixed) fixed.style.display=select.value==='fixed'?'block':'none';
+  }
+  select.addEventListener('change',update);
+  update();
+});
+</script>
 </main></body></html>
