@@ -124,21 +124,52 @@ final class InspectionQcGuard
      * risk/roadworthiness decision is integrated, never silently deliver
      * a vehicle with a known, unrepaired declined finding.
      */
-    public function assertDeliveryRiskReady(int $jobId): void
+    /** Scoped approval expires whenever the refused defect or its evidence changes. */
+    public function declinedFingerprint(int $jobId): string
     {
         $declined=array_values(array_filter(
             $this->findings($jobId),
             static fn(array $f): bool => $f['status']==='DECLINED'
         ));
+        $signature=[];
+        foreach ($declined as $f) {
+            if (!$f['same'] || $f['duplicate'] || !$f['record']) {
+                throw ValidationException::withMessages(['delivery'=>'Declined inspection history changed; Admin review required before any delivery.']);
+            }
+            $r=$f['record'];
+            $signature[]=[
+                (int)$r->id,(string)$r->point_key,(string)$r->status,
+                (string)$r->updated_at,(string)($r->decline_reason??''),
+                (string)($r->decline_acknowledgement??''),
+                (string)($r->decline_evidence_ref??''),
+            ];
+        }
+        usort($signature,static fn($a,$b): int => $a[0]<=>$b[0]);
+        return hash('sha256',json_encode($signature,JSON_THROW_ON_ERROR));
+    }
+
+    public function assertDeliveryRiskReady(int $jobId): void
+    {
+        $declined=array_values(array_filter($this->findings($jobId),
+            static fn(array $f): bool => $f['status']==='DECLINED'));
         if (!$declined) return;
-        $names=array_map(static fn(array $f): string => $f['label'], $declined);
-        throw ValidationException::withMessages([
-            'delivery'=>'Vehicle delivery HOLD: '.count($declined)
-                .' unrepaired customer-declined inspection defect(s) recorded ('
-                .implode(', ',$names).'). Approved repair-work QC is not'
-                .' an authorization to release an unassessed vehicle.'
-                .' Complete an authorised risk/roadworthiness decision first.',
-        ]);
+        if (!Schema::hasTable('am_qc_delivery_risk_reviews')) {
+            throw ValidationException::withMessages(['delivery'=>'Vehicle delivery HOLD: signed customer refusal and authorised roadworthiness review have not been configured.']);
+        }
+        $review=DB::table('am_qc_delivery_risk_reviews')->where('job_card_id',$jobId)->first();
+        if (!$review || $review->decision!=='APPROVED'
+            || !hash_equals((string)$review->defects_fingerprint,$this->declinedFingerprint($jobId))) {
+            throw ValidationException::withMessages([
+                'delivery'=>'Vehicle delivery HOLD: customer-declined work is unrepaired. Record signed customer acknowledgement and authorised current roadworthiness assessment in Inspection Defects before delivery.',
+            ]);
+        }
+        foreach ($declined as $f) {
+            $r=$f['record'];
+            if ($r->decline_acknowledgement!=='WRITTEN'
+                || trim((string)($r->decline_evidence_ref??''))==='') {
+                throw ValidationException::withMessages(['delivery'=>'Vehicle delivery HOLD: every declined defect requires documented written customer acknowledgement.']);
+            }
+        }
     }
 
     /** Admin action, inside transaction. Registers saved defects only. */
