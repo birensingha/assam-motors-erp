@@ -99,15 +99,17 @@ p{line-height:1.6}
 <p class="muted">Customer did not approve this repair. Keep the original defect and refusal record; do not mark it repaired.</p>
 <label>Customer decision / refusal reason</label>
 <textarea name="decline_reason" rows="3" minlength="12" maxlength="2000" required placeholder="What work was advised, what did customer decline, how and when were risks explained?"></textarea>
-<label>Customer Acknowledgement</label>
-<select name="decline_acknowledgement" required>
-<option value="PENDING">Pending</option>
-<option value="WRITTEN">Signed / documented written acknowledgement</option>
-<option value="VERBAL">Verbal only</option>
-<option value="REFUSED_TO_SIGN">Customer refused to sign</option>
+<label>Customer Informed?</label>
+<select name="decline_acknowledgement" class="am-ack-select" required>
+<option value="VERBAL">Yes — Informed verbally</option>
+<option value="WRITTEN">Yes — Signed acknowledgement</option>
+<option value="REFUSED_TO_SIGN">Yes — Customer refused to sign</option>
+<option value="PENDING">Not yet informed / Pending</option>
 </select>
-<label>Evidence reference (required for written acknowledgement)</label>
-<textarea name="decline_evidence_ref" rows="2" maxlength="500" placeholder="Customer signed form reference / date, if available"></textarea>
+<div class="am-written-proof" style="display:none">
+<label>Signed Proof Reference</label>
+<input name="decline_evidence_ref" type="text" maxlength="500" placeholder="Signed slip / reference / date" style="width:100%;padding:10px;border:1px solid #c5d5e2;border-radius:8px">
+</div>
 <button type="submit">Save Customer Denied — Unrepaired</button>
 </form>
 </div>
@@ -175,6 +177,12 @@ p{line-height:1.6}
 <div class="panel success">No Fair/Poor inspection findings recorded for this Job Card. Existing QC workflow remains unchanged.</div>
 @endforelse
 <script>
+document.querySelectorAll('.am-ack-select').forEach(function(select){
+ var proof=select.closest('form').querySelector('.am-written-proof');
+ var field=proof.querySelector('input');
+ function update(){var written=select.value==='WRITTEN'; proof.style.display=written?'block':'none'; field.required=written; if(!written)field.value='';}
+ select.addEventListener('change',update); update();
+});
 document.querySelectorAll('.am-decision-panel').forEach(function(panel){
   var select=panel.querySelector('.am-decision-picker');
   var parent=panel.parentElement;
