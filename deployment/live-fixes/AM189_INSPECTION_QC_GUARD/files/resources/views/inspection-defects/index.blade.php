@@ -61,12 +61,12 @@ p{line-height:1.6}
 @if($errors->any())<div class="panel error">{{ $errors->first() }}</div>@endif
 <div class="panel">
 <h2>Inspection Findings & QC PASS Control</h2>
-<p>Inspection submit can finish with Fair/Poor findings. QC PASS remains blocked until each finding has a recorded repair and an independently checked verification. Original inspection answers stay unchanged.</p>
+<p>Inspection may contain Fair/Poor findings. FIXED work needs repair and actual re-inspection. Documented CUSTOMER DENIED work stays unrepaired and outside the approved repair QC scope; vehicle delivery remains separately restricted. Original inspection answers stay unchanged.</p>
 <form method="post" action="{{ route('erp.job-cards.inspection-defects.sync',$job->id) }}">
 @csrf
 <button type="submit">Register Saved Inspection Defects</button>
 </form>
-<div class="notice"><strong>Safety rule:</strong> Status OPEN or RECTIFIED is not verified. Select actual repairing staff and enter repair details; then a qualified independent reviewer must verify. This does not bypass QC by changing the original inspection.</div>
+<div class="notice"><strong>Safety rule:</strong> A repair marked FIXED must have real repair details and verification. Customer Denied is a recorded refusal, not a repair; no changes to original inspection data and no automatic vehicle release.</div>
 </div>
 @forelse($findings as $f)
 <div class="panel finding {{ $f['verified'] ? 'verified' : '' }}">
@@ -84,26 +84,38 @@ p{line-height:1.6}
 @else
 <div class="forms">
 @if(in_array($f['record']->status,['OPEN','RECTIFIED'],true))
+<div style="grid-column:1/-1" class="am-decision-panel">
+<label>Defect Decision</label>
+<select class="am-decision-picker" aria-label="Defect decision">
+<option value="fixed">FIXED — Repair / Re-inspection</option>
+<option value="declined">CUSTOMER DENIED TO WORK — Record Refusal</option>
+</select>
+<p class="muted">Select only the actual decision. Customer refusal stays unrepaired and is not a repair verification.</p>
+</div>
+<div class="am-decline-form" style="display:none">
 <form method="post" action="{{ route('erp.job-cards.inspection-defects.decline',$f['record']->id) }}" style="border:1px solid #e8c987;border-radius:9px;padding:12px;margin:10px 0;background:#fffbf0">
 @csrf
-<h2>Customer Declined Repair — separate from QC PASS</h2>
-<p class="muted">Document an actual refusal. This does not mean the problem was fixed and will not release the Full QC PASS safety block.</p>
+<h2>Customer Denied to Work</h2>
+<p class="muted">Customer did not approve this repair. Keep the original defect and refusal record; do not mark it repaired.</p>
 <label>Customer decision / refusal reason</label>
 <textarea name="decline_reason" rows="3" minlength="12" maxlength="2000" required placeholder="What work was advised, what did customer decline, how and when were risks explained?"></textarea>
-<label>Customer Acknowledgement</label>
-<select name="decline_acknowledgement" required>
-<option value="PENDING">Pending</option>
-<option value="WRITTEN">Signed / documented written acknowledgement</option>
-<option value="VERBAL">Verbal only</option>
-<option value="REFUSED_TO_SIGN">Customer refused to sign</option>
+<label>Customer Informed?</label>
+<select name="decline_acknowledgement" class="am-ack-select" required>
+<option value="VERBAL">Yes — Informed verbally</option>
+<option value="WRITTEN">Yes — Signed acknowledgement</option>
+<option value="REFUSED_TO_SIGN">Yes — Customer refused to sign</option>
+<option value="PENDING">Not yet informed / Pending</option>
 </select>
-<label>Evidence reference (required for written acknowledgement)</label>
-<textarea name="decline_evidence_ref" rows="2" maxlength="500" placeholder="Customer signed form reference / date, if available"></textarea>
-<button type="submit">Save Customer Declined — Keep QC Hold</button>
+<div class="am-written-proof" style="display:none">
+<label>Signed Proof Reference</label>
+<input name="decline_evidence_ref" type="text" maxlength="500" placeholder="Signed slip / reference / date" style="width:100%;padding:10px;border:1px solid #c5d5e2;border-radius:8px">
+</div>
+<button type="submit">Save Customer Denied — Unrepaired</button>
 </form>
+</div>
 @endif
 @if($f['record']->status==='DECLINED')
-<div class="notice"><strong>Customer Declined — Unrepaired.</strong> Full QC PASS remains blocked. Safety release requires a separate authorised risk decision and customer disclosure.</div>
+<div class="notice"><strong>Customer Denied — Unrepaired.</strong> This defect is excluded from approved repair-work QC when refusal is documented, but it is NOT fixed or VERIFIED. Vehicle delivery remains on safety HOLD pending authorised risk review and disclosure.</div>
 <p><strong>Recorded refusal:</strong> {{ $f['record']->decline_reason ?? '' }}</p>
 <p><strong>Customer acknowledgement:</strong> {{ $f['record']->decline_acknowledgement ?? 'PENDING' }}</p>
 <form method="post" action="{{ route('erp.job-cards.inspection-defects.reopen-declined',$f['record']->id) }}">
@@ -114,6 +126,7 @@ p{line-height:1.6}
 </form>
 @endif
 @if($f['record']->status==='OPEN')
+<div class="am-fixed-form">
 <form method="post" action="{{ route('erp.job-cards.inspection-defects.repair',$f['record']->id) }}">
 @csrf
 <h2>1 · Record Repair</h2>
@@ -125,8 +138,10 @@ p{line-height:1.6}
 <textarea name="repair_note" rows="3" minlength="8" maxlength="2000" required placeholder="Which work was completed, when and on which component?"></textarea>
 <button type="submit">Save Repair — RECTIFIED</button>
 </form>
+</div>
 @endif
 @if($f['record']->status==='RECTIFIED')
+<div class="am-fixed-form">
 <form method="post" action="{{ route('erp.job-cards.inspection-defects.verify',$f['record']->id) }}">
 @csrf
 <h2>2 · Independent Re-inspection</h2>
@@ -153,6 +168,7 @@ p{line-height:1.6}
 <p class="muted">Record actual re-inspection findings. Safety reviewer attestation is not required for this normal defect.</p>
 @endif
 </form>
+</div>
 @endif
 </div>
 @endif
@@ -160,4 +176,24 @@ p{line-height:1.6}
 @empty
 <div class="panel success">No Fair/Poor inspection findings recorded for this Job Card. Existing QC workflow remains unchanged.</div>
 @endforelse
+<script>
+document.querySelectorAll('.am-ack-select').forEach(function(select){
+ var proof=select.closest('form').querySelector('.am-written-proof');
+ var field=proof.querySelector('input');
+ function update(){var written=select.value==='WRITTEN'; proof.style.display=written?'block':'none'; field.required=written; if(!written)field.value='';}
+ select.addEventListener('change',update); update();
+});
+document.querySelectorAll('.am-decision-panel').forEach(function(panel){
+  var select=panel.querySelector('.am-decision-picker');
+  var parent=panel.parentElement;
+  var denied=parent.querySelector('.am-decline-form');
+  var fixed=parent.querySelector('.am-fixed-form');
+  function update(){
+    if(denied) denied.style.display=select.value==='declined'?'block':'none';
+    if(fixed) fixed.style.display=select.value==='fixed'?'block':'none';
+  }
+  select.addEventListener('change',update);
+  update();
+});
+</script>
 </main></body></html>
