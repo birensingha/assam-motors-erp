@@ -32,6 +32,7 @@ final class InspectionQcDefectController extends Controller
             'job'=>$card,'findings'=>$guard->findings($job),'staff'=>$staff,
             'identity'=>$this->jobIdentity($card),
             'inspectionMeta'=>$this->inspectionMeta($job),
+            'riskReview'=>Schema::hasTable('am_qc_delivery_risk_reviews') ? DB::table('am_qc_delivery_risk_reviews')->where('job_card_id',$job)->first() : null,
         ]);
     }
 
@@ -198,6 +199,109 @@ final class InspectionQcDefectController extends Controller
         $job=$guard->reopenDeclined($defect,(int)$admin->id,(string)$data['reopen_reason']);
         return redirect()->route('erp.job-cards.inspection-defects',$job)
             ->with('success','Customer-declined defect reopened as OPEN. Previous refusal preserved in audit.');
+    }
+
+    /**
+     * Record real written refusal and an authorised roadworthiness decision.
+     * Deliberately does not change any QC PASS / defect repair / delivery status.
+     */
+    public function deliveryRiskReview(Request $request,int $job,InspectionQcGuard $guard)
+    {
+        $admin=$this->admin($request);
+        $data=$request->validate([
+            'decision'=>['required','in:HOLD,APPROVED'],
+            'reviewer_staff_id'=>['required','integer','min:1'],
+            'actual_safety_assessment'=>['required','string','min:30','max:3000'],
+            'signed_customer_ack_ref'=>['nullable','string','max:500'],
+            'signed_ack_attested'=>['nullable','accepted'],
+        ]);
+        if (!Schema::hasTable('am_qc_delivery_risk_reviews')
+            || !Schema::hasTable('am_qc_delivery_risk_review_audits')) {
+            abort(503,'Delivery risk-review migration not installed.');
+        }
+        $result=DB::transaction(function() use($job,$admin,$data,$request,$guard) {
+            $card=DB::table('job_cards')->where('id',$job)->lockForUpdate()->first();
+            if (!$card) abort(404);
+            if (strtolower(trim((string)$card->status))!=='completed'
+                || !str_contains(strtolower((string)$card->customer_public_status),'quality check passed')) {
+                throw ValidationException::withMessages(['delivery'=>'Complete the approved-work QC before delivery review.']);
+            }
+            $all=$guard->findings($job);
+            $declined=array_values(array_filter($all,static fn(array $f): bool => $f['status']==='DECLINED'));
+            if (!$declined) {
+                throw ValidationException::withMessages(['delivery'=>'No declined inspection defect on this Job Card. Use normal Ready for Delivery.']);
+            }
+            foreach($declined as $f) {
+                if (!$f['same'] || $f['duplicate'] || !$f['record']) {
+                    throw ValidationException::withMessages(['delivery'=>'Original inspection/defect mismatch: review required.']);
+                }
+            }
+            $pending=array_filter($all,static fn(array $f): bool => !$f['verified'] && $f['status']!=='DECLINED');
+            if ($pending && $data['decision']==='APPROVED') {
+                throw ValidationException::withMessages(['delivery'=>'Other unresolved defects remain; cannot approve conditional delivery.']);
+            }
+            $staff=DB::table('staff')->where('id',$data['reviewer_staff_id'])
+                ->whereRaw("LOWER(COALESCE(status,'active'))='active'")->first();
+            if (!$staff) {
+                throw ValidationException::withMessages(['reviewer_staff_id'=>'Choose an active qualified staff member who actually assessed vehicle roadworthiness.']);
+            }
+            foreach($declined as $f) {
+                if ($f['severity']==='safety'
+                    && (int)$f['record']->repair_staff_id===(int)$staff->id) {
+                    throw ValidationException::withMessages(['reviewer_staff_id'=>'Roadworthiness reviewer must be independent of safety repair technician.']);
+                }
+            }
+            $signedRef=trim((string)($data['signed_customer_ack_ref']??''));
+            if ($data['decision']==='APPROVED' && (
+                mb_strlen($signedRef)<5 || !$request->boolean('signed_ack_attested'))) {
+                throw ValidationException::withMessages(['signed_customer_ack_ref'=>'For conditional approval, obtain and record genuine signed customer acknowledgement of the unrepaired defects.']);
+            }
+            if ($data['decision']==='APPROVED') {
+                // One signed document must explicitly cover EVERY declined point.
+                foreach ($declined as $f) {
+                    $defect=$f['record'];
+                    $before=(array)$defect;
+                    DB::table('am189_inspection_defects')->where('id',$defect->id)->update([
+                        'decline_acknowledgement'=>'WRITTEN',
+                        'decline_evidence_ref'=>$signedRef,
+                        'updated_at'=>now(),
+                    ]);
+                    DB::table('am189_inspection_defect_audits')->insert([
+                        'job_card_id'=>$job,'defect_id'=>$defect->id,'actor_admin_id'=>$admin->id,
+                        'action'=>'SIGNED_ACK_UPDATE',
+                        'before_json'=>json_encode($before,JSON_THROW_ON_ERROR),
+                        'after_json'=>json_encode([
+                            'decline_acknowledgement'=>'WRITTEN','decline_evidence_ref'=>$signedRef,
+                            'note'=>'Signed customer form must identify each outstanding declined fault',
+                        ],JSON_THROW_ON_ERROR),'created_at'=>now(),
+                    ]);
+                }
+            }
+            $fingerprint=$guard->declinedFingerprint($job);
+            $beforeReview=DB::table('am_qc_delivery_risk_reviews')->where('job_card_id',$job)->first();
+            $entry=[
+                'decision'=>$data['decision'],
+                'reviewed_by_staff_id'=>(int)$staff->id,
+                'approved_by_admin_id'=>(int)$admin->id,
+                'actual_safety_assessment'=>trim($data['actual_safety_assessment']),
+                'signed_customer_ack_ref'=>$signedRef,
+                'defects_fingerprint'=>$fingerprint,
+                'reviewed_at'=>now(),'updated_at'=>now(),
+            ];
+            DB::table('am_qc_delivery_risk_reviews')->updateOrInsert(
+                ['job_card_id'=>$job],$entry+['created_at'=>now()]);
+            DB::table('am_qc_delivery_risk_review_audits')->insert([
+                'job_card_id'=>$job,'actor_admin_id'=>$admin->id,
+                'before_json'=>$beforeReview ? json_encode($beforeReview,JSON_THROW_ON_ERROR) : null,
+                'after_json'=>json_encode($entry,JSON_THROW_ON_ERROR),
+                'created_at'=>now(),
+            ]);
+            return $data['decision'];
+        });
+        return redirect()->route('erp.job-cards.inspection-defects',$job)
+            ->with('success',$result==='APPROVED'
+                ?'Conditional readiness review recorded. Unrepaired defects remain DECLINED. Use normal Ready for Delivery; do not release an unsafe vehicle.'
+                :'Delivery safety HOLD recorded. Vehicle must not be released.');
     }
 
 }
