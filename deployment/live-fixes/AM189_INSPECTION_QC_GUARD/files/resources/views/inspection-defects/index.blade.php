@@ -196,4 +196,34 @@ document.querySelectorAll('.am-decision-panel').forEach(function(panel){
   update();
 });
 </script>
+@if(collect($findings)->contains(fn($f) => $f['status']==='DECLINED'))
+<div class="panel">
+<details>
+<summary class="btn secondary" style="cursor:pointer">Ready for Delivery — Customer Denied Work Review</summary>
+<p class="notice"><strong>Unrepaired problems remain.</strong> This is not a defect fix or permission to release an unsafe vehicle. Only record an actual roadworthiness assessment after checking the vehicle and advising the customer.</p>
+@if($riskReview)
+<p>Previous decision: <strong>{{ $riskReview->decision }}</strong> (reviewed {{ $riskReview->reviewed_at }})</p>
+@endif
+<form method="post" action="{{ route('erp.job-cards.inspection-defects.delivery-risk-review',$job->id) }}" style="margin-top:10px">
+@csrf
+<label>Safety / Roadworthiness Decision</label>
+<select name="decision" required>
+<option value="HOLD">HOLD — Not safe / review incomplete</option>
+<option value="APPROVED">Conditional readiness approved — Actual safety assessment satisfactory</option>
+</select>
+<label>Who actually inspected the remaining vehicle risk?</label>
+<select name="reviewer_staff_id" required><option value="">Select qualified reviewer</option>
+@foreach($staff as $person)<option value="{{ $person->id }}">{{ $person->name }} ({{ $person->staff_code ?? '' }})</option>@endforeach
+</select>
+<label>Actual condition, checks and findings</label>
+<textarea name="actual_safety_assessment" rows="3" minlength="30" maxlength="3000" required placeholder="Describe tests performed and any unsafe condition, cooling/temperature risk, roadworthiness concerns and whether movement is safe."></textarea>
+<label>Signed Customer Refusal / Warning Slip Reference</label>
+<input type="text" name="signed_customer_ack_ref" maxlength="500" placeholder="Signed notice number/date listing all declined defects" style="width:100%;padding:10px;border:1px solid #c5d5e2;border-radius:8px">
+<label style="font-weight:normal"><input type="checkbox" name="signed_ack_attested" value="1" style="width:auto"> Customer actually signed a document listing every unrepaired defect and its risks (required for conditional approval)</label>
+<button type="submit">Save Delivery Risk Decision</button>
+</form>
+<p class="muted">This decision preserves declined defects and does not itself mark delivery, close the job, or certify an unsafe vehicle as roadworthy. If unsure about P0115/overheating, choose HOLD.</p>
+</details>
+</div>
+@endif
 </main></body></html>
