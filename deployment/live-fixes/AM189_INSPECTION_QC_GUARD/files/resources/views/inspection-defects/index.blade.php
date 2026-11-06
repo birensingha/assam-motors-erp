@@ -59,6 +59,28 @@ p{line-height:1.6}
 <a class="btn secondary" href="{{ route('erp.job-cards.show',$job->id) }}">← Back to Job Card</a>
 @if(session('success'))<div class="panel success">{{ session('success') }}</div>@endif
 @if($errors->any())<div class="panel error">{{ $errors->first() }}</div>@endif
+<div class="panel" id="approved-work-qc">
+<h2>QC of Approved Work — Separate from Full Vehicle QC</h2>
+<p class="muted">Customer-declined items are <strong>unrepaired</strong>. Complete QC for genuinely approved work separately. This record does NOT trigger Full QC PASS, Ready for Delivery, or automatically release an unsafe vehicle.</p>
+@if($conditionalReview)
+<p class="notice">Saved approved-work check: <strong>{{ $conditionalReview->approved_work_result }}</strong> · Risk review: <strong>{{ $conditionalReview->assessment }}</strong>. Full vehicle QC remains subject to the existing guard.</p>
+@endif
+<form method="post" action="{{ route('erp.job-cards.inspection-defects.approved-work-qc',$job->id) }}">
+@csrf
+<label>Actual QC Result — Customer Approved Work Only</label>
+<select name="approved_work_result" required><option value="PASS">PASS — Approved work checked</option><option value="FAIL">FAIL — Further work needed</option></select>
+<label>Work checked / test findings</label>
+<textarea name="approved_work_findings" rows="3" minlength="12" maxlength="2000" required placeholder="Describe actual work checked, tests performed, readings/results and any outstanding complaint"></textarea>
+<label>Conditional Release Risk Assessment</label>
+<select name="assessment" required><option value="HOLD">HOLD — No conditional risk clearance</option><option value="RISK_REVIEWED">RISK REVIEWED — Documentary assessment only (NOT delivery approval)</option></select>
+<label>Safety / Risk Assessment (required for Risk Reviewed)</label>
+<textarea name="risk_assessment" rows="3" maxlength="2000" placeholder="Actual vehicle risk assessment, roadworthiness concerns and mitigations"></textarea>
+<label>Signed Customer Acknowledgement Reference (required for Risk Reviewed)</label>
+<textarea name="customer_acknowledgement_ref" rows="2" maxlength="500" placeholder="Customer signed notice/reference number/date; must match recorded written refusal"></textarea>
+<button type="submit">Save Approved Work QC &amp; Risk Assessment</button>
+</form>
+<p class="notice"><strong>Important:</strong> RISK REVIEWED is not vehicle-release authorization. Keep Full QC PASS blocked for unrepaired defects; release requires a separate approved delivery workflow and safety/legal assessment.</p>
+</div>
 <div class="panel">
 <h2>Inspection Findings & QC PASS Control</h2>
 <p>Inspection submit can finish with Fair/Poor findings. QC PASS remains blocked until each finding has a recorded repair and an independently checked verification. Original inspection answers stay unchanged.</p>
@@ -106,12 +128,15 @@ p{line-height:1.6}
 <div class="notice"><strong>Customer Declined — Unrepaired.</strong> Full QC PASS remains blocked. Safety release requires a separate authorised risk decision and customer disclosure.</div>
 <p><strong>Recorded refusal:</strong> {{ $f['record']->decline_reason ?? '' }}</p>
 <p><strong>Customer acknowledgement:</strong> {{ $f['record']->decline_acknowledgement ?? 'PENDING' }}</p>
-<form method="post" action="{{ route('erp.job-cards.inspection-defects.reopen-declined',$f['record']->id) }}">
+<details style="margin-top:12px">
+<summary class="btn secondary" style="cursor:pointer">Reopen for Repair (only if customer changes decision)</summary>
+<form method="post" action="{{ route('erp.job-cards.inspection-defects.reopen-declined',$f['record']->id) }}" style="margin-top:10px">
 @csrf
-<label>Reopen reason / customer changed decision</label>
+<label>Why is repair being reopened?</label>
 <textarea name="reopen_reason" minlength="8" maxlength="2000" required rows="2"></textarea>
-<button type="submit">Reopen for Repair — OPEN</button>
+<button type="submit">Confirm Reopen — OPEN</button>
 </form>
+</details>
 @endif
 @if($f['record']->status==='OPEN')
 <form method="post" action="{{ route('erp.job-cards.inspection-defects.repair',$f['record']->id) }}">

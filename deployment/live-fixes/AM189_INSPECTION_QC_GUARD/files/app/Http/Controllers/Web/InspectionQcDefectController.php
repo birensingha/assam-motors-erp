@@ -32,6 +32,7 @@ final class InspectionQcDefectController extends Controller
             'job'=>$card,'findings'=>$guard->findings($job),'staff'=>$staff,
             'identity'=>$this->jobIdentity($card),
             'inspectionMeta'=>$this->inspectionMeta($job),
+            'conditionalReview'=>Schema::hasTable('am_qc_conditional_reviews') ? DB::table('am_qc_conditional_reviews')->where('job_card_id',$job)->first() : null,
         ]);
     }
 
@@ -198,6 +199,84 @@ final class InspectionQcDefectController extends Controller
         $job=$guard->reopenDeclined($defect,(int)$admin->id,(string)$data['reopen_reason']);
         return redirect()->route('erp.job-cards.inspection-defects',$job)
             ->with('success','Customer-declined defect reopened as OPEN. Previous refusal preserved in audit.');
+    }
+
+    /**
+     * Separately audit QC of approved work. Never modifies Full QC PASS,
+     * Job Card lifecycle or vehicle-delivery status.
+     */
+    public function approvedWorkQc(Request $request,int $job,InspectionQcGuard $guard)
+    {
+        $admin=$this->admin($request);
+        $data=$request->validate([
+            'approved_work_result'=>['required','in:PASS,FAIL'],
+            'approved_work_findings'=>['required','string','min:12','max:2000'],
+            'assessment'=>['required','in:HOLD,RISK_REVIEWED'],
+            'risk_assessment'=>['nullable','string','max:2000'],
+            'customer_acknowledgement_ref'=>['nullable','string','max:500'],
+        ]);
+        if (!Schema::hasTable('am_qc_conditional_reviews')
+            || !Schema::hasTable('am_qc_conditional_review_audits')) {
+            abort(503,'QC conditional review migration is required.');
+        }
+        $card=DB::table('job_cards')->where('id',$job)->first();
+        if (!$card) abort(404);
+        if (in_array(strtolower(trim((string)$card->status)),['cancelled','invoiced','closed'],true)) {
+            throw ValidationException::withMessages(['status'=>'Closed, invoiced or cancelled Job Card needs an authorized workflow.']);
+        }
+        $findings=$guard->findings($job);
+        $nonDeclined=array_filter($findings,static fn(array $f): bool =>
+            !$f['verified'] && $f['status']!=='DECLINED');
+        if ($data['approved_work_result']==='PASS' && count($nonDeclined)>0) {
+            throw ValidationException::withMessages(['qc'=>'Approved-work QC cannot PASS while non-declined inspection defects remain unresolved.']);
+        }
+        $declined=array_filter($findings,static fn(array $f): bool => $f['status']==='DECLINED');
+        if ($data['assessment']==='RISK_REVIEWED') {
+            if (!$declined || $data['approved_work_result']!=='PASS') {
+                throw ValidationException::withMessages(['assessment'=>'Risk review requires a recorded declined defect and approved-work QC PASS.']);
+            }
+            if (mb_strlen(trim((string)($data['risk_assessment']??'')))<20) {
+                throw ValidationException::withMessages(['risk_assessment'=>'Record the actual safety/risk assessment (at least 20 characters).']);
+            }
+            if (trim((string)($data['customer_acknowledgement_ref']??''))==='') {
+                throw ValidationException::withMessages(['customer_acknowledgement_ref'=>'Record the reference to a signed customer acknowledgement. Verbal-only refusal is not enough.']);
+            }
+            foreach ($declined as $finding) {
+                $record=$finding['record'];
+                if (!$record || ($record->decline_acknowledgement??null)!=='WRITTEN'
+                    || trim((string)($record->decline_evidence_ref??''))==='') {
+                    throw ValidationException::withMessages(['assessment'=>'Every declined finding must first have documented written acknowledgement and evidence reference.']);
+                }
+            }
+        }
+        DB::transaction(function () use ($job,$admin,$data,$guard) {
+            $card=DB::table('job_cards')->where('id',$job)->lockForUpdate()->first();
+            if (!$card) abort(404);
+            if (in_array(strtolower(trim((string)$card->status)),['cancelled','invoiced','closed'],true)) {
+                throw ValidationException::withMessages(['status'=>'Job Card state changed during review.']);
+            }
+            $open=array_filter($guard->findings($job),static fn(array $f): bool => !$f['verified'] && $f['status']!=='DECLINED');
+            if ($data['approved_work_result']==='PASS' && $open) {
+                throw ValidationException::withMessages(['qc'=>'Inspection findings changed. Reopen review.']);
+            }
+            $record=[
+                'approved_work_result'=>$data['approved_work_result'],
+                'approved_work_findings'=>trim($data['approved_work_findings']),
+                'assessment'=>$data['assessment'],
+                'risk_assessment'=>trim((string)($data['risk_assessment']??'')) ?: null,
+                'customer_acknowledgement_ref'=>trim((string)($data['customer_acknowledgement_ref']??'')) ?: null,
+                'actor_admin_id'=>(int)$admin->id,'updated_at'=>now(),
+            ];
+            DB::table('am_qc_conditional_reviews')->updateOrInsert(
+                ['job_card_id'=>$job],$record+['created_at'=>now()]);
+            DB::table('am_qc_conditional_review_audits')->insert([
+                'job_card_id'=>$job,'actor_admin_id'=>(int)$admin->id,
+                'review_json'=>json_encode($record,JSON_THROW_ON_ERROR),
+                'created_at'=>now(),
+            ]);
+        });
+        return redirect()->route('erp.job-cards.inspection-defects',$job)
+            ->with('success','Approved-work QC and conditional assessment recorded separately. Full QC PASS and delivery status have NOT been changed.');
     }
 
 }
