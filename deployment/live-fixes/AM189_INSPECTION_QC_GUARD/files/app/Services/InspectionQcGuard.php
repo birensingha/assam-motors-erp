@@ -93,8 +93,18 @@ final class InspectionQcGuard
 
     public function assertQcReady(int $jobId): void
     {
+        // QC PASS concerns work performed, not a certification that every advised
+        // repair was purchased. Preserve every genuinely refused finding as DECLINED.
+        // An unchanged and evidenced refusal is outside the approved repair scope.
         $open = array_values(array_filter(
-            $this->findings($jobId),static fn(array $f): bool => !$f['verified']
+            $this->findings($jobId),static function(array $f): bool {
+                if ($f['verified']) return false;
+                if ($f['status']!=='DECLINED' || !$f['same'] || $f['duplicate']) return true;
+                $record=$f['record'];
+                if (!$record || trim((string)($record->decline_reason??''))==='') return true;
+                $ack=(string)($record->decline_acknowledgement??'');
+                return !in_array($ack,['VERBAL','WRITTEN','REFUSED_TO_SIGN'],true);
+            }
         ));
         if (!$open) return;
         $examples=array_map(
@@ -106,6 +116,28 @@ final class InspectionQcGuard
                 .' inspection defect(s) need recorded repair and verified re-inspection. '
                 .implode('; ',$examples)
                 .'. Owner/Admin: open Job Card Inspection Defects register.',
+        ]);
+    }
+
+    /**
+     * Vehicle release is distinct from workmanship QC. Until an explicit
+     * risk/roadworthiness decision is integrated, never silently deliver
+     * a vehicle with a known, unrepaired declined finding.
+     */
+    public function assertDeliveryRiskReady(int $jobId): void
+    {
+        $declined=array_values(array_filter(
+            $this->findings($jobId),
+            static fn(array $f): bool => $f['status']==='DECLINED'
+        ));
+        if (!$declined) return;
+        $names=array_map(static fn(array $f): string => $f['label'], $declined);
+        throw ValidationException::withMessages([
+            'delivery'=>'Vehicle delivery HOLD: '.count($declined)
+                .' unrepaired customer-declined inspection defect(s) recorded ('
+                .implode(', ',$names).'). Approved repair-work QC is not'
+                .' an authorization to release an unassessed vehicle.'
+                .' Complete an authorised risk/roadworthiness decision first.',
         ]);
     }
 
