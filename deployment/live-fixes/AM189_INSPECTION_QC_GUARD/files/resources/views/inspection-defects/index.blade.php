@@ -147,7 +147,11 @@ p{line-height:1.6}
 <label>Re-inspection and test findings</label>
 <textarea name="verification_note" rows="3" minlength="8" maxlength="2000" required placeholder="Describe actual recheck: test performed, results and observations"></textarea>
 <button type="submit">Save Re-inspection Result</button>
+@if($f['severity']==='safety')
 <p class="muted">Safety repairs need an independent reviewer, not the same repairing technician.</p>
+@else
+<p class="muted">Record actual re-inspection findings. Safety reviewer attestation is not required for this normal defect.</p>
+@endif
 </form>
 @endif
 </div>
