@@ -61,12 +61,12 @@ p{line-height:1.6}
 @if($errors->any())<div class="panel error">{{ $errors->first() }}</div>@endif
 <div class="panel">
 <h2>Inspection Findings & QC PASS Control</h2>
-<p>Inspection submit can finish with Fair/Poor findings. QC PASS remains blocked until each finding has a recorded repair and an independently checked verification. Original inspection answers stay unchanged.</p>
+<p>Inspection may contain Fair/Poor findings. FIXED work needs repair and actual re-inspection. Documented CUSTOMER DENIED work stays unrepaired and outside the approved repair QC scope; vehicle delivery remains separately restricted. Original inspection answers stay unchanged.</p>
 <form method="post" action="{{ route('erp.job-cards.inspection-defects.sync',$job->id) }}">
 @csrf
 <button type="submit">Register Saved Inspection Defects</button>
 </form>
-<div class="notice"><strong>Safety rule:</strong> Status OPEN or RECTIFIED is not verified. Select actual repairing staff and enter repair details; then a qualified independent reviewer must verify. This does not bypass QC by changing the original inspection.</div>
+<div class="notice"><strong>Safety rule:</strong> A repair marked FIXED must have real repair details and verification. Customer Denied is a recorded refusal, not a repair; no changes to original inspection data and no automatic vehicle release.</div>
 </div>
 @forelse($findings as $f)
 <div class="panel finding {{ $f['verified'] ? 'verified' : '' }}">
@@ -113,7 +113,7 @@ p{line-height:1.6}
 </div>
 @endif
 @if($f['record']->status==='DECLINED')
-<div class="notice"><strong>Customer Declined — Unrepaired.</strong> Full QC PASS remains blocked. Safety release requires a separate authorised risk decision and customer disclosure.</div>
+<div class="notice"><strong>Customer Denied — Unrepaired.</strong> This defect is excluded from approved repair-work QC when refusal is documented, but it is NOT fixed or VERIFIED. Vehicle delivery remains on safety HOLD pending authorised risk review and disclosure.</div>
 <p><strong>Recorded refusal:</strong> {{ $f['record']->decline_reason ?? '' }}</p>
 <p><strong>Customer acknowledgement:</strong> {{ $f['record']->decline_acknowledgement ?? 'PENDING' }}</p>
 <form method="post" action="{{ route('erp.job-cards.inspection-defects.reopen-declined',$f['record']->id) }}">
