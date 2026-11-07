@@ -25,6 +25,10 @@ final class ComplaintReworkLinkService
   return DB::transaction(function()use($complaintId,$newSessionId,$assignedStaffId,$adminId,$instructions):int{
    $case=DB::table('am_rot_work_complaints')->where('id',$complaintId)->lockForUpdate()->first();
    if (!$case) abort(404);
+   $card=DB::table('job_cards')->where('id',$case->job_card_id)->lockForUpdate()->first();
+   if (!$card || in_array(strtolower(trim((string)$card->status)),['closed','invoiced','cancelled'],true)) {
+    throw ValidationException::withMessages(['job_card_id'=>'Complaint rework can be linked only while the Job Card is open.']);
+   }
    $original=DB::table('rot_sessions')->where('id',$case->rot_session_id)->first();
    $new=DB::table('rot_sessions')->where('id',$newSessionId)->lockForUpdate()->first();
    if (!$original || !$new || (int)$original->job_card_id!==(int)$case->job_card_id
