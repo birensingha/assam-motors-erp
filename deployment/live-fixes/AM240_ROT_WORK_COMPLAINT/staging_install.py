@@ -68,7 +68,28 @@ def lint(content,label):
 for rel in files:
     if rel.endswith(".php"): lint((pkg/rel).read_text(),rel)
 lint(routes_new,"routes/web.php")
-lint(view_new,"job-cards/show.blade.php")
+
+# Compile all candidate Blade templates with the REAL Laravel Blade compiler.
+# php -l on raw Blade is NOT a meaningful syntax validation.
+def blade_lint(content,label):
+    with tempfile.TemporaryDirectory(prefix="am240-blade-") as d:
+        source=Path(d)/"source.blade.php"
+        compiled=Path(d)/"compiled.php"
+        source.write_text(content)
+        php_script=r"""require 'vendor/autoload.php';
+$app=require 'bootstrap/app.php';
+$app->make(\\Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
+file_put_contents($argv[2],$app->make('blade.compiler')->compileString(file_get_contents($argv[1])));"""
+        done=subprocess.run(["php","-r",php_script,str(source),str(compiled)],cwd=root,capture_output=True,text=True,timeout=45)
+        if done.returncode or not compiled.exists():
+            raise SystemExit("STOP_BLADE_COMPILER "+label+": "+(done.stdout+done.stderr)[-500:])
+        done=subprocess.run(["php","-l",str(compiled)],cwd=root,capture_output=True,text=True,timeout=25)
+        if done.returncode:
+            raise SystemExit("STOP_COMPILED_BLADE_SYNTAX "+label+": "+(done.stdout+done.stderr)[-500:])
+
+blade_lint(view_new,"job-cards/show.blade.php")
+for rel in files:
+    if rel.endswith(".blade.php"):blade_lint((pkg/rel).read_text(),rel)
 
 # Read-only schema shape check, without reading rows or leaking credentials.
 probe=r"""require 'vendor/autoload.php';
@@ -80,8 +101,11 @@ echo json_encode([
  'rot_job'=>S::hasColumn('rot_sessions','job_card_id'),
  'rot_staff'=>S::hasColumn('rot_sessions','staff_id'),
  'rot_status'=>S::hasColumn('rot_sessions','status'),
+ 'job_cards'=>S::hasTable('job_cards'),
+ 'staff'=>S::hasTable('staff'),
  'staff_code'=>S::hasColumn('staff','staff_code'),
- 'staff_name'=>S::hasColumn('staff','name')
+ 'staff_name'=>S::hasColumn('staff','name'),
+ 'staff_id'=>S::hasColumn('staff','id')
 ]);"""
 check=subprocess.run(["php","-r",probe],cwd=root,capture_output=True,text=True)
 if check.returncode: raise SystemExit("STOP_SCHEMA_CHECK_FAILED (inspect server logs; no changes)")
@@ -111,8 +135,24 @@ try:
     migr=subprocess.run(["php","artisan","migrate","--path=database/migrations/2026_11_07_150000_create_work_complaints.php","--force"],cwd=root)
     if migr.returncode:raise RuntimeError("Migration failed; tables may partially exist. Inspect schema before retry.")
     for command in (["php","artisan","route:clear"],["php","artisan","view:cache"],["php","artisan","optimize:clear"]):
-        result=subprocess.run(command,cwd=root,capture_output=True,text=True)
-        if result.returncode:raise RuntimeError("Validation failed: "+" ".join(command))
+        result=subprocess.run(command,cwd=root,capture_output=True,text=True,timeout=100)
+        if result.returncode:raise RuntimeError("Validation failed: "+" ".join(command)+" "+result.stderr[-300:])
+    # Verify Laravel registered the route names the new Blade uses.
+    verify=r"""require 'vendor/autoload.php';
+$app=require 'bootstrap/app.php';
+$app->make(\\Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
+foreach (['erp.rot-work-complaints.create','erp.rot-work-complaints.store',
+  'erp.rot-work-complaints.show','erp.rot-work-complaints.review',
+  'erp.rot-work-complaints.monthly'] as $name) {
+  if (!\\Illuminate\\Support\\Facades\\Route::has($name)) {
+    fwrite(STDERR,'Missing route name: '.$name);exit(11);
+  }
+}
+echo 'AM240_ROUTE_PASS';"""
+    verified=subprocess.run(["php","-r",verify],cwd=root,capture_output=True,text=True,timeout=50)
+    if verified.returncode or "AM240_ROUTE_PASS" not in verified.stdout:
+        raise RuntimeError("New complaint routes not registered: "+verified.stderr[-300:])
+    print("AM240_ROUTE_PASS")
 except Exception as exc:
     shutil.copy2(backup/routepath.relative_to(root),routepath)
     shutil.copy2(backup/viewpath.relative_to(root),viewpath)
