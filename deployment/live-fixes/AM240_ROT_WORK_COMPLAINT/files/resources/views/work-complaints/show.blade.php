@@ -17,4 +17,4 @@
 <label>Employee response (optional, do not fabricate)</label>
 <textarea name="employee_response" maxlength="3000" rows="3" style="display:block;width:100%;margin:10px 0">{{ old('employee_response',$case->employee_response) }}</textarea>
 <button type="submit">Save Audited Decision</button></form>
-<p><a href="{{ route('erp.job-cards.show',$case->job_card_id) }}">Back to Job Card</a></p></body></html>
+<p><a href="{{ route('erp.job-cards.show',$case->job_card_id) }}">Back to Job Card</a> · <a href="{{ route('erp.rot-work-complaints.monthly') }}">Monthly Staff Work Complaints</a></p></body></html>
