@@ -6,8 +6,8 @@ from pathlib import Path
 from datetime import datetime
 import subprocess, shutil, tempfile, sys, json
 
-if len(sys.argv)!=3 or sys.argv[1] not in ("check","apply"):
-    raise SystemExit("Usage: staging_install.py check|apply /path/to/assam-erp-staging")
+if len(sys.argv)!=3 or sys.argv[1] not in ("check","apply","rollback"):
+    raise SystemExit("Usage: staging_install.py check|apply|rollback /path/to/assam-erp-staging")
 mode=sys.argv[1]
 root=Path(sys.argv[2]).expanduser().resolve()
 pkg=Path(__file__).resolve().parent/"files"
@@ -17,6 +17,26 @@ routepath=root/"routes/web.php"
 viewpath=root/"resources/views/job-cards/show.blade.php"
 if not routepath.is_file() or not viewpath.is_file():
     raise SystemExit("STOP_NO_ROUTES_OR_JC_VIEW")
+pointer=root/"storage/app/am-backups/AM240_LAST_SUCCESSFUL_BACKUP.txt"
+if mode=="rollback":
+    if not pointer.is_file():
+        raise SystemExit("STOP_AM240_NO_SUCCESSFUL_BACKUP_TO_ROLLBACK")
+    backup=Path(pointer.read_text().strip()).resolve()
+    allowed=(root/"storage/app/am-backups").resolve()
+    if allowed not in backup.parents or not backup.name.startswith("AM240_WORK_COMPLAINT_"):
+        raise SystemExit("STOP_AM240_UNSAFE_BACKUP_LOCATION")
+    if "erp.rot-work-complaints.create" not in routepath.read_text():
+        raise SystemExit("STOP_AM240_ROUTES_ALREADY_CHANGED_REFUSE_RESTORE")
+    for p in (routepath,viewpath):
+        previous=backup/p.relative_to(root)
+        if not previous.is_file():raise SystemExit("STOP_AM240_ROLLBACK_BACKUP_MISSING")
+    shutil.copy2(backup/routepath.relative_to(root),routepath)
+    shutil.copy2(backup/viewpath.relative_to(root),viewpath)
+    done=subprocess.run(["php","artisan","optimize:clear"],cwd=root,capture_output=True,text=True)
+    if done.returncode:raise SystemExit("AM240_RESTORED_BUT_CACHE_CLEAR_FAILED")
+    print("AM240_ORIGINAL_JOB_CARD_AND_ROUTES_RESTORED")
+    print("Complaint tables and previously entered audit records retained for safety")
+    sys.exit(0)
 files=[
  "database/migrations/2026_11_07_150000_create_work_complaints.php",
  "app/Http/Controllers/Web/RotWorkComplaintController.php",
@@ -159,6 +179,8 @@ except Exception as exc:
     for target in created:target.unlink(missing_ok=True)
     subprocess.run(["php","artisan","optimize:clear"],cwd=root,capture_output=True)
     raise SystemExit("STOP_APPLICATION_ROLLED_BACK: "+str(exc)+"; database migration must be reviewed separately")
+pointer.write_text(str(backup)+"\\n")
 print("AM240_STAGING_CODE_INSTALLED")
+print("AM240_ROLLBACK_READY")
 print("Original ROT work history, timing, invoice and all QC records unchanged")
 print("Next: test link from actual JC-11 Completed ROT, report and monthly counts in browser")
