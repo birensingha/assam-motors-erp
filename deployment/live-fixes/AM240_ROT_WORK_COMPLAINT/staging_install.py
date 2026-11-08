@@ -78,7 +78,7 @@ def blade_lint(content,label):
         source.write_text(content)
         php_script=r"""require 'vendor/autoload.php';
 $app=require 'bootstrap/app.php';
-$app->make(\Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
+$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 file_put_contents($argv[2],$app->make('blade.compiler')->compileString(file_get_contents($argv[1])));"""
         done=subprocess.run(["php","-r",php_script,str(source),str(compiled)],cwd=root,capture_output=True,text=True,timeout=45)
         if done.returncode or not compiled.exists():
@@ -140,11 +140,11 @@ try:
     # Verify Laravel registered the route names the new Blade uses.
     verify=r"""require 'vendor/autoload.php';
 $app=require 'bootstrap/app.php';
-$app->make(\Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
+$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 foreach (['erp.rot-work-complaints.create','erp.rot-work-complaints.store',
   'erp.rot-work-complaints.show','erp.rot-work-complaints.review',
   'erp.rot-work-complaints.monthly'] as $name) {
-  if (!\Illuminate\\Support\\Facades\\Route::has($name)) {
+  if (!\Illuminate\Support\Facades\Route::has($name)) {
     fwrite(STDERR,'Missing route name: '.$name);exit(11);
   }
 }
