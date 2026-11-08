@@ -35,7 +35,11 @@ final class RotWorkComplaintController extends Controller
  public function create(Request $request,int $job,int $rot)
  {
   $this->admin($request); $this->tables();
-  abort_unless(DB::table('job_cards')->where('id',$job)->exists(),404);
+  $card=DB::table('job_cards')->where('id',$job)->first();
+  abort_unless($card,404);
+  if (in_array(strtolower(trim((string)$card->status)),['closed','invoiced','cancelled'],true)) {
+   throw ValidationException::withMessages(['job'=>'Complaint reporting is available only before Job Card closure.']);
+  }
   $session=$this->ownedRot($job,$rot);
   abort_unless(strtolower(trim((string)$session->status))==='completed',422,'Only completed ROT complaints handled here');
   $staff=DB::table('staff')->where('id',$session->staff_id)->first();
@@ -46,7 +50,11 @@ final class RotWorkComplaintController extends Controller
   $admin=$this->admin($request);$this->tables();
   $data=$request->validate(['description'=>['required','string','min:12','max:3000']]);
   $id=DB::transaction(function()use($job,$rot,$admin,$data){
-   abort_unless(DB::table('job_cards')->where('id',$job)->lockForUpdate()->exists(),404);
+   $card=DB::table('job_cards')->where('id',$job)->lockForUpdate()->first();
+   abort_unless($card,404);
+   if (in_array(strtolower(trim((string)$card->status)),['closed','invoiced','cancelled'],true)) {
+    throw ValidationException::withMessages(['job'=>'Job Card is already closed; original work cannot receive an open rework case.']);
+   }
    $session=$this->ownedRot($job,$rot);
    if(strtolower(trim((string)$session->status))!=='completed' || (int)$session->staff_id<1){
     throw ValidationException::withMessages(['rot'=>'Completed ROT must have an assigned staff member.']);
