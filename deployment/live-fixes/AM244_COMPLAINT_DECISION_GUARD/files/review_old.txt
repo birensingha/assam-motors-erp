@@ -1,0 +1,29 @@
+ public function review(Request $request,int $complaint)
+ {
+  $admin=$this->admin($request);$this->tables();
+  $data=$request->validate([
+   'outcome'=>['required','in:UNDER_REVIEW,WORKMANSHIP_CONFIRMED,PART_FAILURE,CUSTOMER_MISUSE,NOT_WORKMANSHIP,INCONCLUSIVE'],
+   'investigation_notes'=>['required','string','min:12','max:3000'],
+   'employee_response'=>['nullable','string','max:3000'],
+  ]);
+  DB::transaction(function()use($complaint,$admin,$data){
+   $case=DB::table('am_rot_work_complaints')->where('id',$complaint)->lockForUpdate()->first();
+   abort_unless($case,404);
+   $before=(array)$case;
+   $after=[
+    'status'=>$data['outcome']==='UNDER_REVIEW'?'UNDER_REVIEW':'REVIEWED',
+    'outcome'=>$data['outcome']==='UNDER_REVIEW'?null:$data['outcome'],
+    'investigation_notes'=>trim($data['investigation_notes']),
+    'employee_response'=>trim((string)($data['employee_response']??''))?:null,
+    'reviewed_by_admin_id'=>(int)$admin->id,
+    'reviewed_at'=>now('Asia/Kolkata'),'updated_at'=>now(),
+   ];
+   DB::table('am_rot_work_complaints')->where('id',$complaint)->update($after);
+   DB::table('am_rot_work_complaint_audits')->insert([
+    'complaint_id'=>$complaint,'actor_admin_id'=>(int)$admin->id,'action'=>'INVESTIGATION_REVIEW',
+    'previous_json'=>json_encode($before,JSON_THROW_ON_ERROR),
+    'new_json'=>json_encode($after,JSON_THROW_ON_ERROR),'created_at'=>now(),
+   ]);
+  });
+  return redirect()->route('erp.rot-work-complaints.show',$complaint)->with('success','Investigation saved with audit.');
+ }
