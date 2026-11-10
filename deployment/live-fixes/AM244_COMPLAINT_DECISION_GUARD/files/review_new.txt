@@ -1,0 +1,82 @@
+ public function review(Request $request,int $complaint)
+ {
+  $admin=$this->admin($request);$this->tables();
+  $data=$request->validate([
+   'outcome'=>['required','in:UNDER_REVIEW,WORKMANSHIP_CONFIRMED,PART_FAILURE,CUSTOMER_MISUSE,NOT_WORKMANSHIP,INCONCLUSIVE'],
+   'investigation_notes'=>['required','string','min:12','max:3000'],
+   'employee_response'=>['nullable','string','max:3000'],
+   'expected_audit_id'=>['required','integer','min:0'],
+   'correction_reason'=>['nullable','string','max:1000'],
+   'confirm_outcome_change'=>['nullable','in:1'],
+  ]);
+  $result=DB::transaction(function()use($complaint,$admin,$data){
+   $case=DB::table('am_rot_work_complaints')->where('id',$complaint)->lockForUpdate()->first();
+   abort_unless($case,404);
+
+   $currentAuditId=(int)(DB::table('am_rot_work_complaint_audits')
+        ->where('complaint_id',$complaint)->max('id')??0);
+   if ($currentAuditId!==(int)$data['expected_audit_id']) {
+    throw ValidationException::withMessages(['decision'=>'The investigation was updated in another tab or by another administrator. Reload this page and review the latest decision before saving.']);
+   }
+
+   $oldOutcome=trim((string)($case->outcome??''));
+   $newOutcome=$data['outcome']==='UNDER_REVIEW'?null:$data['outcome'];
+   $newOutcomeText=(string)($newOutcome??'');
+   $oldStatus=(string)$case->status;
+   $newStatus=$data['outcome']==='UNDER_REVIEW'?'UNDER_REVIEW':'REVIEWED';
+   $notes=trim((string)$data['investigation_notes']);
+   $response=trim((string)($data['employee_response']??''));
+   $oldNotes=trim((string)($case->investigation_notes??''));
+   $oldResponse=trim((string)($case->employee_response??''));
+   $statusChanged=$oldStatus!==$newStatus;
+   $outcomeChanged=$oldOutcome!==$newOutcomeText;
+   $contentChanged=$oldNotes!==$notes || $oldResponse!==$response;
+   if (!$statusChanged && !$outcomeChanged && !$contentChanged) {
+    return 'No change was made; duplicate investigation history entry was not created.';
+   }
+
+   // A case that was confirmed earlier remains a reviewed case even if a
+   // legacy form later moved it back to UNDER_REVIEW without any explanation.
+   $everReviewed=DB::table('am_rot_work_complaint_audits')
+     ->where('complaint_id',$complaint)
+     ->where('new_json','like','%"status":"REVIEWED"%')->exists();
+   $previouslyFinal=$oldOutcome!=='' || strtoupper($oldStatus)==='REVIEWED' || $everReviewed;
+   $reason=trim((string)($data['correction_reason']??''));
+   if ($previouslyFinal && mb_strlen($reason)<15) {
+    throw ValidationException::withMessages([
+      'correction_reason'=>'A reason of at least 15 characters is required to correct a previously reviewed decision or its recorded notes.'
+    ]);
+   }
+   // Confirmed/other final outcomes must never silently revert to Under Review.
+   if ($outcomeChanged && $oldOutcome!=='' && (string)($data['confirm_outcome_change']??'')!=='1') {
+    throw ValidationException::withMessages([
+      'confirm_outcome_change'=>'The previously saved finding will change. Select the explicit confirmation checkbox to proceed.'
+    ]);
+   }
+   $after=[
+    'status'=>$newStatus,
+    'outcome'=>$newOutcome,
+    'investigation_notes'=>$notes,
+    'employee_response'=>$response?:null,
+    'reviewed_by_admin_id'=>(int)$admin->id,
+    'reviewed_at'=>now('Asia/Kolkata'),
+    'updated_at'=>now(),
+   ];
+   $before=(array)$case;
+   DB::table('am_rot_work_complaints')->where('id',$complaint)->update($after);
+   $eventDetails=$after+[
+     'correction_reason'=>$previouslyFinal?$reason:null,
+     'previous_outcome'=>$case->outcome,
+     'previous_status'=>$case->status,
+   ];
+   DB::table('am_rot_work_complaint_audits')->insert([
+    'complaint_id'=>$complaint,'actor_admin_id'=>(int)$admin->id,
+    'action'=>$previouslyFinal?'DECISION_CORRECTED':'INVESTIGATION_REVIEW',
+    'previous_json'=>json_encode($before,JSON_THROW_ON_ERROR),
+    'new_json'=>json_encode($eventDetails,JSON_THROW_ON_ERROR),
+    'created_at'=>now(),
+   ]);
+   return $previouslyFinal?'Investigation correction saved with a mandatory reason and audit history.':'Investigation decision saved with audit history.';
+  });
+  return redirect()->route('erp.rot-work-complaints.show',$complaint)->with('success',$result);
+ }
