@@ -116,8 +116,12 @@ src={rel:original[rel].decode("utf-8","surrogateescape") for rel in existing}
 marker="AM242_RESULT_PORTAL"
 if any(marker in s for s in src.values()):
     raise SystemExit("STOP_AM242_ALREADY_PRESENT")
-if "AM240" not in src[jc] and "Report Work Complaint" not in src[jc]:
+if "Report Work Complaint" not in src[jc]:
     raise SystemExit("STOP_AM242_AM240_JC_BUTTON_MISSING")
+if "<h2>ASSAM MOTORS — Work Complaint #{{ $case->id }}</h2>" not in src[old_result] or "Save Audited Decision" not in src[old_result]:
+    raise SystemExit("STOP_AM242_ORIGINAL_RESULT_PAGE_UNEXPECTED")
+if "<h2>ASSAM MOTORS — Monthly Work Complaint Performance</h2>" not in src[old_monthly]:
+    raise SystemExit("STOP_AM242_ORIGINAL_MONTHLY_PAGE_UNEXPECTED")
 
 # Add admin-only complaint register route immediately BEFORE parameterized complaint detail.
 route_anchor="Route::get('/rot-work-complaints/{complaint}',"
