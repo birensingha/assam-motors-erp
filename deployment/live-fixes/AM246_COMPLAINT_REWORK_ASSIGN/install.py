@@ -133,16 +133,16 @@ if any("AM246_COMPLAINT_REWORK" in s for s in src.values()):
     raise SystemExit("STOP_AM246_ALREADY_APPLIED")
 route_anchor="Route::get('/rot-work-complaints/{complaint}',"
 addition=(
-    "    // AM246_COMPLAINT_REWORK: existing Admin-only route group.\\n"
+    "    // AM246_COMPLAINT_REWORK: existing Admin-only route group.\n"
     "    Route::get('/rot-work-complaints/{complaint}/rework',"
-    " [\\\\App\\\\Http\\\\Controllers\\\\Web\\\\ComplaintReworkAssignmentController::class,'show'])"
-    "->name('erp.rot-work-complaints.rework.show');\\n"
+    " [\\App\\Http\\Controllers\\Web\\ComplaintReworkAssignmentController::class,'show'])"
+    "->name('erp.rot-work-complaints.rework.show');\n"
     "    Route::post('/rot-work-complaints/{complaint}/rework',"
-    " [\\\\App\\\\Http\\\\Controllers\\\\Web\\\\ComplaintReworkAssignmentController::class,'assign'])"
-    "->name('erp.rot-work-complaints.rework.assign');\\n"
+    " [\\App\\Http\\Controllers\\Web\\ComplaintReworkAssignmentController::class,'assign'])"
+    "->name('erp.rot-work-complaints.rework.assign');\n"
     "    Route::post('/rot-work-complaints/{complaint}/rework-rot',"
-    " [\\\\App\\\\Http\\\\Controllers\\\\Web\\\\ComplaintReworkAssignmentController::class,'linkRot'])"
-    "->name('erp.rot-work-complaints.rework.link');\\n"
+    " [\\App\\Http\\Controllers\\Web\\ComplaintReworkAssignmentController::class,'linkRot'])"
+    "->name('erp.rot-work-complaints.rework.link');\n"
 )
 patched={}
 patched[routes]=enc(exactly(src[routes],route_anchor,addition+route_anchor,"ADMIN_ROUTES"))
