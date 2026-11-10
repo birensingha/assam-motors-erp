@@ -1,0 +1,12 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Monthly Staff Work Complaints</title>
+<style>body{font:14px/1.5 Arial,sans-serif;background:#f5f8fc;color:#1c3348;margin:0}main{max-width:1050px;margin:26px auto;padding:0 14px}h1{font-size:22px}a{font-weight:700;color:#1462a1;text-decoration:none}.panel{background:#fff;border:1px solid #d6e1ed;border-radius:10px;padding:16px;margin:13px 0}.stats{display:flex;gap:12px;flex-wrap:wrap}.stat{background:#edf4fc;padding:10px 15px;border-radius:9px;min-width:110px}.stat b{display:block;font-size:20px}input,button{padding:9px;border-radius:6px}input{border:1px solid #b7c9da}button{background:#185f9b;color:#fff;border:0;cursor:pointer}table{width:100%;border-collapse:collapse;font-size:13px}th,td{padding:10px;border-bottom:1px solid #dde6f0;text-align:left}th{background:#ecf3fa}.muted{color:#60778d}.scroll{overflow:auto}</style></head><body><main>
+<h1>ASSAM MOTORS — Monthly Work Complaint Performance</h1>
+<p class="muted">Report month is based on complaint filing date, not original ROT completion date. Reported complaints do not automatically prove fault.</p>
+<nav><a href="{{ route('erp.rot-work-complaints.register') }}">All Complaint Records</a></nav>
+<div class="panel"><form method="get"><label>Month <input type="month" name="month" value="{{ $month }}"></label> <button type="submit">Apply</button></form></div>
+<div class="panel"><div class="stats"><div class="stat">Reported <b>{{ $rows->sum('reported_count') }}</b></div><div class="stat">Confirmed <b>{{ $rows->sum('confirmed_count') }}</b></div><div class="stat">Pending <b>{{ $rows->sum('pending_count') }}</b></div></div></div>
+<div class="panel scroll"><table><thead><tr><th>Staff</th><th>Code</th><th>Reported</th><th>Confirmed Workmanship</th><th>Pending Investigation</th><th>View Cases</th></tr></thead>
+<tbody>@forelse($rows as $r)<tr><td>{{ $r->name ?? ('Staff #'.$r->staff_id) }}</td><td>{{ $r->staff_code }}</td><td>{{ $r->reported_count }}</td><td>{{ $r->confirmed_count }}</td><td>{{ $r->pending_count }}</td><td><a href="{{ route('erp.rot-work-complaints.register',['month'=>$month,'staff_id'=>$r->staff_id]) }}">Details</a></td></tr>
+@empty<tr><td colspan="6">No work complaints filed this month.</td></tr>@endforelse</tbody></table></div>
+<p class="muted">No automatic payroll deductions or punishment. A receiving rework mechanic's hours and QC result must be credited separately from the original complaint case.</p>
+</main></body></html>
