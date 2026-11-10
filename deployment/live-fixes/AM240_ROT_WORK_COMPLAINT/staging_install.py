@@ -25,7 +25,7 @@ if mode=="rollback":
     allowed=(root/"storage/app/am-backups").resolve()
     if allowed not in backup.parents or not backup.name.startswith("AM240_WORK_COMPLAINT_"):
         raise SystemExit("STOP_AM240_UNSAFE_BACKUP_LOCATION")
-    if "erp.rot-work-complaints.create" not in routepath.read_text():
+    if "erp.rot-work-complaints.create" not in routepath.read_text(encoding="utf-8",errors="surrogateescape"):
         raise SystemExit("STOP_AM240_ROUTES_ALREADY_CHANGED_REFUSE_RESTORE")
     for p in (routepath,viewpath):
         previous=backup/p.relative_to(root)
@@ -49,7 +49,7 @@ for rel in files:
     if (root/rel).exists(): raise SystemExit("STOP_SOURCE_COLLISION "+rel)
 
 # Admin route insertion anchors inside existing protected admin group.
-routes=routepath.read_text()
+routes=routepath.read_text(encoding="utf-8",errors="surrogateescape")
 route_anchor="Route::post('/inspection-defects/{defect}/verify'"
 if routes.count(route_anchor)!=1 or "erp.rot-work-complaints.create" in routes:
     raise SystemExit("STOP_ADMIN_ROUTE_ANCHOR_CHANGED")
@@ -68,7 +68,9 @@ route_lines.insert(matched[0]+1,newroute)
 routes_new="".join(route_lines)
 
 # Must be the existing Completed ROT card's action row, with $rot in scope.
-view=viewpath.read_text()
+view=viewpath.read_text(encoding="utf-8",errors="surrogateescape")
+if view.encode("utf-8",errors="surrogateescape")!=viewpath.read_bytes():
+    raise SystemExit("STOP_BLADE_ENCODING_ROUNDTRIP_FAILED_NO_WRITES")
 view_anchor='<div class="rot-actions {{ $rot && $rot->status===\'Completed\' ? \'am95-completed-actions\' : \'am95-active-actions\' }}">'
 if view.count(view_anchor)!=1:
     raise SystemExit("STOP_COMPLETED_ROT_CARD_ANCHOR_CHANGED")
@@ -78,7 +80,7 @@ link=r"""@if($rot && strcasecmp((string)$rot->status,'Completed')===0)
 view_new=view.replace(view_anchor,view_anchor+"\n"+link,1)
 
 def lint(content,label):
-    with tempfile.NamedTemporaryFile("w",suffix=".php",delete=False) as f:
+    with tempfile.NamedTemporaryFile("w",suffix=".php",encoding="utf-8",errors="surrogateescape",delete=False) as f:
         f.write(content); t=Path(f.name)
     try:
         result=subprocess.run(["php","-l",str(t)],capture_output=True,text=True)
@@ -95,7 +97,7 @@ def blade_lint(content,label):
     with tempfile.TemporaryDirectory(prefix="am240-blade-") as d:
         source=Path(d)/"source.blade.php"
         compiled=Path(d)/"compiled.php"
-        source.write_text(content)
+        source.write_text(content,encoding="utf-8",errors="surrogateescape")
         php_script=r"""require 'vendor/autoload.php';
 $app=require 'bootstrap/app.php';
 $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
@@ -150,8 +152,8 @@ try:
         target.parent.mkdir(parents=True,exist_ok=True)
         shutil.copy2(pkg/rel,target)
         created.append(target)
-    routepath.write_text(routes_new)
-    viewpath.write_text(view_new)
+    routepath.write_text(routes_new,encoding="utf-8",errors="surrogateescape")
+    viewpath.write_text(view_new,encoding="utf-8",errors="surrogateescape")
     migr=subprocess.run(["php","artisan","migrate","--path=database/migrations/2026_11_07_150000_create_work_complaints.php","--force"],cwd=root)
     if migr.returncode:raise RuntimeError("Migration failed; tables may partially exist. Inspect schema before retry.")
     for command in (["php","artisan","route:clear"],["php","artisan","view:cache"],["php","artisan","optimize:clear"]):
@@ -179,7 +181,7 @@ except Exception as exc:
     for target in created:target.unlink(missing_ok=True)
     subprocess.run(["php","artisan","optimize:clear"],cwd=root,capture_output=True)
     raise SystemExit("STOP_APPLICATION_ROLLED_BACK: "+str(exc)+"; database migration must be reviewed separately")
-pointer.write_text(str(backup)+"\\n")
+pointer.write_text(str(backup)+"\n")
 print("AM240_STAGING_CODE_INSTALLED")
 print("AM240_ROLLBACK_READY")
 print("Original ROT work history, timing, invoice and all QC records unchanged")
