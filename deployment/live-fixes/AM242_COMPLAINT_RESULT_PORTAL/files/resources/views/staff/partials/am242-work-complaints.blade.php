@@ -5,11 +5,17 @@
       ? (int)($am242Actor->staff_id??0) : 0;
   $am242Own=collect();
   $am242Receiving=collect();
+  $am242Transfers=collect();
   if ($am242StaffId>0 && \Illuminate\Support\Facades\Schema::hasTable('am_rot_work_complaints')) {
       $am242Own=\Illuminate\Support\Facades\DB::table('am_rot_work_complaints')
           ->where('staff_id',$am242StaffId)->orderByDesc('id')->limit(30)->get();
       // Receiving mechanic entries appear only after a real AM241 rework link exists.
       if (\Illuminate\Support\Facades\Schema::hasTable('am_complaint_rework_links')) {
+          $am242Transfers=\Illuminate\Support\Facades\DB::table('am_complaint_rework_links as l')
+              ->leftJoin('staff as s','s.id','=','l.assigned_staff_id')
+              ->where('l.original_staff_id',$am242StaffId)
+              ->get(['l.complaint_id','l.rework_rot_session_id','l.status','l.assigned_staff_id',
+                  's.name as receiving_name','s.staff_code as receiving_code'])->keyBy('complaint_id');
           $am242Receiving=\Illuminate\Support\Facades\DB::table('am_complaint_rework_links as l')
               ->join('am_rot_work_complaints as c','c.id','=','l.complaint_id')
               ->where('l.assigned_staff_id',$am242StaffId)
@@ -32,7 +38,7 @@
   @if($am242Own->isNotEmpty())
   <h3 style="font-size:13px;margin:9px 0">Complaints Against My Completed Work</h3>
   @foreach($am242Own as $am242C)
-    <details style="border:1px solid #dbe5ed;border-radius:7px;margin:7px 0;padding:8px 10px">
+    <details @if($loop->first) open @endif style="border:1px solid #dbe5ed;border-radius:7px;margin:7px 0;padding:8px 10px">
       <summary style="cursor:pointer;font-weight:700;font-size:12px">
        Complaint #{{ $am242C->id }} · JC #{{ $am242C->job_card_id }} · {{ $am242C->outcome==='WORKMANSHIP_CONFIRMED'?'Confirmed Workmanship':($am242C->outcome ? str_replace('_',' ',$am242C->outcome) : 'Under Review') }}
       </summary>
@@ -41,7 +47,11 @@
       @if($am242C->investigation_notes)
       <p style="font-size:12px;white-space:pre-wrap"><b>Supervisor Findings:</b> {{ $am242C->investigation_notes }}</p>
       @endif
-      <p style="font-size:12px;white-space:pre-wrap"><b>Employee Response on Record:</b> {{ $am242C->employee_response ?: 'Not yet recorded' }}</p>
+      @if($am242Transfers->has($am242C->id))
+      @php $am242Transfer=$am242Transfers->get($am242C->id); @endphp
+      <p style="font-size:12px;border-left:3px solid #e6ab63;padding-left:8px"><b>Complaint Rework Assigned:</b> {{ $am242Transfer->receiving_name ?? ('Staff #'.$am242Transfer->assigned_staff_id) }} ({{ $am242Transfer->receiving_code ?? '—' }}) · New ROT {{ $am242Transfer->rework_rot_session_id }} · {{ $am242Transfer->status }}</p>
+      @endif
+      <p style="font-size:12px;white-space:pre-wrap"><b>Admin-Recorded Employee Response:</b> {{ $am242C->employee_response ?: 'Not yet recorded' }}</p>
       <p style="font-size:11px;color:#60748a">If explanation is incorrect or needs an amendment, contact Admin/HR. This panel cannot alter investigation records.</p>
     </details>
   @endforeach
