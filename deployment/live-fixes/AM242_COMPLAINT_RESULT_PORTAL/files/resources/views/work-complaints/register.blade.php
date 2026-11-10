@@ -3,7 +3,7 @@
 <h1>ASSAM MOTORS — Employee Work Complaint Register</h1>
 <p class="muted">All reported cases remain separate from original completed ROT records. Supervisor findings determine confirmed faults.</p>
 <div class="panel"><form method="get" action="{{ route('erp.rot-work-complaints.register') }}">
-<label>Month <input type="month" name="month" value="{{ $filters['month'] }}"></label>
+<label>Month <input type="month" name="month" value="{{ $filters['month'] ?? '' }}"></label>
 <label>Staff ID <input type="number" name="staff_id" min="1" value="{{ $filters['staff_id']??'' }}" placeholder="All"></label>
 <label>Job Card ID <input type="number" name="job_card_id" min="1" value="{{ $filters['job_card_id']??'' }}" placeholder="All"></label>
 <label>Finding <select name="outcome">
