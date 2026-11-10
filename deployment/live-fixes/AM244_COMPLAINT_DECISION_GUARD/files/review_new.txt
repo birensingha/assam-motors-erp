@@ -35,7 +35,12 @@
     return 'No change was made; duplicate investigation history entry was not created.';
    }
 
-   $previouslyFinal=$oldOutcome!=='' || strtoupper($oldStatus)==='REVIEWED';
+   // A case that was confirmed earlier remains a reviewed case even if a
+   // legacy form later moved it back to UNDER_REVIEW without any explanation.
+   $everReviewed=DB::table('am_rot_work_complaint_audits')
+     ->where('complaint_id',$complaint)
+     ->where('new_json','like','%"status":"REVIEWED"%')->exists();
+   $previouslyFinal=$oldOutcome!=='' || strtoupper($oldStatus)==='REVIEWED' || $everReviewed;
    $reason=trim((string)($data['correction_reason']??''));
    if ($previouslyFinal && mb_strlen($reason)<15) {
     throw ValidationException::withMessages([
