@@ -28,8 +28,9 @@ old_result="resources/views/work-complaints/show.blade.php"
 old_monthly="resources/views/work-complaints/monthly.blade.php"
 new_register="resources/views/work-complaints/register.blade.php"
 new_partial="resources/views/staff/partials/am242-work-complaints.blade.php"
+jc_partial="resources/views/job-cards/partials/am242-complaint-count.blade.php"
 existing=[ctrl,routes,jc,portal,old_result,old_monthly]
-new_files=[new_register,new_partial]
+new_files=[new_register,new_partial,jc_partial]
 backup_root=root/"storage/app/am-backups"
 pointer=backup_root/"AM242_LAST_BACKUP.txt"
 
@@ -58,9 +59,9 @@ file_put_contents($argv[2],$app->make('blade.compiler')->compileString(file_get_
         a=shell(["php","-r",php,str(raw),str(output)],50)
         if a.returncode or not output.is_file():
             raise SystemExit("STOP_AM242_BLADE_COMPILER_"+label+" "+(a.stdout+a.stderr)[-400:])
-        b=shell(["php","-l",str(output)],20)
+        b=shell(["php","-d","display_errors=1","-d","log_errors=0","-l",str(output)],20)
         if b.returncode:
-            raise SystemExit("STOP_AM242_BLADE_PHP_LINT_"+label+" "+(b.stdout+b.stderr)[-400:])
+            raise SystemExit("STOP_AM242_BLADE_PHP_LINT_"+label+" "+(b.stdout+b.stderr)[-1800:])
 def php_lint(blob,label):
     with tempfile.NamedTemporaryFile("wb",suffix=".php",delete=False) as f:
         f.write(blob); p=Path(f.name)
@@ -170,19 +171,7 @@ controller_new=exact(controller_new," public function monthly(Request $request)"
 
 # Existing AM240 ROT card already has a Report Work Complaint link. Append direct complaint register badge.
 jc_button='<a class="btn" href="{{ route(\'erp.rot-work-complaints.create\', [$job->id,$rot->id]) }}">Report Work Complaint</a>'
-jc_badge=r"""
-        {{-- AM242_RESULT_PORTAL: show existing audited complaints on original completed ROT. --}}
-        @php
-          $am242ComplaintCount=\Illuminate\Support\Facades\DB::table('am_rot_work_complaints')
-              ->where('job_card_id',$job->id)->where('rot_session_id',(string)$rot->id)->count();
-        @endphp
-        @if($am242ComplaintCount>0)
-        <a class="btn" style="background:#fff0dc;border-color:#ddb378;color:#7a481e"
-           href="{{ route('erp.rot-work-complaints.register',['job_card_id'=>$job->id]) }}">
-           Complaint ({{ $am242ComplaintCount }}) · View Result
-        </a>
-        @endif
-"""
+jc_badge="\n        {{-- AM242_RESULT_PORTAL: complaint counter is isolated, not parsed inside original JC source. --}}\n        @include('job-cards.partials.am242-complaint-count')\n"
 jc_new=exact(src[jc],jc_button,jc_button+"\n"+jc_badge,"COMPLETED_ROT_BUTTON")
 
 # Install into existing Staff Portal only; private staff record query lives in Blade include.
@@ -205,12 +194,18 @@ replacement={
     old_monthly:(pkg/old_monthly).read_bytes(),
     new_register:(pkg/new_register).read_bytes(),
     new_partial:(pkg/new_partial).read_bytes(),
+    jc_partial:(pkg/jc_partial).read_bytes(),
 }
 if b"AM242_RESULT_PORTAL" not in replacement[ctrl] or b"AM242_RESULT_PORTAL" not in replacement[jc]:
     raise SystemExit("STOP_AM242_NO_PATCH_MARKERS")
+# Baseline compilation is essential: original JC can include legacy non-UTF8 bytes.
+# Comparing baseline vs proposed isolates whether this patch introduced the error.
+for baseline in [jc, portal]:
+    blade_preflight(original[baseline],"BASELINE_"+baseline.replace("/","_"))
+    print("AM242_BASELINE_BLADE_PASS",baseline)
 for rel in [ctrl,routes]:
     php_lint(replacement[rel],rel.replace("/","_"))
-for rel in [jc,portal,old_result,old_monthly,new_register,new_partial]:
+for rel in [jc,portal,old_result,old_monthly,new_register,new_partial,jc_partial]:
     blade_preflight(replacement[rel],rel.replace("/","_"))
 print("AM242_BLADE_COMPILE_AND_PHP_LINT_PASS")
 print("AM242_STAFF_ID_QUERY_IS_SCOPED_TO_AUTHENTICATED_STAFF")
