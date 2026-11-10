@@ -92,7 +92,7 @@ b=newmethod.read_bytes()
 if c.count(a)!=1:
     if c.count(b)==1: raise SystemExit("STOP_AM244_ALREADY_PATCHED")
     raise SystemExit("STOP_AM244_REVIEW_METHOD_CHANGED_REQUIRES_MANUAL_REVIEW")
-if b"AM242" not in v or b"Audited Complaint History" not in v:
+if b"Audited Complaint History" not in v or b"Admin: Correct Investigation Decision" not in v:
     raise SystemExit("STOP_AM244_COMPLAINT_REPORT_NOT_EXPECTED_AM242_VERSION")
 if b"Investigation Decision Timeline" in v:
     raise SystemExit("STOP_AM244_VIEW_ALREADY_PATCHED")
