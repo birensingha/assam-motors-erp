@@ -11,7 +11,7 @@ return new class extends Migration {
    Schema::create('am_rot_work_complaints',function(Blueprint $t) {
     $t->bigIncrements('id');
     $t->unsignedBigInteger('job_card_id')->index();
-    $t->unsignedBigInteger('rot_session_id')->index();
+    $t->string('rot_session_id',191)->index();
     $t->unsignedBigInteger('staff_id')->index();
     $t->unsignedBigInteger('reported_by_admin_id');
     $t->string('status',24)->default('REPORTED');

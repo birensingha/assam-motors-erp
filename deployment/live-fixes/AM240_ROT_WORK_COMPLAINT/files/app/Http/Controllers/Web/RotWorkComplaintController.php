@@ -26,13 +26,13 @@ final class RotWorkComplaintController extends Controller
    abort_unless(Schema::hasColumn('rot_sessions',$col),503,'ROT session field not available: '.$col);
   }
  }
- private function ownedRot(int $job,int $rot): object
+ private function ownedRot(int $job,string $rot): object
  {
   $row=DB::table('rot_sessions')->where('id',$rot)->where('job_card_id',$job)->first();
   abort_unless($row,404,'ROT does not belong to this Job Card');
   return $row;
  }
- public function create(Request $request,int $job,int $rot)
+ public function create(Request $request,int $job,string $rot)
  {
   $this->admin($request); $this->tables();
   $card=DB::table('job_cards')->where('id',$job)->first();
@@ -45,7 +45,7 @@ final class RotWorkComplaintController extends Controller
   $staff=DB::table('staff')->where('id',$session->staff_id)->first();
   return view('work-complaints.create',compact('job','rot','session','staff'));
  }
- public function store(Request $request,int $job,int $rot)
+ public function store(Request $request,int $job,string $rot)
  {
   $admin=$this->admin($request);$this->tables();
   $data=$request->validate(['description'=>['required','string','min:12','max:3000']]);
