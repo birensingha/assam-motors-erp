@@ -27,7 +27,7 @@
   }
 @endphp
 @if($am242StaffId>0 && ($am242Own->isNotEmpty() || $am242Receiving->isNotEmpty()))
-<section class="staff-panel am242-complaints" id="am242-my-complaints" style="border:1px solid #d5dfea;border-left:5px solid #c17c26;border-radius:9px;padding:12px 14px;margin:8px 0;background:#fff">
+<section class="staff-panel am242-complaints" id="am242-my-complaints" style="order:3;border:1px solid #d5dfea;border-left:5px solid #c17c26;border-radius:9px;padding:12px 14px;margin:8px 0;background:#fff">
   <div class="panel-head" style="display:flex;align-items:center;justify-content:space-between;gap:10px">
     <h2 style="font-size:15px;margin:0">⚠ My Work Complaints & Rework</h2>
     <strong style="font-size:12px;background:#fff0db;padding:4px 8px;border-radius:13px">{{ $am242Own->count() }} original complaint(s)</strong>
