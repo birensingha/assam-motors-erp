@@ -1,0 +1,43 @@
+<style id="assam-hr-directory-mobile-v2">
+/* Scoped to native ERP HR dashboard only: preserve desktop table and staff workflows. */
+.hr-staff-directory .scroll{scrollbar-color:#b7cadf transparent}
+.hr-staff-directory table{table-layout:auto}
+.hr-staff-directory td{overflow-wrap:anywhere;word-break:normal}
+@media(max-width:680px){
+ header.top .wrap{padding:14px 14px 13px!important;gap:11px!important}
+ header.top h1{font-size:clamp(17px,4.5vw,21px)!important;line-height:1.28!important;letter-spacing:0!important}
+ header.top .muted{font-size:12px!important;overflow-wrap:anywhere}
+ header.top .links{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:7px!important;width:100%}
+ header.top .links>*{min-width:0;margin:0}
+ header.top .links a,header.top .links button{min-height:39px!important;padding:8px 10px!important;font-size:12px!important;text-align:center;width:100%}
+ header.top .links form{display:flex;grid-column:1 / -1}
+ .statrow{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:10px!important;margin:14px 0!important}
+ .statrow .card{padding:15px!important;min-width:0}
+ .statrow .card:nth-child(3){grid-column:1/-1}
+ .statrow .label{font-size:11px!important;line-height:1.4!important;overflow-wrap:anywhere}
+ .statrow .stat{font-size:24px!important}
+ main.wrap{padding:14px 12px 26px!important}
+ main.wrap>.warn{margin:14px 0!important;padding:13px!important;font-size:13px!important}
+ main.wrap .card h2{font-size:18px!important}
+ .hr-staff-directory .scroll{overflow-x:hidden!important;overflow-y:auto!important;max-width:100%!important;max-height:75vh!important}
+ .hr-staff-directory table{display:block!important;width:100%!important;min-width:0!important;border:0!important}
+ .hr-staff-directory thead{display:none!important}
+ .hr-staff-directory tbody{display:grid!important;grid-template-columns:minmax(0,1fr);gap:10px!important}
+ .hr-staff-directory tbody tr{display:grid!important;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px!important;
+   padding:13px!important;border:1px solid #dbe7f3!important;border-left:4px solid #0b315b!important;
+   border-radius:13px!important;background:#fff!important;box-shadow:0 2px 7px rgba(15,39,69,.05)!important;min-width:0}
+ .hr-staff-directory tbody tr:nth-child(even){background:#f9fbff!important}
+ .hr-staff-directory tbody td{display:block!important;min-width:0;width:auto!important;min-height:0!important;
+   padding:1px 2px!important;border:0!important;color:#173650!important;font-size:13px!important;line-height:1.48!important;
+   overflow-wrap:anywhere!important;word-break:break-word!important}
+ .hr-staff-directory tbody td::before{display:block;content:attr(data-label);color:#687f97;
+   font-size:10px;font-weight:800;text-transform:uppercase;letter-spacing:.35px;margin-bottom:3px}
+ .hr-staff-directory tbody td:nth-child(2), .hr-staff-directory tbody td:nth-child(3){grid-column:1/-1}
+ .hr-staff-directory tbody td:nth-child(2){font-weight:800;font-size:15px!important;color:#0b315b!important}
+ .hr-staff-directory tbody td:nth-child(6){font-weight:750}
+}
+@media(max-width:360px){
+ .hr-staff-directory tbody tr{grid-template-columns:minmax(0,1fr)!important}
+ .hr-staff-directory tbody td{grid-column:1/-1!important}
+}
+</style>

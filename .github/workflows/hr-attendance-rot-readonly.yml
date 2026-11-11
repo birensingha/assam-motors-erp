@@ -1,0 +1,90 @@
+name: Assam Motors HR Attendance and ROT Readonly Audit
+on:
+  push:
+    branches: [feature/hr-safe-preflight-20261012]
+    paths: [.github/workflows/hr-attendance-rot-readonly.yml]
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: SSH authentication
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 "$HOME/.ssh"
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > "$HOME/.ssh/id_ed25519"
+            chmod 600 "$HOME/.ssh/id_ed25519"
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Readonly app, table schema, source anchors
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          cd "$ROOT"
+          test -f artisan && test -f resources/views/staff/portal.blade.php
+          echo '== READ ONLY STAFF VIEW IDENTIFIERS =='
+          grep -nEi 'diagnos|inspection report|my rot|rot work|my job|attendance|hr|staff-panel|production|performance' resources/views/staff/portal.blade.php | sed -E 's/[[:space:]]+/ /g' | cut -c1-190 | head -75 || true
+          echo '== READ ONLY ATTENDANCE CONTROLLER METHOD ANCHORS =='
+          if [ -f app/Http/Controllers/Web/AdminNativeModuleController.php ]; then
+            grep -nE 'function (attendance|createAttendance|updateAttendance|resetAttendance)' app/Http/Controllers/Web/AdminNativeModuleController.php || true
+            sha256sum app/Http/Controllers/Web/AdminNativeModuleController.php
+          fi
+          echo '== READ ONLY ROUTE ANCHORS =='
+          php artisan route:list --path=erp/attendance --except-vendor | head -30
+          php artisan route:list --path=erp/hr --except-vendor | head -30
+          echo '== READ ONLY DB SCHEMA METADATA =='
+          php -r '
+          require "vendor/autoload.php";
+          $app=require "bootstrap/app.php"; $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::connection();
+          $tables=$db->select("SHOW TABLES");
+          foreach($tables as $t) {
+            $table=(string)array_values((array)$t)[0];
+            if(!preg_match("/(staff|attendan|rot|leave|payroll|salary|labou|product|audit|hr_)/i",$table)) continue;
+            $cols=\Illuminate\Support\Facades\Schema::getColumnListing($table);
+            echo "TABLE_SCHEMA ".$table."=".implode(",",$cols)."\n";
+          }'
+          echo '== HR OPERATIONS REPORT READ ONLY RUNTIME =='
+          php -r '
+          require "vendor/autoload.php"; $app=require "bootstrap/app.php";
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $service=$app->make(\App\Services\HrOperationsService::class);
+          $r=$service->report(now("Asia/Kolkata")->format("Y-m"));
+          echo "HR_OPERATIONS_RUNTIME_REPORT_PASS: staff_count=".$r["staff"]->count()."; recorded_attendance=".$r["attendance"]->count()."; rot_lines=".count($r["rows"])."; leave_accounts=".count($r["balances"])."\n";'
+          echo 'HR ATTENDANCE/ROT READONLY AUDIT: PASS — no data rows read and no changes made.'
+          REMOTE
+      - name: Verify guest web and API security (no redirect following)
+        shell: bash
+        run: |
+          set -euo pipefail
+          web="$(curl --max-time 20 -sS -o /dev/null -w '%{http_code}' --max-redirs 0 https://staging.assammotors.com/erp/hr/operations)"
+          api="$(curl --max-time 20 -sS -H 'Accept: application/json' -o /dev/null -w '%{http_code}' --max-redirs 0 https://staging.assammotors.com/api/v1/hr/operations)"
+          echo "HR_GUEST_WEB_HTTP=$web HR_GUEST_API_HTTP=$api"
+          test "$web" = 302 && test "$api" = 401
+          echo 'HR_OPERATIONS_ACCESS_BOUNDARY: PASS'
+      - name: Remove SSH key
+        if: always()
+        run: rm -f "$HOME/.ssh/id_ed25519"

@@ -1,0 +1,115 @@
+/* ASSAM_MOTORS_STAFF_ANDROID_THEME_V1
+   Mirrors the production Staff Android app's original navy/red/green theme.
+   Scoped selectors preserve functionality, forms, ROT and attendance states. */
+:root {
+  --am-navy:#0b315b; --am-navy2:#061f3b; --am-navy3:#103e70;
+  --am-red:#e53935; --am-green:#16a34a; --am-orange:#f59e0b;
+  --am-ink:#10243e; --am-muted:#6f8094; --am-line:#dce5ef;
+  --am-bg:#f3f6fa; --am-card:#fff;
+  --am-shadow:0 8px 24px rgba(15,39,69,.08);
+}
+html {background:var(--am-bg);scroll-behavior:smooth}
+body {background:var(--am-bg)!important;color:var(--am-ink)!important;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif!important;
+  font-size:14px;line-height:1.55}
+*, *::before,*::after {box-sizing:border-box}
+.staff-topbar,header.top,body>header:not(.staff-topbar):not(.top) {
+  background:linear-gradient(135deg,#082846,#0d3c69)!important;
+  color:#fff!important;border-bottom:3px solid var(--am-red);
+  box-shadow:0 4px 18px rgba(2,22,42,.20);
+}
+.staff-topbar {display:flex;align-items:center;justify-content:space-between;
+  gap:14px;flex-wrap:wrap;padding:17px clamp(14px,2.5vw,32px)!important}
+.staff-topbar strong,header.top h1,body>header h1 {color:#fff!important;font-size:clamp(19px,2vw,24px)!important;letter-spacing:.3px}
+.staff-topbar small {display:block;color:#bfd2e6;font-size:12px;font-weight:600}
+.staff-topbar>div:last-of-type {display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.staff-topbar .ghost,.staff-topbar a,header.top .links a,header.top .links button,body>header a{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  border:1px solid rgba(255,255,255,.25)!important;border-radius:11px!important;
+  background:rgba(255,255,255,.10)!important;color:#fff!important;
+  padding:9px 13px!important;text-decoration:none!important;font-weight:750;min-height:38px;
+  transition:background .15s ease,transform .15s ease}
+.staff-topbar .ghost:hover,.staff-topbar a:hover,header.top .links a:hover,header.top .links button:hover,body>header a:hover {background:rgba(255,255,255,.2)!important;transform:translateY(-1px)}
+.staff-top-actions {display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-left:auto}
+.staff-top-actions .staff-hr-shortcut{background:linear-gradient(135deg,#e53935,#c62828)!important;border-color:transparent!important}
+.staff-shell,main.wrap,body>main:not(.staff-shell):not(.wrap){max-width:1240px!important;width:100%;margin-inline:auto!important;padding:22px clamp(12px,2.5vw,30px) 42px!important}
+.staff-shell h1,.staff-shell h2,.staff-shell h3,.wrap h2,body>main h2 {color:#12395e;font-weight:800;letter-spacing:-.2px}
+.staff-cards,.statrow{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr));gap:13px!important;margin:20px 0!important}
+.staff-cards>*,.statrow>.card,.card,.staff-panel,.permission-lock {
+  background:#fff!important;border:1px solid var(--am-line)!important;
+  border-radius:17px!important;box-shadow:0 3px 15px rgba(15,39,69,.055)!important}
+.staff-cards>*{padding:18px!important;min-width:0;overflow-wrap:anywhere}
+.staff-cards strong,.staff-cards b,.statrow .stat{font-size:clamp(22px,2.5vw,31px);font-weight:900;color:var(--am-navy)!important}
+.staff-panel,.card{padding:20px!important;margin-bottom:17px!important}
+.staff-panel h2,.card h2{margin:0 0 12px;font-size:clamp(17px,1.8vw,20px)}
+.staff-panel .panel-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+.staff-panel .panel-head h2{margin:0}
+.staff-panel .muted,.card .muted,.wrap .muted {color:var(--am-muted)}
+.staff-panel .empty,.staff-panel .empty-state {padding:24px;border:1px dashed #c5d7e7;border-radius:12px;text-align:center;color:var(--am-muted);background:#f9fbfd}
+.staff-panel .action-row,.rot-controls{display:flex;gap:9px;align-items:center;flex-wrap:wrap}
+.staff-panel button,.staff-panel .staff-primary-link,button.primary,button.publish,body>main button {
+  min-height:40px;border-radius:11px!important;font-size:13px!important;font-weight:750!important}
+.staff-panel a.staff-primary-link,button.primary {display:inline-flex;align-items:center;justify-content:center;padding:10px 16px!important;
+  border:0!important;background:linear-gradient(135deg,#0b315b,#164c7b)!important;color:#fff!important;text-decoration:none!important}
+.staff-panel button:disabled,button.primary:disabled {opacity:.55;cursor:not-allowed}
+/* Do not recolor checked-in, paused, failed or other status-specific ROT actions. */
+.staff-alert,.error {border-left:4px solid var(--am-red)!important;border-radius:12px!important}
+.staff-alert.success,.good,.flash{border-left-color:var(--am-green)!important}
+.staff-alert.danger,.staff-alert.error{border-left-color:var(--am-red)!important}
+.permission-lock {padding:18px!important;border-left:4px solid var(--am-orange)!important}
+.reminder-list,.inspection-review-list,.rot-list {display:grid;gap:12px}
+.reminder,.inspection-review-row,.rot-row {background:#fff!important;border:1px solid var(--am-line)!important;
+  border-radius:13px!important;padding:15px!important;margin-bottom:0!important;box-shadow:0 2px 8px rgba(15,39,69,.035)!important}
+.inspection-review-statuses,.inspection-review-actions {display:flex;gap:7px;flex-wrap:wrap;align-items:center}
+.status,.pill {border-radius:999px!important;font-size:12px!important;font-weight:800!important;padding:5px 10px!important}
+.status.completed,.status.passed,.status.ready {background:#e1f7e8;color:#166534}
+.status.paused,.status.pending {background:#fff4d5;color:#945800}
+.status.failed,.status.overdue {background:#ffe8e8;color:#aa2020}
+/* Shared HR desktop styling */
+header.top .wrap{max-width:1240px!important;padding:17px clamp(14px,2.5vw,32px)!important}
+header.top .muted{color:#bed2e7!important}
+header.top .links{display:flex;flex-wrap:wrap;gap:8px}
+.statrow .card{margin:0!important;padding:19px 21px!important}
+.statrow .label {color:#657b95;font-size:12px;font-weight:800;letter-spacing:.4px;text-transform:uppercase}
+.statrow .stat{margin:7px 0 2px}
+.statrow .card:first-child{border-top:4px solid var(--am-navy)!important}
+.statrow .card:nth-child(2){border-top:4px solid var(--am-green)!important}
+.statrow .card:nth-child(3){border-top:4px solid var(--am-red)!important}
+.grid{gap:17px!important}
+.warn{background:#fff8e8!important;border-left:4px solid var(--am-orange)!important;border-radius:12px!important;padding:16px!important}
+.good,.flash{background:#e8f7ee!important;color:#17603b!important;border-radius:12px!important;padding:13px!important}
+.error{background:#fff0ef!important;color:#971b1b!important;padding:13px!important}
+.card label{display:block;color:#466078;font-size:13px;font-weight:750;margin:10px 0 5px}
+.card input,.card textarea,.card select{width:100%;border:1px solid #d1ddea!important;border-radius:11px!important;
+  background:#fbfdff!important;color:var(--am-ink)!important;padding:12px 13px!important;font:inherit;min-height:43px}
+.card textarea{min-height:140px;resize:vertical}
+.card input:focus,.card textarea:focus,.card select:focus{border-color:#3478ba!important;outline:3px solid rgba(52,120,186,.15)}
+button.primary {background:linear-gradient(135deg,#e53935,#c62828)!important;box-shadow:0 5px 13px rgba(229,57,53,.15)}
+button.publish {background:linear-gradient(135deg,#16a34a,#11733a)!important}
+.card details{background:#f7fafd!important;border:1px solid #e8eff6!important;border-radius:12px!important;padding:13px!important}
+.card details>summary{cursor:pointer;padding:3px 0;font-weight:800;color:#173a59}
+.card details>.body{padding-top:11px;line-height:1.7}
+.scroll{overflow-x:auto;max-width:100%}
+table{width:100%;border-collapse:collapse}
+th{background:#eff4f9;color:#49617d!important;font-size:12px;text-transform:uppercase;letter-spacing:.35px}
+td,th{padding:12px 10px!important;border-bottom:1px solid #e4ebf3!important;text-align:left}
+tbody tr:nth-child(even){background:#fafcff}
+tbody tr:hover{background:#f0f6fc}
+a:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid #66aff7!important;outline-offset:2px}
+@media (max-width:900px){.staff-cards,.statrow{grid-template-columns:repeat(2,minmax(0,1fr))!important}.grid{grid-template-columns:1fr!important}}
+@media (max-width:620px){
+ .staff-topbar{padding:12px 14px!important;align-items:flex-start}
+ .staff-topbar>div:last-of-type{font-size:12px}
+ .staff-top-actions{width:100%;margin-left:0}
+ .staff-top-actions a{flex:1;white-space:nowrap;font-size:12px;padding:8px!important}
+ .staff-shell,main.wrap,body>main:not(.staff-shell):not(.wrap){padding:14px 12px 28px!important}
+ .staff-cards,.statrow{grid-template-columns:repeat(2,minmax(0,1fr))!important;gap:9px!important}
+ .staff-cards>*{padding:13px!important}
+ .staff-panel,.card{padding:15px!important}
+ .reminder,.inspection-review-row,.rot-row{padding:12px!important}
+ .staff-panel .action-row>*{flex:1 1 auto}
+ .staff-panel button{min-height:43px}
+ table{min-width:620px}
+ header.top .wrap{padding:15px 13px!important}
+}
+@media (prefers-reduced-motion:reduce){html{scroll-behavior:auto}*{transition:none!important}}

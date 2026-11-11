@@ -1,0 +1,78 @@
+name: Assam Motors HR Existing Account Activation
+on:
+  push:
+    branches: [feature/hr-safe-preflight-20261012]
+    paths: [.github/workflows/hr-link-existing-account.yml]
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency:
+  group: assam-motors-hr-account-activation
+  cancel-in-progress: false
+jobs:
+  activate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_PRIVATE_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint authenticated staff-link script
+        run: |
+          set -euo pipefail
+          php -l deployment/live-fixes/HR_NATIVE_PHASE2B/LINK_EXISTING_HR.php
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          test -n "$SSH_PRIVATE_KEY" || test -n "$SSH_PASSWORD"
+      - name: Set up SSH using existing protected GitHub secrets
+        run: |
+          set -euo pipefail
+          install -d -m 700 ~/.ssh
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq && sudo apt-get install -y -qq sshpass
+          fi
+      - name: Preflight and link ONLY existing uniquely authorized HR Staff
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_PRIVATE_KEY" ]; then
+            SSH=(ssh -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(scp -i "$HOME/.ssh/id_ed25519" -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -p "$SSH_PORT")
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'mkdir -p ~/hr-native-deploy'
+          "${SCP[@]}" deployment/live-fixes/HR_NATIVE_PHASE2B/LINK_EXISTING_HR.php \
+            "$SSH_USER@$SSH_HOST:~/hr-native-deploy/LINK_EXISTING_HR.php"
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          SCRIPT="$HOME/hr-native-deploy/LINK_EXISTING_HR.php"
+          php -l "$SCRIPT"
+          php "$SCRIPT" check
+          php "$SCRIPT" apply
+          cd "$ROOT"
+          php -l app/Support/HrAccess.php
+          php artisan optimize:clear
+          php -r '
+          require "vendor/autoload.php";
+          $app=require "bootstrap/app.php";
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $s=\Illuminate\Support\Facades\DB::table("staff")
+              ->whereRaw("LOWER(TRIM(role)) = ?",["hr manager"])
+              ->whereRaw("LOWER(TRIM(department)) = ?",["human resources (hr)"])
+              ->whereRaw("LOWER(TRIM(status)) = ?",["active"])->first();
+          if(!$s){fwrite(STDERR,"NO-GO: HR staff missing after link\n");exit(2);}
+          $u=\App\Models\ErpAuthUser::query()->where("staff_id",(int)$s->id)->where("role","staff")->where("active",1)->first();
+          if(!$u || !\App\Support\HrAccess::permitted($u)){fwrite(STDERR,"NO-GO: HR authorization check denied\n");exit(2);}
+          echo "HR_NATIVE_AUTHORIZATION_VERIFICATION: PASS\n";
+          '
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
