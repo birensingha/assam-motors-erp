@@ -1,0 +1,126 @@
+name: Read-only Diagnose Admin Assigned ROT and Staging Native Routes
+on:
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/v637-diagnose-admin-rot-readonly.yml"]
+permissions: { contents: read }
+jobs:
+  diagnose:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Read-only diagnostic of AM5077 and native ROT list/auth route
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/v637ro; chmod 600 ~/.ssh/v637ro
+            SSH=(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -i ~/.ssh/v637ro -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          cd "$ROOT"
+          echo '=== LIVE NATIVE STAFF/ROT ROUTES ==='
+          php artisan route:list --path=api/v1 --json 2>/dev/null | python3 -c 'import sys,json; x=json.load(sys.stdin); [print(z.get("method"),z.get("uri"),z.get("action")) for z in x if "rot" in z.get("uri","").lower() or "staff/me" in z.get("uri","").lower() or "mobile/me" in z.get("uri","").lower()]' | head -85
+          echo '=== AUTHENTICATED STAGING ROT CONTROLLER LOCATIONS ==='
+          grep -RIn --include='*.php' -E "function (rot|rots|staffRots|myRot|myRots|rotSessions|rotList)|staff-rot-v3.php|/staff/rot|rot_session" app/Http/Controllers/Api/V1 routes/api.php | head -100 || true
+          echo '=== STAFF LEGACY ROT AUTH SELECT AND FILTER (non-secret) ==='
+          LEGACY="$HOME/domains/assammotors.com/public_html/staging/legacy/api/staff-rot-v3.php"
+          test -f "$LEGACY"
+          php -r '$f=$argv[1];$a=file($f);foreach($a as $i=>$line){if(preg_match("/^.*(function .*rot|\\$staffId|technician_id|assigned_staff_id|staff_code|JWT|Bearer|session_id|function .*list|action.?=.?.?list)/i",$line)&&!preg_match("/secret|password|database|apikey|token.?=/i",$line)){echo ($i+1).": ".substr(trim($line),0,170).PHP_EOL;}}' "$LEGACY" | head -90 || true
+          echo '=== JC-20261016-00036 STAFF/ROT SOURCE KEYS (read-only) ==='
+          php -r 'chdir(getenv("HOME")."/domains/assammotors.com/public_html/staging/legacy/api");require "config.php"; $db=getDB(); foreach(["job_cards","staff","rot_sessions","job_card_rot","job_card_rots","rot_assignments"] as $t){try{$q=$db->query("SHOW COLUMNS FROM `".$t."`"); echo "TABLE ".$t." COLUMNS ".implode(",",array_column($q->fetchAll(PDO::FETCH_ASSOC),"Field")).PHP_EOL;}catch(Throwable $e){echo "TABLE ".$t." MISSING\n";}}' | head -14
+          php -r 'chdir(getenv("HOME")."/domains/assammotors.com/public_html/staging/legacy/api");require "config.php";$db=getDB();$p=$db->prepare("SELECT id,staff_code,name FROM staff WHERE staff_code=? LIMIT 1");$p->execute(["AM5077"]);echo "STAFF_ADMIN_AM5077=".json_encode($p->fetch(PDO::FETCH_ASSOC)).PHP_EOL;$q=$db->prepare("SELECT id,job_no,vehicle_reg_no,technician_id,technician FROM job_cards WHERE job_no=? LIMIT 1");$q->execute(["JC-20261016-00036"]);echo "JC_ROT_TARGET=".json_encode($q->fetch(PDO::FETCH_ASSOC)).PHP_EOL;'
+          echo '=== NATIVE STAFF ID RESOLUTION METHODS ==='
+          grep -RIn --include='*.php' -E 'function (linkedStaffId|resolveStaffId|staffProfileId|staffRot|rot|rotList|listRot)' app/Http/Controllers/Api/V1 app/Services | head -75 || true
+          echo '=== NATIVE STAFF ROT/USER RESOLUTION IMPLEMENTATION ==='
+          python3 - <<'PY'
+          from pathlib import Path
+          for p,keys in [
+            (Path('app/Http/Controllers/Api/V1/StaffDashboardController.php'),['public function rots','public function rot','staffId']),
+            (Path('app/Services/StaffDashboardService.php'),['public function rots','private function rotQuery','private function rotPublic','function staff']),
+            (Path('app/Http/Controllers/Api/V1/RotWorkflowController.php'),['public function start','public function resume','public function pause','public function complete']),
+            (Path('app/Http/Controllers/Api/V1/OwnerWorkshopController.php'),['public function rotAction'])
+          ]:
+            if not p.exists():continue
+            data=p.read_text(errors='ignore').splitlines()
+            print('FILE',p)
+            hits=[i for i,l in enumerate(data) if any(x in l for x in keys)]
+            blocks=[]
+            for i in hits[:10]:
+              blocks += list(range(max(0,i-4),min(len(data),i+36)))
+            for i in sorted(set(blocks)):
+              v=data[i]
+              if any(x in v.lower() for x in ['password','secret','credential','token']):continue
+              print(str(i+1)+': '+v[:220])
+          PY
+          echo '=== ACTUAL ROT ASSIGNMENT ON JOB CARD 36 ==='
+          php -r 'chdir(getenv("HOME")."/domains/assammotors.com/public_html/staging/legacy/api");require "config.php";$db=getDB();$p=$db->prepare("SELECT id,job_card_no,rot_code,staff_id,staff_code,status FROM rot_sessions WHERE job_card_id=? AND rot_code=? LIMIT 4");$p->execute([36,"ROT-DIA-007"]);echo json_encode($p->fetchAll(PDO::FETCH_ASSOC)).PHP_EOL;'
+          echo '=== LINKED ADMIN ERP AUTH MODEL SHAPE ==='
+          python3 - <<'PY'
+          from pathlib import Path
+          for path in [Path('app/Models/ErpAuthUser.php'),Path('app/Http/Controllers/Api/V1/AuthController.php')]:
+            if not path.exists():continue
+            s=path.read_text(errors='ignore').splitlines()
+            print('MODEL_FILE',path)
+            for i,line in enumerate(s):
+              if any(v in line for v in ['function isAdmin','function isStaff','staff_id','function admin','role','function login','function authenticate']):
+                if 'password' in line.lower() or 'secret' in line.lower():continue
+                print(i+1, line.strip()[:170])
+          PY
+          echo '=== ACCOUNT ROW LINK STATUS AM5077 (NO SECRETS) ==='
+          php -r 'chdir(getenv("HOME")."/domains/assammotors.com/public_html/staging/legacy/api");require "config.php";$db=getDB();foreach(["erp_auth_users","users","staff"] as $t){try{$q=$db->query("SHOW COLUMNS FROM `".$t."`");$cols=array_column($q->fetchAll(PDO::FETCH_ASSOC),"Field");echo "TABLE ".$t." HAS_STAFF_ID=".(in_array("staff_id",$cols)?"yes":"no")." HAS_ROLE=".(in_array("role",$cols)?"yes":"no")."\n";if(in_array("staff_id",$cols)&&in_array("role",$cols)){$st=$db->prepare("SELECT id,staff_id,role FROM `".$t."` WHERE staff_id=?");$st->execute([4]);echo "LINKED_ADMIN_IDENTITIES=".json_encode($st->fetchAll(PDO::FETCH_ASSOC))."\n";}}catch(Throwable $e){echo "TABLE ".$t." not readable\n";}}'
+          echo '=== UPDATE API PHP SOURCE (remove secret/token-bearing lines) ==='
+          php -r '$f=$argv[1];$ls=file($f);foreach($ls as $i=>$ln){$text=trim($ln);if(preg_match("/password|secret|hash_hmac|base64|JWT_SECRET|token|header.?authorization|private_key/i",$text))continue;if(preg_match("/download|\.json|sha256|version|apk_file|latest|file|url|public|action|GET|readfile|header|sendJson|manifest|private|staff|preg_match/i",$text))echo ($i+1).": ".substr($text,0,180).PHP_EOL;}' "$HOME/domains/assammotors.com/public_html/staging/legacy/api/staff-app-update.php" | head -125 || true
+          echo '=== UPDATER CURRENT MANIFEST KEYS ONLY ==='
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          f=Path.home()/'domains/assammotors.com/public_html/staging/staff-app/latest.json'
+          d=json.loads(f.read_text())
+          print('UPDATE_MANIFEST_KEYS',sorted(d.keys()))
+          print('CURRENT_VERSION',d.get('version_code'),d.get('version_name'))
+          print('FILE_EXISTS_IN_PRIVATE',(f.parent/'private'/str(d.get('apk_file',''))).is_file())
+          PY
+          echo '=== NATIVE ROUTE API MIDDLEWARE AND AUTH GROUP ==='
+          sed -n '1,100p' "$ROOT/routes/api.php" | sed -E '/password|secret|token/d' | head -95 || true
+          echo '=== EXACT OFFICIAL SIGNED APK DOWNLOAD LINK BUILD (safe lines only) ==='
+          sed -n '72,102p' "$HOME/domains/assammotors.com/public_html/staging/legacy/api/staff-app-update.php" | sed -E '/secret|token|password|hmac|key/i d'
+          echo '=== DOWNLOAD SERVING GET REQUIREMENTS / AUTH (no secrets) ==='
+          php -r '$f=$argv[1];if(!is_file($f)){echo "DOWNLOAD_FILE_MISSING\n";exit;}foreach(file($f) as $i=>$s){if(preg_match("/(GET|file|sha256|readfile|private|latest.json|Bearer|Authorization|login|HTTP_)/i",$s) && !preg_match("/password|secret|hash_hmac|key|token.*=|session/i",$s))echo ($i+1).": ".substr(trim($s),0,170).PHP_EOL;}' "$HOME/domains/assammotors.com/public_html/staging/legacy/api/staff-app-download.php" | head -80
+          echo '=== ROT CLOCK UTC VS IST (READ ONLY; no job action) ==='
+          php <<'PHP'
+          <?php
+          chdir(getenv('HOME').'/domains/assammotors.com/public_html/staging/legacy/api');
+          require 'config.php';
+          $pdo=getDB();
+          $stmt=$pdo->prepare("SELECT id,job_card_no,rot_code,status,first_start_at,start_time,updated_at,std_hours,total_seconds FROM rot_sessions WHERE staff_id=? ORDER BY updated_at DESC LIMIT 8");
+          $stmt->execute([4]);
+          foreach($stmt->fetchAll(PDO::FETCH_ASSOC) as $r){
+              echo 'ROT_CLOCK_SAMPLE='.json_encode($r,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES).PHP_EOL;
+          }
+          $now=$pdo->query("SELECT NOW() AS db_now, UTC_TIMESTAMP() AS utc_now, @@session.time_zone AS db_session_tz")->fetch(PDO::FETCH_ASSOC);
+          echo 'DB_CLOCK='.json_encode($now).PHP_EOL;
+          echo 'PHP_DEFAULT_TIMEZONE='.date_default_timezone_get().PHP_EOL;
+          echo 'PHP_LOCAL_NOW='.date('Y-m-d H:i:s').PHP_EOL;
+          PHP
+          echo 'V637_READ_ONLY_DIAGNOSTIC=COMPLETE'
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/v637ro
