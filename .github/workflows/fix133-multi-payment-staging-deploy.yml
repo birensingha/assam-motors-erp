@@ -1,0 +1,64 @@
+name: FIX133 Multi Purchase Bill Voucher - STAGING DEPLOY
+on:
+  push:
+    branches: [fix/fix133-multi-bill-payment-20261025]
+    paths: ['.github/workflows/fix133-multi-payment-staging-deploy.yml']
+permissions:
+  contents: read
+jobs:
+  deploy-staging-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          for i in 1 2 3;do
+            ssh-keyscan -T 10 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null && break
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Deploy guarded voucher multi-bill with additive allocation schema, old payments preserved
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=12 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=12 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f artisan
+          echo 'FIX133_STAGING_DEPLOY_START'
+          curl -fsSL --retry 2 'https://raw.githubusercontent.com/birensingha/assam-motors-erp/06b98194bb1c2201fdb9b3703e6efcb43a547d15/deployment/live-fixes/FIX133_MULTI_VENDOR_PAYMENTS/apply_fix133_staging.py' -o /tmp/fix133-staging-deploy.py
+          python3 -m py_compile /tmp/fix133-staging-deploy.py
+          python3 /tmp/fix133-staging-deploy.py check "$PWD"
+          python3 /tmp/fix133-staging-deploy.py apply "$PWD"
+          echo '=== VERIFIED NEW SERVICE AND INVOICE ALLOCATION UI ==='
+          php -l app/Services/MultiPurchasePaymentService.php
+          php -l app/Services/ExpensePaymentService.php
+          grep -n 'Multiple Purchase Bills' resources/views/payments/create.blade.php | head -n 2
+          echo 'FIX133_STAGING_DEPLOY_COMPLETE'
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519

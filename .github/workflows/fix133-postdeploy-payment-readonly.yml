@@ -1,0 +1,97 @@
+name: FIX133 Multi-Bill Payment Postdeploy Read-only Verification
+on:
+  push:
+    branches: [fix/fix133-multi-bill-payment-20261025]
+    paths: ['.github/workflows/fix133-postdeploy-payment-readonly.yml']
+permissions:
+  contents: read
+jobs:
+  deploy-staging-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          for i in 1 2 3;do
+            ssh-keyscan -T 10 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null && break
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Verify voucher allocation schema, outstanding source data and negative rejection without writing
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=12 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=12 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f artisan
+          echo 'FIX133_POSTDEPLOY_VERIFY_START'
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';$app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=\Illuminate\Support\Facades\DB::class;
+          $schema=\Illuminate\Support\Facades\Schema::class;
+          if(!$schema::hasTable('workshop_payment_allocations')) {echo "ALLOCATION_TABLE_MISSING\n";exit(10);}
+          echo "ALLOCATION_TABLE=READY\n";
+          $allocStart=$db::table('workshop_payment_allocations')->count();
+          $voucherStart=$db::table('workshop_payment_vouchers')->count();
+          echo "ALLOCATIONS_BEFORE={$allocStart} VOUCHERS_BEFORE={$voucherStart}\n";
+          $sources=$app->make(\App\Services\ExpensePaymentService::class)->payableSources();
+          $purchases=array_values(array_filter($sources,fn($s)=>($s['type']??'')==='PURCHASE_INVOICE'));
+          $withVendor=count(array_filter($purchases,fn($s)=>(int)($s['vendor_id']??0)>0));
+          echo "OPEN_PURCHASE_SOURCES=".count($purchases)." VENDOR_TAGGED={$withVendor}\n";
+          if($withVendor!==count($purchases))exit(11);
+          $v=$app->make(\App\Services\VendorService::class)->ledger(5)['summary'];
+          echo "VENDOR_5_PURCHASES={$v['purchases']} PAYMENTS={$v['payments']} OUTSTANDING={$v['outstanding']}\n";
+          if(abs((float)$v['purchases']-1830)>0.01 || abs((float)$v['payments']-1830)>0.01 || abs((float)$v['outstanding'])>0.01)exit(12);
+          try {
+            $app->make(\App\Services\MultiPurchasePaymentService::class)->save([
+             'source_type'=>'PURCHASE_INVOICE',
+             'request_key'=>'123e4567-e89b-42d3-a456-426614174000',
+             'allocations'=>[
+               ['ref'=>'__FIX133_NONEXISTENT_A__','amount'=>10],
+               ['ref'=>'__FIX133_NONEXISTENT_B__','amount'=>20]
+             ],
+             'amount'=>30,
+             'payment_mode'=>'Cash',
+             'payment_date'=>'2026-10-25'
+            ],'FIX133_NEVER_POST');
+            echo "NEGATIVE_TEST_UNEXPECTED_ACCEPT\n";exit(13);
+          }catch(\Illuminate\Validation\ValidationException $e) {
+            echo "NONEXISTENT_BILLS_REJECTED=YES\n";
+          }
+          $allocEnd=$db::table('workshop_payment_allocations')->count();
+          $voucherEnd=$db::table('workshop_payment_vouchers')->count();
+          echo "ALLOCATIONS_AFTER={$allocEnd} VOUCHERS_AFTER={$voucherEnd}\n";
+          if($allocEnd!==$allocStart || $voucherEnd!==$voucherStart)exit(14);
+          echo "FIX133_POSTDEPLOY_READONLY_PASS\n";
+          PHP
+          echo 'FIX133_POSTDEPLOY_READONLY_COMPLETE'
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519

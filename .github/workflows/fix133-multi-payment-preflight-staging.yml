@@ -1,0 +1,66 @@
+name: FIX133 Multi-Bill Voucher STAGING Preflight - READ ONLY
+on:
+  push:
+    branches: [fix/fix133-multi-bill-payment-20261025]
+    paths: ['.github/workflows/fix133-multi-payment-preflight-staging.yml']
+permissions:
+  contents: read
+jobs:
+  deploy-staging-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          for i in 1 2 3;do
+            ssh-keyscan -T 10 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null && break
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Read-only preflight for multi-purchase voucher code and vendor allocation schema
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=12 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=12 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f artisan
+          echo 'FIX133_PREFLIGHT_START'
+          BASE=https://raw.githubusercontent.com/birensingha/assam-motors-erp/83bae8a4d5c7e3a60034820c86eca7ccaf40395f/deployment/live-fixes/FIX133_MULTI_VENDOR_PAYMENTS
+          curl -fsSL --retry 2 "$BASE/apply_fix133_staging.py" -o /tmp/fix133-apply.py
+          curl -fsSL --retry 2 "$BASE/MultiPurchasePaymentService.php" -o /tmp/fix133-service.php
+          curl -fsSL --retry 2 "$BASE/2026_10_25_093000_create_workshop_payment_allocations.php" -o /tmp/fix133-migration.php
+          curl -fsSL --retry 2 "$BASE/payment-voucher-multi.js" -o /tmp/fix133-payment.js
+          python3 -m py_compile /tmp/fix133-apply.py
+          php -l /tmp/fix133-service.php
+          php -l /tmp/fix133-migration.php
+          if command -v node >/dev/null 2>&1;then node --check /tmp/fix133-payment.js;else echo 'JS_NODE_CHECK_NOT_AVAILABLE_ON_HOST';fi
+          python3 /tmp/fix133-apply.py check "$PWD"
+          echo 'FIX133_PREFLIGHT_SUCCESS_NO_DB_WRITES'
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519

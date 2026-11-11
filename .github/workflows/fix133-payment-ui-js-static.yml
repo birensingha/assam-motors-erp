@@ -1,0 +1,15 @@
+name: FIX133 Payment Multi Bill JS Syntax - SAFE STATIC
+on:
+  push:
+    branches: [fix/fix133-multi-bill-payment-20261025]
+    paths: ['.github/workflows/fix133-payment-ui-js-static.yml']
+permissions:
+  contents: read
+jobs:
+  syntax:
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - run: node --check deployment/live-fixes/FIX133_MULTI_VENDOR_PAYMENTS/payment-voucher-multi.js
+      - run: python3 -m py_compile deployment/live-fixes/FIX133_MULTI_VENDOR_PAYMENTS/apply_fix133_staging.py
