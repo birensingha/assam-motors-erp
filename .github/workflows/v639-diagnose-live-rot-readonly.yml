@@ -1,0 +1,130 @@
+name: Diagnose Live ROT Desktop/Android and JC WIP Edit Policy (Read-Only)
+on:
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/v639-diagnose-live-rot-readonly.yml"]
+permissions: { contents: read }
+jobs:
+  diagnose:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'fix/v639-live-rot-web-wip-audit-20261017'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Authenticated read-only diagnosis
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/diagnose_v639
+            chmod 600 ~/.ssh/diagnose_v639
+            SSH=(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -i ~/.ssh/diagnose_v639 -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq && sudo apt-get install -qq -y sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          cd "$ROOT"
+          echo '===== ROT AND INVOICE/JC ROUTES ====='
+          php artisan route:list --json | python3 -c 'import sys,json; r=json.load(sys.stdin); [print(x.get("method"),x.get("uri"),x.get("action")) for x in r if any(y in x.get("uri","").lower() for y in ["rot","job-cards","job-cards/","invoice","admin/mobile/my-attendance","admin/mobile/dashboard"])]' | head -135
+          echo '===== RELEVANT SOURCE FILES ====='
+          grep -RIl --include='*.php' -E 'rot_sessions|ROT.*WIP|ROT.*edit|rot.*action|rot\.timer|ROT timer|remaining_seconds|RotWorkflow|invoice reversal|invoice.*reverse' app routes resources/views | head -105 || true
+          echo '===== ROT CANDIDATE CONTROLLER/VIEW REGIONS ====='
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          roots=[Path('app/Http/Controllers'),Path('app/Services'),Path('resources/views')]
+          count=0
+          for root in roots:
+            if not root.exists():continue
+            for file in root.rglob('*.php'):
+              low=str(file).lower()
+              if not any(s in low for s in ['rot','jobcard','job-card','invoice','labour','work-in-progress','workshop','staffdashboard','ownerworkshop','owner-job']):
+                continue
+              data=file.read_text(errors='replace').splitlines()
+              matches=[i for i,line in enumerate(data) if re.search(r'remaining_seconds|first_start_at|start_time|total_seconds|rot_sessions|function (edit|update|save|start|pause|resume|complete)|invoic(ed|e).*revers|work_in_progress|\bWIP\b|Date\.now\(|setInterval\(|ROT_TIME|rot-timer',line,re.I)]
+              if not matches:continue
+              print('FILE',file,'MATCHES',len(matches))
+              spans=set()
+              for i in matches[:10]:
+                for j in range(max(0,i-2),min(len(data),i+4)):spans.add(j)
+              for j in sorted(spans):
+                line=data[j].strip()
+                if re.search(r'password|secret|api.?key|credential|bearer|authorization',line,re.I):continue
+                print(str(j+1)+': '+line[:200])
+              count+=1
+              if count>=25:break
+            if count>=25:break
+          PY
+          echo '===== LIVE ROT STATE / DB CLOCK (NO CHANGES) ====='
+          php <<'PHP'
+          <?php
+          chdir(getenv('HOME').'/domains/assammotors.com/public_html/staging/legacy/api');
+          require 'config.php';
+          $db=getDB();
+          $cols=$db->query("SHOW COLUMNS FROM rot_sessions")->fetchAll(PDO::FETCH_ASSOC);
+          echo 'ROT_COLUMNS='.implode(',',array_column($cols,'Field')).PHP_EOL;
+          $stmt=$db->prepare("SELECT id,job_card_no,rot_code,status,staff_id,first_start_at,start_time,end_time,updated_at,total_seconds,std_hours FROM rot_sessions WHERE id=? LIMIT 1");
+          $stmt->execute(['ROT261016193126LSFNZ']);
+          echo 'LIVE_ROT='.json_encode($stmt->fetch(PDO::FETCH_ASSOC)).PHP_EOL;
+          echo 'CLOCK='.json_encode($db->query("SELECT NOW() AS db_now,UTC_TIMESTAMP() AS utc_now,@@session.time_zone AS tz")->fetch(PDO::FETCH_ASSOC)).PHP_EOL;
+          foreach(['job_cards','invoices','invoice_items'] as $table) {
+            try { $q=$db->query('SHOW COLUMNS FROM '.$table); echo 'TABLE_COLUMNS_'.$table.'='.implode(',',array_column($q->fetchAll(PDO::FETCH_ASSOC),'Field')).PHP_EOL; }
+            catch(Throwable $e){echo 'TABLE_MISSING='.$table.PHP_EOL;}
+          }
+          PHP
+          echo '===== LIVE SERVER CLOCK REGRESSION: NO WRITES ====='
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $now=\Carbon\CarbonImmutable::now('Asia/Kolkata');
+          $t=(object)['id'=>'ROT-QA-NOW','status'=>'Running','std_hours'=>0.5,
+            'total_seconds'=>90,'start_time'=>$now->subSeconds(240)->format('Y-m-d H:i:s'),
+            'first_start_at'=>$now->subSeconds(600)->format('Y-m-d H:i:s')];
+          $s=\App\Support\RotLiveClock::snapshot($t);
+          if($s['elapsed_seconds']<330 || $s['elapsed_seconds']>335 ||
+             $s['remaining_seconds']>1470 || $s['remaining_seconds']<1465 ||
+             !$s['running'])throw new \RuntimeException('Running ROT 90+240s live timer regression');
+          echo "ROT_330S_ELAPSED_AND_1470S_REMAINING=PASS\n";
+          $t->status='Paused';$t->start_time=null;
+          $p=\App\Support\RotLiveClock::snapshot($t);
+          if($p['elapsed_seconds']!==90||$p['running'])throw new \RuntimeException('Paused counted running seconds');
+          echo "ROT_PAUSED_FREEZE=PASS\n";
+          $t->status='Completed';
+          $p=\App\Support\RotLiveClock::snapshot($t);
+          if($p['elapsed_seconds']!==90||$p['running'])throw new \RuntimeException('Completed moved');
+          echo "ROT_COMPLETED_FREEZE=PASS\n";
+          $service=$app->make(\App\Services\StaffDashboardService::class);
+          $actual=$service->rot(4,'ROT261016193126LSFNZ');
+          if(!array_key_exists('live_seconds',$actual)||!array_key_exists('remaining_seconds',$actual))
+            throw new \RuntimeException('Native API missing authoritative clock fields');
+          if(($actual['status']??'')==='Completed' && $actual['live_seconds']!==(int)$actual['productive_seconds'])
+            throw new \RuntimeException('Native Completed API altered saved work seconds');
+          echo "NATIVE_STAFF_OWNER_ROT_CLOCK_API=PASS\n";
+          PHP
+          echo '===== WIP/INVOICE GUARDS (READ-ONLY CODE AUDIT) ====='
+          grep -Fq 'ROT edit/reassignment requires Job Card WIP status' app/Services/RotWorkflowService.php
+          grep -Fq 'ROT reopen is allowed only while Job Card is WIP' app/Services/RotWorkflowService.php
+          grep -Fq 'ROT/Labour editing requires WIP Job Card' app/Http/Controllers/Web/AdminWorkshopControlPageController.php
+          grep -Fq 'ROT billable / no-charge editing requires Job Card WIP status' app/Http/Controllers/Web/AdminRotBillingController.php
+          echo 'ROT_WIP_ACCOUNTING_GUARD_PATHS=VERIFIED'
+          echo '===== READ ONLY DONE ====='
+          REMOTE
+      - name: Remove temporary runner key
+        if: always()
+        run: rm -f ~/.ssh/diagnose_v639
