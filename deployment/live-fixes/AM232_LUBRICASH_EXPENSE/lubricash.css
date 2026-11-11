@@ -1,0 +1,18 @@
+
+#expense-form #am232-staff-field[hidden],#expense-form #am232-coupon-guidance[hidden]{display:none!important}
+#expense-form #am232-staff-field{display:flex;flex-direction:column;gap:5px;
+  background:#f4f9ff;border:1px solid #b2d0e8;border-radius:9px;padding:10px;
+  font-size:11px;font-weight:700;color:#174d7b}
+#expense-form #am232-staff-field input,
+#expense-form #am232-staff-field select{width:100%;box-sizing:border-box;
+  border:1px solid #aac6dc;border-radius:7px;padding:8px 10px;
+  background:#fff;font-size:12px;color:#163e67;min-height:34px}
+#expense-form #job-field #am232-job-search{width:100%;box-sizing:border-box;
+  margin:5px 0 4px;border-radius:6px;background:#fff}
+#expense-form #am232-job-search[hidden]{display:none!important}
+#expense-form #am232-coupon-guidance{grid-column:1/-1;border:1px solid #9bbfe3;
+  background:#ecf6ff;border-radius:8px;padding:11px 12px;color:#255071;
+  font-size:11px;line-height:1.65}
+#expense-form #am232-coupon-guidance strong{display:block;margin-bottom:3px;color:#154878}
+#expense-form #am232-coupon-guidance small{display:block;margin-top:4px;color:#51687b}
+#expense-form #am232-description-label textarea{min-height:58px}
