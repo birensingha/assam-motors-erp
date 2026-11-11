@@ -1,0 +1,64 @@
+name: Inspect Staff ROT Pause Check-In Guard and Firajul Timeline (Read Only)
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/v650-diagnose-owner-timeout.yml"
+      - "deployment/live-fixes/V650_PAUSE_CHECKIN/**"
+permissions: { contents: read }
+concurrency:
+  group: assam-motors-v650-jc-rework-readonly
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'fix/v650-staff-pause-checkin-guard-20261018'
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Check targeted updater controller and guarded deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n deployment/live-fixes/V650_PAUSE_CHECKIN/READONLY.sh
+          test -s deployment/live-fixes/V650_PAUSE_CHECKIN/READONLY.sh
+          grep -Fq 'V650_ROT_PAUSE_READONLY_AUDIT=COMPLETE' deployment/live-fixes/V650_PAUSE_CHECKIN/READONLY.sh
+      - name: Deploy to Hostinger staging via existing secure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/v650
+            chmod 600 ~/.ssh/v650
+            SSH=(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -i ~/.ssh/v650 -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "$PORT")
+          fi
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          TEMP_DIR="/tmp/v650-attendance-diagnose-${GITHUB_RUN_ID}"
+          # Stage authenticated PHP only in the Laravel project folder.
+          tar -czf /tmp/v650-attendance-diagnose.tgz -C deployment/live-fixes/V650_PAUSE_CHECKIN READONLY.sh
+          if [ -n "$KEY" ]; then
+            SCP=(scp -o StrictHostKeyChecking=accept-new -i ~/.ssh/v650 -P "$PORT")
+          else
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$PORT")
+          fi
+          "${SCP[@]}" /tmp/v650-attendance-diagnose.tgz "$USERNAME@$HOST:$TEMP_DIR.tgz"
+          "${SSH[@]}" "$USERNAME@$HOST" "mkdir -p '$TEMP_DIR' && tar -xzf '$TEMP_DIR.tgz' -C '$TEMP_DIR' && bash '$TEMP_DIR/READONLY.sh' '/home/u956497103/domains/assammotors.com/assam-erp-staging'; result=\$?; rm -rf '$TEMP_DIR' '$TEMP_DIR.tgz'; exit \$result"
+      - if: always()
+        run: rm -f ~/.ssh/v650 /tmp/v650-attendance-diagnose.tgz
