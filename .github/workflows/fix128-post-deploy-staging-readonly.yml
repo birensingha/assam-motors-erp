@@ -1,0 +1,79 @@
+name: FIX128 Parts Buttons Post-Deployment Verification - READ ONLY
+on:
+  push:
+    branches: [fix/fix128-jc-bulk-bar-safe-20261025]
+    paths: ['.github/workflows/fix128-post-deploy-staging-readonly.yml']
+permissions:
+  contents: read
+jobs:
+  staging-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Configure remote access
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          for i in 1 2 3;do
+            ssh-keyscan -T 10 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null && break
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Verify FIX128 Parts heading UI, routes and no stock changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=12 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=12 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f artisan
+          echo 'FIX128_POSTDEPLOY_READONLY_START'
+          echo '=== VIEW AND ROUTES SHA ==='
+          sha256sum resources/views/job-cards/show.blade.php routes/web.php
+          echo '=== PARTS PANEL UI ANCHOR ==='
+          sed -n '903,915p' resources/views/job-cards/show.blade.php
+          echo '=== BULK BUTTON SOURCE ==='
+          grep -nE 'Issue All Parts|Mark All Fitted|FIX128_PARTS_BULK_SAFE' resources/views/job-cards/parts-bulk-actions.blade.php
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          foreach(['erp.job-cards.parts.issue-all','erp.job-cards.parts.fitted-all'] as $name) {
+           echo "ROUTE_{$name}=".(\Illuminate\Support\Facades\Route::has($name)?'YES':'NO')."\n";
+          }
+          $db=\Illuminate\Support\Facades\DB::class;
+          foreach($db::table('job_card_parts')->where('job_card_id',40)
+                  ->selectRaw('issue_status,COUNT(*) as c')->groupBy('issue_status')->get() as $x)
+            echo "JC40_{$x->issue_status}={$x->c}\n";
+          echo 'JC40_STOCK_MOVEMENT_COUNT='.$db::table('inventory_movements')->where('job_card_id',40)
+            ->where('movement_type','JOB_ISSUE')->count()."\n";
+          echo "FIX128_DATABASE_READ_ONLY_COMPLETE\n";
+          PHP
+          echo 'FIX128_POSTDEPLOY_READONLY_COMPLETE'
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
