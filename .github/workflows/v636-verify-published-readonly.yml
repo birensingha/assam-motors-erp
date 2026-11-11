@@ -1,0 +1,81 @@
+name: Verify Staff App v6.3.6 Update Published (Read Only)
+on:
+  pull_request:
+    branches: [main]
+    paths: [".github/workflows/v636-verify-published-readonly.yml"]
+permissions: { contents: read }
+jobs:
+  verify:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'release/verify-staff-v636-published-20261016'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Secure Hostinger read-only verification
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/v636read;chmod 600 ~/.ssh/v636read
+            SSH=(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -i ~/.ssh/v636read -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          SITE="$HOME/domains/assammotors.com/public_html/staging/staff-app"
+          test -f "$SITE/latest.json"
+          for i in $(seq 1 72); do
+            current=$(php -r '$d=json_decode(file_get_contents($argv[1]),true);echo (int)($d["version_code"]??0);' "$SITE/latest.json")
+            if [ "$current" = 60306 ]; then break; fi
+            if [ "$current" != 60305 ]; then echo "Unexpected manifest version=$current";exit 1;fi
+            echo "PUBLISH_WAIT=$i current_version_code=$current"
+            sleep 10
+          done
+          python3 - "$SITE" <<'PY'
+          import sys,hashlib,json
+          from pathlib import Path
+          root=Path(sys.argv[1])
+          data=json.loads((root/'latest.json').read_text())
+          name='Assam-Motors-Staff-v6.3.6-INSPECTION-30-POINT-SIGNED.apk'
+          sha='686f678d8f984789551718746cd049f48ec19f486d8ec8f33ce2674205e68964'
+          assert data.get('version_code')==60306,('NOT_PUBLISHED',data.get('version_code'))
+          assert data.get('version_name')=='6.3.6'
+          assert data.get('package_id')=='com.assammotors.staff'
+          assert data.get('sha256')==sha and data.get('apk_file')==name
+          f=root/'private'/name
+          assert f.exists() and f.stat().st_size==3336948
+          assert hashlib.sha256(f.read_bytes()).hexdigest()==sha
+          assert data.get('licence_file')
+          note=root/str(data.get('release_notes_file',''))
+          assert note.is_file()
+          assert not (root/'v636-upload-once.php').exists(),'Temporary receiver still present'
+          print('STAFF_V636_LIVE_MANIFEST=VERIFIED')
+          print('STAFF_V636_VERSION_CODE=60306')
+          print('STAFF_V636_PRIVATE_APK_SHA256=VERIFIED')
+          print('STAFF_V636_TEMP_UPLOAD_RECEIVER=REMOVED')
+          print('STAFF_V636_UPDATE_NOTES=AVAILABLE')
+          PY
+          REMOTE
+      - name: Verify HTTPS protected Staff update route
+        shell: bash
+        run: |
+          set -euo pipefail
+          code=$(curl -sS --max-time 20 -o /tmp/up -w '%{http_code}' 'https://staging.assammotors.com/legacy/api/staff-app-update.php?platform=android&version_code=60305')
+          echo "STAFF_PROTECTED_UPDATE_UNAUTH_HTTP=$code"
+          test "$code" = 401 || test "$code" = 403
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/v636read /tmp/up
