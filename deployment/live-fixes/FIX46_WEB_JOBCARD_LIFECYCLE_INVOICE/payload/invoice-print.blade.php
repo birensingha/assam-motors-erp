@@ -9,7 +9,19 @@ body{font:13px Arial;color:#111;margin:22px}.head{display:flex;justify-content:s
 </head>
 <body>
 <button class="no-print" onclick="window.print()">Print / Save PDF</button>
-<div class="head"><div><h1>ASSAM MOTORS</h1><div>Workshop Tax Invoice</div></div><div><strong>{{ $inv->invoice_no }}</strong><br>Job: {{ $job->job_no }}</div></div>
+@php
+// Shared document identity: only load a logo located inside the public site tree.
+// A missing logo leaves a readable text fallback; never access private uploads.
+$amLogoFile = public_path('images/assam-motors-logo.png');
+$amLogoUrl = is_file($amLogoFile) ? asset('images/assam-motors-logo.png') : null;
+@endphp
+<div class="head"><div style="display:flex;align-items:center;gap:12px">
+@if($amLogoUrl)
+<img src="{{ $amLogoUrl }}" alt="Assam Motors logo" style="width:58px;height:58px;object-fit:contain" />
+@else
+<div style="width:58px;height:58px;display:flex;align-items:center;justify-content:center;background:#174678;color:#fff;font-weight:bold;border-radius:6px">AM</div>
+@endif
+<div><h1>ASSAM MOTORS</h1><div>Workshop Tax Invoice</div></div></div><div><strong>{{ $inv->invoice_no }}</strong><br>Job: {{ $job->job_no }}</div></div>
 <div class="meta">
   <div><span>Customer</span>{{ $inv->customer_name }}<br>{{ $inv->customer_phone }}</div>
   <div><span>Vehicle</span>{{ $inv->vehicle_reg_no }}<br>{{ trim(($job->vehicle_make??'').' '.($job->vehicle_model??'')) }}</div>
