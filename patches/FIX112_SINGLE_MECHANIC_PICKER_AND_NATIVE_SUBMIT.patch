@@ -1,0 +1,77 @@
+--- a/resources/views/job-cards/show.blade.php
++++ b/resources/views/job-cards/show.blade.php
+@@ -1580,7 +1580,64 @@
+     close.addEventListener('click',closeModal);
+     head.appendChild(title);head.appendChild(close);
+     var content=document.createElement('div');content.className='am87-dialog-content';
+-    content.appendChild(sourceForm.cloneNode(true));
++    // FIX112: One picker per actual dialog. Remove any cloned legacy combo UI.
++    // The staff_id sent to Laravel is the ID from the original staff <option>.
++    var copiedForm=sourceForm.cloneNode(true);
++    if(sourceForm.action.indexOf('change-mechanic')!==-1){
++      var oldSelect=copiedForm.querySelector('select[name="staff_id"]');
++      if(oldSelect){
++        var choices=Array.from(oldSelect.options).filter(function(o){
++          return o.value && !o.disabled;
++        }).map(function(o){return {id:o.value,label:o.textContent.trim()};});
++        var oldCombo=oldSelect.closest('.am109-mechanic-picker');
++        var picker=document.createElement('div');picker.className='am112-picker';
++        picker.style.cssText='position:relative;display:flex;align-items:center;width:100%;box-sizing:border-box';
++        var chosenId=document.createElement('input');chosenId.type='hidden';chosenId.name='staff_id';
++        var query=document.createElement('input');query.type='search';query.required=true;
++        query.autocomplete='off';query.placeholder='Search mechanic name / staff code';
++        query.setAttribute('aria-label','Search new mechanic by name or staff code');
++        query.setAttribute('aria-expanded','false');query.setAttribute('role','combobox');
++        query.style.cssText='flex:1;min-width:0;width:100%;padding-right:36px!important';
++        var arrow=document.createElement('button');arrow.type='button';arrow.textContent='▼';
++        arrow.setAttribute('aria-label','Show available mechanics');
++        arrow.style.cssText='position:absolute;right:1px;top:1px;width:32px;height:32px;min-height:30px!important;z-index:2';
++        var menu=document.createElement('div');menu.className='am112-menu';
++        menu.setAttribute('role','listbox');
++        menu.style.cssText='position:absolute;top:100%;left:0;right:0;z-index:2147483600;display:none;max-height:195px;overflow-y:auto;background:#fff;border:1px solid #8badd0;border-radius:5px;box-shadow:0 7px 20px #1c3e5d35';
++        picker.appendChild(chosenId);picker.appendChild(query);picker.appendChild(arrow);picker.appendChild(menu);
++        if(oldCombo)oldCombo.replaceWith(picker);else oldSelect.replaceWith(picker);
++        function hide(){menu.style.display='none';query.setAttribute('aria-expanded','false');}
++        function draw(all){
++          menu.replaceChildren();var filter=all?'':query.value.trim().toLowerCase();
++          var visible=choices.filter(function(c){return !filter||c.label.toLowerCase().includes(filter);});
++          if(!visible.length){var empty=document.createElement('span');empty.textContent='No eligible matching mechanic';empty.style.cssText='display:block;padding:9px';menu.appendChild(empty);}
++          visible.forEach(function(c){
++            var button=document.createElement('button');button.type='button';button.textContent=c.label;
++            button.style.cssText='display:block;width:100%;border:0;border-bottom:1px solid #ebf1f8;border-radius:0;background:#fff;color:#173e61;text-align:left;padding:9px';
++            button.addEventListener('click',function(){
++              chosenId.value=c.id;query.value=c.label;query.setCustomValidity('');hide();
++            });menu.appendChild(button);
++          });
++          menu.style.display='block';query.setAttribute('aria-expanded','true');
++        }
++        query.addEventListener('input',function(){chosenId.value='';query.setCustomValidity('');draw(false);});
++        query.addEventListener('focus',function(){query.setCustomValidity('');});
++        query.addEventListener('keydown',function(e){
++          if(e.key==='Escape'){hide();}
++          if(e.key==='Enter'&&menu.style.display==='block'){
++            e.preventDefault();var b=menu.querySelector('button');if(b)b.click();
++          }
++        });
++        arrow.addEventListener('click',function(){if(menu.style.display==='block')hide();else{query.focus();draw(true);}});
++        copiedForm.addEventListener('submit',function(e){
++          if(!choices.some(function(c){return c.id===chosenId.value;})){
++            e.preventDefault();query.setCustomValidity('Please select a mechanic from the list.');
++            query.reportValidity();query.focus();draw(true);
++          }
++        });
++      }
++    }
++    content.appendChild(copiedForm);
+     modal.appendChild(head);modal.appendChild(content);
+     document.body.appendChild(modal);
+     modal.addEventListener('close',function(){if(modal){modal.remove();modal=null;modalZone=null;}});
+@@ -1630,6 +1687,8 @@
+   }
+   document.addEventListener('submit',async function(e){
+     var submitted=e.target;if(!(submitted instanceof HTMLFormElement))return;
++    // FIX112: Full-page POST surfaces Laravel validation/errors and avoids false AJAX success.
++    if(submitted.action.indexOf('change-mechanic')!==-1)return;
+     var zone=matchingZone(submitted);
+     if(!zone)return;
+     if(busy){e.preventDefault();return;}
