@@ -1,0 +1,62 @@
+name: FIX124 Summary Print Toolbar Final UI - STAGING
+on:
+  push:
+    branches: [fix/fix124-jobcard-summary-gst-print-20261025]
+    paths: ['.github/workflows/fix124-summary-toolbar-followup-staging.yml']
+permissions:
+  contents: read
+jobs:
+  deploy-staging-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          for i in 1 2 3;do
+            ssh-keyscan -T 10 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null && break
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Final toolbar HTML and print validation
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=12 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=12 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f artisan
+          echo 'FIX124_TOOLBAR_DEPLOY_BEGIN'
+          curl -fsSL --retry 2 'https://raw.githubusercontent.com/birensingha/assam-motors-erp/1005538ed539aa298e0036454c99232692b3ff90/deployment/live-fixes/FIX124_SUMMARY_DUAL_PRINT/fix_toolbar_close.py' -o /tmp/fix124-toolbar.py
+          python3 -m py_compile /tmp/fix124-toolbar.py
+          python3 /tmp/fix124-toolbar.py check "$PWD"
+          python3 /tmp/fix124-toolbar.py apply "$PWD"
+          echo '=== SUMMARY PRINT MODES ==='
+          grep -nE 'FIX124_TOOLBAR_BALANCED_V2|\?gst=1|\?gst=0|Job Card Grand Total' resources/views/job-cards/summary-print.blade.php | head -n 12
+          echo 'FIX124_TOOLBAR_DEPLOY_COMPLETE'
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
