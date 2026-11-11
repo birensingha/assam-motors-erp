@@ -1,0 +1,64 @@
+name: FIX123 Work Complete Visibility - STAGING UI ONLY
+on:
+  push:
+    branches: [fix/fix123-wip-work-complete-visible-20261024]
+    paths: ['.github/workflows/fix123-work-complete-staging-deploy.yml']
+permissions:
+  contents: read
+jobs:
+  deploy-staging-ui:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh && chmod 700 ~/.ssh
+          for i in 1 2 3;do
+            ssh-keyscan -T 10 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null && break
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq sshpass
+          fi
+      - name: Check baseline, back up and patch STAGING view only
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=12 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=12 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          cd "$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f artisan
+          echo 'FIX123_STAGING_UI_DEPLOY_START'
+          curl -fsSL --retry 2 'https://raw.githubusercontent.com/birensingha/assam-motors-erp/9eddeca1feba5ef92fc37e79da82a906020d15b6/deployment/live-fixes/FIX123_WIP_WORK_COMPLETE_VISIBLE/apply_fix123_staging.py' -o /tmp/fix123-ui-safe.py
+          python3 -m py_compile /tmp/fix123-ui-safe.py
+          python3 /tmp/fix123-ui-safe.py check "$PWD"
+          python3 /tmp/fix123-ui-safe.py apply "$PWD"
+          echo '=== POST DEPLOY UI MARKER ==='
+          grep -n 'FIX123_WIP_WORK_COMPLETE_VISIBLE_DISABLED' resources/views/job-cards/lifecycle-panel.blade.php
+          echo '=== ORIGINAL BACKEND ROUTE PRESERVED ==='
+          grep -n 'lifecycle/work-complete' routes/web.php | head -n 1
+          echo 'FIX123_STAGING_UI_DEPLOY_COMPLETE'
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/id_ed25519
