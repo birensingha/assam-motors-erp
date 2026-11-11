@@ -1,0 +1,64 @@
+name: AM126 Completed ROT Rendered TAT Post Deploy QA
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/qa-am126-rendered-tat-staging.yml'
+  workflow_dispatch:
+permissions: {contents: read}
+concurrency: {group: assam-motors-am126-rendered-tat-qa, cancel-in-progress: false}
+jobs:
+  inspect:
+    name: Read-only check Completed TAT, untouched Productive and Running clock
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate read-only PHP
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -l deployment/live-fixes/AM126_ROT_LIVE_SYNC/verify.php
+      - name: SSH staging credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$KEY" || test -n "$PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4; do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then break; fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Verify AM128 staging source and saved ROT mechanic (no writes)
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519 "$USERNAME@$HOST" 'mkdir -p "$HOME/AM126_RENDER_QA"'
+            scp -o BatchMode=yes -o ConnectTimeout=14 -P "$PORT" -i ~/.ssh/id_ed25519 deployment/live-fixes/AM126_ROT_LIVE_SYNC/verify.php "$USERNAME@$HOST:~/AM126_RENDER_QA/verify.php"
+            ssh -o BatchMode=yes -o ConnectTimeout=14 -p "$PORT" -i ~/.ssh/id_ed25519 "$USERNAME@$HOST" "cd '$ROOT' && php -l ~/AM126_RENDER_QA/verify.php && php ~/AM126_RENDER_QA/verify.php"
+          else
+            export SSHPASS="$PASSWORD"
+            sshpass -e ssh -o ConnectTimeout=14 -p "$PORT" "$USERNAME@$HOST" 'mkdir -p "$HOME/AM126_RENDER_QA"'
+            sshpass -e scp -o ConnectTimeout=14 -P "$PORT" deployment/live-fixes/AM126_ROT_LIVE_SYNC/verify.php "$USERNAME@$HOST:~/AM126_RENDER_QA/verify.php"
+            sshpass -e ssh -o ConnectTimeout=14 -p "$PORT" "$USERNAME@$HOST" "cd '$ROOT' && php -l ~/AM126_RENDER_QA/verify.php && php ~/AM126_RENDER_QA/verify.php"
+          fi
+      - name: Remove transient key
+        if: always()
+        shell: bash
+        run: rm -f ~/.ssh/id_ed25519
