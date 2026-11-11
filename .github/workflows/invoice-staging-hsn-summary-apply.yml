@@ -1,0 +1,111 @@
+name: Staging GST invoice HSN SAC summary deploy
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/invoice-staging-hsn-summary-apply.yml"
+permissions:
+  contents: read
+jobs:
+  apply:
+    if: github.head_ref == 'fix/dual-invoice-print-modes-20261018' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+      SCRIPT: deployment/live-fixes/FIX46_WEB_JOBCARD_LIFECYCLE_INVOICE/STAGING_HSN_SUMMARY_V1.py
+    steps:
+      - name: Checkout audited patch
+        uses: actions/checkout@v4
+      - name: Validate patch Python syntax
+        run: python3 -m py_compile "$SCRIPT"
+      - name: Connect to staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ -n "$SSH_KEY" ]; then
+            printf '%s\n' "$SSH_KEY" > ~/.ssh/staging-invoice
+            chmod 600 ~/.ssh/staging-invoice
+          else
+            test -n "$SSH_PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Apply compact HSN SAC table in verified staging GST invoice
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ]; then
+            SSH=(ssh -p "$SSH_PORT" -i ~/.ssh/staging-invoice -o BatchMode=yes)
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "python3 - '$APP_ROOT'" < "$SCRIPT"
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "bash -s -- '$APP_ROOT'" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          cd "$ROOT"
+          php artisan view:clear
+          if ! php artisan view:cache; then
+            echo 'HSN_BLADE_COMPILE_FAILED_ROLLBACK'
+            python3 - "$ROOT" <<'PY'
+          from pathlib import Path
+          import os,sys,shutil
+          p=Path(sys.argv[1])/'resources/views/invoices/print.blade.php'
+          backups=sorted(p.parent.glob('print.blade.php.before-hsn-panel-*.bak'))
+          if not backups: raise SystemExit('BACKUP_MISSING')
+          shutil.copy2(backups[-1],p)
+          print('RESTORED',backups[-1].name)
+          PY
+            php artisan view:clear
+            exit 1
+          fi
+          python3 - "$ROOT" <<'PY'
+          from pathlib import Path
+          import sys
+          p=Path(sys.argv[1])/'resources/views/invoices/print.blade.php'
+          s=p.read_text(encoding='utf-8')
+          assert 'AM_HSN_PANEL_V1' in s
+          assert 'HSN / SAC-wise Tax Summary' in s
+          assert s.count('hsn-summary-table') >= 2
+          assert 'AM_INVOICE_ROW_V2' in s
+          assert 'Show Item Discounts' in s
+          assert "abs($amTaxCalculated-$tax)" in s
+          print('STAGING_HSN_STRUCTURE_VERIFIED')
+          PY
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $DB=Illuminate\Support\Facades\DB::class;
+          $inv=$DB::table('invoices')->where('invoice_no','INV-2026-00021')->first();
+          if (!$inv) $inv=$DB::table('invoices')->where('invoice_no','INV-2026-00010')->first();
+          if (!$inv) { echo "RENDER_SAMPLE_UNAVAILABLE\n"; exit(0); }
+          $job=$DB::table('job_cards')->where('id',$inv->job_card_id)->first();
+          $parts=$DB::table('job_card_parts')->where('job_card_id',$job->id)->get();
+          $labour=$DB::table('job_card_labour')->where('job_card_id',$job->id)->get();
+          $ledger=collect();
+          foreach (['tax','summary'] as $mode) {
+              $app['request']->query->set('format',$mode);
+              $app['request']->query->set('show_discount','0');
+              $html=view('invoices.print',compact('inv','job','parts','labour','ledger'))->render();
+              $visible=strpos($html,'HSN / SAC-wise Tax Summary')!==false;
+              if ($visible!==($mode==='tax')) {fwrite(STDERR,"RENDER_HSN_VISIBILITY_FAIL ".$mode."\n");exit(8);}
+              if (strpos($html,'Invoice Total')===false) {fwrite(STDERR,"RENDER_TOTAL_MISSING\n");exit(9);}
+              echo "RENDER_HSN_PASS mode=".$mode." has_table=".($visible?'yes':'no')."\n";
+          }
+          PHP
+          REMOTE
+      - name: Delete temporary credential
+        if: always()
+        run: rm -f ~/.ssh/staging-invoice

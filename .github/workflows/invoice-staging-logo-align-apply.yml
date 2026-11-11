@@ -1,0 +1,84 @@
+name: Staging invoice logo alignment only
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/invoice-staging-logo-align-apply.yml'
+permissions:
+  contents: read
+jobs:
+  align:
+    if: github.head_ref == 'fix/dual-invoice-print-modes-20261018' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USER: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASS: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - name: Back up and align logo in existing staging invoice print layout
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USER"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/am-invoice-logo
+            chmod 600 ~/.ssh/am-invoice-logo
+            SSH=(ssh -p "$PORT" -i ~/.ssh/am-invoice-logo -o BatchMode=yes)
+          else
+            test -n "$PASS"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+            export SSHPASS="$PASS"
+            SSH=(sshpass -e ssh -p "$PORT")
+          fi
+          "${SSH[@]}" "$USER@$HOST" 'bash -s' -- "$ROOT" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          test -f "$ROOT/artisan"
+          FILE="$ROOT/resources/views/invoices/print.blade.php"
+          test -f "$FILE"
+          export LOGO_FIX_FILE="$FILE"
+          python3 - <<'PY'
+          import os,hashlib,shutil,time,stat
+          from pathlib import Path
+          p=Path(os.environ['LOGO_FIX_FILE'])
+          s=p.read_text(encoding='utf-8')
+          sha=hashlib.sha256(s.encode()).hexdigest()
+          print('BEFORE_SHA256_PREFIX',sha[:16])
+          old_css='.logo{width:61px;height:61px;max-width:61px;max-height:61px;object-fit:contain;flex:none}'
+          new_css='.logo{display:block;width:72px;height:72px;max-width:72px;max-height:72px;object-fit:contain;object-position:center center;align-self:center;flex:none}'
+          old_fallback='<img src="https://assammotors.com/images/logo.png" alt="Assam Motors logo" style="width:58px;height:58px;object-fit:contain">'
+          new_fallback='<img class="logo" src="https://assammotors.com/images/logo.png" alt="Assam Motors logo">'
+          if new_css in s and new_fallback in s:
+              print('LOGO_ALIGNMENT_ALREADY_APPLIED')
+          else:
+              if sha[:16]!='60359e1cf9d3ff09':
+                  raise SystemExit('SAFE_STOP: live invoice template differs from audited version')
+              if s.count(old_css)!=1 or s.count(old_fallback)!=1:
+                  raise SystemExit('SAFE_STOP: expected logo markup not matched exactly once')
+              new=s.replace(old_css,new_css).replace(old_fallback,new_fallback)
+              stamp=time.strftime('%Y%m%d%H%M%S')
+              backup=p.with_name(p.name+'.pre-logo-center-'+stamp+'.bak')
+              shutil.copy2(p,backup)
+              temp=p.with_name(p.name+'.logo-center-temp')
+              temp.write_text(new,encoding='utf-8')
+              os.chmod(temp,stat.S_IMODE(p.stat().st_mode))
+              os.replace(temp,p)
+              print('LOGO_ALIGNMENT_APPLIED')
+              print('BACKUP',backup.name)
+              print('AFTER_SHA256_PREFIX',hashlib.sha256(new.encode()).hexdigest()[:16])
+          PY
+          cd "$ROOT"
+          php artisan view:clear
+          php artisan view:cache
+          echo 'STAGING_LOGO_ALIGN_SUCCESS'
+          REMOTE
+      - name: Remove temporary SSH credential
+        if: always()
+        run: rm -f ~/.ssh/am-invoice-logo

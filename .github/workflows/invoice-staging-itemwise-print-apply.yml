@@ -1,0 +1,88 @@
+name: Staging invoice item-wise rows deployment
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/invoice-staging-itemwise-print-apply.yml"
+permissions:
+  contents: read
+jobs:
+  apply:
+    if: github.head_ref == 'fix/dual-invoice-print-modes-20261018' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+      SCRIPT: deployment/live-fixes/FIX46_WEB_JOBCARD_LIFECYCLE_INVOICE/STAGING_ITEMWISE_PRINT_V2.py
+    steps:
+      - name: Checkout audited patch
+        uses: actions/checkout@v4
+      - name: Validate patch Python syntax
+        run: python3 -m py_compile "$SCRIPT"
+      - name: Connect to staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [ -n "$SSH_KEY" ]; then
+            printf '%s\n' "$SSH_KEY" > ~/.ssh/staging-invoice
+            chmod 600 ~/.ssh/staging-invoice
+          else
+            test -n "$SSH_PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Apply guarded invoice-print-only patch with immutable backup
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ]; then
+            SSH=(ssh -p "$SSH_PORT" -i ~/.ssh/staging-invoice -o BatchMode=yes)
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "python3 - '$APP_ROOT'" < "$SCRIPT"
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" "bash -s -- '$APP_ROOT'" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          cd "$ROOT"
+          php artisan view:clear
+          if ! php artisan view:cache; then
+            echo 'BLADE_COMPILE_FAILED_ROLLBACK'
+            python3 - "$ROOT" <<'PY'
+          from pathlib import Path
+          import os,sys,shutil
+          p=Path(sys.argv[1])/'resources/views/invoices/print.blade.php'
+          backups=sorted(p.parent.glob('print.blade.php.before-itemwise-gst-*.bak'))
+          if not backups: raise SystemExit('BACKUP_MISSING')
+          shutil.copy2(backups[-1],p)
+          print('RESTORED',backups[-1].name)
+          PY
+            php artisan view:clear
+            exit 1
+          fi
+          python3 - "$ROOT" <<'PY'
+          from pathlib import Path
+          import sys
+          p=Path(sys.argv[1])/'resources/views/invoices/print.blade.php'
+          s=p.read_text(encoding='utf-8')
+          assert 'AM_INVOICE_ROW_V2' in s
+          assert s.count('Taxable ₹')==3
+          assert s.count('GST ₹')==3
+          assert s.count('Final Amt ₹')==3
+          assert 'Show Item Discounts' in s
+          assert 'GST printing blocked' in s
+          print('STAGING_PRINT_ROWS_VERIFIED')
+          PY
+          REMOTE
+      - name: Delete temporary credential
+        if: always()
+        run: rm -f ~/.ssh/staging-invoice

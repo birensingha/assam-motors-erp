@@ -1,0 +1,223 @@
+name: Read-only staging invoice print audit
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/invoice-staging-readonly-qa.yml"
+      - "deployment/live-fixes/FIX46_WEB_JOBCARD_LIFECYCLE_INVOICE/payload/invoice-print.blade.php"
+permissions:
+  contents: read
+jobs:
+  audit:
+    if: github.head_ref == 'fix/dual-invoice-print-modes-20261018'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      SSH_HOST: ${{ secrets.STAGING_SSH_HOST }}
+      SSH_PORT: ${{ secrets.STAGING_SSH_PORT }}
+      SSH_USER: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP_ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - name: Check staged invoice print template on Hostinger without modification
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$SSH_HOST" && test -n "$SSH_PORT" && test -n "$SSH_USER"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$SSH_PORT" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          if [[ -n "$SSH_KEY" ]]; then
+            printf '%s\n' "$SSH_KEY" > ~/.ssh/invoice-qa-key
+            chmod 600 ~/.ssh/invoice-qa-key
+            SSH=(ssh -i ~/.ssh/invoice-qa-key -p "$SSH_PORT" -o BatchMode=yes)
+          else
+            test -n "$SSH_PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -p "$SSH_PORT")
+          fi
+          "${SSH[@]}" "$SSH_USER@$SSH_HOST" 'bash -s' -- "$APP_ROOT" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          test -f "$ROOT/artisan"
+          export INVOICE_QA_ROOT="$ROOT"
+          python3 - <<'PY'
+          import os,re,hashlib
+          from pathlib import Path
+          root=Path(os.environ['INVOICE_QA_ROOT'])
+          views=root/'resources'/'views'
+          files=list(views.rglob('*.blade.php'))
+          print('STAGING_BLADE_COUNT',len(files))
+          patterns=['DOCUMENT NO.','TAX / SERVICE','ASSAM MOTORS','invoice-logo','GST Amount','Taxable Amount']
+          matches=0
+          for p in files:
+              name=str(p.relative_to(root))
+              if not any(k in name.lower() for k in ('invoice','print','document','receipt','voucher')):
+                  continue
+              txt=p.read_text(encoding='utf-8',errors='replace')
+              present=[pat for pat in patterns if pat.lower() in txt.lower()]
+              if not present:
+                  continue
+              matches+=1
+              print('TEMPLATE',name,'SHA256',hashlib.sha256(txt.encode()).hexdigest()[:16],'MARKERS',','.join(present),'AM_LOGO_ASSET',('images/logo.png' in txt))
+          print('CANDIDATE_COUNT',matches)
+
+          print('LIVE_VEHICLE_SECTION_LINES')
+          print('LIVE_INVOICE_PRINT_STRUCTURE')
+          p=views/'invoices'/'print.blade.php'
+          ls=p.read_text(encoding='utf-8',errors='replace').splitlines()
+          selected=[]
+          for i,line in enumerate(ls,1):
+              low=line.lower()
+              if any(k in low for k in ['logo','parts','labour','discount','gst','taxable','<thead','<tbody','<th','<td','@forelse','@foreach','@php','@endif','amount','total','printing']):
+                  selected.append((i,line.strip()))
+          for i,line in selected[:100]:
+              print('VIEW_LINE',i,line[:340])
+          print('VIEW_LINES_TOTAL',len(ls),'SELECTED',len(selected))
+          for n in range(151,209):
+              if n<=len(ls): print('VEHICLE_VIEW_LINE',n,ls[n-1][:440])
+          print('INVOICE_PRINT_TARGET_STRUCTURE_BEGIN')
+          for n in list(range(88,114))+list(range(168,257)):
+              if n<=len(ls): print('TARGET_LINE',n,ls[n-1][:650])
+          print('INVOICE_PRINT_TARGET_STRUCTURE_END')
+          for n in range(45,86): print('STYLE_LINE',n,ls[n-1][:260])
+          print('LIVE_HEADER_EXACT_LINES')
+          for n in list(range(12,45))+list(range(113,140)):
+              if n<=len(ls): print('HEADER_LINE',n,ls[n-1][:400])
+
+
+          PY
+          if [ -f "$ROOT/vendor/autoload.php" ]; then
+            cd "$ROOT"
+            php -r '
+              require "vendor/autoload.php";
+              $app=require "bootstrap/app.php";
+              $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+              foreach (["job_card_parts","job_card_labour","invoices"] as $table) {
+                try {
+                  if (Illuminate\Support\Facades\Schema::hasTable($table)) {
+                    $columns=Illuminate\Support\Facades\Schema::getColumnListing($table);
+                    $selected=array_values(array_filter($columns,function($v) {
+                      return preg_match("/^(total|rate|qty|labour_rate|parts_total|labour_total|grand_total|tax_total|gst_total|round_off|.*discount.*|.*taxable.*|.*gst.*|.*sac.*|.*hsn.*)$/i",$v);
+                    }));
+                    echo "TABLE_COLUMNS ".$table." ".implode(",",$selected)."\n";
+                  } else echo "MISSING_TABLE ".$table."\n";
+                } catch (Throwable $e) {
+                  echo "SCHEMA_CHECK_UNAVAILABLE ".$table."\n";
+                }
+              }'
+          fi
+          if [ -f "$ROOT/vendor/autoload.php" ]; then
+            cd "$ROOT"
+            php -r '
+              require "vendor/autoload.php";
+              $app=require "bootstrap/app.php";
+              $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+              $no="INV-2026-00010";
+              $inv=Illuminate\Support\Facades\DB::table("invoices")->where("invoice_no",$no)->first();
+              if (!$inv) { echo "SAMPLE_INVOICE_NOT_FOUND\n"; }
+              else {
+                $iid=$inv->job_card_id;
+                echo "SAMPLE_SAVED_TOTALS parts=".($inv->parts_total??0)." labour=".($inv->labour_total??0)." gst=".($inv->gst_total??$inv->tax_total??0)." grand=".($inv->grand_total??0)."\n";
+                foreach (["job_card_parts","job_card_labour"] as $t) {
+                  $rows=Illuminate\Support\Facades\DB::table($t)->where("job_card_id",$iid)->get();
+                  $net=0.0; $derivedGST=0.0; $n=0;
+                  foreach ($rows as $row) {
+                    $n++;
+                    $net+=(float)($row->total??0);
+                    $derivedGST+=round((float)($row->total??0)*(float)($row->gst_percent??0)/100,2);
+                  }
+                  echo "SAMPLE_ROW_AGG ".$t." count=".$n." sum_total=".round($net,2)." percent_based_gst=".round($derivedGST,2)."\n";
+                }
+              }'
+          fi
+          echo 'VEHICLE_SCHEMA_AUDIT_BEGIN'
+          cd "$ROOT"
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $schema=Illuminate\Support\Facades\Schema::class;
+          $db=Illuminate\Support\Facades\DB::class;
+          foreach (['job_cards','vehicles','vehicle_master','vehicle_masters','vehicle_models','vehicle_variants','invoices'] as $table) {
+              if (!$schema::hasTable($table)) {echo "NO_TABLE ".$table."\n";continue;}
+              echo "COLS ".$table." ".implode(',',$schema::getColumnListing($table))."\n";
+          }
+          $inv=$db::table('invoices')->where('invoice_no','INV-2026-00018')->first();
+          if(!$inv) {echo "SAMPLE_VEHICLE_INVOICE_ABSENT\n";}
+          else {
+              $job=$db::table('job_cards')->where('id',$inv->job_card_id)->first();
+              if(!$job) echo "SAMPLE_VEHICLE_JOB_ABSENT\n";
+              else {
+                  echo "SAMPLE_VEHICLE_JOB_FOUND vehicle_id_present=".(!empty($job->vehicle_id)?'yes':'no')."\n";
+                  if($schema::hasTable('vehicles') && !empty($job->vehicle_id)){
+                      $v=$db::table('vehicles')->where('id',$job->vehicle_id)->first();
+                      echo "SAMPLE_VEHICLE_MASTER_LINKED=".($v?'yes':'no')."\n";
+                      if ($v) foreach ((array)$v as $k=>$val) {
+                          if (preg_match('/(make|model|variant|year|fuel|engine|chassis|cc|capacity|transmi|vin|registration|reg_no|color)/i',$k))
+                              echo "MASTER_FIELD ".$k."=".($val===null||$val===''?'EMPTY':'POPULATED')."\n";
+                      }
+                  }
+              }
+          }
+          PHP
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $db=Illuminate\Support\Facades\DB::class;
+          $schema=Illuminate\Support\Facades\Schema::class;
+          $tables=$db::select('SHOW TABLES');
+          $matches=[];
+          foreach($tables as $row){
+              $table=(string)array_values((array)$row)[0];
+              if(preg_match('/vehic|car_|_car|make|model|variant|engine|fuel|garage/i',$table)) $matches[]=$table;
+          }
+          foreach($matches as $table) echo "VEHICLE_CANDIDATE ".$table." ".implode(',',$schema::getColumnListing($table))."\n";
+          $inv=$db::table('invoices')->where('invoice_no','INV-2026-00018')->first();
+          $job=$inv ? $db::table('job_cards')->where('id',$inv->job_card_id)->first():null;
+          if($job) {
+            foreach($matches as $table) {
+              $cols=$schema::getColumnListing($table);
+              if(!in_array('id',$cols))continue;
+              $row=$db::table($table)->where('id',$job->vehicle_id)->first();
+              if($row && preg_match('/vehic|garage/i',$table)){
+                echo "VEHICLE_ID_MATCH ".$table."\n";
+                foreach((array)$row as $k=>$v)if(preg_match('/make|model|variant|year|fuel|engine|chassis|cc|capacity|transmi|vin|registration|reg_no|color/i',$k))
+                  echo "MATCHED_FIELD ".$k."=".($v===null||$v===''?'EMPTY':'SET')."\n";
+              }
+            }
+          }
+          PHP
+          php <<'PHP'
+          <?php
+          require 'vendor/autoload.php';
+          $app=require 'bootstrap/app.php';
+          $app->make(Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $d=Illuminate\Support\Facades\DB::class;
+          $inv=$d::table('invoices')->where('invoice_no','INV-2026-00018')->first();
+          $j=$inv?$d::table('job_cards')->where('id',$inv->job_card_id)->first():null;
+          if($j){
+            $norm=static fn($v)=>strtoupper(preg_replace('/[^A-Z0-9]/','',strtoupper((string)$v)));
+            foreach(['am_vehicle_master','customer_vehicles'] as $t){
+              $v=$d::table($t)->where('id',$j->vehicle_id)->first();
+              echo "RELATION ".$t." BY_ID=".($v?'yes':'no');
+              if($v) echo " REG_MATCH=".($norm($v->registration_no??'')===$norm($j->vehicle_reg_no??'')?'yes':'no')." CUSTOMER_MATCH=".(($v->customer_id??'')===$j->customer_id?'yes':'no');
+              $count=$d::table($t)->where('customer_id',$j->customer_id)->where('registration_no',$j->vehicle_reg_no)->count();
+              echo " BY_CUSTOMER_REG_COUNT=".$count."\n";
+            }
+            $src=$d::table('am_vehicle_sources_v2')->where('vehicle_id',$j->vehicle_id)->get();
+            echo "BRIDGE_ROWS=".count($src)."\n";
+            foreach($src as $q)echo "BRIDGE_SOURCE_TYPE=".$q->source_type."\n";
+          }
+          PHP
+          echo 'VEHICLE_SCHEMA_AUDIT_END'
+          echo 'STAGING_INVOICE_READ_ONLY_AUDIT_DONE'
+          REMOTE
+      - name: Cleanup SSH key
+        if: always()
+        run: rm -f ~/.ssh/invoice-qa-key
