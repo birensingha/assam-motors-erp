@@ -1,0 +1,70 @@
+name: Block Invoiced ROT Resume; Enable Admin Audit TAT after Closure
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - ".github/workflows/v646-deploy-invoiced-rot-tat.yml"
+      - "deployment/live-fixes/V646_INVOICED_ROT/**"
+permissions: { contents: read }
+concurrency:
+  group: assam-motors-v646-admin-rot-time-deploy
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'fix/v646-closed-invoiced-rot-resume-tat-audit-20261018'
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Verify targeted Admin-only controller and reversible patch scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          bash -n deployment/live-fixes/V646_INVOICED_ROT/APPLY.sh
+          test -s deployment/live-fixes/V646_INVOICED_ROT/APPLY.sh
+      - name: Deploy backed-up Admin time-correction controller, audited edit UI and WIP/invoice guards to Staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          install -d -m 700 ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/v646
+            chmod 600 ~/.ssh/v646
+            SSH=(ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -i ~/.ssh/v646 -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o StrictHostKeyChecking=accept-new -o ConnectTimeout=25 -p "$PORT")
+          fi
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          TEMP_DIR="/tmp/v646-rot-clock-${GITHUB_RUN_ID}"
+          # Stage authenticated PHP only in the Laravel project folder.
+          tar -czf /tmp/v646-clock-bundle.tgz -C deployment/live-fixes/V646_INVOICED_ROT APPLY.sh
+          if [ -n "$KEY" ]; then
+            SCP=(scp -o StrictHostKeyChecking=accept-new -i ~/.ssh/v646 -P "$PORT")
+          else
+            SCP=(sshpass -e scp -o StrictHostKeyChecking=accept-new -P "$PORT")
+          fi
+          "${SCP[@]}" /tmp/v646-clock-bundle.tgz "$USERNAME@$HOST:$TEMP_DIR.tgz"
+          "${SSH[@]}" "$USERNAME@$HOST" "mkdir -p '$TEMP_DIR' && tar -xzf '$TEMP_DIR.tgz' -C '$TEMP_DIR' && bash '$TEMP_DIR/APPLY.sh' '/home/u956497103/domains/assammotors.com/assam-erp-staging'; result=\$?; rm -rf '$TEMP_DIR' '$TEMP_DIR.tgz'; exit \$result"
+      - name: Verify Staging ERP login still loads
+        shell: bash
+        run: |
+          set -euo pipefail
+          status=$(curl -sS -L --max-time 25 -o /tmp/v646-login-page -w '%{http_code}' 'https://staging.assammotors.com/erp/login')
+          echo "V646_ERP_LOGIN_HTTP=$status"
+          test "$status" = 200
+      - if: always()
+        run: rm -f ~/.ssh/v646 /tmp/v646-clock-bundle.tgz /tmp/v646-login-page
