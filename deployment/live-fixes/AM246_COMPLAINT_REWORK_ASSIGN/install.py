@@ -158,10 +158,12 @@ newtitle='<th>Finding</th><th>Rework Assignment</th><th>Result</th>'
 row='<td><a href="{{ route('+"'erp.rot-work-complaints.show'"+',$c->id) }}">View Report</a></td>'
 newrow=(
  '<td><a href="{{ route('+"'erp.rot-work-complaints.rework.show'"+',$c->id) }}">'
- '@if($c->rework_staff_name){{ $c->rework_staff_name }} · {{ $c->rework_status }}'
- ' @if($c->rework_rot_session_id)· ROT {{ $c->rework_rot_session_id }}@else · New ROT pending@endif'
- '@else Assign Mechanic @endif</a></td>'+row
+ "{{ $c->rework_staff_name ? ($c->rework_staff_name . ' · ' . $c->rework_status . ($c->rework_rot_session_id ? ' · ROT ' . $c->rework_rot_session_id : ' · New ROT pending')) : 'Assign Mechanic' }}"
+ '</a></td>'+row
 )
+# AM246: use a single escaped Blade expression; inline nested @if/@else directly
+# adjacent to @forelse can compile to an unterminated conditional in PHP.
+
 x=exactly(src[register],title,newtitle,"REGISTER_HEAD")
 x=exactly(x,row,newrow,"REGISTER_ROW")
 x=exactly(x,'colspan="8"','colspan="9"',"EMPTY_COLSPAN")
