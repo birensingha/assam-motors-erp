@@ -76,6 +76,25 @@ jobs:
               sed -n '1,150p' "$f" | grep -E -v '(password|secret|token|@csrf)' | head -110
             fi
           done
+          echo AM252_EXISTING_CREDITNOTE_CONTROLLER
+          if [ -f app/Http/Controllers/Web/AdminInvoiceCreditNoteController.php ];then
+            sed -n '1,240p' app/Http/Controllers/Web/AdminInvoiceCreditNoteController.php
+          fi
+          echo AM252_PURCHASE_INDEX_CONTROLLER
+          sed -n '1,48p' app/Http/Controllers/Web/AdminPurchasePageController.php
+          echo AM252_PURCHASE_SERVICE_REGISTRY
+          grep -nE 'function (search|list|index|purchases|purchaseSummary|createReturn)|function .*Return|purchase_batch_no|workshop_purchase_batches' app/Services/PurchaseService.php | head -110
+          echo AM252_PURCHASE_REGISTER_TABLE
+          sed -n '148,300p' resources/views/purchases/index.blade.php
+          echo AM252_ROUTES_AROUND_FINANCE
+          grep -nE '(invoice-credit-note|credit-notes|money-receipts|purchases|counter-sales|sales-register)' routes/web.php | head -75
+          echo AM252_POSTED_INVOICE_AND_CREDIT_NOTE_STATUS_COUNTS
+          php -r 'require "vendor/autoload.php";$a=require "bootstrap/app.php";$a->make(\\Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
+          foreach(["invoices","invoice_credit_notes"] as $table){if(!\\Illuminate\\Support\\Facades\\Schema::hasTable($table))continue;
+            echo "TABLE ".$table." TOTAL ".\\Illuminate\\Support\\Facades\\DB::table($table)->count()."\\n";
+            foreach(\\Illuminate\\Support\\Facades\\DB::table($table)->selectRaw("status,COUNT(*) as n")->groupBy("status")->get() as $row)
+              echo "STATUS ".$table." ".($row->status??"NULL")." COUNT=".$row->n."\\n";
+          }'
           echo AM252_READ_ONLY_REGISTER_AUDIT_COMPLETE
           REMOTE
       - name: Cleanup credentials
