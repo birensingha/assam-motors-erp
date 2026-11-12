@@ -1,0 +1,84 @@
+name: AM249 Admin QC Review — Staging Deploy
+on:
+  push:
+    branches: [fix/am249-admin-qc-review-jc50-20261112]
+    paths:
+      - .github/workflows/deploy-am249-admin-qc-review-staging.yml
+      - deployment/live-fixes/AM249_ADMIN_QC_REVIEW/**
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Source package preflight
+        run: |
+          set -euo pipefail
+          P=deployment/live-fixes/AM249_ADMIN_QC_REVIEW
+          python3 -m py_compile "$P/install.py"
+          php -l "$P/files/app/Http/Controllers/Web/AdminQcReviewController.php"
+          test -s "$P/files/resources/views/job-cards/admin-qc-review.blade.php"
+          echo AM249_GITHUB_PACKAGE_PREFLIGHT_PASS
+      - name: Prepare STAGING SSH
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$USERNAME" && test -n "$PORT"
+          test -n "$SSH_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4; do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then break; fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$SSH_KEY" ]; then
+            printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Guarded Hostinger STAGING deploy
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"
+          test "$(basename "$APP")" = "assam-erp-staging"
+          test -f "$APP/artisan"
+          cd "$HOME/assam-motors-deploy"
+          git fetch origin fix/am249-admin-qc-review-jc50-20261112
+          PATCH_DIR="$(mktemp -d)"
+          git archive FETCH_HEAD deployment/live-fixes/AM249_ADMIN_QC_REVIEW | tar -x -C "$PATCH_DIR"
+          SCRIPT="$PATCH_DIR/deployment/live-fixes/AM249_ADMIN_QC_REVIEW/install.py"
+          python3 -m py_compile "$SCRIPT"
+          python3 "$SCRIPT" check "$APP"
+          python3 "$SCRIPT" apply "$APP"
+          cd "$APP"
+          php artisan route:list --path=job-cards | grep -E 'admin-qc-review'
+          echo AM249_STAGING_QC_ROUTE_VERIFIED
+          REMOTE
+      - name: Check unauthenticated Admin QC access remains protected
+        run: |
+          set -euo pipefail
+          HTTP="$(curl -sS --max-time 20 -o /dev/null -w '%{http_code}' --max-redirs 0 https://staging.assammotors.com/erp/job-cards/50/admin-qc-review)"
+          echo "AM249_ANON_PAGE_HTTP=$HTTP"
+          test "$HTTP" = "302" || test "$HTTP" = "303"
+          echo AM249_UNAUTHENTICATED_ACCESS_PROTECTED
+      - name: Erase ephemeral SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
