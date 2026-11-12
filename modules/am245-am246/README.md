@@ -16,3 +16,9 @@ Implementation branch for **staging integration review**, not a deployed change.
 
 ### Meta API phase
 Automatic messaging requires business credentials, opt-in, approved templates and webhook delivery status. No credentials or business data should be committed to Git.
+
+## Admin page separation (user-approved)
+1. CUSTOMER > Reviews & Feedback: `am.customer-engagement.index`. Only feedback, ratings, reply drafts, complaints. **No outstanding figures, receipts, payment messages, or messaging log in this page.**
+2. CUSTOMER > Customer Outstanding & WhatsApp: `am.customer-messaging.index`. Financial messaging form and activity log live here, behind both `manage-customer-engagement` and `view-customer-ledger` gates. Implement canonical outstanding register using real ERP finance models, not placeholder balances.
+3. Message POST route: `am.customer-messaging.message`. Never post to the feedback route.
+4. These routes and templates have not been mounted to live staging: merge and test only with deployed Laravel source.
