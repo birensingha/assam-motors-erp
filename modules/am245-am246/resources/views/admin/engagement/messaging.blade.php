@@ -18,9 +18,13 @@ table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:9px;text-
 @if($errors->any())<div class="warning"><ul>@foreach($errors->all() as $error)<li>{{$error}}</li>@endforeach</ul></div>@endif
 <div class="grid">
 <section class="card"><h2>WhatsApp Customer Messaging</h2>
-<p class="note">Use ERP Customer ID. The current balance and phone number are retrieved from server-side ERP masters, not entered by hand.</p>
+<p class="note">Search the verified ERP Customer Master. Phone and current balance are read on the server when composing, never entered by hand.</p>
 <form method="post" action="{{route('am.customer-messaging.message')}}">@csrf
-<label>Customer ID</label><input type="number" name="customer_id" min="1" required>
+<label for="customer-search">Search Customer (name, mobile or vehicle)</label>
+<input id="customer-search" type="search" autocomplete="off" minlength="2" placeholder="Type at least 2 characters" aria-controls="customer-matches" aria-expanded="false">
+<input id="customer-id" name="customer_id" type="hidden" required>
+<div id="customer-matches" role="listbox" style="display:none;border:1px solid #cdd6e2;border-radius:8px;padding:8px;margin-bottom:12px"></div>
+<p class="note" id="selected-customer" role="status">No customer selected.</p>
 <label>Message Type</label>
 <select name="type"><option value="balance">Current Balance</option><option value="reminder">Payment Reminder</option><option value="feedback">Service Feedback Request</option></select>
 <label><input type="checkbox" name="consent" value="1" style="width:auto" required> Confirm permitted customer messaging / consent</label>
@@ -35,4 +39,50 @@ table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:9px;text-
 @forelse($messages as $m)<tr><td>{{$m->customer_name_snapshot}}</td><td>{{$m->type}}</td><td>{{$m->balance_snapshot===null?'—':'INR '.number_format($m->balance_snapshot,2)}}</td><td>{{$m->status}}</td></tr>
 @empty<tr><td colspan="4">No message activity.</td></tr>@endforelse
 </table></div></section>
-</main></body></html>
+</main>
+<script>
+(() => {
+ const search=document.getElementById('customer-search');
+ const customerId=document.getElementById('customer-id');
+ const list=document.getElementById('customer-matches');
+ const selected=document.getElementById('selected-customer');
+ const form=customerId.closest('form');
+ let requestCount=0;
+ const reset=()=>{
+   customerId.value=''; selected.textContent='No customer selected.';
+   list.replaceChildren();list.style.display='none';search.setAttribute('aria-expanded','false');
+ };
+ search.addEventListener('input',async()=>{
+   reset();
+   const q=search.value.trim();
+   const requestId=++requestCount;
+   if(q.length<2) return;
+   const url=new URL(@json(route('am.customer-messaging.customers')),window.location.href);
+   url.searchParams.set('q',q);
+   try {
+     const response=await fetch(url.toString(),{credentials:'same-origin',headers:{'Accept':'application/json'}});
+     if(!response.ok) throw new Error('Customer lookup unavailable');
+     const data=await response.json();
+     if(requestId!==requestCount) return;
+     const rows=Array.isArray(data.customers)?data.customers:[];
+     list.style.display='block';search.setAttribute('aria-expanded','true');
+     if(!rows.length){list.textContent='No matching customers';return;}
+     rows.forEach(customer=>{
+       const button=document.createElement('button');
+       button.type='button'; button.style.cssText='display:block;width:100%;margin:4px 0;text-align:left;background:#e8eff6;color:#18233b';
+       button.textContent=String(customer.name)+' (ID '+String(customer.id)+')';
+       button.addEventListener('click',()=>{
+         customerId.value=String(customer.id);
+         search.value=String(customer.name);
+         selected.textContent='Selected: '+String(customer.name);
+         list.style.display='none';search.setAttribute('aria-expanded','false');
+       });
+       list.appendChild(button);
+     });
+   }catch(e){if(requestId===requestCount){list.style.display='block';list.textContent='Customer lookup unavailable. No message prepared.';}}
+ });
+ form.addEventListener('submit',event=>{
+   if(!customerId.value){event.preventDefault();selected.textContent='Select an existing customer from the search results.';search.focus();}
+ });
+})();
+</script></body></html>
