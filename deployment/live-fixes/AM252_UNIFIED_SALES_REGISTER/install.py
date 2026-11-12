@@ -82,7 +82,7 @@ $query->selectRaw("COUNT(*) as document_count, COALESCE(SUM(signed_amount),0) as
 echo 'AM252_SALES_UNION_SQL_READONLY_PASS';"""
     x=run(['php','-r',php],65)
     if x.returncode or 'AM252_SALES_UNION_SQL_READONLY_PASS' not in x.stdout:
-        raise SystemExit('STOP_AM252_SALES_SQL_PREFLIGHT '+(x.stdout+x.stderr)[-400:])
+        raise SystemExit('STOP_AM252_SALES_SQL_PREFLIGHT '+(x.stdout+x.stderr)[:2200])
     print('AM252_SALES_UNION_SQL_READONLY_PASS')
 def routes_check():
     code=r"""require 'vendor/autoload.php';
