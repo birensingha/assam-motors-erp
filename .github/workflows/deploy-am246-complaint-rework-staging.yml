@@ -1,0 +1,92 @@
+name: AM246 Complaint Rework Assignment STAGING Deploy
+on:
+  push:
+    branches: [feature/am246-complaint-rework-assign-20261110]
+    paths:
+      - .github/workflows/deploy-am246-complaint-rework-staging.yml
+      - deployment/live-fixes/AM246_COMPLAINT_REWORK_ASSIGN/**
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Source package preflight
+        run: |
+          set -euo pipefail
+          P=deployment/live-fixes/AM246_COMPLAINT_REWORK_ASSIGN
+          python3 -m py_compile "$P/install.py"
+          php -l "$P/files/app/Http/Controllers/Web/ComplaintReworkAssignmentController.php"
+          php -l "$P/files/database/migrations/2026_11_10_173000_create_complaint_rework_assignments.php"
+          php -l "$P/staging_dump_config.php"
+          bash -n "$P/staging_db_backup_shell.sh"
+          echo AM246_GITHUB_PACKAGE_PREFLIGHT_PASS
+      - name: Prepare STAGING SSH
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$USERNAME" && test -n "$PORT"
+          test -n "$SSH_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4; do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then break; fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$SSH_KEY" ]; then
+            printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Guarded install, fresh database backup, migrate and check STAGING routes
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"
+          test "$(basename "$APP")" = "assam-erp-staging"
+          test -f "$APP/artisan"
+          cd "$HOME/assam-motors-deploy"
+          git fetch origin feature/am246-complaint-rework-assign-20261110
+          PATCH_DIR="$(mktemp -d)"
+          git archive FETCH_HEAD deployment/live-fixes/AM246_COMPLAINT_REWORK_ASSIGN | tar -x -C "$PATCH_DIR"
+          PKG="$PATCH_DIR/deployment/live-fixes/AM246_COMPLAINT_REWORK_ASSIGN"
+          SCRIPT="$PKG/install.py"
+          # Read-only schema diagnostic; no row contents or credentials printed.
+          (cd "$APP" && php -r 'require "vendor/autoload.php"; $app=require "bootstrap/app.php"; $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap(); foreach(["am_complaint_rework_links","am_complaint_rework_audits","am_complaint_staff_notifications"] as $t){echo "AM246_DIAG_TABLE ".$t." present=".(\Illuminate\Support\Facades\Schema::hasTable($t)?"YES":"NO")."\n"; if(\Illuminate\Support\Facades\Schema::hasTable($t)){ $cols=\Illuminate\Support\Facades\Schema::getColumnListing($t); echo "AM246_DIAG_COLS ".$t." ".implode(",",$cols)."\n"; } }')
+          if grep -Fq 'AM246_COMPLAINT_REWORK' "$APP/routes/web.php" &&
+             test -f "$APP/app/Http/Controllers/Web/ComplaintReworkAssignmentController.php"; then
+            echo AM246_ALREADY_INSTALLED_VERIFY
+          else
+            python3 "$SCRIPT" check "$APP"
+            python3 "$SCRIPT" prepare "$APP"
+            # IMPORTANT: migration runs ONLY if a new private complete database export succeeds.
+            bash "$PKG/staging_db_backup_shell.sh" "$APP"
+            (cd "$APP" && php artisan migrate --path=database/migrations/2026_11_10_173000_create_complaint_rework_assignments.php --force)
+            python3 "$SCRIPT" apply "$APP"
+          fi
+          cd "$APP"
+          php artisan route:list --path=rot-work-complaints | grep -F '/rework'
+          php -l app/Http/Controllers/Web/ComplaintReworkAssignmentController.php
+          php -r 'require "vendor/autoload.php"; $app=require "bootstrap/app.php"; $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap(); foreach(["erp.rot-work-complaints.rework.show","erp.rot-work-complaints.rework.assign","erp.rot-work-complaints.rework.link"] as $n){$r=\Illuminate\Support\Facades\Route::getRoutes()->getByName($n);if(!$r || !in_array("auth:web",$r->gatherMiddleware(),true) || !str_contains(implode("|",$r->gatherMiddleware()),"EnsureErpAdmin"))exit(23);} foreach(["am_complaint_rework_links","am_complaint_rework_audits","am_complaint_staff_notifications"] as $t)if(!\Illuminate\Support\Facades\Schema::hasTable($t))exit(24);echo "AM246_SECURE_ROUTES_AND_THREE_TABLES_VERIFIED\n";'
+          echo AM246_STAGING_REWORK_ROUTE_VERIFIED
+          REMOTE
+      - name: Erase ephemeral SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
