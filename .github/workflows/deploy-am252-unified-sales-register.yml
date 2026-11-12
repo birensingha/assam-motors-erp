@@ -1,0 +1,83 @@
+name: AM252 Unified Sales Register — STAGING Deploy
+on:
+  push:
+    branches: [feature/am252-unified-purchase-sales-register-20261112]
+    paths:
+      - .github/workflows/deploy-am252-unified-sales-register.yml
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Package PHP/Python syntax
+        run: |
+          set -euo pipefail
+          P=deployment/live-fixes/AM252_UNIFIED_SALES_REGISTER
+          python3 -m py_compile "$P/install.py"
+          php -l "$P/files/app/Http/Controllers/Web/AdminUnifiedSalesRegisterController.php"
+          grep -q 'AM252_UNIFIED_SALES_REGISTER' "$P/files/resources/views/sales-register/index.blade.php"
+          echo AM252_GITHUB_SALES_REGISTER_PACKAGE_PASS
+      - name: Prepare STAGING SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$SSH_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4; do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then break; fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$SSH_KEY" ];then printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Guarded read-only Sales Register installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"
+          test "$(basename "$APP")" = assam-erp-staging
+          test -f "$APP/artisan"
+          cd "$HOME/assam-motors-deploy"
+          git fetch origin feature/am252-unified-purchase-sales-register-20261112
+          TMP="$(mktemp -d)"
+          trap 'rm -rf "$TMP"' EXIT
+          git archive FETCH_HEAD deployment/live-fixes/AM252_UNIFIED_SALES_REGISTER | tar -x -C "$TMP"
+          PKG="$TMP/deployment/live-fixes/AM252_UNIFIED_SALES_REGISTER"
+          python3 "$PKG/install.py" check "$APP"
+          python3 "$PKG/install.py" apply "$APP"
+          cd "$APP"
+          php artisan route:list --path=erp/sales-register | grep -F 'erp.sales-register.index'
+          php -l app/Http/Controllers/Web/AdminUnifiedSalesRegisterController.php
+          echo AM252_STAGING_UNIFIED_SALES_REGISTER_ROUTE_VERIFIED
+          echo AM252_NO_FINANCIAL_RECORD_OR_SCHEMA_CHANGED
+          REMOTE
+      - name: Public login redirect smoke for protected register
+        shell: bash
+        run: |
+          set -euo pipefail
+          STATUS=$(curl -sS -L --max-redirs 0 --max-time 20 -o /dev/null -w '%{http_code}' 'https://staging.assammotors.com/erp/sales-register' || true)
+          echo "AM252_UNAUTHENTICATED_ROUTE_STATUS=$STATUS"
+          test "$STATUS" = "302" || test "$STATUS" = "303"
+          echo AM252_UNAUTHENTICATED_GUEST_REDIRECT_VERIFIED
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
