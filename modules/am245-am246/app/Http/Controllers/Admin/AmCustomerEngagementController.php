@@ -31,6 +31,17 @@ class AmCustomerEngagementController extends Controller
         ]);
     }
 
+    public function customers(Request $request, AmEngagementLedger $ledger)
+    {
+        $v=$request->validate(['q'=>['required','string','min:2','max:80']]);
+        $results=$ledger->searchCustomers(trim($v['q']), 15);
+        // Deliberately do not expose phone number or balance in the search endpoint.
+        return response()->json(['customers'=>array_map(
+            fn(array $customer)=>['id'=>(int)$customer['id'],'name'=>(string)$customer['name']],
+            array_slice($results,0,15)
+        )])->header('Cache-Control','no-store, private');
+    }
+
     public function feedback(Request $request)
     {
         $v = $request->validate([
