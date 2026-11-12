@@ -39,20 +39,20 @@ final class AdminUnifiedSalesRegisterController extends Controller
         $to = $filters['to'] ?? '';
 
         $sales = DB::table('invoices as i')
-            ->selectRaw("'SALE' as document_type, i.id as doc_id, i.invoice_no as document_no, i.invoice_date as document_date,
+            ->selectRaw("'SALE' as document_type, i.id as doc_id, CONVERT(i.invoice_no USING utf8mb4) COLLATE utf8mb4_unicode_ci as document_no, i.invoice_date as document_date,
                          i.customer_name as customer_name, i.vehicle_reg_no as vehicle_no,
                          i.id as invoice_id, i.invoice_no as invoice_no,
                          i.grand_total as signed_amount, i.gst_total as signed_gst,
-                         i.status as document_status, i.created_at as created_at");
+                         CONVERT(i.status USING utf8mb4) COLLATE utf8mb4_unicode_ci as document_status, i.created_at as created_at");
 
         $credits = DB::table('invoice_credit_notes as c')
             ->leftJoin('invoices as i', 'i.id', '=', 'c.invoice_id')
             ->where('c.status', 'posted')
-            ->selectRaw("'CREDIT_NOTE' as document_type, c.id as doc_id, c.credit_note_no as document_no, c.credit_date as document_date,
+            ->selectRaw("'CREDIT_NOTE' as document_type, c.id as doc_id, CONVERT(c.credit_note_no USING utf8mb4) COLLATE utf8mb4_unicode_ci as document_no, c.credit_date as document_date,
                          i.customer_name as customer_name, i.vehicle_reg_no as vehicle_no,
                          c.invoice_id as invoice_id, i.invoice_no as invoice_no,
                          -c.credit_amount as signed_amount, -c.gst_amount as signed_gst,
-                         c.status as document_status, c.created_at as created_at");
+                         CONVERT(c.status USING utf8mb4) COLLATE utf8mb4_unicode_ci as document_status, c.created_at as created_at");
 
         if ($search !== '') {
             $like = '%'.str_replace(['%', '_'], ['\\%', '\\_'], $search).'%';
