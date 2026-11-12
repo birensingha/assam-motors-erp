@@ -1,0 +1,94 @@
+name: AM251 Admin Login Center — STAGING Deploy
+on:
+  push:
+    branches: [feature/am251-admin-login-center-20261112]
+    paths:
+      - .github/workflows/deploy-am251-admin-login-center.yml
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate login patch syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/AM251_ADMIN_LOGIN_CENTER/install.py
+          test -s deployment/live-fixes/AM251_ADMIN_LOGIN_CENTER/login.blade.php
+          grep -q 'AM251_LOGIN_STANDALONE_CENTER' deployment/live-fixes/AM251_ADMIN_LOGIN_CENTER/login.blade.php
+          echo AM251_GITHUB_PACKAGE_PASS
+      - name: Configure STAGING SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$SSH_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4; do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then break; fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$SSH_KEY" ];then
+            printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq;sudo apt-get install -qq -y sshpass
+          fi
+      - name: Guarded Admin Login standalone center deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"
+          test "$(basename "$APP")" = assam-erp-staging
+          test -f "$APP/artisan"
+          cd "$HOME/assam-motors-deploy"
+          git fetch origin feature/am251-admin-login-center-20261112
+          TMP="$(mktemp -d)"
+          trap 'rm -rf "$TMP"' EXIT
+          git archive FETCH_HEAD deployment/live-fixes/AM251_ADMIN_LOGIN_CENTER | tar -x -C "$TMP"
+          PKG="$TMP/deployment/live-fixes/AM251_ADMIN_LOGIN_CENTER"
+          python3 "$PKG/install.py" check "$APP"
+          python3 "$PKG/install.py" apply "$APP"
+          cd "$APP"
+          php artisan route:list --path=erp/login | grep -F 'erp.login.submit'
+          grep -q 'AM251_LOGIN_STANDALONE_CENTER' resources/views/auth/login.blade.php
+          echo AM251_ADMIN_LOGIN_VIEW_AND_ROUTES_DEPLOYED
+          REMOTE
+      - name: Anonymous public HTML smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          HTML="$(mktemp)"
+          trap 'rm -f "$HTML"' EXIT
+          if curl --max-time 20 -fsSL -H 'Cache-Control: no-cache' "https://staging.assammotors.com/erp/login" > "$HTML";then
+            if grep -q 'AM251_LOGIN_STANDALONE_CENTER' "$HTML" && grep -q 'am251-center-page' "$HTML";then
+              echo AM251_PUBLIC_LOGIN_HTML_STANDALONE_CENTER_VERIFIED
+            else
+              echo AM251_PUBLIC_LOGIN_HTML_NOT_YET_UPDATED_OR_CACHED
+              exit 24
+            fi
+          else
+            echo AM251_PUBLIC_HTTP_UNAVAILABLE_BUT_SERVER_DEPLOY_VERIFIED
+          fi
+      - name: Remove SSH material
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
