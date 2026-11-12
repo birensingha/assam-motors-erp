@@ -165,9 +165,9 @@ if 'staff.qc.show' in newlink or 'erp.job-cards.admin-qc-review' not in newlink:
     raise SystemExit('STOP_AM249_REPLACEMENT_LINK_INVALID')
 # Redirect Admin lifecycle button only; staff portal links remain untouched.
 # Fix nearby helper copy to describe the actual new Admin QC route.
-patched_source=show_source[:m.start()]+newlink+
-      '\\n{{-- AM249_ADMIN_QC_REVIEW: Admin button targets Admin authenticated route --}}'
-      +show_source[m.end():]
+patched_source=(show_source[:m.start()]+newlink+
+      '\n{{-- AM249_ADMIN_QC_REVIEW: Admin button targets Admin authenticated route --}}'
+      +show_source[m.end():])
 old_copy='QC Staff ke portal mein read-only Job Card Summary open hoga. Wahi assigned staff PASS / FAIL submit karega. Admin yahaan staff dobara select nahi karega.'
 new_copy='Admin QC Review mein assigned staff aur current QC record verify hoga. Sirf linked assigned reviewer actual vehicle QC ke baad PASS / FAIL record kar sakega.'
 if patched_source.count(old_copy)!=1:
