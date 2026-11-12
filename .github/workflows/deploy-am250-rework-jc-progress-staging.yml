@@ -1,0 +1,79 @@
+name: AM250 Rework Progress on Job Card — STAGING Deploy
+on:
+  push:
+    branches: [feature/am250-complaint-rework-jc-progress-20261112]
+    paths:
+      - .github/workflows/deploy-am250-rework-jc-progress-staging.yml
+      - deployment/live-fixes/AM250_REWORK_JC_PROGRESS/**
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preflight Python package
+        run: |
+          set -euo pipefail
+          P=deployment/live-fixes/AM250_REWORK_JC_PROGRESS
+          python3 -m py_compile "$P/install.py"
+          test -s "$P/files/resources/views/work-complaints/rework-jc-panel.blade.php"
+          grep -Fq 'AM250_REWORK_JC_PROGRESS' "$P/files/resources/views/work-complaints/rework-jc-panel.blade.php"
+          echo AM250_GITHUB_SOURCE_PREFLIGHT_PASS
+      - name: Set up existing STAGING SSH credentials
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$USERNAME" && test -n "$PORT"
+          test -n "$SSH_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4; do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then break; fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$SSH_KEY" ]; then
+            printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Guarded STAGING Job Card UI patch and read-only render test
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"
+          test "$(basename "$APP")" = "assam-erp-staging"
+          test -f "$APP/artisan"
+          cd "$HOME/assam-motors-deploy"
+          git fetch origin feature/am250-complaint-rework-jc-progress-20261112
+          PATCH_DIR="$(mktemp -d)"
+          git archive FETCH_HEAD deployment/live-fixes/AM250_REWORK_JC_PROGRESS | tar -x -C "$PATCH_DIR"
+          SCRIPT="$PATCH_DIR/deployment/live-fixes/AM250_REWORK_JC_PROGRESS/install.py"
+          if [ -f "$APP/resources/views/work-complaints/rework-jc-panel.blade.php" ]; then
+            echo AM250_PANEL_PRESENT_VERIFY
+          else
+            python3 "$SCRIPT" check "$APP"
+            python3 "$SCRIPT" apply "$APP"
+          fi
+          python3 "$SCRIPT" verify "$APP"
+          echo AM250_STAGING_REWORK_PANEL_VERIFIED
+          REMOTE
+      - name: Cleanup SSH credential
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
