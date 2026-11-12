@@ -150,7 +150,7 @@ final class ComplaintReworkRotSetupController extends Controller
                 'gst_percent'=>0,
                 'total'=>0,
                 'billing_included'=>0,
-                'billing_reason'=>$reason,
+                'billing_reason'=>\Illuminate\Support\Str::limit($reason,230,''),
                 'mechanic_id'=>0,
                 'mechanic_name'=>'',
                 'rot_start'=>null,
