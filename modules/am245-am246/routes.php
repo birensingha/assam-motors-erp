@@ -19,5 +19,6 @@ Route::middleware(['web','auth','can:manage-customer-engagement','can:view-custo
     ->name('am.customer-messaging.')
     ->group(function () {
         Route::get('/', [AmCustomerEngagementController::class,'messaging'])->name('index');
+        Route::get('/customers', [AmCustomerEngagementController::class,'customers'])->middleware('throttle:30,1')->name('customers');
         Route::post('/message', [AmCustomerEngagementController::class,'message'])->name('message');
     });
