@@ -21,7 +21,13 @@ class AmCustomerEngagementController extends Controller
         return view('admin.engagement.index', [
             'feedback' => $query->paginate(20)->withQueryString(),
             'complaints' => DB::table('am_customer_complaints')->orderByDesc('id')->limit(30)->get(),
-            'messages' => DB::table('am_customer_message_log')->orderByDesc('id')->limit(30)->get(),
+        ]);
+    }
+
+    public function messaging(Request $request)
+    {
+        return view('admin.engagement.messaging', [
+            'messages' => DB::table('am_customer_message_log')->orderByDesc('id')->limit(50)->get(),
         ]);
     }
 
