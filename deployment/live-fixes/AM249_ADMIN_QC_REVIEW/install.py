@@ -137,8 +137,23 @@ if len(matches)!=1:
             snippet=show_source[max(0,m0.start()-180):min(len(show_source),m0.end()+240)]
             snippet=re.sub(r'(?i)(password|secret|bearer|api[_ -]?key|auth[_ -]?token)[^\\n]{0,130}','[REDACTED]',snippet)
             print('AM249_LINK_SOURCE_EXCERPT',repr(snippet)[:900])
+    # Actual QC button may reside in a Blade partial; report only paths and source snippets.
+    candidates=[]
+    for viewpath in (root/'resources/views').rglob('*.blade.php'):
+        if viewpath.stat().st_size>400000:continue
+        content=viewpath.read_text('utf8','replace')
+        if any(x.lower() in content.lower() for x in ('staff.qc.show','Staff QC Review','Open Quality Check','Open QC Review')):
+            candidates.append((viewpath.relative_to(root),content))
+    print('AM249_QC_BUTTON_VIEW_CANDIDATES',len(candidates))
+    for relative,content in candidates[:12]:
+        for token in ('staff.qc.show','Staff QC Review','Open Quality Check','Open QC Review'):
+            hit=re.search(re.escape(token),content,re.I)
+            if hit:
+                snip=content[max(0,hit.start()-240):min(len(content),hit.end()+300)]
+                snip=re.sub(r'(?i)(password|secret|bearer|api[_ -]?key|auth[_ -]?token)[^\\n]{0,130}','[REDACTED]',snip)
+                print('AM249_QC_BUTTON_SOURCE',relative,'TOKEN',token,'EXCERPT',repr(snip)[:1100])
     raise SystemExit('STOP_AM249_STAFF_QC_LINK_ANCHOR_COUNT_'+str(len(matches))+
-       ' (no UI changes; inspect diagnostic source excerpts)')
+       ' (no UI changes; use reported view path)')
 m=matches[0]
 oldlink=m.group(0)
 newlink=oldlink.replace('staff.qc.show','erp.job-cards.admin-qc-review')
