@@ -62,6 +62,17 @@ jobs:
           trap 'rm -rf "$WORK"' EXIT
           git archive FETCH_HEAD deployment/live-fixes/AM207_RECEIPT_VOUCHER_EDIT_PREFLIGHT | tar -x -C "$WORK"
           python3 "$WORK/deployment/live-fixes/AM207_RECEIPT_VOUCHER_EDIT_PREFLIGHT/audit.py" "$APP"
+          echo AM250_POSTING_CODE_BEGIN
+          sed -n '170,293p' "$APP/app/Http/Controllers/Web/AdminMoneyReceiptController.php"
+          echo AM250_POSTING_CODE_END
+          echo AM250_REGISTER_VIEW_BEGIN
+          sed -n '36,71p' "$APP/resources/views/money-receipts/index.blade.php"
+          echo AM250_REGISTER_VIEW_END
+          echo AM250_DETAILS_VIEW_BEGIN
+          sed -n '20,68p' "$APP/resources/views/money-receipts/show.blade.php"
+          echo AM250_DETAILS_VIEW_END
+          echo AM250_ROUTE_DECLARATIONS
+          grep -n -F "money-receipts" "$APP/routes/web.php" | head -20
           echo AM250_READONLY_STAGING_RECEIPT_AUDIT_COMPLETE
           REMOTE
       - name: Remove SSH material
