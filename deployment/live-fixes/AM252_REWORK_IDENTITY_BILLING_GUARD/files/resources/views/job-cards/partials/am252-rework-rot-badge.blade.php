@@ -18,11 +18,13 @@
     && abs((float)($line->gst_percent??0))<0.005;
 @endphp
 @if($am252Link)
+ @once
  <style id="am252-rot-inline-tag-style">
   .am252-tag{display:inline-flex;align-items:center;gap:5px;border-radius:6px;border:1px solid #b4d5bc;background:#e8f7ec;color:#116039;padding:3px 7px;font-weight:800;font-size:10px;line-height:1.4;margin:3px 4px 3px 0;text-decoration:none}
   .am252-tag.original{border-color:#c6d7e8;background:#eaf2fc;color:#254f83}
   .am252-tag.warning{border-color:#f3bc9a;background:#fff1e7;color:#a33e10}
  </style>
+ @endonce
  @if($am252IsRework)
   <a class="am252-tag" href="{{ route('erp.rot-work-complaints.rework.show',$am252Link->complaint_id) }}">↻ REPEAT COMPLAINT REWORK #{{ $am252Link->complaint_id }}</a>
   @if($am252SafeBilling)
