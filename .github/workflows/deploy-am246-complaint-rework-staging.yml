@@ -68,6 +68,8 @@ jobs:
           git archive FETCH_HEAD deployment/live-fixes/AM246_COMPLAINT_REWORK_ASSIGN | tar -x -C "$PATCH_DIR"
           PKG="$PATCH_DIR/deployment/live-fixes/AM246_COMPLAINT_REWORK_ASSIGN"
           SCRIPT="$PKG/install.py"
+          # Read-only schema diagnostic; no row contents or credentials printed.
+          (cd "$APP" && php -r 'require "vendor/autoload.php"; $app=require "bootstrap/app.php"; $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap(); foreach(["am_complaint_rework_links","am_complaint_rework_audits","am_complaint_staff_notifications"] as $t){echo "AM246_DIAG_TABLE ".$t." present=".(\Illuminate\Support\Facades\Schema::hasTable($t)?"YES":"NO")."\n"; if(\Illuminate\Support\Facades\Schema::hasTable($t)){ $cols=\Illuminate\Support\Facades\Schema::getColumnListing($t); echo "AM246_DIAG_COLS ".$t." ".implode(",",$cols)."\n"; } }')
           if grep -Fq 'AM246_COMPLAINT_REWORK' "$APP/routes/web.php" &&
              test -f "$APP/app/Http/Controllers/Web/ComplaintReworkAssignmentController.php"; then
             echo AM246_ALREADY_INSTALLED_VERIFY
