@@ -3,7 +3,7 @@ on:
   push:
     branches: [fix/am252-rework-rot-identity-nonbillable-20261112]
     paths:
-      - .github/workflows/diag-am251-native-complaint-rot-staging.yml
+      - .github/workflows/diag-am252-rework-identity-billing-staging.yml
       - deployment/live-fixes/AM252_REWORK_IDENTITY_BILLING_GUARD/**
 permissions: {contents: read}
 concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
