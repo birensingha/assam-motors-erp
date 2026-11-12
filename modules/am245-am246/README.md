@@ -22,3 +22,11 @@ Automatic messaging requires business credentials, opt-in, approved templates an
 2. CUSTOMER > Customer Outstanding & WhatsApp: `am.customer-messaging.index`. Financial messaging form and activity log live here, behind both `manage-customer-engagement` and `view-customer-ledger` gates. Implement canonical outstanding register using real ERP finance models, not placeholder balances.
 3. Message POST route: `am.customer-messaging.message`. Never post to the feedback route.
 4. These routes and templates have not been mounted to live staging: merge and test only with deployed Laravel source.
+
+## Next integration increment — searchable Customer Master
+- The **Customer Outstanding & WhatsApp** page now has a searchable customer picker; direct numeric ID entry was removed from its visible form.
+- GET `am.customer-messaging.customers` returns only customer ID/name, requires both Admin/customer engagement and customer ledger authorization, is rate limited and marked no-store.
+- `AmEngagementLedger::searchCustomers($query, $limit)` must be bound to the deployed ERP's real scoped Customer Master queries. This is **not** a generic full-text database query or an automatic live connection.
+- All ledger, customer and mobile values stay on the server during message construction. A typed browser customer name is not trusted to establish customer identity.
+- Confirm zero, credit, invoice, credit-note, advance and on-account balances against the existing ledger; verify no staff, HR, unauthenticated or cross-company lookup; verify no WhatsApp delivery acknowledgement is fabricated.
+- Pending mandatory stages: implemented adapter binding, staging PHP/Blade validation, actual sidebar insertion, database migration, customer opt-in audit, end-to-end browser testing.
