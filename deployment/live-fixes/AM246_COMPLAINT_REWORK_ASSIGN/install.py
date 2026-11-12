@@ -78,8 +78,10 @@ foreach($required as $c){if(!$schema::hasColumn('am_complaint_rework_links',$c))
  fwrite(STDERR,'AM246_MISSING_COLUMN_'.$c);exit(32);
 }}
 foreach(['original_rot_session_id','rework_rot_session_id'] as $column){
- $r=$db::selectOne('SHOW COLUMNS FROM am_complaint_rework_links LIKE ?',[$column]);
- if(!$r || stripos((string)$r->Type,'varchar')===false) {
+ // Hostinger MariaDB rejects parameter binding in SHOW COLUMNS LIKE ?. Use information_schema instead.
+ $r=$db::selectOne('SELECT DATA_TYPE AS data_type FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?',
+   ['am_complaint_rework_links',$column]);
+ if(!$r || stripos((string)$r->data_type,'varchar')===false) {
   fwrite(STDERR,'AM246_ROT_ID_MUST_BE_VARCHAR_'.$column);exit(33);
  }
 }
