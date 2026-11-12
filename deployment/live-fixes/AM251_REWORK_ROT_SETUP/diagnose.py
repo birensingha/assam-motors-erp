@@ -114,5 +114,19 @@ for rel,method in [
   print('AM251_DETAIL_CODE',rel,i+1,v[:500])
 print('AM251_CREATION_HANDLER_DETAILS_END')
 
+
+print('AM251_ROT_ASSIGNMENT_SERVICE_DETAIL_START')
+for rel in ['app/Services/RotAssignmentService.php',
+            'app/Models/JobCardLabour.php','app/Models/RotSession.php']:
+ p=root/rel
+ if not p.is_file():
+  print('AM251_SERVICE_FILE_MISSING',rel);continue
+ lines=p.read_text('utf8','replace').splitlines()
+ print('AM251_SERVICE_FILE',rel,'LINES',len(lines))
+ for n,line in enumerate(lines[:340],1):
+  if secret.search(line):line='[REDACTED_SENSITIVE]'
+  print('AM251_SERVICE_CODE',rel,n,line.strip()[:560])
+print('AM251_ROT_ASSIGNMENT_SERVICE_DETAIL_DONE')
+
 print('AM251_NO_SOURCE_OR_DATABASE_CHANGES')
 print('AM251_READ_ONLY_DONE')
