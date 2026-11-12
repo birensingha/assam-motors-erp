@@ -24,6 +24,35 @@ python3 "$SCRIPT" apply "$ROOT"      # source backup, PHP lint, Blade compile, v
 ```
 Do not proceed after any STOP or failed backup. No existing complaint, original ROT, finance or staff entry changes during installer. If backup source has changed after apply, rollback refuses to overwrite newer changes. Database migrations are additive, with a preservation-only down().
 
+## Hostinger PHP `proc_open()` disabled — safe shell dump fallback
+
+On this hosting account the original `staging_db_backup.php` stops with
+`AM246_BACKUP_STOP_PROC_OPEN_DISABLED`. **This means the backup, migration and install have NOT happened.**
+
+The corrected shell-based backup is now included; it executes `mariadb-dump` or
+`mysqldump` from the user's SSH shell rather than using PHP `proc_open`.
+It gets STAGING DB configuration from Laravel via a PHP helper that stores
+credentials only in a private temporary `0600` MySQL defaults file, does not
+print the password, validates that the Laravel app URL is STAGING, verifies
+every base table has a `CREATE TABLE` statement in the SQL export, and stores a
+private SQL backup with a SHA256 manifest under
+`storage/app/am-backups/AM246_REWORK_SQL_SNAPSHOT`.
+
+After fetching the latest AM246 branch and extracting its package:
+
+```bash
+bash "$PACKAGE/staging_db_backup_shell.sh" "$ROOT"
+```
+
+Only after `AM246_FRESH_STAGING_DB_BACKUP_EXPORT_VERIFIED`:
+
+```bash
+(cd "$ROOT" && php artisan migrate --path=database/migrations/2026_11_10_173000_create_complaint_rework_assignments.php --force)
+python3 "$PACKAGE/install.py" apply "$ROOT"
+```
+
+If backup reports `STOP_AM246_SHELL_BACKUP_NO_MARIADB_DUMP_BINARY`, use Hostinger hPanel's MariaDB database backup/export facility and verify the artifact first. Do not run the migration without a verified export. A verified export is not the same as a tested restoration.
+
 ## Browser acceptance
 - Admin GET `/erp/rot-work-complaints/1/rework` shows case and original ROT.
 - Admin selects a different actual employee only when ready; POST must show assigned receiver, no auto ROT billing, staff portal receiving inbox new assignment, original staff portal new receiver.
