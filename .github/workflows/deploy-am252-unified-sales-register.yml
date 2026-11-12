@@ -4,6 +4,7 @@ on:
     branches: [feature/am252-unified-purchase-sales-register-20261112]
     paths:
       - .github/workflows/deploy-am252-unified-sales-register.yml
+      - 'deployment/live-fixes/AM252_UNIFIED_SALES_REGISTER/**'
 permissions: {contents: read}
 concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
 jobs:
