@@ -129,8 +129,16 @@ for m in linkpat.finditer(show_source):
     if 'staff.qc.show' in m.group('attrs') and re.search('Staff\s+QC\s+Review',m.group('body'),re.I):
         matches.append(m)
 if len(matches)!=1:
+    # Read-only source diagnostic; no customer data values are accessed.
+    for token in ('staff.qc.show', 'Staff QC Review', 'Open Staff QC'):
+        hit=list(re.finditer(re.escape(token),show_source,re.I))
+        print('AM249_LINK_SOURCE_TOKEN',repr(token),'count',len(hit))
+        for m0 in hit[:3]:
+            snippet=show_source[max(0,m0.start()-180):min(len(show_source),m0.end()+240)]
+            snippet=re.sub(r'(?i)(password|secret|bearer|api[_ -]?key|auth[_ -]?token)[^\\n]{0,130}','[REDACTED]',snippet)
+            print('AM249_LINK_SOURCE_EXCERPT',repr(snippet)[:900])
     raise SystemExit('STOP_AM249_STAFF_QC_LINK_ANCHOR_COUNT_'+str(len(matches))+
-       ' (no UI changes; verify actual Job Card source)')
+       ' (no UI changes; inspect diagnostic source excerpts)')
 m=matches[0]
 oldlink=m.group(0)
 newlink=oldlink.replace('staff.qc.show','erp.job-cards.admin-qc-review')
