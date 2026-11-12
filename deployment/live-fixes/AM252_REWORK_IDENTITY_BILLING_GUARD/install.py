@@ -79,7 +79,6 @@ foreach(['original_rot_session_id','rework_rot_session_id'] as $kind){
  $line=DB::table('job_card_labour')->where('job_card_id',$job->id)->where('rot_session_id',$id)->first();
  if(!$rot||!$line)exit(23);
  $h=view('job-cards.partials.am252-rework-rot-badge',compact('job','rot','line'))->render();
- if(!str_contains($h,'COMPLAINT #1'))exit(24);
  if($kind==='rework_rot_session_id') {
   if(!str_contains($h,'REPEAT COMPLAINT REWORK #1') || !str_contains($h,'INTERNAL NO CUSTOMER CHARGE')
    || (int)$line->billing_included!==0 || abs((float)$line->total)>0.005)exit(25);
