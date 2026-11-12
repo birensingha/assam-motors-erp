@@ -14,7 +14,7 @@ pkg=Path(__file__).resolve().parent/'files'
 if root.name!='assam-erp-staging' or not (root/'artisan').is_file():
     raise SystemExit('STOP_AM249_NOT_STAGING')
 routes='routes/web.php'
-job_view='resources/views/job-cards/show.blade.php'
+job_view='resources/views/job-cards/lifecycle-panel.blade.php'
 controller='app/Http/Controllers/Web/AdminQcReviewController.php'
 qc_view='resources/views/job-cards/admin-qc-review.blade.php'
 old_files=[routes,job_view]
@@ -163,9 +163,17 @@ if len(label.findall(newlink))!=1:
 newlink=label.sub('Open Admin QC Review',newlink,count=1)
 if 'staff.qc.show' in newlink or 'erp.job-cards.admin-qc-review' not in newlink:
     raise SystemExit('STOP_AM249_REPLACEMENT_LINK_INVALID')
-patched[job_view]=blob(show_source[:m.start()]+newlink+
-      '\n{{-- AM249_ADMIN_QC_REVIEW: Admin button targets Admin authenticated route --}}'
-      +show_source[m.end():])
+# Redirect Admin lifecycle button only; staff portal links remain untouched.
+# Fix nearby helper copy to describe the actual new Admin QC route.
+patched_source=show_source[:m.start()]+newlink+
+      '\\n{{-- AM249_ADMIN_QC_REVIEW: Admin button targets Admin authenticated route --}}'
+      +show_source[m.end():]
+old_copy='QC Staff ke portal mein read-only Job Card Summary open hoga. Wahi assigned staff PASS / FAIL submit karega. Admin yahaan staff dobara select nahi karega.'
+new_copy='Admin QC Review mein assigned staff aur current QC record verify hoga. Sirf linked assigned reviewer actual vehicle QC ke baad PASS / FAIL record kar sakega.'
+if patched_source.count(old_copy)!=1:
+    raise SystemExit('STOP_AM249_LIFECYCLE_QC_HELPER_COPY_CHANGED')
+patched_source=patched_source.replace(old_copy,new_copy,1)
+patched[job_view]=blob(patched_source)
 for rel in new_files:patched[rel]=(pkg/rel).read_bytes()
 
 php_check(raw[routes],'ORIGINAL_ROUTES')
