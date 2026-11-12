@@ -1,0 +1,80 @@
+name: AM247 FINAL — Public Admin & Staff STAGING Footer Links
+on:
+  push:
+    branches: [fix/am247-footer-staging-links-20261112]
+    paths:
+      - .github/workflows/deploy-am247-final-footer.yml
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  fix-footer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      APP: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Python syntax
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/AM247_FOOTER_FINAL/site_links.py
+          echo AM247_FINAL_GITHUB_SCRIPT_PASS
+      - name: Prepare SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$SSH_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4; do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then break; fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$SSH_KEY" ];then printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Targeted public site footer link update
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$APP'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"
+          test "$(basename "$APP")" = assam-erp-staging
+          test -f "$APP/artisan"
+          SITE="$HOME/domains/assammotors.com/public_html"
+          test -d "$SITE"
+          cd "$HOME/assam-motors-deploy"
+          git fetch origin fix/am247-footer-staging-links-20261112
+          TEMP="$(mktemp -d)"
+          trap 'rm -rf "$TEMP"' EXIT
+          git archive FETCH_HEAD deployment/live-fixes/AM247_FOOTER_FINAL | tar -x -C "$TEMP"
+          SCRIPT="$TEMP/deployment/live-fixes/AM247_FOOTER_FINAL/site_links.py"
+          python3 "$SCRIPT" check "$APP" "$SITE"
+          python3 "$SCRIPT" apply "$APP" "$SITE"
+          echo AM247_FINAL_PUBLIC_FOOTER_DEPLOY_STEP_COMPLETE
+          REMOTE
+      - name: Public footer destinations HTTP smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="$(mktemp)"
+          trap 'rm -f "$OUT"' EXIT
+          curl -fsSL --max-time 25 -H 'Cache-Control: no-cache' 'https://www.assammotors.com/?am247v=final-20261112' > "$OUT"
+          grep -Fq 'https://staging.assammotors.com/erp/login' "$OUT"
+          grep -Fq 'https://staging.assammotors.com/staff/login' "$OUT"
+          echo AM247_FINAL_PUBLIC_HTML_BOTH_STAGING_HREFS_VERIFIED
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
