@@ -1,0 +1,80 @@
+name: AM251 No-Charge Complaint Rework ROT — STAGING Deploy
+on:
+  push:
+    branches: [feature/am251-rework-rot-setup-20261112]
+    paths:
+      - .github/workflows/deploy-am251-no-charge-rot-setup-staging.yml
+      - deployment/live-fixes/AM251_REWORK_ROT_SETUP/install.py
+      - deployment/live-fixes/AM251_REWORK_ROT_SETUP/files/**
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Source code-only preflight
+        run: |
+          set -euo pipefail
+          P=deployment/live-fixes/AM251_REWORK_ROT_SETUP
+          python3 -m py_compile "$P/install.py"
+          php -l "$P/files/app/Http/Controllers/Web/ComplaintReworkRotSetupController.php"
+          grep -Fq 'AM251_REWORK_ROT_CREATE' "$P/files/resources/views/work-complaints/no-charge-rot.blade.php"
+          echo AM251_GITHUB_SOURCE_PREFLIGHT_PASS
+      - name: Set up STAGING SSH
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$USERNAME" && test -n "$PORT"
+          test -n "$SSH_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4; do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then break; fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$SSH_KEY" ]; then
+            printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Install no-charge ROT form only; never submit business action
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"
+          test "$(basename "$APP")" = "assam-erp-staging"
+          test -f "$APP/artisan"
+          cd "$HOME/assam-motors-deploy"
+          git fetch origin feature/am251-rework-rot-setup-20261112
+          PATCH_DIR="$(mktemp -d)"
+          git archive FETCH_HEAD deployment/live-fixes/AM251_REWORK_ROT_SETUP | tar -x -C "$PATCH_DIR"
+          SCRIPT="$PATCH_DIR/deployment/live-fixes/AM251_REWORK_ROT_SETUP/install.py"
+          if [ -f "$APP/app/Http/Controllers/Web/ComplaintReworkRotSetupController.php" ]; then
+            echo AM251_ALREADY_PRESENT_VERIFY_ONLY
+          else
+            python3 "$SCRIPT" check "$APP"
+            python3 "$SCRIPT" apply "$APP"
+          fi
+          python3 "$SCRIPT" verify "$APP"
+          echo AM251_NO_CHARGE_ROT_FORM_STAGING_VERIFIED
+          REMOTE
+      - name: Cleanup SSH credential
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
