@@ -1,9 +1,8 @@
 <?php
-// Include once inside your ERP's existing verified admin route group.
-// IMPORTANT: Route authentication is intentionally strict; do not expose publicly.
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Admin\AmCustomerEngagementController;
 
+// Standalone module routing. Match the existing ERP admin route conventions during deployment.
 Route::middleware(['web','auth','can:manage-customer-engagement'])
     ->prefix('erp/admin/customer-engagement')
     ->name('am.customer-engagement.')
@@ -12,5 +11,13 @@ Route::middleware(['web','auth','can:manage-customer-engagement'])
         Route::post('/feedback', [AmCustomerEngagementController::class,'feedback'])->name('feedback');
         Route::post('/reply', [AmCustomerEngagementController::class,'reply'])->name('reply');
         Route::post('/complaint', [AmCustomerEngagementController::class,'complaint'])->name('complaint');
+    });
+
+// Separate page and stricter finance permission; no outstanding on Customer Feedback.
+Route::middleware(['web','auth','can:manage-customer-engagement','can:view-customer-ledger'])
+    ->prefix('erp/admin/customer-messaging')
+    ->name('am.customer-messaging.')
+    ->group(function () {
+        Route::get('/', [AmCustomerEngagementController::class,'messaging'])->name('index');
         Route::post('/message', [AmCustomerEngagementController::class,'message'])->name('message');
     });
