@@ -86,5 +86,33 @@ p=subprocess.run(['php','-r',php],cwd=root,capture_output=True,text=True,timeout
 if p.returncode:
     print('STOP_AM251_DB_SCHEMA_PHP',(p.stdout+p.stderr)[-650:]);raise SystemExit(3)
 print(p.stdout[:26000])
+
+print('AM251_CREATION_HANDLER_DETAILS_BEGIN')
+for rel,method in [
+ ('app/Http/Controllers/Web/AdminJobCardPageController.php','assignMechanic'),
+ ('app/Http/Controllers/Web/AdminJobCardPageController.php','addLabourDirect'),
+ ('app/Http/Controllers/Web/AdminRotBillingController.php','setBilling'),
+ ('app/Services/RotWorkflowService.php','assign')]:
+ p=root/rel
+ if not p.is_file():
+  print('AM251_DETAILS_SOURCE_MISSING',rel);continue
+ lines=p.read_text('utf8','replace').splitlines()
+ found=[i for i,v in enumerate(lines) if re.search(r'function\s+'+re.escape(method)+r'\s*\(',v)]
+ if len(found)!=1:
+  print('AM251_DETAILS_METHOD_NOT_UNIQUE',rel,method,len(found));continue
+ start=found[0]
+ if method=='addLabourDirect':maxcount=70
+ elif method=='assignMechanic':maxcount=260
+ elif method=='setBilling':maxcount=180
+ else:maxcount=140
+ stop=min(len(lines),start+maxcount)
+ for i in range(start,stop):
+  if i>start and re.search(r'^\s*(?:(?:public|private|protected)\s+)?function\s+\w+\s*\(',lines[i]):
+   break
+  v=lines[i].strip()
+  if secret.search(v):v='[REDACTED_SENSITIVE]'
+  print('AM251_DETAIL_CODE',rel,i+1,v[:500])
+print('AM251_CREATION_HANDLER_DETAILS_END')
+
 print('AM251_NO_SOURCE_OR_DATABASE_CHANGES')
 print('AM251_READ_ONLY_DONE')
