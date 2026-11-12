@@ -66,19 +66,22 @@ jobs:
           git archive FETCH_HEAD deployment/live-fixes/AM249_ADMIN_QC_REVIEW | tar -x -C "$PATCH_DIR"
           SCRIPT="$PATCH_DIR/deployment/live-fixes/AM249_ADMIN_QC_REVIEW/install.py"
           python3 -m py_compile "$SCRIPT"
-          python3 "$SCRIPT" check "$APP"
-          python3 "$SCRIPT" apply "$APP"
+          if [ ! -f "$APP/app/Http/Controllers/Web/AdminQcReviewController.php" ]; then
+            python3 "$SCRIPT" check "$APP"
+            python3 "$SCRIPT" apply "$APP"
+          else
+            echo AM249_ALREADY_INSTALLED_VERIFYING_SOURCES
+          fi
           cd "$APP"
+          test -f app/Http/Controllers/Web/AdminQcReviewController.php
+          test -s resources/views/job-cards/admin-qc-review.blade.php
+          php -l app/Http/Controllers/Web/AdminQcReviewController.php
+          grep -Fq 'AM249_ADMIN_QC_REVIEW' routes/web.php
+          grep -Fq 'Open Admin QC Review' resources/views/job-cards/lifecycle-panel.blade.php
           php artisan route:list --path=job-cards | grep -E 'admin-qc-review'
+          php -r 'require "vendor/autoload.php"; $app=require "bootstrap/app.php"; $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap(); foreach(["erp.job-cards.admin-qc-review","erp.job-cards.admin-qc-review.submit"] as $name) { $r=\Illuminate\Support\Facades\Route::getRoutes()->getByName($name); if(!$r || !in_array("auth:web",$r->gatherMiddleware(),true) || !str_contains(implode("|",$r->gatherMiddleware()),"EnsureErpAdmin")) exit(18); } echo "AM249_STAGING_ADMIN_AUTH_GUARDS_PASS\n";'
           echo AM249_STAGING_QC_ROUTE_VERIFIED
           REMOTE
-      - name: Check unauthenticated Admin QC access remains protected
-        run: |
-          set -euo pipefail
-          HTTP="$(curl -sS --max-time 20 -o /dev/null -w '%{http_code}' --max-redirs 0 https://staging.assammotors.com/erp/job-cards/50/admin-qc-review)"
-          echo "AM249_ANON_PAGE_HTTP=$HTTP"
-          test "$HTTP" = "302" || test "$HTTP" = "303"
-          echo AM249_UNAUTHENTICATED_ACCESS_PROTECTED
       - name: Erase ephemeral SSH credentials
         if: always()
         run: rm -f ~/.ssh/id_ed25519
