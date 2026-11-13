@@ -1,0 +1,87 @@
+name: AM255 Money Receipt Actions One Row — STAGING Deploy
+on:
+  push:
+    branches: [fix/am255-money-receipt-action-inline-20261113]
+    paths:
+      - '.github/workflows/deploy-am255-receipt-actions.yml'
+      - 'deployment/live-fixes/AM255_RECEIPT_ACTIONS_INLINE/**'
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate installer syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deployment/live-fixes/AM255_RECEIPT_ACTIONS_INLINE/install.py
+          echo AM255_GITHUB_INSTALLER_SYNTAX_PASS
+      - name: Prepare secure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$SSH_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4; do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$SSH_KEY" ];then
+            printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Deploy receipt Actions inline with guarded code backup
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"
+          test "$(basename "$APP")" = assam-erp-staging
+          test -f "$APP/artisan"
+          cd "$HOME/assam-motors-deploy"
+          git fetch origin fix/am255-money-receipt-action-inline-20261113
+          TMP="$(mktemp -d)"
+          trap 'rm -rf "$TMP"' EXIT
+          git archive FETCH_HEAD deployment/live-fixes/AM255_RECEIPT_ACTIONS_INLINE | tar -x -C "$TMP"
+          INSTALL="$TMP/deployment/live-fixes/AM255_RECEIPT_ACTIONS_INLINE/install.py"
+          python3 "$INSTALL" check "$APP"
+          python3 "$INSTALL" apply "$APP"
+          cd "$APP"
+          python3 - <<'PY'
+          from pathlib import Path
+          s=Path('resources/views/money-receipts/index.blade.php').read_text()
+          for target in ('AM255_RECEIPT_ACTIONS_ONE_ROW','am255-actions-cell','am255-actions-row',
+                         'am255-void-form','am255-reason','flex-wrap:nowrap','min-width:366px'):
+              assert target in s, 'STOP_AM255_RENDER_TEMPLATE_CONTRACT_'+target
+          assert s.count('class="am255-actions-row"') == 1
+          assert 'style="display:inline-flex;flex-wrap:wrap;gap:4px' not in s
+          print('AM255_OPEN_PRINT_REASON_VOID_NONWRAPPING_TEMPLATE_PASS')
+          PY
+          echo AM255_STAGING_RECEIPT_ACTIONS_VIEW_DEPLOYED
+          echo AM255_NO_RECEIPT_OR_LEDGER_DATA_CHANGED
+          REMOTE
+      - name: Clean SSH material
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
