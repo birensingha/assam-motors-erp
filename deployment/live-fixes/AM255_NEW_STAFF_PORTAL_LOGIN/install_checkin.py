@@ -49,7 +49,7 @@ def verify():
     s=target.read_text('utf8','replace')
     if s.count(marker)!=1 or 'return $attendance; // Existing open Check-In' not in s:
         raise SystemExit('STOP_AM255_CHECKIN_SERVER_GUARD_NOT_PRESENT')
-    if 'whereNull(\\'check_out\\')' not in s or 'Strict Check-In' not in s:
+    if "whereNull('check_out')" not in s or 'Strict Check-In' not in s:
         raise SystemExit('STOP_AM255_CHECKIN_PREVIOUS_GUARDS_MISSING')
     php_lint(target.read_bytes())
     print('AM255_ATTENDANCE_RETRY_GUARD_AND_PHP_SYNTAX_VERIFIED')
