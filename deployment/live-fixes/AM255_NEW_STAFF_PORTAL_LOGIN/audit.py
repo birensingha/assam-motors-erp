@@ -143,4 +143,46 @@ for rel,rr in wanted:
   print('AM255_IMPLEMENTATION_SOURCE',rel,i,l[:520])
 print('AM255_AUTH_CHECKIN_READONLY_DONE')
 
+
+print('AM255_STAFF_CREATION_AND_HASH_METADATA_START')
+php3=r"""require 'vendor/autoload.php';$app=require 'bootstrap/app.php';$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+use Illuminate\Support\Facades\DB;use Illuminate\Support\Facades\Route;use Illuminate\Support\Facades\Hash;
+foreach(Route::getRoutes() as $r){
+ $u=(string)$r->uri();$n=(string)($r->getName()??'');$ac=(string)$r->getActionName();
+ if(str_contains($u,'staff')||str_contains($ac,'Staff')||str_contains($n,'staff'))
+  if(in_array('POST',$r->methods(),true) || in_array('PUT',$r->methods(),true))
+    echo 'AM255_STAFF_WRITE_ROUTE='.json_encode(['uri'=>$u,'name'=>$n,'action'=>$ac,'methods'=>$r->methods()])."\n";
+}
+foreach(['staff','erp_auth_users'] as $t){
+ foreach(DB::select('SELECT INDEX_NAME AS n, COLUMN_NAME AS c, NON_UNIQUE AS non_unique FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME IN ("email","staff_id")',[$t]) as $x)
+  echo 'AM255_LOGIN_IDENTITY_INDEX='.$t.':'.$x->n.':'.$x->c.':'.$x->non_unique."\n";
+}
+$s=DB::table('staff')->where('id',9)->first();
+if($s){
+ $h=(string)$s->password;
+ $algo=(password_get_info($h)['algoName']??'unknown');
+ echo 'AM255_NEW_STAFF_PASSWORD_HASH_TYPE='.$algo.' (no hash/secret printed)'."\n";
+ $email=(string)($s->email??'');
+ $email_count=DB::table('staff')->whereRaw('LOWER(email)=?',[strtolower($email)])->count();
+ $erp_email_count=DB::table('erp_auth_users')->whereRaw('LOWER(email)=?',[strtolower($email)])->count();
+ echo 'AM255_NEW_STAFF_EMAIL_UNIQUENESS='.json_encode(['staff_match_count'=>$email_count,'erp_account_match_count'=>$erp_email_count])."\n";
+}
+"""
+p3=subprocess.run(['php','-r',php3],cwd=root,text=True,capture_output=True,timeout=35)
+if p3.returncode:raise SystemExit('STOP_AM255_STAFF_CREATE_AUDIT '+(p3.stderr+p3.stdout)[-450:])
+print(p3.stdout[:13000])
+for rel in ['app/Http/Controllers/Web/AdminNativeModuleController.php','app/Http/Controllers/Web/AdminWorkshopControlPageController.php']:
+ p=root/rel
+ if not p.is_file():continue
+ lines=p.read_text('utf8','replace').splitlines()
+ hits=[i for i,l in enumerate(lines) if re.search(r'function\s+(createStaff|storeStaff|updateStaff|staffStore|newStaff)\s*\(|DB::table\(\s*[\'"]staff[\'"]\s*\)|Staff::create|Staff::query\(',l)]
+ print('AM255_STAFF_HANDLER_FILE',rel,'hits',len(hits))
+ selects=set()
+ for i in hits[:20]:selects.update(range(max(0,i-7),min(len(lines),i+45)))
+ for i in sorted(selects)[:240]:
+  line=lines[i].strip()
+  if redact.search(line):line='[REDACTED_SENSITIVE]'
+  print('AM255_STAFF_HANDLER_CODE',rel,i+1,line[:480])
+print('AM255_STAFF_CREATION_AND_HASH_METADATA_END')
+
 print('AM255_NO_AUTH_ATTEMPTS_NO_PASSWORDS_NO_MUTATIONS')
