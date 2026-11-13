@@ -62,7 +62,7 @@ jobs:
           $req->setUserResolver(static fn()=>$admin);
           $page=$controller->create($req)->render();
           foreach(['am256-vendor-name','am256-vendor-id','Vendor / Purchased From',
-                   'am256-vendor-options','purchase-returns/vendors'] as $fragment)
+                   'am256-vendor-options','var vendorUrl='] as $fragment)
             if(!str_contains($page,$fragment))throw new RuntimeException('AM256_FORM_ELEMENT_MISSING_'.$fragment);
           echo "AM256_VENDOR_NAME_FIELD_RENDER_PASS\n";
 
