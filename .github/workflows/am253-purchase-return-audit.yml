@@ -92,6 +92,13 @@ jobs:
           grep -RInE 'workshop_vendor_debit_uses|workshop_vendor_payments|vendor_outstanding' app/Http/Controllers/Web app/Services | head -95 || true
           echo AM253_SCHEMA_FROM_MIGRATIONS
           grep -RInE "Schema::create\\('(inventory_movements|workshop_vendor_debit_uses|workshop_vendor_payments|purchase_audit_logs|workshop_purchase_audit_logs)'" database/migrations | head -45 || true
+          echo AM253_VENDOR_LEDGER_SERVICE
+          sed -n '1,185p' app/Services/VendorService.php
+          echo AM253_AUDIT_MIGRATION_AND_INVENTORY
+          sed -n '1,95p' database/migrations/2026_10_05_000006_create_purchase_audit_logs_table.php
+          grep -RInE "Schema::create\\('inventory_movements'" database/migrations | head -8 || true
+          echo AM253_VENDOR_DEBIT_USES_MIGRATION
+          sed -n '1,100p' database/migrations/2026_11_01_001200_create_workshop_vendor_debit_uses.php
           echo AM253_READONLY_PURCHASE_AUDIT_COMPLETE
           REMOTE
       - name: Erase ephemeral SSH credentials
