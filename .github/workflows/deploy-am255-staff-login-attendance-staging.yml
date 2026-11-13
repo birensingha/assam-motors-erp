@@ -6,6 +6,7 @@ on:
       - .github/workflows/deploy-am255-staff-login-attendance-staging.yml
       - deployment/live-fixes/AM255_NEW_STAFF_PORTAL_LOGIN/install.py
       - deployment/live-fixes/AM255_NEW_STAFF_PORTAL_LOGIN/repair_am5848.php
+      - deployment/live-fixes/AM255_NEW_STAFF_PORTAL_LOGIN/install_checkin.py
       - deployment/live-fixes/AM255_NEW_STAFF_PORTAL_LOGIN/attendance_probe.php
       - deployment/live-fixes/AM255_NEW_STAFF_PORTAL_LOGIN/files/**
 permissions: {contents: read}
@@ -28,6 +29,7 @@ jobs:
           set -euo pipefail
           P=deployment/live-fixes/AM255_NEW_STAFF_PORTAL_LOGIN
           python3 -m py_compile "$P/install.py"
+          python3 -m py_compile "$P/install_checkin.py"
           php -l "$P/repair_am5848.php"
           php -l "$P/attendance_probe.php"
           php -l "$P/files/app/Services/StaffLoginBootstrapService.php"
@@ -86,8 +88,14 @@ jobs:
           # Only Staff Master ID 9 / AM5848 may be provisioned here.
           php "$PKG/repair_am5848.php" "$APP"
           python3 "$SCRIPT" verify "$APP"
+          if grep -Fq AM255_IDEMPOTENT_EXISTING_CHECK_IN "$APP/app/Services/AttendanceService.php"; then
+            python3 "$PKG/install_checkin.py" verify "$APP"
+          else
+            python3 "$PKG/install_checkin.py" check "$APP"
+            python3 "$PKG/install_checkin.py" apply "$APP"
+          fi
           php "$PKG/attendance_probe.php" "$APP"
-          echo AM255_STAGING_STAFF_LOGIN_AND_ATTENDANCE_DIAGNOSTIC_COMPLETE
+          echo AM255_STAGING_STAFF_LOGIN_AND_ATTENDANCE_RETRY_VERIFIED
           REMOTE
       - name: Erase ephemeral SSH identity
         if: always()
