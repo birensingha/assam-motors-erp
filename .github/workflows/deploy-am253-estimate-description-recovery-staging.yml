@@ -81,7 +81,7 @@ jobs:
             python3 "$SCRIPT" apply "$APP"
           fi
           python3 "$SCRIPT" verify "$APP"
-          php artisan route:list --path=job-cards | grep -F estimate
+          php -r 'require "vendor/autoload.php"; $app=require "bootstrap/app.php"; $app->make(\\Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap(); $r=\\Illuminate\\Support\\Facades\\Route::getRoutes()->getByName("erp.estimates.store"); if(!$r||!in_array("POST",$r->methods(),true)||!in_array("auth:web",$r->gatherMiddleware(),true))exit(71); echo "AM253_ESTIMATE_POST_ROUTE_AUTH_VERIFIED\\n";'
           echo AM253_STAGING_ESTIMATE_LONG_DESCRIPTION_AND_RECOVERY_VERIFIED
           REMOTE
       - name: Clean ephemeral SSH identity
