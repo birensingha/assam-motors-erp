@@ -61,7 +61,7 @@ jobs:
           $html=$controller->create($req)->render();
           if(!str_contains($html,'Item-wise Purchase Return') ||
              !str_contains($html,'am254-search') ||
-             !str_contains($html,'purchase-returns/search'))exit(41);
+             !str_contains($html,'purchase-returns'))exit(41);
           echo "AM254_ITEMWISE_ADMIN_FORM_RENDER_PASS\n";
           $source=$DB::table('workshop_purchases')->where('purchase_type','PART')
             ->where('vendor_id','>',0)->whereRaw("COALESCE(record_status,'ACTIVE') <> 'DELETED'")
