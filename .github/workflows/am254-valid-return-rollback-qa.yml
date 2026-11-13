@@ -1,0 +1,151 @@
+name: AM254 Item-wise Return — Transaction Rollback Integration QA
+on:
+  push:
+    branches: [feature/am254-itemwise-purchase-return-20261113]
+    paths: [.github/workflows/am254-valid-return-rollback-qa.yml]
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - name: Prepare STAGING SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$SSH_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4; do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$SSH_KEY" ];then
+            printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Exercise legitimate item-wise return inside mandatory rollback transaction
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ];then SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$SSH_PASSWORD";SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT");fi
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          test "$(basename "$ROOT")" = assam-erp-staging
+          cd "$ROOT"
+          QA="$(mktemp --suffix=.php)"
+          trap 'rm -f "$QA"' EXIT
+          cat > "$QA" <<'PHP'
+          <?php
+          error_reporting(E_ALL);
+          require getcwd().'/vendor/autoload.php';
+          $app=require getcwd().'/bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $DB=\Illuminate\Support\Facades\DB::class;
+          $session=app('session')->driver();$session->start();
+          app('redirect')->setSession($session);
+          $user=\App\Models\ErpAuthUser::query()->where('active',1)
+            ->whereIn('role',['owner','admin'])->firstOrFail();
+          $itemwise=app(\App\Http\Controllers\Web\AdminPurchaseReturnItemwiseController::class);
+          $poster=app(\App\Http\Controllers\Web\AdminPurchaseReturnController::class);
+          $beforeDocs=(int)$DB::table('am_purchase_returns')->count();
+          $candidates=$DB::table('workshop_purchases as p')
+            ->join('parts_master as pm','pm.id','=','p.part_master_id')
+            ->join('workshop_vendors as v','v.id','=','p.vendor_id')
+            ->where('p.purchase_type','PART')
+            ->whereNull('p.job_card_id')
+            ->where('p.qty','>=',1)
+            ->where('p.unit_cost','>=',1)
+            ->where('pm.stock_qty','>=',1)
+            ->whereRaw("COALESCE(p.record_status,'ACTIVE') <> 'DELETED'")
+            ->orderByDesc('p.id')->limit(100)
+            ->get(['p.*','pm.stock_qty']);
+          if($candidates->isEmpty()){
+            echo "AM254_VALID_POST_FIXTURE_MISSING_NO_TRANSACTION_STARTED\n";
+            exit(70);
+          }
+          $pass=false;$failures=[];
+          foreach($candidates as $p){
+            $ref=(string)($p->purchase_batch_no ?: $p->purchase_no);
+            if($ref==='')continue;
+            $beforeStock=(float)$DB::table('parts_master')->where('id',$p->part_master_id)->value('stock_qty');
+            $qty=min(1.0,(float)$p->qty,$beforeStock);
+            if($qty<0.001)continue;
+            $requestKey=(string)\Illuminate\Support\Str::uuid();
+            $subKey=\Ramsey\Uuid\Uuid::uuid5($requestKey,(int)$p->vendor_id.'|PART|'.$ref)->toString();
+            $request=\Illuminate\Http\Request::create('/erp/purchase-returns/itemwise','POST',[
+              'request_key'=>$requestKey,
+              'return_date'=>now('Asia/Kolkata')->format('Y-m-d'),
+              'supplier_credit_note'=>'QA-NO-SAVE',
+              'reason'=>'AM254 staged test of return posting, mandatory full rollback',
+              'lines'=>[['purchase_id'=>(int)$p->id,'qty'=>$qty]]
+            ]);
+            $request->setUserResolver(static fn()=>$user);
+            $request->setLaravelSession($session);
+            $DB::beginTransaction();
+            try {
+              $result=$itemwise->store($request,$poster);
+              $doc=$DB::table('am_purchase_returns')->where('request_key',$subKey)->first();
+              if(!$doc || $doc->record_status!=='POSTED')
+                throw new RuntimeException('AM254_VALID_POST_DOCUMENT_NOT_CREATED');
+              $line=$DB::table('am_purchase_return_lines')
+                ->where('return_id',$doc->id)->where('purchase_id',$p->id)->first();
+              if(!$line || abs((float)$line->qty-$qty)>0.0001)
+                throw new RuntimeException('AM254_VALID_POST_LINE_MISSING');
+              $afterStock=(float)$DB::table('parts_master')->where('id',$p->part_master_id)->value('stock_qty');
+              if(abs($afterStock-($beforeStock-$qty))>0.0001)
+                throw new RuntimeException('AM254_VALID_POST_STOCK_NOT_REDUCED');
+              $movement=$DB::table('inventory_movements')
+                ->where('reference_no',$doc->return_no)
+                ->where('movement_type','PURCHASE_RETURN_OUT')
+                ->where('part_master_id',$p->part_master_id)->first();
+              if(!$movement || abs((float)$movement->qty_out-$qty)>0.0001)
+                throw new RuntimeException('AM254_VALID_POST_STOCK_AUDIT_MISSING');
+              echo "AM254_LEGITIMATE_RETURN_DOCUMENT_LINE_STOCK_MOVEMENT_PASS\n";
+              $pass=true;
+            } catch(\Illuminate\Validation\ValidationException $e) {
+              $failures[]=mb_substr(collect($e->errors())->flatten()->implode(' '),0,160);
+            } catch(\Throwable $e) {
+              $failures[]=get_class($e).': '.mb_substr($e->getMessage(),0,200);
+            } finally {
+              // NEVER commit a tested return; rollback supplier credit, line and stock movement together.
+              $DB::rollBack();
+            }
+            if($pass){
+              $stockRestored=(float)$DB::table('parts_master')
+                ->where('id',$p->part_master_id)->value('stock_qty');
+              if(abs($stockRestored-$beforeStock)>0.0001)
+                throw new RuntimeException('AM254_VALID_TEST_ROLLBACK_DID_NOT_RESTORE_STOCK');
+              echo "AM254_ROLLBACK_RESTORES_PHYSICAL_STOCK_PASS\n";
+              break;
+            }
+          }
+          if(!$pass){
+            echo "AM254_VALID_POST_NO_ELIGIBLE_SOURCE_AFTER_".count($failures)."_ATTEMPTS\n";
+            if($failures)echo "AM254_VALID_POST_FIRST_ERROR: ".$failures[0]."\n";
+            exit(71);
+          }
+          if((int)$DB::table('am_purchase_returns')->count()!==$beforeDocs)
+            throw new RuntimeException('AM254_VALID_TEST_LEFT_POSTED_DOCUMENT');
+          echo "AM254_NO_PURCHASE_RETURN_PERSISTED_AFTER_QA_PASS\n";
+          PHP
+          OUTPUT="$(php "$QA" 2>&1)"
+          printf '%s\n' "$OUTPUT"
+          for marker in AM254_LEGITIMATE_RETURN_DOCUMENT_LINE_STOCK_MOVEMENT_PASS AM254_ROLLBACK_RESTORES_PHYSICAL_STOCK_PASS AM254_NO_PURCHASE_RETURN_PERSISTED_AFTER_QA_PASS;do
+            printf '%s\n' "$OUTPUT" | grep -Fq "$marker" || { echo "STOP_AM254_ROLLBACK_QA_MISSING_$marker";exit 75; }
+          done
+          echo AM254_VALID_POSTING_ROLLED_BACK_TEST_PASS
+          REMOTE
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
