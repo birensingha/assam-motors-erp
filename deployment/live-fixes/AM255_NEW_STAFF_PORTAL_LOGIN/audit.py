@@ -120,4 +120,27 @@ for name in ('app/Http/Controllers/Web/StaffMasterController.php',
   print('AM255_FUNCTION_SOURCE',name,i+1,line[:560])
 print('AM255_ATTENDANCE_AND_CREATE_SOURCE_DONE')
 
+
+print('AM255_AUTH_AND_CHECKIN_IMPLEMENTATIONS_START')
+wanted=[
+('app/Services/AttendanceService.php',range(1,310)),
+('app/Services/MandatoryNotificationService.php',range(1,230)),
+('app/Http/Controllers/Api/V1/AttendanceController.php',range(1,210)),
+('app/Http/Controllers/Api/V1/AuthController.php',range(1,180)),
+('app/Http/Controllers/Api/V1/StaffAuthApiController.php',range(1,180)),
+('app/Http/Controllers/Web/AdminNativeModuleController.php',range(1,200)),
+('app/Models/Staff.php',range(1,150)),
+]
+for rel,rr in wanted:
+ p=root/rel
+ if not p.is_file():print('AM255_IMPLEMENTATION_MISSING',rel);continue
+ print('AM255_IMPLEMENTATION_FILE',rel,p.stat().st_size)
+ lines=p.read_text('utf8','replace').splitlines()
+ for i in rr:
+  if i>len(lines):break
+  l=lines[i-1].rstrip()
+  if redact.search(l):l='[REDACTED_SENSITIVE]'
+  print('AM255_IMPLEMENTATION_SOURCE',rel,i,l[:520])
+print('AM255_AUTH_CHECKIN_READONLY_DONE')
+
 print('AM255_NO_AUTH_ATTEMPTS_NO_PASSWORDS_NO_MUTATIONS')
