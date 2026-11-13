@@ -11,8 +11,8 @@ chdir($root);
 require $root.'/vendor/autoload.php';
 $app=require $root.'/bootstrap/app.php';
 $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-$db=\Illuminate\Support\Facades\DB::getFacadeRoot();
-$schema=\Illuminate\Support\Facades\Schema::getFacadeRoot();
+$db=\Illuminate\Support\Facades\DB::class;
+$schema=\Illuminate\Support\Facades\Schema::class;
 if (!$schema->hasTable('attendance') || !$schema->hasTable('staff')) {
     echo "STOP_AM255_ATTENDANCE_TABLE_MISSING\n";exit(2);
 }
