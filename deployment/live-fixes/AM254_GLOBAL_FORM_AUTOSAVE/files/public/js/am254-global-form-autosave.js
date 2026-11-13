@@ -34,6 +34,16 @@
   }
   var store = storage();
   if (!store) return;
+  // Only a confirmed Laravel success flash clears the submitted form draft.
+  try {
+    var pending = JSON.parse(sessionStorage.getItem(prefix + 'submitted') || 'null');
+    if (pending && script.getAttribute('data-success') === '1' &&
+        Date.now() - Number(pending.at || 0) < 300000 &&
+        typeof pending.key === 'string' && pending.key.indexOf(prefix) === 0) {
+      store.removeItem(pending.key);
+      sessionStorage.removeItem(prefix + 'submitted');
+    }
+  } catch (_) {}
 
   function now() { return Date.now(); }
   function textContent(x) { return String(x == null ? '' : x); }
@@ -236,7 +246,13 @@
     }
     form.addEventListener('input',schedule,true);
     form.addEventListener('change',schedule,true);
-    form.addEventListener('submit',function(){ meta.dirty=true;persist(); },true);
+    form.addEventListener('submit',function(){
+      // Preserve the draft if validation rejects the POST. A subsequent
+      // confirmed success flash permits safe cleanup on the next page.
+      meta.dirty=true;persist();
+      try { sessionStorage.setItem(prefix + 'submitted',JSON.stringify({key:k,at:now()})); }
+      catch (_) {}
+    },true);
     // Dynamic form rows (e.g. purchase/estimate) can be inserted or removed.
     var observer=new MutationObserver(function (mutations) {
       if (!mutations.some(function(m){return m.addedNodes.length || m.removedNodes.length;})) return;
