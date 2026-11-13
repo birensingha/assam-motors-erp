@@ -55,6 +55,7 @@ jobs:
           require getcwd().'/vendor/autoload.php';
           $app=require getcwd().'/bootstrap/app.php';
           $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          \Illuminate\Support\Facades\View::share('errors',new \Illuminate\Support\ViewErrorBag());
           $DB=\Illuminate\Support\Facades\DB::class;
           $u=\App\Models\ErpAuthUser::query()->where('active',1)
             ->whereIn('role',['admin','owner'])->first();
@@ -91,8 +92,15 @@ jobs:
           // Assert all checks were strictly SELECT/Blade rendering: no return transaction.
           echo "AM253_RUNTIME_QA_NO_PURCHASE_RETURN_POSTED\n";
           PHP
-          php "$QA"
-          echo AM253_RUNTIME_QA_DONE
+          LOG="$(php "$QA" 2>&1)"
+          printf '%s\n' "$LOG"
+          for marker in AM253_ADMIN_PURCHASE_RETURN_PICKER_RENDER_PASS AM253_ADMIN_RETURN_FORM_RENDER_PASS AM253_UNIFIED_PURCHASE_REGISTER_RENDER_PASS AM253_VENDOR_PAYMENT_SOURCES_QUERY_PASS AM253_VENDOR_LEDGER_QUERY_PASS AM253_RUNTIME_QA_NO_PURCHASE_RETURN_POSTED; do
+            if ! printf '%s\n' "$LOG" | grep -Fq "$marker";then
+              echo "STOP_AM253_RUNTIME_MISSING_MARKER_$marker"
+              exit 42
+            fi
+          done
+          echo AM253_RUNTIME_QA_ALL_ASSERTIONS_PASS
           REMOTE
       - name: Erase credentials
         if: always()
