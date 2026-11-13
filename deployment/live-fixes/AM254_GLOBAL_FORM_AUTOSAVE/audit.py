@@ -35,4 +35,18 @@ for p in views.rglob('*.blade.php'):
   if len(forms)<130:forms.append((rel,found, bool(re.search(r'@extends\([\'"]layouts\.erp',s)),bool(re.search(r'@extends\([\'"]layouts\.staff',s))))
 print('AM254_FORM_COUNT_BY_FIRST_FOLDER',dict(count))
 for rel,n,erp,staff in forms:print('AM254_FORM_FILE',rel,n,'ERP_LAYOUT',erp,'STAFF_LAYOUT',staff)
+
+for rel in ['layouts/new-admin.blade.php','staff/portal.blade.php','staff/inspection.blade.php','staff/assigned-inspection.blade.php','staff/qc-review.blade.php','hr/dashboard.blade.php','hr/operations.blade.php','work-complaints/rework-assign.blade.php']:
+ p=views/rel
+ if not p.is_file():continue
+ lines=p.read_text('utf8','replace').splitlines()
+ print('AM254_NONERP_VIEW',rel,'COUNT',len(lines))
+ picks=range(min(25,len(lines)))
+ if rel=='layouts/new-admin.blade.php':
+  picks=sorted(set(list(picks)+list(range(max(0,len(lines)-35),len(lines)))))
+ for i in picks:
+  v=lines[i].strip()
+  if re.search(r'password|secret|token|api.key|csrf|private',v,re.I):v='[REDACTED]'
+  print('AM254_NONERP_CODE',rel,i+1,v[:410])
 print('AM254_AUDIT_COMPLETED_READ_ONLY')
+
