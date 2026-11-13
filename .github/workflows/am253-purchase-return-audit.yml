@@ -1,0 +1,81 @@
+name: AM253 Purchase Return — Read-Only STAGING Audit
+on:
+  push:
+    branches: [feature/am253-purchase-return-20261113]
+    paths: [.github/workflows/am253-purchase-return-audit.yml]
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - name: Configure SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$SSH_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4; do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then break; fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$SSH_KEY" ]; then printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Inspect source and schema without reading customer financial rows
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"
+          test "$(basename "$APP")" = assam-erp-staging
+          test -f "$APP/artisan"
+          cd "$APP"
+          echo AM253_SERVICE_TOP_HISTORY
+          sed -n '1,200p' app/Services/PurchaseService.php
+          echo AM253_SERVICE_SHOW_UPDATE
+          sed -n '340,460p' app/Services/PurchaseService.php
+          echo AM253_SERVICE_STORE_PARTS
+          sed -n '570,895p' app/Services/PurchaseService.php
+          echo AM253_SERVICE_STOCK_RECALC
+          sed -n '970,1175p' app/Services/PurchaseService.php
+          echo AM253_CONTROLLER_ACTIONS
+          sed -n '210,315p' app/Http/Controllers/Web/AdminPurchasePageController.php
+          echo AM253_PURCHASE_INDEX_RELEVANT
+          sed -n '119,180p' resources/views/purchases/index.blade.php
+          echo AM253_PURCHASE_SHOW_TOP
+          sed -n '1,215p' resources/views/purchases/show.blade.php
+          echo AM253_PART_MODEL
+          if [ -f app/Models/PartMaster.php ];then sed -n '1,155p' app/Models/PartMaster.php;fi
+          echo AM253_STOCK_VENDOR_SERVICE_REFERENCES
+          grep -RInE 'stock_movements|stock_qty|part_ledger|vendor_ledger|vendor_outstanding|payment_allocations|purchase_batch_no' app/Services/PurchaseService.php app/Services/MultiPurchasePaymentService.php app/Services/ExpensePaymentService.php | head -165
+          echo AM253_SCHEMA
+          php -r 'require "vendor/autoload.php";$a=require "bootstrap/app.php";$a->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $DB=\Illuminate\Support\Facades\DB::class;$S=\Illuminate\Support\Facades\Schema::class;
+          foreach(["workshop_purchases","workshop_purchase_batches","parts_master","workshop_vendor_ledger","vendor_ledger","stock_movements","parts_stock_movements","workshop_payment_allocations","workshop_payment_vouchers","workshop_vendors","workshop_purchase_line_audits","workshop_purchase_audits","job_card_parts","job_card_part_issues","job_card_parts_issues"] as $table){
+            if($S::hasTable($table)) echo "TABLE ".$table." ".implode(",",$S::getColumnListing($table))."\n";else echo "MISSING ".$table."\n";
+          }
+          echo "POSSIBLE_VENDOR_STOCK_TABLES\n";
+          foreach($DB::select("SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND (TABLE_NAME LIKE ? OR TABLE_NAME LIKE ? OR TABLE_NAME LIKE ?) ORDER BY TABLE_NAME",["%vendor%","%stock%","%return%"]) as $o)echo $o->TABLE_NAME."\n";
+          '
+          echo AM253_READONLY_PURCHASE_AUDIT_COMPLETE
+          REMOTE
+      - name: Erase ephemeral SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
