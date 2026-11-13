@@ -49,4 +49,34 @@ echo "AM253_SCHEMA_AND_ROUTES_READONLY_DONE\n";"""
 p=subprocess.run(['php','-r',php],cwd=root,capture_output=True,text=True,timeout=50)
 if p.returncode:raise SystemExit('STOP_AM253_PHP_AUDIT_FAILED '+(p.stdout+p.stderr)[-750:])
 print(p.stdout[:11000])
+
+print('AM253_TARGETED_DETAIL_START')
+for rel,ranges in [
+ ('resources/views/estimates/create.blade.php',[(295,389)]),
+ ('app/Http/Controllers/Web/AdminEstimatePageController.php',[(25,79)]),
+ ('app/Services/EstimateService.php',[(1,250)]),
+ ('app/Models/JobEstimateItem.php',[(1,100)]),
+ ('app/Models/JobEstimate.php',[(1,100)])]:
+ p=root/rel
+ if not p.is_file():print('AM253_DETAIL_MISSING',rel);continue
+ lines=p.read_text('utf8','replace').splitlines()
+ for aa,bb in ranges:
+  for i in range(aa-1,min(len(lines),bb)):
+   line=lines[i].strip()
+   if secrets.search(line):line='[REDACTED]'
+   print('AM253_DETAIL',rel,i+1,line[:610])
+phpmore=r"""require 'vendor/autoload.php';
+$app=require 'bootstrap/app.php';$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\DB;
+foreach(DB::select("SELECT TABLE_NAME n FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME LIKE '%estimat%'") as $t){
+ echo "AM253_EST_TABLE ".$t->n."\n";
+ foreach(DB::select("SELECT COLUMN_NAME c,DATA_TYPE t,CHARACTER_MAXIMUM_LENGTH l FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND (COLUMN_NAME LIKE '%description%' OR COLUMN_NAME LIKE '%note%')",[$t->n]) as $c)echo "AM253_EST_COLUMN ".$t->n." ".$c->c." ".$c->t." LEN=".($c->l??'NULL')."\n";
+}
+"""
+z=subprocess.run(['php','-r',phpmore],cwd=root,capture_output=True,text=True,timeout=35)
+if z.returncode:raise SystemExit('STOP_AM253_DETAIL_SCHEMA '+z.stderr[-450:])
+print(z.stdout[:5000])
+print('AM253_TARGETED_DETAIL_READONLY_DONE')
+
 print('AM253_AUDIT_READ_ONLY_NO_PRIVATE_SESSIONS_OR_DB_WRITES')
