@@ -84,9 +84,14 @@ jobs:
           grep -RInE 'workshop_vendor_debit_uses|vendor_credit|purchase_return|supplier_credit' app routes database/migrations 2>/dev/null | head -105 || true
           echo AM253_PURCHASE_INDEX_HEADER_ROW
           sed -n '105,142p' resources/views/purchases/index.blade.php
-          echo AM253_EXTRA_SCHEMA
-          php -r 'require "vendor/autoload.php";$a=require "bootstrap/app.php";$a->make(\\Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
-          foreach(["inventory_movements","workshop_vendor_debit_uses","workshop_vendor_payments","purchase_audit_logs","workshop_purchase_audit_logs","parts_issue_register","job_card_parts","job_card_labour","stock_movements"] as $t)if(\\Illuminate\\Support\\Facades\\Schema::hasTable($t))echo "TABLE ".$t." ".implode(",",\\Illuminate\\Support\\Facades\\Schema::getColumnListing($t))."\\n";else echo "MISSING ".$t."\\n";'
+          echo AM253_VENDOR_DEBIT_SERVICE
+          if [ -f app/Services/VendorDebitSettlementService.php ];then
+            sed -n '1,270p' app/Services/VendorDebitSettlementService.php
+          fi
+          echo AM253_VENDOR_PAYMENT_LEDGER_CONTEXT
+          grep -RInE 'workshop_vendor_debit_uses|workshop_vendor_payments|vendor_outstanding' app/Http/Controllers/Web app/Services | head -95 || true
+          echo AM253_SCHEMA_FROM_MIGRATIONS
+          grep -RInE "Schema::create\\('(inventory_movements|workshop_vendor_debit_uses|workshop_vendor_payments|purchase_audit_logs|workshop_purchase_audit_logs)'" database/migrations | head -45 || true
           echo AM253_READONLY_PURCHASE_AUDIT_COMPLETE
           REMOTE
       - name: Erase ephemeral SSH credentials
