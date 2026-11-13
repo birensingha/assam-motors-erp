@@ -79,4 +79,25 @@ if z.returncode:raise SystemExit('STOP_AM253_DETAIL_SCHEMA '+z.stderr[-450:])
 print(z.stdout[:5000])
 print('AM253_TARGETED_DETAIL_READONLY_DONE')
 
+
+print('AM253_DOWNSTREAM_SOURCE_START')
+for rel in ('app/Services/EstimateService.php',):
+ p=root/rel;ls=p.read_text('utf8','replace').splitlines()
+ for i,v in enumerate(ls):
+  if re.search(r'function calculate|description|job_card_labour|job_card_parts|line_note',v,re.I):
+   print('AM253_SERVICE_SOURCE',i+1,' '.join(x.strip() for x in ls[max(0,i-1):min(len(ls),i+2)])[:470])
+sql=r"""require 'vendor/autoload.php';$app=require 'bootstrap/app.php';$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+use Illuminate\Support\Facades\DB;
+foreach(['job_estimate_items','job_card_labour','job_card_parts'] as $t){
+ foreach(DB::select('SELECT COLUMN_NAME c,DATA_TYPE d,CHARACTER_MAXIMUM_LENGTH len,IS_NULLABLE nullable,COLUMN_DEFAULT def FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND COLUMN_NAME=?',[$t,'description']) as $c){
+ echo 'AM253_COLUMN_FULL '.$t.' '.$c->c.' '.$c->d.' LEN='.($c->len??'NULL').' NULL='.$c->nullable.' DEFAULT='.($c->def??'NULL')."\n";
+ }
+ foreach(DB::select('SHOW INDEX FROM '.$t) as $i){if($i->Column_name==='description')echo 'AM253_DESCRIPTION_INDEX '.$t.' '.$i->Key_name."\n";}
+}
+"""
+z=subprocess.run(['php','-r',sql],cwd=root,capture_output=True,text=True,timeout=35)
+if z.returncode:raise SystemExit('STOP_AM253_DOWNSTREAM_SCHEMA '+z.stderr[-420:])
+print(z.stdout[:4500])
+print('AM253_DOWNSTREAM_SOURCE_END')
+
 print('AM253_AUDIT_READ_ONLY_NO_PRIVATE_SESSIONS_OR_DB_WRITES')
