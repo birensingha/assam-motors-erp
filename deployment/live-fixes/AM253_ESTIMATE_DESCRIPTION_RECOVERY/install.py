@@ -140,7 +140,7 @@ def verify():
     db_check('text')
     # Pure calculation, no business writes. Check chars are saved intact.
     check=r"""require 'vendor/autoload.php';$app=require 'bootstrap/app.php';$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-$line=str_repeat('Long service description ',20);$svc=$app->make(\App\Services\EstimateService::class);$out=$svc->calculate([['item_type'=>'LABOUR','description'=>$line,'qty'=>1,'rate'=>0,'discount_percent'=>0,'tax_percent'=>0]]);
+$line=trim(str_repeat('Long service description ',20));$svc=$app->make(\App\Services\EstimateService::class);$out=$svc->calculate([['item_type'=>'LABOUR','description'=>$line,'qty'=>1,'rate'=>0,'discount_percent'=>0,'tax_percent'=>0]]);
 if(!isset($out['items'][0]['description'])||$out['items'][0]['description']!==$line)exit(53);
 echo 'AM253_LONG_ESTIMATE_DESCRIPTION_CALC_NO_TRUNCATION_PASS';"""
     r=run(['php','-r',check],35)
