@@ -1,0 +1,86 @@
+name: AM254 Global ERP Auto Draft Recovery — STAGING
+on:
+  push:
+    branches: [feature/am254-global-erp-draft-autosave-20261113]
+    paths:
+      - .github/workflows/deploy-am254-global-erp-autosave-staging.yml
+      - deployment/live-fixes/AM254_GLOBAL_FORM_AUTOSAVE/install.py
+      - deployment/live-fixes/AM254_GLOBAL_FORM_AUTOSAVE/files/**
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check source and global browser JavaScript
+        run: |
+          set -euo pipefail
+          P=deployment/live-fixes/AM254_GLOBAL_FORM_AUTOSAVE
+          python3 -m py_compile "$P/install.py"
+          node --check "$P/files/public/js/am254-global-form-autosave.js"
+          grep -Fq AM254_GLOBAL_FORM_AUTOSAVE "$P/files/public/js/am254-global-form-autosave.js"
+          if grep -Fq 'fetch(' "$P/files/public/js/am254-global-form-autosave.js"; then
+            echo STOP_AM254_UNEXPECTED_NETWORK_REQUEST
+            exit 8
+          fi
+          echo AM254_GLOBAL_DRAFT_SOURCE_AND_JS_SYNTAX_PASS
+      - name: Prepare Hostinger STAGING SSH
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$USERNAME" && test -n "$PORT"
+          test -n "$SSH_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4; do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then break; fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$SSH_KEY" ]; then
+            printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Readonly preflight and guarded auto-draft UI deployment
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"
+          test "$(basename "$APP")" = "assam-erp-staging"
+          test -f "$APP/artisan"
+          cd "$HOME/assam-motors-deploy"
+          git fetch origin feature/am254-global-erp-draft-autosave-20261113
+          PATCH_DIR="$(mktemp -d)"
+          git archive FETCH_HEAD deployment/live-fixes/AM254_GLOBAL_FORM_AUTOSAVE | tar -x -C "$PATCH_DIR"
+          SCRIPT="$PATCH_DIR/deployment/live-fixes/AM254_GLOBAL_FORM_AUTOSAVE/install.py"
+          if [ -f "$APP/public/js/am254-global-form-autosave.js" ]; then
+            echo AM254_ALREADY_PRESENT_VERIFY_ONLY
+          else
+            python3 "$SCRIPT" check "$APP"
+            python3 "$SCRIPT" apply "$APP"
+          fi
+          python3 "$SCRIPT" verify "$APP"
+          test -f "$APP/resources/views/layouts/erp.blade.php"
+          test -f "$APP/resources/views/layouts/new-admin.blade.php"
+          echo AM254_GLOBAL_AUTOSAVE_STAGING_DEPLOY_VERIFIED
+          REMOTE
+      - name: Erase ephemeral SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
