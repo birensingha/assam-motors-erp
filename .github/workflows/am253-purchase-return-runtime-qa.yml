@@ -76,6 +76,32 @@ jobs:
             if(!str_contains($html,'Post Purchase Return') ||
                !str_contains($html,'name="items['))exit(41);
             echo "AM253_ADMIN_RETURN_FORM_RENDER_PASS\n";
+            $beforeRows=(int)$DB::table('am_purchase_returns')->count();
+            $beforeStock=(float)$DB::table('parts_master')->where('id',$original->part_master_id)->value('stock_qty');
+            $bad=\Illuminate\Http\Request::create('/erp/purchases/'.$original->id.'/return','POST',[
+              'request_key'=>(string)\Illuminate\Support\Str::uuid(),
+              'return_date'=>now('Asia/Kolkata')->format('Y-m-d'),
+              'reason'=>'Runtime QA: deliberately over-return purchase quantity',
+              'items'=>[(int)$original->id=>max(1000000,(float)$original->qty+1)]
+            ]);
+            $bad->setUserResolver(static fn()=>$u);
+            try {
+              $controller->store($bad,(int)$original->id);
+              echo "STOP_AM253_OVER_RETURN_WAS_ACCEPTED\n";exit(51);
+            }catch(\Illuminate\Validation\ValidationException $expected) {
+              echo "AM253_OVER_RETURN_VALIDATION_BLOCK_PASS\n";
+            }
+            $afterRows=(int)$DB::table('am_purchase_returns')->count();
+            $afterStock=(float)$DB::table('parts_master')->where('id',$original->part_master_id)->value('stock_qty');
+            if($beforeRows!==$afterRows || abs($beforeStock-$afterStock)>0.0001)exit(52);
+            echo "AM253_REJECTED_POST_NO_STOCK_OR_RETURN_DATA_CHANGED_PASS\n";
+            $guest=\Illuminate\Http\Request::create('/erp/purchases/'.$original->id.'/return','GET');
+            $guest->setUserResolver(static fn()=>null);
+            try { $controller->form($guest,(int)$original->id);exit(53); }
+            catch(\Symfony\Component\HttpKernel\Exception\HttpException $denied){
+              if($denied->getStatusCode()!==403)exit(54);
+              echo "AM253_UNAUTHORISED_CONTROLLER_ACCESS_BLOCK_PASS\n";
+            }
           }else echo "AM253_NO_PARTS_BILL_FOR_RUNTIME_FORM_QA\n";
           $index=app(\App\Http\Controllers\Web\AdminPurchasePageController::class)
             ->index($request,$service);
@@ -94,7 +120,7 @@ jobs:
           PHP
           LOG="$(php "$QA" 2>&1)"
           printf '%s\n' "$LOG"
-          for marker in AM253_ADMIN_PURCHASE_RETURN_PICKER_RENDER_PASS AM253_ADMIN_RETURN_FORM_RENDER_PASS AM253_UNIFIED_PURCHASE_REGISTER_RENDER_PASS AM253_VENDOR_PAYMENT_SOURCES_QUERY_PASS AM253_VENDOR_LEDGER_QUERY_PASS AM253_RUNTIME_QA_NO_PURCHASE_RETURN_POSTED; do
+          for marker in AM253_ADMIN_PURCHASE_RETURN_PICKER_RENDER_PASS AM253_ADMIN_RETURN_FORM_RENDER_PASS AM253_UNIFIED_PURCHASE_REGISTER_RENDER_PASS AM253_VENDOR_PAYMENT_SOURCES_QUERY_PASS AM253_VENDOR_LEDGER_QUERY_PASS AM253_OVER_RETURN_VALIDATION_BLOCK_PASS AM253_REJECTED_POST_NO_STOCK_OR_RETURN_DATA_CHANGED_PASS AM253_UNAUTHORISED_CONTROLLER_ACCESS_BLOCK_PASS AM253_RUNTIME_QA_NO_PURCHASE_RETURN_POSTED; do
             if ! printf '%s\n' "$LOG" | grep -Fq "$marker";then
               echo "STOP_AM253_RUNTIME_MISSING_MARKER_$marker"
               exit 42
