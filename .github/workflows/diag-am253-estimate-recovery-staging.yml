@@ -23,7 +23,7 @@ jobs:
       - name: Source syntax
         run: |
           set -euo pipefail
-          python3 -m py_compile deployment/live-fixes/AM253_ESTIMATE_DESCRIPTION_RECOVERY/diagnose.py
+          python3 -m py_compile deployment/live-fixes/AM253_ESTIMATE_DESCRIPTION_RECOVERY/audit.py
       - name: Prepare STAGING SSH
         run: |
           set -euo pipefail
@@ -60,7 +60,7 @@ jobs:
           git fetch origin fix/am253-estimate-description-recovery-20261113
           PATCH_DIR="$(mktemp -d)"
           git archive FETCH_HEAD deployment/live-fixes/AM253_ESTIMATE_DESCRIPTION_RECOVERY | tar -x -C "$PATCH_DIR"
-          python3 "$PATCH_DIR/deployment/live-fixes/AM253_ESTIMATE_DESCRIPTION_RECOVERY/diagnose.py" "$APP"
+          python3 "$PATCH_DIR/deployment/live-fixes/AM253_ESTIMATE_DESCRIPTION_RECOVERY/audit.py" "$APP"
           REMOTE
       - name: Clean up SSH credential
         if: always()
