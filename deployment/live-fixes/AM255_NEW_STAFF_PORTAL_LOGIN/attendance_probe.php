@@ -13,7 +13,7 @@ $app=require $root.'/bootstrap/app.php';
 $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
 $db=\Illuminate\Support\Facades\DB::class;
 $schema=\Illuminate\Support\Facades\Schema::class;
-if (!$schema->hasTable('attendance') || !$schema->hasTable('staff')) {
+if (!$schema::hasTable('attendance') || !$schema::hasTable('staff')) {
     echo "STOP_AM255_ATTENDANCE_TABLE_MISSING\n";exit(2);
 }
 echo "AM255_ATTENDANCE_REPORT_TODAY=".now('Asia/Kolkata')->toDateString()."\n";
@@ -37,7 +37,7 @@ foreach ($staff as $s) {
 foreach($db::select("SELECT INDEX_NAME AS i, COLUMN_NAME AS c, SEQ_IN_INDEX AS seq FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='attendance' ORDER BY INDEX_NAME,SEQ_IN_INDEX") as $idx)
     echo 'AM255_ATTENDANCE_INDEX='.$idx->i.':'.$idx->seq.':'.$idx->c."\n";
 foreach (['staff_reminder_states','notification_outbox','staff_devices'] as $t) {
-    if (!$schema->hasTable($t))continue;
+    if (!$schema::hasTable($t))continue;
     $q=$db::table($t);
     echo 'AM255_NOTIFICATION_TABLE_COUNT='.$t.':'.$q->count()."\n";
 }
