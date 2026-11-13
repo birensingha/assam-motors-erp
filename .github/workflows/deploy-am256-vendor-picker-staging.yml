@@ -1,0 +1,83 @@
+name: AM256 Purchase Return Vendor Picker — STAGING Deploy
+on:
+  push:
+    branches: [fix/am256-purchase-return-vendor-picker-20261113]
+    paths:
+      - '.github/workflows/deploy-am256-vendor-picker-staging.yml'
+      - 'deployment/live-fixes/AM256_VENDOR_PICKER/**'
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate vendor picker package
+        shell: bash
+        run: |
+          set -euo pipefail
+          P=deployment/live-fixes/AM256_VENDOR_PICKER
+          python3 -m py_compile "$P/install.py"
+          php -l "$P/files/app/Http/Controllers/Web/AdminPurchaseReturnItemwiseController.php"
+          echo AM256_GITHUB_VENDOR_PICKER_CODE_STATIC_PASS
+      - name: Prepare STAGING SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$SSH_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4;do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$SSH_KEY" ];then printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519; chmod 600 ~/.ssh/id_ed25519
+          else sudo apt-get update -qq; sudo apt-get install -qq -y sshpass; fi
+      - name: Guarded Vendor Name dropdown deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ];then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"
+          test "$(basename "$APP")" = assam-erp-staging
+          test -f "$APP/artisan"
+          cd "$HOME/assam-motors-deploy"
+          git fetch origin fix/am256-purchase-return-vendor-picker-20261113
+          TMP="$(mktemp -d)"
+          trap 'rm -rf "$TMP"' EXIT
+          git archive FETCH_HEAD deployment/live-fixes/AM256_VENDOR_PICKER | tar -x -C "$TMP"
+          INSTALL="$TMP/deployment/live-fixes/AM256_VENDOR_PICKER/install.py"
+          python3 "$INSTALL" check "$APP"
+          python3 "$INSTALL" apply "$APP"
+          cd "$APP"
+          php -l app/Http/Controllers/Web/AdminPurchaseReturnItemwiseController.php
+          php -r 'require "vendor/autoload.php";$a=require "bootstrap/app.php";$a->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();$r=\Illuminate\Support\Facades\Route::getRoutes()->getByName("erp.purchase-returns.vendors");if(!$r||!in_array("GET",$r->methods(),true))exit(41);echo "AM256_VENDOR_SEARCH_ADMIN_ROUTE_PRESENT\n";'
+          echo AM256_STAGING_VENDOR_NAME_PICKER_AND_SOURCE_FILTER_DEPLOYED
+          REMOTE
+      - name: Guest vendor-search route authentication smoke
+        shell: bash
+        run: |
+          set -euo pipefail
+          HTTP=$(curl -sS --max-redirs 0 --max-time 20 -o /dev/null -w '%{http_code}' 'https://staging.assammotors.com/erp/purchase-returns/vendors?q=test' || true)
+          echo "AM256_GUEST_VENDOR_SEARCH_HTTP=$HTTP"
+          test "$HTTP" = 302 || test "$HTTP" = 303
+          echo AM256_VENDOR_LOOKUP_GUEST_AUTH_REDIRECT_PASS
+      - name: Cleanup SSH
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
