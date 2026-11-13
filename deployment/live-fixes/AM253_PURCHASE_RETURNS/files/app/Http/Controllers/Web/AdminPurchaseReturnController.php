@@ -216,11 +216,14 @@ final class AdminPurchaseReturnController extends Controller
                 $this->reject('return_date','Return date cannot be before original Purchase Bill date.');
             $byId = $source->keyBy('id');
             $items = [];
+            $seenSourceIds = [];
             $stockChanges = [];
             $totalQtyMilli=0;
             $taxableCents=0;$gstCents=0;$grossCents=0;
             foreach ($data['items'] as $id => $qty) {
                 if (!ctype_digit((string)$id)) $this->reject('items','Invalid purchase line selection.');
+                if (isset($seenSourceIds[(int)$id])) $this->reject('items','Duplicate Purchase line in return request.');
+                $seenSourceIds[(int)$id]=true;
                 $p=$byId->get((int)$id);
                 if (!$p) $this->reject('items','Selected purchase line does not belong to this bill.');
                 if (!is_numeric($qty) || !is_finite((float)$qty))
