@@ -75,4 +75,49 @@ echo 'AM255_STAFF_IDENTITY_SCHEMA_READ_ONLY_DONE'."\n";"""
 p=subprocess.run(['php','-r',php],cwd=root,text=True,capture_output=True,timeout=50)
 if p.returncode:raise SystemExit('STOP_AM255_SCHEMA_AUDIT '+(p.stderr or p.stdout)[-600:])
 print(p.stdout[:7500])
+
+# Staff creation, API login and Check-In route/controller source: never print request data.
+print('AM255_ATTENDANCE_AND_CREATE_SOURCE_START')
+php2=r"""require 'vendor/autoload.php';
+$app=require 'bootstrap/app.php';$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+use Illuminate\Support\Facades\DB;use Illuminate\Support\Facades\Schema;use Illuminate\Support\Facades\Route;
+foreach(['staff','erp_auth_users','staff_attendances','staff_attendance','attendance','attendances'] as $table) {
+ if(!Schema::hasTable($table))continue;
+ foreach(DB::select('SELECT COLUMN_NAME AS c,DATA_TYPE AS d,IS_NULLABLE AS nullable,COLUMN_DEFAULT AS def FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? ORDER BY ORDINAL_POSITION',[$table]) as $col){
+   if(in_array($table,['staff','erp_auth_users']) && !in_array($col->c,['id','name','email','staff_code','staff_id','role','status','active','phone','mobile','created_at','updated_at','department','designation','password','password_hash'],true)) continue;
+   echo 'AM255_COLUMN '.$table.' '.$col->c.' '.$col->d.' NULL='.$col->nullable."\n";
+ }
+}
+foreach(Route::getRoutes() as $r){
+ $uri=(string)$r->uri();$name=(string)($r->getName()??'');$action=(string)$r->getActionName();
+ if(preg_match('/staff.*(store|create|update|new)|attendance|check.in|check.out|mobile.*(login|auth)/i',$uri.' '.$name.' '.$action)){
+  echo 'AM255_FUNCTION_ROUTE='.json_encode(['uri'=>$uri,'name'=>$name,'methods'=>$r->methods(),'action'=>$action,'middleware'=>$r->gatherMiddleware()])."\n";
+ }
+}
+echo "AM255_ATTENDANCE_SCHEMA_ROUTES_READONLY_DONE\n";"""
+p2=subprocess.run(['php','-r',php2],cwd=root,text=True,capture_output=True,timeout=45)
+if p2.returncode:raise SystemExit('STOP_AM255_ATTENDANCE_ROUTE_AUDIT '+(p2.stderr+p2.stdout)[-800:])
+print(p2.stdout[:24500])
+for name in ('app/Http/Controllers/Web/StaffMasterController.php',
+ 'app/Http/Controllers/Web/StaffManagementController.php',
+ 'app/Http/Controllers/Web/AdminStaffMasterController.php',
+ 'app/Http/Controllers/Web/AdminConfigurationController.php',
+ 'app/Http/Controllers/Web/StaffPortalController.php',
+ 'app/Http/Controllers/Api/V1/StaffAuthController.php',
+ 'app/Http/Controllers/Api/V1/StaffAttendanceController.php',
+ 'app/Http/Controllers/Api/V1/StaffApiController.php'):
+ p=root/name
+ if not p.is_file():continue
+ ls=p.read_text('utf8','replace').splitlines()
+ print('AM255_FUNCTION_SOURCE_FILE',name,'LINES',len(ls))
+ pat=re.compile(r'function\s+(store|create|update|login|checkIn|checkOut|attendance)|erp_auth_users|Staff::create|DB::table\([\'"]staff|attendance|check.in',re.I)
+ picks=set()
+ for i,line in enumerate(ls):
+  if pat.search(line):picks.update(range(max(0,i-5),min(len(ls),i+23)))
+ for i in sorted(picks)[:260]:
+  line=ls[i].strip()
+  if redact.search(line):line='[REDACTED_SENSITIVE]'
+  print('AM255_FUNCTION_SOURCE',name,i+1,line[:560])
+print('AM255_ATTENDANCE_AND_CREATE_SOURCE_DONE')
+
 print('AM255_NO_AUTH_ATTEMPTS_NO_PASSWORDS_NO_MUTATIONS')
