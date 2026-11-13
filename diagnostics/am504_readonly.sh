@@ -9,7 +9,9 @@ printf '\n[%s]\n' 'Time'
 date -Is 2>&1 || date
 
 printf '\n[%s]\n' 'ERP public HTTP probes (anonymous, no login tokens)'
-for path in /erp/ /erp/attendance; do
+# GET probes require no credentials and MUST NOT be used to trigger login/check-in.
+# A fast 401/403/404/405 is evidence the upstream returned, not a successful login.
+for path in /erp/ /erp/attendance /api/v1/auth/login /legacy/api/staff-login.php; do
     printf 'Path: %s  ' "$path"
     curl --connect-timeout 5 --max-time 15 --silent --show-error \
       --output /dev/null \
