@@ -6,9 +6,9 @@ if len(sys.argv)!=2:raise SystemExit("AM253_USAGE audit.py STAGING_ROOT")
 root=Path(sys.argv[1]).expanduser().resolve()
 if root.name!="assam-erp-staging" or not (root/"artisan").is_file():raise SystemExit("STOP_AM253_NOT_STAGING")
 cases=[
-('resources/views/estimates/create.blade.php',r'old\(|initial|@json|json_encode|estimate-entry|estimate-form|description|items|note|script',200,2,4),
-('public/js/estimate-entry.js',r'initial|description|rowHtml|function add|JSON|sessionStorage|localStorage|submit|name=',260,2,5),
-('app/Http/Controllers/Web/AdminEstimateController.php',r'function |description|items\.\*|items\.\d+|max:255|store|validate|create|update',270,3,9),
+('resources/views/estimates/create.blade.php',r'old\(|initial|@json|json_encode|estimate-entry|estimate-form|description|items|note|script',280,2,4),
+('public/js/estimate-entry.js',r'initial|description|rowHtml|function add|JSON|sessionStorage|localStorage|submit|name=',290,2,5),
+('app/Http/Controllers/Web/AdminEstimatePageController.php',r'function |description|items\.\*|items\.\d+|max:255|store|validate|create|update',350,3,9),
 ('app/Http/Controllers/Web/EstimateController.php',r'function |description|items\.\*|max:255|store|validate|create|update',260,3,8),
 ('app/Http/Requests/StoreEstimateRequest.php',r'description|max:255|rules|items',80,2,4),
 ]
@@ -21,8 +21,8 @@ for rel,pattern,cap,before,after in cases:
  mat=[i for i,v in enumerate(lines) if re.search(pattern,v,re.I)]
  selected=set()
  for i in mat[:cap//4]:selected.update(range(max(0,i-before),min(len(lines),i+after+1)))
- if rel.endswith('create.blade.php'):selected.update(range(min(len(lines),115)))
- if rel.endswith('estimate-entry.js'):selected.update(range(min(len(lines),140)))
+ if rel.endswith('create.blade.php'):selected.update(range(185,min(len(lines),389)))
+ if rel.endswith('estimate-entry.js'):selected.update(range(140,min(len(lines),278)))
  print('AM253_SOURCE',rel,'LINES',len(lines),'MATCHES',len(mat))
  for i in sorted(selected)[:cap]:
   v=lines[i].strip()
