@@ -158,7 +158,7 @@ s=one(s,
     'ACTION_ROW_END')
 new=enc(s)
 if old==new:raise SystemExit('STOP_AM255_NO_DIFFERENCE')
-if s.count('am255-actions-row')!=2:raise SystemExit('STOP_AM255_ACTION_ROW_MISSING_OR_DUPLICATED')
+if s.count('am255-actions-row')!=3:raise SystemExit('STOP_AM255_ACTION_ROW_MISSING_OR_DUPLICATED')
 blade_lint(old)
 blade_lint(new)
 route_check()
