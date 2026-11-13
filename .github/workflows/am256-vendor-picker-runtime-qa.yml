@@ -1,0 +1,154 @@
+name: AM256 Purchase Return Vendor Picker — Runtime QA
+on:
+  push:
+    branches: [fix/am256-purchase-return-vendor-picker-20261113]
+    paths: [.github/workflows/am256-vendor-picker-runtime-qa.yml]
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - name: Prepare STAGING SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$SSH_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4;do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$SSH_KEY" ];then
+            printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq; sudo apt-get install -qq -y sshpass
+          fi
+      - name: Real Laravel vendor dropdown, filtered item search and cross-vendor posting guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ];then SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$SSH_PASSWORD";SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT");fi
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"
+          test "$(basename "$APP")" = assam-erp-staging
+          cd "$APP"
+          QA="$(mktemp --suffix=.php)"
+          trap 'rm -f "$QA"' EXIT
+          cat > "$QA" <<'PHP'
+          <?php
+          error_reporting(E_ALL);
+          require getcwd().'/vendor/autoload.php';
+          $app=require getcwd().'/bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          \Illuminate\Support\Facades\View::share('errors',new \Illuminate\Support\ViewErrorBag());
+          $DB=\Illuminate\Support\Facades\DB::class;
+          $admin=\App\Models\ErpAuthUser::where('active',1)->whereIn('role',['owner','admin'])->firstOrFail();
+          $controller=app(\App\Http\Controllers\Web\AdminPurchaseReturnItemwiseController::class);
+          $req=\Illuminate\Http\Request::create('/erp/purchase-returns/create','GET');
+          $req->setUserResolver(static fn()=>$admin);
+          $page=$controller->create($req)->render();
+          foreach(['am256-vendor-name','am256-vendor-id','Vendor / Purchased From',
+                   'am256-vendor-options','purchase-returns/vendors'] as $fragment)
+            if(!str_contains($page,$fragment))throw new RuntimeException('AM256_FORM_ELEMENT_MISSING_'.$fragment);
+          echo "AM256_VENDOR_NAME_FIELD_RENDER_PASS\n";
+
+          $purchase=$DB::table('workshop_purchases as p')
+             ->join('workshop_vendors as v','v.id','=','p.vendor_id')
+             ->whereIn('p.purchase_type',['PART','OSL'])
+             ->whereRaw("COALESCE(p.record_status,'ACTIVE') <> 'DELETED'")
+             ->where('p.vendor_id','>',0)->orderByDesc('p.id')
+             ->first(['p.id','p.purchase_no','p.vendor_id','v.vendor_name']);
+          if(!$purchase)throw new RuntimeException('AM256_VENDOR_PURCHASE_TEST_FIXTURE_MISSING');
+
+          $query=mb_substr((string)$purchase->vendor_name,0,5);
+          $vendorReq=\Illuminate\Http\Request::create('/erp/purchase-returns/vendors','GET',['q'=>$query]);
+          $vendorReq->setUserResolver(static fn()=>$admin);
+          $vendorResult=json_decode($controller->vendors($vendorReq)->getContent(),true,512,JSON_THROW_ON_ERROR);
+          if(!isset($vendorResult['vendors']) || !is_array($vendorResult['vendors']))exit(41);
+          $found=false;
+          foreach($vendorResult['vendors'] as $v){
+            if((int)$v['id']===(int)$purchase->vendor_id){$found=true;break;}
+          }
+          if(!$found)throw new RuntimeException('AM256_SEARCHED_VENDOR_NOT_IN_MASTER_PICKER');
+          echo "AM256_PURCHASED_FROM_VENDOR_DROPDOWN_SEARCH_PASS\n";
+
+          $itemReq=\Illuminate\Http\Request::create('/erp/purchase-returns/search','GET',[
+             'vendor_id'=>(int)$purchase->vendor_id, 'q'=>(string)$purchase->purchase_no
+          ]);
+          $itemReq->setUserResolver(static fn()=>$admin);
+          $itemResult=json_decode($controller->search($itemReq)->getContent(),true,512,JSON_THROW_ON_ERROR);
+          if(!isset($itemResult['items']) || !is_array($itemResult['items']))exit(42);
+          if(!count($itemResult['items']))throw new RuntimeException('AM256_VENDOR_FILTERED_PURCHASE_SEARCH_EMPTY');
+          foreach($itemResult['items'] as $line){
+            if((int)$line['vendor_id']!==(int)$purchase->vendor_id)
+              throw new RuntimeException('AM256_SEARCH_LEAKED_OTHER_VENDOR_ITEM');
+          }
+          echo "AM256_ITEM_SEARCH_ONLY_SELECTED_VENDOR_PASS\n";
+
+          $guest=\Illuminate\Http\Request::create('/erp/purchase-returns/vendors','GET',['q'=>'test']);
+          $guest->setUserResolver(static fn()=>null);
+          try{$controller->vendors($guest);exit(43);}
+          catch(\Symfony\Component\HttpKernel\Exception\HttpException $e) {
+            if($e->getStatusCode()!==403)exit(44);
+          }
+          echo "AM256_VENDOR_MASTER_SEARCH_GUEST_403_PASS\n";
+
+          $other=$DB::table('workshop_purchases')
+            ->where('vendor_id','<>',(int)$purchase->vendor_id)
+            ->whereRaw("COALESCE(record_status,'ACTIVE') <> 'DELETED'")
+            ->whereIn('purchase_type',['PART','OSL'])->orderByDesc('id')->first();
+          if($other) {
+            $beforeReturns=$DB::table('am_purchase_returns')->count();
+            $request=\Illuminate\Http\Request::create('/erp/purchase-returns/itemwise','POST',[
+              'vendor_id'=>(int)$purchase->vendor_id,
+              'request_key'=>(string)\Illuminate\Support\Str::uuid(),
+              'return_date'=>now('Asia/Kolkata')->format('Y-m-d'),
+              'reason'=>'Validation check - selected Vendor does not match source item',
+              'lines'=>[['purchase_id'=>(int)$other->id,'qty'=>1.0]]
+            ]);
+            $request->setUserResolver(static fn()=>$admin);
+            try {
+              $controller->store($request,app(\App\Http\Controllers\Web\AdminPurchaseReturnController::class));
+              throw new RuntimeException('AM256_WRONG_VENDOR_POST_UNEXPECTEDLY_ACCEPTED');
+            } catch(\Illuminate\Validation\ValidationException $e) {
+              $message=collect($e->errors())->flatten()->implode(' ');
+              if(!str_contains($message,'different Vendor'))
+                throw new RuntimeException('AM256_UNRELATED_VALIDATION: '.mb_substr($message,0,120));
+              echo "AM256_WRONG_VENDOR_SOURCE_POST_BLOCK_PASS\n";
+            }
+            if($DB::table('am_purchase_returns')->count()!=$beforeReturns)
+              throw new RuntimeException('AM256_INVALID_POST_CHANGED_ACCOUNTING');
+            echo "AM256_WRONG_VENDOR_REJECTION_NO_FINANCIAL_WRITE_PASS\n";
+          } else {
+            echo "AM256_ONLY_ONE_VENDOR_IN_TEST_DATA_WRONG_VENDOR_CASE_SKIPPED\n";
+          }
+          echo "AM256_VENDOR_PICKER_RUNTIME_QA_PASS\n";
+          PHP
+          RESULT="$(php "$QA" 2>&1)"
+          printf '%s\n' "$RESULT"
+          for marker in AM256_VENDOR_NAME_FIELD_RENDER_PASS AM256_PURCHASED_FROM_VENDOR_DROPDOWN_SEARCH_PASS AM256_ITEM_SEARCH_ONLY_SELECTED_VENDOR_PASS AM256_VENDOR_MASTER_SEARCH_GUEST_403_PASS AM256_VENDOR_PICKER_RUNTIME_QA_PASS;do
+            printf '%s\n' "$RESULT" | grep -Fq "$marker" || { echo "STOP_AM256_RUNTIME_QA_MISSING_$marker";exit 75; }
+          done
+          if ! printf '%s\n' "$RESULT" | grep -Eq 'AM256_WRONG_VENDOR_SOURCE_POST_BLOCK_PASS|AM256_ONLY_ONE_VENDOR_IN_TEST_DATA_WRONG_VENDOR_CASE_SKIPPED';then
+            echo STOP_AM256_CROSS_VENDOR_CASE_NOT_VERIFIED
+            exit 76
+          fi
+          echo AM256_REAL_RUNTIME_AND_VENDOR_VALIDATION_COMPLETE
+          REMOTE
+      - name: Remove SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
