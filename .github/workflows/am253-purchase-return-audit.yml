@@ -99,6 +99,12 @@ jobs:
           grep -RInE "Schema::create\\('inventory_movements'" database/migrations | head -8 || true
           echo AM253_VENDOR_DEBIT_USES_MIGRATION
           sed -n '1,100p' database/migrations/2026_11_01_001200_create_workshop_vendor_debit_uses.php
+          echo AM253_OSL_BATCH_CONTROLLER
+          sed -n '1,250p' app/Http/Controllers/Web/AdminOslPurchaseBatchController.php
+          echo AM253_VENDOR_LEDGER_TAIL
+          sed -n '180,315p' app/Services/VendorService.php
+          echo AM253_PURCHASE_FORM_CSS
+          sed -n '1,110p' resources/views/purchases/create.blade.php
           echo AM253_READONLY_PURCHASE_AUDIT_COMPLETE
           REMOTE
       - name: Erase ephemeral SSH credentials
