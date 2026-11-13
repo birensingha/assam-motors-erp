@@ -61,6 +61,7 @@ jobs:
           PATCH_DIR="$(mktemp -d)"
           git archive FETCH_HEAD deployment/live-fixes/AM255_NEW_STAFF_PORTAL_LOGIN | tar -x -C "$PATCH_DIR"
           python3 "$PATCH_DIR/deployment/live-fixes/AM255_NEW_STAFF_PORTAL_LOGIN/audit.py" "$APP"
+          php "$PATCH_DIR/deployment/live-fixes/AM255_NEW_STAFF_PORTAL_LOGIN/attendance_probe.php" "$APP"
           REMOTE
       - name: Clean up SSH credential
         if: always()
