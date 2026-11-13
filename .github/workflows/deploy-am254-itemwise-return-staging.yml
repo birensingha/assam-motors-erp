@@ -71,8 +71,7 @@ jobs:
           python3 "$PKG/install.py" check "$APP"
           python3 "$PKG/install.py" apply "$APP"
           cd "$APP"
-          php artisan route:list --path=erp/purchase-returns | grep -F 'erp.purchase-returns.search'
-          php artisan route:list --path=erp/purchase-returns | grep -F 'erp.purchase-returns.itemwise.store'
+          php -r 'require "vendor/autoload.php";$a=require "bootstrap/app.php";$a->make(\\Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();foreach(["erp.purchase-returns.create","erp.purchase-returns.select-bill","erp.purchase-returns.search","erp.purchase-returns.itemwise.store"] as $name){$r=\\Illuminate\\Support\\Facades\\Route::getRoutes()->getByName($name);if(!$r)exit(31);echo "AM254_ROUTE_VERIFIED ".$name." ".$r->uri()."\\n";}'
           php -l app/Http/Controllers/Web/AdminPurchaseReturnItemwiseController.php
           echo AM254_STAGING_ITEMWISE_SEARCH_AND_POST_ROUTES_READY
           echo AM254_NO_PURCHASE_RETURN_AUTOMATICALLY_POSTED
