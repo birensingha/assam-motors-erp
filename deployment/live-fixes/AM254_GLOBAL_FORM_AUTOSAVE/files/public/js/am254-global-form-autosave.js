@@ -41,7 +41,7 @@
     if (!el || !el.name || el.disabled || el.closest('[data-no-autosave]')) return true;
     if (!/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return true;
     var type = String(el.type || '').toLowerCase();
-    if (['password','file','hidden','button','submit','reset','image','color'].indexOf(type) >= 0) return true;
+    if (['password','file','button','submit','reset','image','color'].indexOf(type) >= 0) return true;
     if (sensitive.test(el.name) || sensitive.test(el.id || '')) return true;
     if (el.hasAttribute('data-sensitive') || el.autocomplete === 'one-time-code') return true;
     return false;
@@ -149,17 +149,23 @@
     makeButton('Restore Draft',function () {
       if (!window.confirm('Restore the earlier browser draft into this form? Current visible values will be replaced.')) return;
       var result = restore(form,draft);
-      banner.remove();
       if (result.missing) {
-        notify('Draft restored where fields exist. ' + result.missing + ' saved fields need their original rows.');
+        // Preserve original complete snapshot; do not overwrite with a partial form.
+        meta.blockWrites = true;
+        notify('Draft restored where fields exist. ' + result.missing + ' fields need their rows. Add them and click Restore Draft again.');
         showMissingNotice(form,result.missing);
-      } else notify('Draft restored. Review and use the normal Save button.');
-      meta.dirty = true;
+      } else {
+        meta.blockWrites = false;
+        banner.remove();
+        notify('Draft restored. Review and use the normal Save button.');
+        meta.dirty = true;
+      }
     });
     makeButton('Discard Draft',function () {
       if (!window.confirm('Discard this browser-only draft?')) return;
       try { store.removeItem(k); } catch (_) {}
       meta.dirty = false;
+      meta.blockWrites = false;
       banner.remove();
       notify('Browser draft discarded.');
     });
@@ -200,12 +206,12 @@
     if (formsSeen.has(form) || !relevant(form)) return;
     formsSeen.add(form);
     var k = key(form), initial = read(k);
-    var meta = {key:k,dirty:false,timer:0,last:null};
+    var meta = {key:k,dirty:false,blockWrites:!!(initial && meaningful(initial.fields)),timer:0,last:null};
     activeStores.set(form,meta);
     if (initial && meaningful(initial.fields)) showBanner(form,meta,initial,k);
     function persist() {
       clearTimeout(meta.timer);meta.timer=0;
-      if (!meta.dirty) return;
+      if (!meta.dirty || meta.blockWrites) return;
       var fields=values(form);
       if (!fields.length || !meaningful(fields)) return;
       var snapshot={version:1,time:now(),user:account,guard:guard,fields:fields};
@@ -223,6 +229,7 @@
     }
     function schedule(e) {
       if (e && e.target && e.target.closest('[data-no-autosave]')) return;
+      if (meta.blockWrites) return;
       meta.dirty=true;
       clearTimeout(meta.timer);
       meta.timer=setTimeout(persist,500);
