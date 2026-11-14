@@ -1,0 +1,138 @@
+name: AM257 Profit Control — Authenticated Runtime & Financial Safety QA
+on:
+  push:
+    branches: [feature/am257-workshop-profit-dashboard-20261114]
+    paths: [.github/workflows/am257-profit-control-runtime-qa.yml]
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - name: Prepare SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$SSH_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4;do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$SSH_KEY" ];then printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Test admin page, actual invoice date, CSV, guest 403, and plan validation — read-only
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ];then SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$SSH_PASSWORD";SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT");fi
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          test "$(basename "$ROOT")" = assam-erp-staging
+          cd "$ROOT"
+          QA="$(mktemp --suffix=.php)"
+          trap 'rm -f "$QA"' EXIT
+          cat > "$QA" <<'PHP'
+          <?php
+          error_reporting(E_ALL);
+          require getcwd().'/vendor/autoload.php';
+          $app=require getcwd().'/bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          \Illuminate\Support\Facades\View::share('errors',new \Illuminate\Support\ViewErrorBag());
+          $DB=\Illuminate\Support\Facades\DB::class;
+          $user=\App\Models\ErpAuthUser::where('active',1)
+            ->whereIn('role',['owner','admin'])->firstOrFail();
+          $controller=app(\App\Http\Controllers\Web\AdminWorkshopProfitControlController::class);
+          $invoice=$DB::table('invoices')->whereNotNull('invoice_date')
+            ->whereRaw("LOWER(COALESCE(status,'')) NOT IN ('reversed','void','cancelled')")
+            ->orderByDesc('invoice_date')->first(['invoice_date']);
+          if(!$invoice)throw new RuntimeException('AM257_ACTIVE_INVOICE_QA_FIXTURE_NOT_FOUND');
+          $date=(string)$invoice->invoice_date;
+          $before=[
+            'invoices'=>$DB::table('invoices')->count(),
+            'expenses'=>$DB::table('workshop_expenses')->count(),
+            'credits'=>$DB::table('invoice_credit_notes')->count(),
+            'purchases'=>$DB::table('workshop_purchases')->count(),
+            'plans'=>$DB::table('admin_settings')->where('setting_key','am257_profit_control_plan_v1')->count(),
+          ];
+          $request=\Illuminate\Http\Request::create('/erp/profit-control','GET',['date'=>$date]);
+          $request->setUserResolver(static fn()=>$user);
+          $view=$controller->index($request);
+          if(!$view instanceof \Illuminate\View\View)
+            throw new RuntimeException('AM257_ADMIN_DASHBOARD_DID_NOT_RETURN_VIEW');
+          $html=$view->render();
+          foreach(['Workshop Profit & Daily Earning Target','Discount Control Register','Save Cost & Profit Targets',
+            'Actual Net Sales','Estimated Daily Operating Surplus'] as $phrase){
+              if(!str_contains($html,$phrase))throw new RuntimeException('AM257_VIEW_RENDER_MISSING_'.$phrase);
+          }
+          echo "AM257_ADMIN_PROFIT_CONTROL_VIEW_RENDER_PASS\n";
+          $data=$view->getData();
+          if(!isset($data['data']['invoice_count']) || $data['data']['invoice_count']<1)
+            throw new RuntimeException('AM257_ACTUAL_INVOICE_NOT_IN_DAILY_METRIC');
+          foreach(['net_sales','discount_parts','discount_labour','known_discounts','expenses_job',
+            'expenses_other','credit_adjustment','credit_notes_posted'] as $field){
+              if(!array_key_exists($field,$data['data']))
+                throw new RuntimeException('AM257_SOURCE_METRIC_MISSING_'.$field);
+          }
+          if(abs(($data['data']['discount_parts']+$data['data']['discount_labour'])
+              -$data['data']['known_discounts'])>0.01)
+            throw new RuntimeException('AM257_DISCOUNT_DOUBLE_COUNT_ERROR');
+          echo "AM257_LIVE_INVOICE_DISCOUNT_EXPENSE_QUERIES_PASS\n";
+          $export=\Illuminate\Http\Request::create('/erp/profit-control','GET',['date'=>$date,'export'=>'csv']);
+          $export->setUserResolver(static fn()=>$user);
+          $csv=$controller->index($export);
+          if(!$csv instanceof \Symfony\Component\HttpFoundation\StreamedResponse ||
+             $csv->getStatusCode()!==200)
+            throw new RuntimeException('AM257_CSV_EXPORT_RESPONSE_INVALID');
+          echo "AM257_ADMIN_CSV_EXPORT_RESPONSE_PASS\n";
+          $guest=\Illuminate\Http\Request::create('/erp/profit-control','GET',['date'=>$date]);
+          $guest->setUserResolver(static fn()=>null);
+          try{$controller->index($guest);throw new RuntimeException('AM257_GUEST_READ_ALLOWED');}
+          catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){
+            if($e->getStatusCode()!==403)throw $e;
+          }
+          echo "AM257_UNAUTHORIZED_DASHBOARD_403_PASS\n";
+          $invalid=\Illuminate\Http\Request::create('/erp/profit-control/settings','POST',[
+            'date'=>$date,'monthly_operating_cost'=>420000,'desired_monthly_profit'=>80000,
+            'working_days'=>26,'planned_margin_percent'=>0
+          ]);
+          $invalid->setUserResolver(static fn()=>$user);
+          try{$controller->savePlan($invalid);throw new RuntimeException('AM257_ZERO_MARGIN_WRONGLY_SAVED');}
+          catch(\Illuminate\Validation\ValidationException $e){
+            if(!isset($e->errors()['planned_margin_percent']))
+              throw new RuntimeException('AM257_UNRELATED_VALIDATION');
+          }
+          echo "AM257_ZERO_MARGIN_SAVE_REJECTED_PASS\n";
+          $after=[
+            'invoices'=>$DB::table('invoices')->count(),
+            'expenses'=>$DB::table('workshop_expenses')->count(),
+            'credits'=>$DB::table('invoice_credit_notes')->count(),
+            'purchases'=>$DB::table('workshop_purchases')->count(),
+            'plans'=>$DB::table('admin_settings')->where('setting_key','am257_profit_control_plan_v1')->count(),
+          ];
+          if($before!==$after)throw new RuntimeException('AM257_FINANCIAL_RECORD_CHANGED_DURING_QA');
+          echo "AM257_NO_FINANCIAL_OR_SETTINGS_DATA_CHANGED_PASS\n";
+          echo "AM257_AUTHENTICATED_RUNTIME_QA_ALL_PASS\n";
+          PHP
+          OUTPUT="$(php "$QA" 2>&1)"
+          printf '%s\n' "$OUTPUT"
+          for marker in AM257_ADMIN_PROFIT_CONTROL_VIEW_RENDER_PASS AM257_LIVE_INVOICE_DISCOUNT_EXPENSE_QUERIES_PASS AM257_ADMIN_CSV_EXPORT_RESPONSE_PASS AM257_UNAUTHORIZED_DASHBOARD_403_PASS AM257_ZERO_MARGIN_SAVE_REJECTED_PASS AM257_NO_FINANCIAL_OR_SETTINGS_DATA_CHANGED_PASS AM257_AUTHENTICATED_RUNTIME_QA_ALL_PASS;do
+            printf '%s\n' "$OUTPUT" | grep -Fq "$marker" || { echo "STOP_AM257_REQUIRED_TEST_MISSING_$marker";exit 76; }
+          done
+          echo AM257_STAGING_RUNTIME_AUTH_FINANCE_SAFETY_COMPLETE
+          REMOTE
+      - name: Remove SSH
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
