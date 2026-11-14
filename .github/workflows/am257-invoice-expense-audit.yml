@@ -1,0 +1,90 @@
+name: AM257 Profit Control — Invoice & Expense Rules Audit
+on:
+  push:
+    branches: [feature/am257-workshop-profit-dashboard-20261114]
+    paths: [.github/workflows/am257-invoice-expense-audit.yml]
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - name: Prepare SSH
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$SSH_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4;do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$SSH_KEY" ];then printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Read-only source ledger and navigation details
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ];then SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$SSH_PASSWORD";SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT");fi
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"
+          test "$(basename "$APP")" = assam-erp-staging
+          cd "$APP"
+          QA="$(mktemp --suffix=.php)"
+          trap 'rm -f "$QA"' EXIT
+          cat > "$QA" <<'PHP'
+          <?php
+          require getcwd().'/vendor/autoload.php';
+          $app=require getcwd().'/bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $D=\Illuminate\Support\Facades\DB::class;$S=\Illuminate\Support\Facades\Schema::class;
+          $all=array_map(static fn($x)=>array_values((array)$x)[0],$D::select('SHOW TABLES'));
+          foreach($all as $t){
+            if(!preg_match('/osl|outside|sales|credit|estimate|salary|config|setting|inventory|invoice|rot_|job_card_/i',$t))continue;
+            if(preg_match('/_audit|_history|_events|_sessions|_uploads|_photos|_access|_snapshot|_locks|_receipts/i',$t))continue;
+            echo 'AM257_DETAIL_TABLE '.$t.': '.implode(',',$S::getColumnListing($t))."\n";
+          }
+          foreach(['invoice_credit_notes','direct_invoice_lines','workshop_purchase_batches','workshop_expenses',
+              'job_card_parts','job_card_labour','invoices'] as $t){
+            if(!$S::hasTable($t))continue;
+            echo 'AM257_AGG_COUNT '.$t.': '.$D::table($t)->count()."\n";
+          }
+          foreach([['workshop_expenses','expense_category'],['workshop_expenses','expense_against'],
+            ['invoice_credit_notes','status'],['invoices','status'],['workshop_purchase_batches','record_status']] as $spec){
+            [$table,$col]=$spec;
+            if(!$S::hasTable($table)||!$S::hasColumn($table,$col))continue;
+            $a=$D::table($table)->selectRaw($col.',COUNT(*) AS cnt')
+              ->groupBy($col)->orderByDesc('cnt')->limit(20)->get();
+            echo 'AM257_DISTINCT '.$table.'.'.$col.'='.json_encode($a,JSON_UNESCAPED_SLASHES)."\n";
+          }
+          echo 'AM257_INVOICE_SOURCE_COUNTS '.json_encode([
+            'invoice_job_linked'=>$D::table('invoices')->whereNotNull('job_card_id')->count(),
+            'invoice_direct'=>$D::table('invoices')->whereNull('job_card_id')->count(),
+            'job_parts'=>$D::table('job_card_parts')->count(),
+            'job_labour'=>$D::table('job_card_labour')->count(),
+            'direct_invoice_lines'=>$D::table('direct_invoice_lines')->count(),
+          ])."\n";
+          echo "AM257_SECOND_AUDIT_READONLY_PASS\n";
+          PHP
+          php "$QA"
+          echo AM257_LAYOUT_SOURCE_BEGIN
+          sed -n '1,220p' resources/views/layouts/erp.blade.php | head -220
+          echo AM257_LAYOUT_SOURCE_END
+          echo AM257_ROUTES_CONTEXT_BEGIN
+          sed -n '210,320p' routes/web.php
+          echo AM257_ROUTES_CONTEXT_END
+          REMOTE
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
