@@ -59,7 +59,7 @@ jobs:
             ->whereRaw("LOWER(COALESCE(status,'')) NOT IN ('reversed','void','cancelled')")
             ->orderByDesc('invoice_date')->first(['invoice_date']);
           if(!$invoice)throw new RuntimeException('AM257_ACTIVE_INVOICE_QA_FIXTURE_NOT_FOUND');
-          $date=(string)$invoice->invoice_date;
+          $date=substr((string)$invoice->invoice_date,0,10);
           $before=[
             'invoices'=>$DB::table('invoices')->count(),
             'expenses'=>$DB::table('workshop_expenses')->count(),
