@@ -1,0 +1,86 @@
+name: AM257 Profit Control — Read-only STAGING Data Audit
+on:
+  push:
+    branches: [feature/am257-workshop-profit-dashboard-20261114]
+    paths: [.github/workflows/am257-readonly-data-audit.yml]
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - name: Prepare SSH
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$SSH_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4; do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$SSH_KEY" ];then printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Inspect financial schema, source status values, routes and sidebar without modifying data
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ];then SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$SSH_PASSWORD";SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT");fi
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          test "$(basename "$ROOT")" = assam-erp-staging
+          cd "$ROOT"
+          QA="$(mktemp --suffix=.php)"
+          trap 'rm -f "$QA"' EXIT
+          cat > "$QA" <<'PHP'
+          <?php
+          require getcwd().'/vendor/autoload.php';
+          $app=require getcwd().'/bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $D=\Illuminate\Support\Facades\DB::class;
+          $S=\Illuminate\Support\Facades\Schema::class;
+          $tables=array_map(static fn($a)=>array_values((array)$a)[0],$D::select('SHOW TABLES'));
+          foreach($tables as $table){
+            if(!preg_match('/invoice|expense|payment|purchase|credit|job_card|labou?r|rot_|inspection|parts_master|attendance|receipt/i',$table))continue;
+            echo 'AM257_TABLE '.$table.': '.implode(',',$S::getColumnListing($table))."\n";
+          }
+          foreach(['invoices','invoice_items','invoice_lines','invoice_parts','workshop_expenses','expenses',
+            'workshop_purchases','job_cards','job_card_parts','job_card_labours','job_card_rot',
+            'credit_notes','workshop_money_receipts'] as $table){
+            if(!$S::hasTable($table))continue;
+            echo 'AM257_COUNT '.$table.'='.$D::table($table)->count()."\n";
+            foreach(['status','record_status','payment_status','invoice_status','type','expense_type','purchase_type'] as $column){
+              if(!$S::hasColumn($table,$column))continue;
+              $rows=$D::table($table)->selectRaw($column.',COUNT(*) AS n')
+                ->groupBy($column)->orderByDesc('n')->limit(12)->get();
+              echo 'AM257_STATUS '.$table.'.'.$column.'='.json_encode($rows,JSON_UNESCAPED_SLASHES)."\n";
+            }
+          }
+          echo "AM257_DB_READONLY_SCHEMA_AUDIT_PASS\n";
+          PHP
+          php "$QA"
+          echo AM257_SIDEBAR_FILES
+          for FILE in resources/views/layouts/erp.blade.php resources/views/layouts/partials/sidebar.blade.php;do
+            if [ -f "$FILE" ];then
+              echo "FILE:$FILE"
+              grep -n -i -E 'purchase|expense|invoice|sales.register|configuration|payment|dashboard' "$FILE" | head -70 || true
+            fi
+          done
+          echo AM257_ROUTE_MOUNT_CONTEXT
+          grep -n -C 4 -F "Route::get('/purchase-returns/create'" routes/web.php | head -35 || true
+          echo AM257_STAGING_FINANCIAL_AUDIT_COMPLETE
+          REMOTE
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
