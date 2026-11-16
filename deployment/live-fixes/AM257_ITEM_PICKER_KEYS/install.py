@@ -32,16 +32,19 @@ def atomic(p,b):
  finally:
   if os.path.exists(name):os.unlink(name)
 def once(text,old,new,label):
- import re
  n=text.count(old)
  if n==1:return text.replace(old,new,1)
- # Preserve strict textual anchors but accept existing JS indentation drift.
- # Each line must still match exactly once, modulo leading whitespace.
- pieces=old.strip('\\n').splitlines()
- pattern=r'(?m)^[ \\t]*'+r'\\n[ \\t]*'.join(re.escape(line.strip()) for line in pieces)+r'[ \\t]*(?=\\r?\\n|$)'
- found=list(re.finditer(pattern,text))
- if len(found)!=1:raise SystemExit('STOP_AM257_ANCHOR_'+label+'_COUNT_'+str(n)+'_INDENT_MATCH_'+str(len(found)))
- return text[:found[0].start()]+new+text[found[0].end():]
+ # Match exact source statements ignoring only leading/trailing indentation.
+ source_lines=text.splitlines(keepends=True)
+ wanted=[line.strip() for line in old.splitlines()]
+ matches=[]
+ for i in range(len(source_lines)-len(wanted)+1):
+  if all(source_lines[i+j].strip()==wanted[j] for j in range(len(wanted))):
+   matches.append(i)
+ if len(matches)!=1:
+  raise SystemExit('STOP_AM257_ANCHOR_'+label+'_COUNT_'+str(n)+'_LINE_MATCH_'+str(len(matches)))
+ at=matches[0]
+ return ''.join(source_lines[:at])+new.rstrip(chr(10))+chr(10)+''.join(source_lines[at+len(wanted):])
 def blade_lint(raw):
  with tempfile.TemporaryDirectory(prefix='am257_blade_') as td:
   path=Path(td)/'selector.blade.php';out=Path(td)/'compiled.php'
