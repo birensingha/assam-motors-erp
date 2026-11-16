@@ -5,6 +5,7 @@ on:
     paths:
       - .github/workflows/deploy-am257-item-picker-keys-staging.yml
       - deployment/live-fixes/AM257_ITEM_PICKER_KEYS/install.py
+      - deployment/live-fixes/AM257_ITEM_PICKER_KEYS/hotfix.py
 permissions: {contents: read}
 concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
 jobs:
@@ -23,7 +24,7 @@ jobs:
       - name: Python source preflight
         run: |
           set -euo pipefail
-          python3 -m py_compile deployment/live-fixes/AM257_ITEM_PICKER_KEYS/install.py
+          python3 -m py_compile deployment/live-fixes/AM257_ITEM_PICKER_KEYS/install.py deployment/live-fixes/AM257_ITEM_PICKER_KEYS/hotfix.py
           echo AM257_PACKAGE_PYTHON_SYNTAX_PASS
       - name: Configure Hostinger STAGING SSH
         run: |
@@ -69,6 +70,14 @@ jobs:
             python3 "$SCRIPT" apply "$APP"
           fi
           python3 "$SCRIPT" verify "$APP"
+          HOTFIX="$PATCH_DIR/deployment/live-fixes/AM257_ITEM_PICKER_KEYS/hotfix.py"
+          if grep -Fq AM257_SAFE_EMPTY_ENTER "$APP/public/js/estimate-entry.js"; then
+            python3 "$HOTFIX" verify "$APP"
+          else
+            python3 "$HOTFIX" check "$APP"
+            python3 "$HOTFIX" apply "$APP"
+          fi
+          python3 "$HOTFIX" verify "$APP"
           echo AM257_ESTIMATE_PURCHASE_AND_SALES_KEYBOARD_NAV_STAGING_VERIFIED
           REMOTE
       - name: Node syntax verify exact deployed JS and global Sales selector
