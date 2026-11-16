@@ -45,24 +45,40 @@
 
     function entered(row) {
       if (!row) return false;
-      if (row.dataset.am258Touched === '1') return true;
+      // Distinguish actual entered content from a row that was typed into
+      // and then cleared. Only actual content is submitted to Laravel.
       if (def.kind === 'estimate') {
         return !!(
           row.querySelector('.e-ref-id')?.value ||
           row.querySelector('.e-ref-search')?.value.trim() ||
-          row.querySelector('.e-desc')?.value.trim()
+          row.querySelector('.e-desc')?.value.trim() ||
+          Number(row.querySelector('.e-rate')?.value || 0) !== 0 ||
+          Number(row.querySelector('.e-disc')?.value || 0) !== 0 ||
+          Number(row.querySelector('.e-qty')?.value || 1) !== 1
         );
       }
       if (def.kind === 'purchase') {
         return !!(
           row.querySelector('.part-id')?.value ||
-          row.querySelector('.part-search')?.value.trim()
+          row.querySelector('.part-search')?.value.trim() ||
+          Number(row.querySelector('.qty')?.value || 1) !== 1 ||
+          Number(row.querySelector('.rate')?.value || 0) !== 0 ||
+          Number(row.querySelector('.disc')?.value || 0) !== 0 ||
+          Number(row.querySelector('.gst')?.value || 0) !== 0 ||
+          row.querySelector('.job-filter')?.value.trim()
         );
       }
       return !!(
         row.querySelector('select[data-part]')?.value ||
-        row.querySelector('[data-note]')?.value.trim()
+        row.querySelector('[data-note]')?.value.trim() ||
+        Number(row.querySelector('[data-qty]')?.value || 1) !== 1 ||
+        Number(row.querySelector('[data-rate]')?.value || 0) !== 0 ||
+        Number(row.querySelector('[data-disc]')?.value || 0) !== 0
       );
+    }
+
+    function occupied(row) {
+      return !!(row && (row.dataset.am258Touched === '1' || entered(row)));
     }
 
     function updateRequired(row) {
@@ -94,7 +110,7 @@
     function addBlank() {
       if (appending || submitting) return;
       var current = rows();
-      if (current.length && !entered(current[current.length - 1])) return;
+      if (current.length && !occupied(current[current.length - 1])) return;
       if (current.length >= def.max) return;
       appending = true;
       var previous = document.activeElement;
@@ -118,7 +134,7 @@
       if (submitting || appending) return;
       prepareRows();
       var current = rows();
-      if (!current.length || entered(current[current.length - 1])) addBlank();
+      if (!current.length || occupied(current[current.length - 1])) addBlank();
       prepareRows();
     }
 
@@ -146,7 +162,7 @@
         def.kind === 'purchase' && element.matches('.part-id') && !!element.value
       );
       if (e.isTrusted || chosenMaster) row.dataset.am258Touched = '1';
-      if (entered(row)) scheduleEnsure();
+      if (occupied(row)) scheduleEnsure();
       else updateRequired(row);
     }
 
@@ -158,7 +174,7 @@
       if (window.__am258AppendingBlank) return;
       var all = rows();
       var last = all[all.length - 1];
-      if (!last || entered(last)) return;
+      if (!last || occupied(last)) return;
       e.preventDefault();
       e.stopImmediatePropagation();
       var input = last.querySelector(def.picker);
