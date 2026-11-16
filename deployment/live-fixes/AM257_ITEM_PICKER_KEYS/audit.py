@@ -62,3 +62,25 @@ for p in (root/'resources/views').rglob('*.blade.php'):
  if any(x in rel.lower() for x in ['counter','direct-sale','sales/','sales-','invoices/create','sales-invoice']):
   print('AM257_SALES_FILE',rel,'lines',len(p.read_text('utf8','replace').splitlines()))
 print('AM257_TARGETED_LINES_END')
+
+print('AM257_COUNTER_SALES_AND_EDIT_ASSETS_BEGIN')
+for rel in ['resources/views/counter-sales/create.blade.php','resources/views/purchases/create.blade.php',
+            'resources/views/purchases/edit.blade.php','public/js/counter-sale.js',
+            'public/js/counter-sales.js','public/js/direct-sale.js','public/js/direct-sales.js',
+            'public/js/purchase-entry.js']:
+ p=root/rel
+ if not p.is_file():continue
+ lines=p.read_text('utf8','replace').splitlines()
+ if rel.endswith('purchase-entry.js'):spans=[(110,160)]
+ elif rel.endswith('create.blade.php') and 'purchases' in rel:spans=[(1,75),(530,578)]
+ elif rel.endswith('edit.blade.php') and 'purchases' in rel:spans=[(480,527)]
+ else:spans=[(1,230)]
+ for aa,bb in spans:
+  for i in range(aa-1,min(bb,len(lines))):
+   v=lines[i].strip()
+   if danger.search(v):v='[REDACTED_SOURCE]'
+   print('AM257_COUNTER_DETAIL',rel,i+1,v[:580])
+for p in (root/'public/js').glob('*.js'):
+ if re.search(r'counter|sales|invoice|direct|search|item',p.name,re.I):
+  print('AM257_JS_FILE',p.relative_to(root).as_posix())
+print('AM257_COUNTER_SALES_AND_EDIT_ASSETS_END')
