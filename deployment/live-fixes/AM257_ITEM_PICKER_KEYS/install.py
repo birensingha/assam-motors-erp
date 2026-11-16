@@ -32,9 +32,16 @@ def atomic(p,b):
  finally:
   if os.path.exists(name):os.unlink(name)
 def once(text,old,new,label):
+ import re
  n=text.count(old)
- if n!=1:raise SystemExit('STOP_AM257_ANCHOR_'+label+'_COUNT_'+str(n))
- return text.replace(old,new,1)
+ if n==1:return text.replace(old,new,1)
+ # Preserve strict textual anchors but accept existing JS indentation drift.
+ # Each line must still match exactly once, modulo leading whitespace.
+ pieces=old.strip('\\n').splitlines()
+ pattern=r'(?m)^[ \\t]*'+r'\\n[ \\t]*'.join(re.escape(line.strip()) for line in pieces)+r'[ \\t]*(?=\\r?\\n|$)'
+ found=list(re.finditer(pattern,text))
+ if len(found)!=1:raise SystemExit('STOP_AM257_ANCHOR_'+label+'_COUNT_'+str(n)+'_INDENT_MATCH_'+str(len(found)))
+ return text[:found[0].start()]+new+text[found[0].end():]
 def blade_lint(raw):
  with tempfile.TemporaryDirectory(prefix='am257_blade_') as td:
   path=Path(td)/'selector.blade.php';out=Path(td)/'compiled.php'
