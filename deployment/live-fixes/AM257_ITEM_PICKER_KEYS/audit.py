@@ -26,7 +26,7 @@ for parent in dirs:
   matches.append((score,rel,p,lines,indexes))
 matches.sort(key=lambda x:-x[0])
 print('AM257_MATCHING_FILES',len(matches))
-for score,rel,p,lines,indexes in matches[:34]:
+for score,rel,p,lines,indexes in matches[:70]:
  print('AM257_FILE',rel,'LINES',len(lines),'MATCHES',len(indexes),'SCORE',score)
  selected=set()
  top=[i for i in indexes if re.search(r'keydown|ArrowDown|ArrowUp|Enter|Tab|keyCode|\\.key|e-ref-search|pickItem|selectItem',lines[i],re.I)]
@@ -38,3 +38,27 @@ for score,rel,p,lines,indexes in matches[:34]:
   if danger.search(v):v='[REDACTED_SOURCE]'
   print('AM257_CODE',rel,i+1,v[:500])
 print('AM257_KEYBOARD_SOURCE_AUDIT_COMPLETE_READ_ONLY')
+
+print('AM257_TARGETED_LINES_BEGIN')
+ranges={
+ 'public/js/estimate-entry.js':[(98,150),(155,272)],
+ 'public/js/purchase-entry.js':[(35,105),(160,355),(360,465)],
+ 'public/js/purchase-edit.js':[(125,313)],
+ 'resources/views/estimates/create.blade.php':[(350,395)],
+ 'resources/views/purchases/create.blade.php':[(520,580)],
+ 'resources/views/purchases/edit.blade.php':[(470,528)]
+}
+for rel,segments in ranges.items():
+ p=root/rel
+ if not p.is_file():continue
+ ls=p.read_text('utf8','replace').splitlines()
+ for start,end in segments:
+  for i in range(start-1,min(end,len(ls))):
+   v=ls[i].strip()
+   if danger.search(v):v='[REDACTED_SOURCE]'
+   print('AM257_DETAIL',rel,i+1,v[:530])
+for p in (root/'resources/views').rglob('*.blade.php'):
+ rel=p.relative_to(root).as_posix()
+ if any(x in rel.lower() for x in ['counter','direct-sale','sales/','sales-','invoices/create','sales-invoice']):
+  print('AM257_SALES_FILE',rel,'lines',len(p.read_text('utf8','replace').splitlines()))
+print('AM257_TARGETED_LINES_END')
