@@ -84,9 +84,7 @@ jobs:
             "${SSH[@]}" "$USERNAME@$HOST" "cat '$ROOT/$path'" | node --check
             echo "AM257_NODE_SYNTAX_VERIFIED $path"
           done
-          "${SSH[@]}" "$USERNAME@$HOST" "cat '$ROOT/resources/views/partials/am-global-selector.blade.php'" \\
-            | python3 -c 'import re,sys; s=sys.stdin.read(); blocks=re.findall(r"<script[^>]*>(.*?)</script>",s,re.S|re.I); assert len(blocks)==1, "expected one selector script"; print(blocks[0])' \\
-            | node --check
+          "${SSH[@]}" "$USERNAME@$HOST" "cat '$ROOT/resources/views/partials/am-global-selector.blade.php'" | python3 -c 'import re,sys; s=sys.stdin.read(); blocks=re.findall(r"<script[^>]*>(.*?)</script>",s,re.S|re.I); assert len(blocks)==1, "expected one selector script"; print(blocks[0])' | node --check
           echo AM257_GLOBAL_SALES_SELECTOR_NODE_SYNTAX_VERIFIED
       - name: Erase SSH credentials
         if: always()
