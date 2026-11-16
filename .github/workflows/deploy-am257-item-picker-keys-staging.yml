@@ -71,6 +71,23 @@ jobs:
           python3 "$SCRIPT" verify "$APP"
           echo AM257_ESTIMATE_PURCHASE_AND_SALES_KEYBOARD_NAV_STAGING_VERIFIED
           REMOTE
+      - name: Node syntax verify exact deployed JS and global Sales selector
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT")
+          fi
+          for path in public/js/estimate-entry.js public/js/purchase-entry.js public/js/purchase-edit.js; do
+            "${SSH[@]}" "$USERNAME@$HOST" "cat '$ROOT/$path'" | node --check
+            echo "AM257_NODE_SYNTAX_VERIFIED $path"
+          done
+          "${SSH[@]}" "$USERNAME@$HOST" "cat '$ROOT/resources/views/partials/am-global-selector.blade.php'" \\
+            | python3 -c 'import re,sys; s=sys.stdin.read(); blocks=re.findall(r"<script[^>]*>(.*?)</script>",s,re.S|re.I); assert len(blocks)==1, "expected one selector script"; print(blocks[0])' \\
+            | node --check
+          echo AM257_GLOBAL_SALES_SELECTOR_NODE_SYNTAX_VERIFIED
       - name: Erase SSH credentials
         if: always()
         run: rm -f ~/.ssh/id_ed25519
