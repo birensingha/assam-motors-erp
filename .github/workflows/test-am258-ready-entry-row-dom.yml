@@ -1,0 +1,24 @@
+name: AM258 Estimate Purchase Sales Blank-Row DOM Smoke Tests
+on:
+  push:
+    branches: [fix/am258-always-blank-entry-row-20261116]
+    paths:
+      - .github/workflows/test-am258-ready-entry-row-dom.yml
+      - deployment/live-fixes/AM258_AUTO_BLANK_ROW/row-smoke.cjs
+      - deployment/live-fixes/AM258_AUTO_BLANK_ROW/files/public/js/am258-auto-blank-entry.js
+permissions: {contents: read}
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install isolated DOM test runtime
+        run: |
+          set -euo pipefail
+          npm install --no-save --no-audit --no-fund jsdom@26
+      - name: Verify Estimate Purchase and Counter Sale empty-line semantics
+        run: |
+          set -euo pipefail
+          node --check deployment/live-fixes/AM258_AUTO_BLANK_ROW/row-smoke.cjs
+          node deployment/live-fixes/AM258_AUTO_BLANK_ROW/row-smoke.cjs
