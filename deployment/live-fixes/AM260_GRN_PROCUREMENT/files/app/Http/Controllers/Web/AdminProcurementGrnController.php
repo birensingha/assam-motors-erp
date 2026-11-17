@@ -126,8 +126,8 @@ final class AdminProcurementGrnController extends Controller
     {
         $this->admin($request);
         return view('procurement.po-create',$this->selections()+[
-            'selectedJob'=max(0,(int)$request->query('job_card_id',0)),
-            'selectedVendor'=max(0,(int)$request->query('vendor_id',0)),
+            'selectedJob'=>max(0,(int)$request->query('job_card_id',0)),
+            'selectedVendor'=>max(0,(int)$request->query('vendor_id',0)),
         ]);
     }
 
