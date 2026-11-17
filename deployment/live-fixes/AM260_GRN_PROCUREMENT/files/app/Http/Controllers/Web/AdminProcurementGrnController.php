@@ -59,7 +59,7 @@ final class AdminProcurementGrnController extends Controller
               ->orderBy('vendor_name')->get(['id','vendor_name','vendor_code']),
           'jobs'=>DB::table('job_cards')->whereRaw("LOWER(COALESCE(status,''))<>'cancelled'")
               ->orderByDesc('id')->limit(250)->get(['id','job_no','vehicle_reg_no']),
-          'parts'=>DB::table('parts_master')->where('active',1)->orderBy('part_name')
+          'parts'=>DB::table('parts_master')->whereRaw("LOWER(TRIM(COALESCE(active,''))) IN ('yes','1','active','true')")->orderBy('part_name')
               ->get(['id','part_code','part_name','unit','stock_qty','purchase_price']),
         ];
     }
@@ -156,7 +156,7 @@ final class AdminProcurementGrnController extends Controller
                 'created_at'=>now(),'updated_at'=>now()
             ]);
             foreach($lines as $line){
-                $p=DB::table('parts_master')->where('id',$line['part_master_id'])->where('active',1)->first();
+                $p=DB::table('parts_master')->where('id',$line['part_master_id'])->whereRaw("LOWER(TRIM(COALESCE(active,''))) IN ('yes','1','active','true')")->first();
                 if(!$p)throw ValidationException::withMessages(['lines'=>'One Part is missing or inactive.']);
                 DB::table('am260_po_lines')->insert([
                     'po_id'=>$po,'part_master_id'=>$p->id,
@@ -245,7 +245,7 @@ final class AdminProcurementGrnController extends Controller
                 ->lockForUpdate()->get()->keyBy('id');
             foreach($lines as $l){
                 $part=$parts->get($l['part_master_id']);
-                if(!$part || !$part->active)
+                if(!$part || !in_array(strtolower(trim((string)$part->active)),['yes','1','active','true'],true))
                     throw ValidationException::withMessages(['lines'=>'Received Part missing or inactive.']);
                 if($part->stock_qty===null)
                     throw ValidationException::withMessages(['lines'=>$part->part_name.' has no recorded opening stock. Reconcile opening stock before receiving challan; do not silently convert unknown to zero.']);
