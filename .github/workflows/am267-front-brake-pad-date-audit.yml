@@ -45,6 +45,7 @@ jobs:
           sha256sum app/Http/Controllers/Web/AdminMasterItemLedgerController.php resources/views/admin/native/item-ledger.blade.php
           echo AM267_PURCHASE_LEDGER_SOURCE_MATCHES
           grep -n -E 'purchase_date|created_at|GRN_RECEIPT_IN|sort_time|sort_id|usort' app/Http/Controllers/Web/AdminMasterItemLedgerController.php | head -115
+          echo AM267_FINAL_LIVE_STOCK_RECHECK
           echo AM267_SOURCE_DB_FACTS
           PHP="$(mktemp --suffix=.php)"
           trap 'rm -f "$PHP"' EXIT
