@@ -61,23 +61,23 @@ jobs:
           <?php
           require getcwd().'/vendor/autoload.php';
           $app=require getcwd().'/bootstrap/app.php';
-          $app->make(\\Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
-          $D=\\Illuminate\\Support\\Facades\\DB::class;
-          $S=\\Illuminate\\Support\\Facades\\Schema::class;
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $D=\Illuminate\Support\Facades\DB::class;
+          $S=\Illuminate\Support\Facades\Schema::class;
           foreach(['workshop_purchases','workshop_purchase_batches','parts_master','inventory_movements',
             'job_card_parts','job_cards','workshop_vendors','purchase_audit_logs'] as $t){
              if(!$S::hasTable($t))continue;
-             echo 'AM260_TABLE '.$t.' '.implode(',',$S::getColumnListing($t))."\\n";
+             echo 'AM260_TABLE '.$t.' '.implode(',',$S::getColumnListing($t))."\n";
           }
           $job=$D::table('job_cards')->where('job_no','JC-20261116-00060')->first();
           if($job){
-            echo 'AM260_JC_FOUND_ID '.$job->id."\\n";
+            echo 'AM260_JC_FOUND_ID '.$job->id."\n";
             $parts=$D::table('job_card_parts as j')->leftJoin('parts_master as p','p.id','=','j.part_master_id')
                ->where('j.job_card_id',$job->id)
                ->get(['j.id','j.part_code','j.part_name','j.qty','j.issue_status','p.stock_qty','p.id as master_id']);
-            foreach($parts as $p)echo 'AM260_JC_PART '.json_encode($p,JSON_UNESCAPED_UNICODE)."\\n";
-          }else echo 'AM260_JC_NOT_FOUND'."\\n";
-          echo 'AM260_READONLY_AUDIT_PASS'."\\n";
+            foreach($parts as $p)echo 'AM260_JC_PART '.json_encode($p,JSON_UNESCAPED_UNICODE)."\n";
+          }else echo 'AM260_JC_NOT_FOUND'."\n";
+          echo 'AM260_READONLY_AUDIT_PASS'."\n";
           PHP
           php "$PHP"
           REMOTE
