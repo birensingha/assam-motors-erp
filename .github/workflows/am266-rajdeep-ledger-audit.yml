@@ -75,6 +75,29 @@ jobs:
                 'i.reference_no','i.note','i.job_card_id','j.job_no','i.created_at']);
             echo 'AM266_MATCHED_ITEM_LEDGER_MOVEMENTS='.json_encode($movements)."\n";
           }
+
+          foreach(['%RAJ%','%DEEP%','%RAJ DEEP%','%RAJ-D%'] as $needle){
+            $vendorsNear=$D::table('workshop_vendors')->where('vendor_name','like',$needle)
+              ->limit(35)->get(['id','vendor_name','vendor_code']);
+            echo 'AM266_VENDOR_FUZZY_'.str_replace('%','',str_replace(' ','_', $needle)).'='.json_encode($vendorsNear)."\n";
+            $purchaseNear=$D::table('workshop_purchases')->where('supplier_name','like',$needle)
+              ->orWhere('created_by','like',$needle)->orWhere('notes','like',$needle)
+              ->orderByDesc('id')->limit(40)->get([
+                  'id','purchase_date','purchase_no','supplier_name','supplier_invoice',
+                  'part_master_id','job_card_id','qty','record_status','created_by','notes'
+              ]);
+            echo 'AM266_PURCHASE_FUZZY_'.str_replace('%','',str_replace(' ','_', $needle)).'='.json_encode($purchaseNear)."\n";
+            $movesNear=$D::table('inventory_movements')->where('note','like',$needle)
+                ->orWhere('reference_no','like',$needle)->orderByDesc('id')->limit(50)
+                ->get(['id','part_master_id','job_card_id','movement_type','qty_in','qty_out',
+                    'balance_after','reference_no','note','created_at']);
+            echo 'AM266_MOVEMENT_FUZZY_'.str_replace('%','',str_replace(' ','_', $needle)).'='.json_encode($movesNear)."\n";
+          }
+          echo 'AM266_GRN_VENDOR_HISTORY='.json_encode(
+            $D::table('am260_grns as g')->leftJoin('workshop_vendors as v','v.id','=','g.vendor_id')
+              ->orderByDesc('g.id')->limit(20)->get(['g.id','g.grn_no','g.challan_no','g.receipt_date','v.vendor_name'])
+          )."\n";
+
           echo 'AM266_AUDIT_COMPLETE_READONLY'."\n";
           PHP
           php "$PHP"
