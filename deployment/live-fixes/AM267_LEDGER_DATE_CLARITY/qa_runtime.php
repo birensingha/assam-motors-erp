@@ -73,11 +73,14 @@ echo 'AM267_STOCK_QA_FACTS='.json_encode([
   'opening'=>$report['opening']??null,
   'closing'=>$report['closing']??null
 ])."\n";
-if(abs((float)$report['current_stock']-1)>.0001 ||
-   abs((float)$report['reconstructed_current']-1)>.0001 ||
+// User may legitimately post stock movements while this read-only QA
+// is running. Never assume yesterday's/earlier snapshot stock=1 remains.
+$liveStock=(float)$D::table('parts_master')->where('id',234)->value('stock_qty');
+if(abs((float)$report['current_stock']-$liveStock)>.0001 ||
+   abs((float)$report['reconstructed_current']-$liveStock)>.0001 ||
    abs((float)$report['variance'])>.0001)
     throw new RuntimeException('AM267_STOCK_RECONCILIATION_CHANGED');
-echo "AM267_MASTER_STOCK_1_RECONCILES_NO_DOUBLE_COUNT_PASS\n";
+echo "AM267_CURRENT_LIVE_MASTER_STOCK_RECONCILES_NO_DOUBLE_COUNT_PASS\n";
 $html=$view->render();
 foreach(['Ledger Date','Invoice / Receipt Date','ERP Posted',
  'am267-ledger-event-filter','Stock IN / OUT Only','Shyam',
