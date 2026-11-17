@@ -49,6 +49,9 @@ jobs:
           sed -n '1,220p' resources/views/procurement/receive.blade.php
           echo AM263_STATIC_JAVASCRIPT_CANDIDATES
           find public/js resources/js -maxdepth 3 -type f 2>/dev/null | grep -i -E 'draft|procure|erp|form|restore' | head -70 || true
+          echo AM263_GLOBAL_AUTOSAVE_FULL
+          sed -n '1,320p' public/js/am254-global-form-autosave.js
+          echo AM263_GLOBAL_AUTOSAVE_END
           echo AM263_DRAFT_SOURCE_AUDIT_DONE
 
           REMOTE
