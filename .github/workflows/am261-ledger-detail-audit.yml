@@ -1,0 +1,81 @@
+name: AM261 Recent GRN Posting and Ledger Source Detail
+on:
+  push:
+    branches: [fix/am261-grn-item-transaction-ledger-20261117]
+    paths: [.github/workflows/am261-ledger-detail-audit.yml]
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - name: Prepare SSH
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$SSH_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4;do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$SSH_KEY" ];then printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Inspect sales register source and OSL billing schema without writing
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ];then SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$SSH_PASSWORD";SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT");fi
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          test "$(basename "$ROOT")" = assam-erp-staging
+          cd "$ROOT"
+          echo AM261_LEDGER_CONTROLLER_BEGIN
+          sed -n '1,260p' app/Http/Controllers/Web/AdminMasterItemLedgerController.php
+          echo AM261_LEDGER_CONTROLLER_END
+          echo AM261_LEDGER_VIEW_BEGIN
+          sed -n '1,200p' resources/views/admin/native/item-ledger.blade.php
+          echo AM261_LEDGER_VIEW_END
+          echo AM261_RECENT_GRN_POSTINGS_DB
+          PHP="$(mktemp --suffix=.php)"
+          trap 'rm -f "$PHP"' EXIT
+          cat > "$PHP" <<'PHP'
+          <?php
+          require getcwd().'/vendor/autoload.php';
+          $app=require getcwd().'/bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $D=\Illuminate\Support\Facades\DB::class;
+          $rows=$D::table('am260_grns as g')->join('workshop_vendors as v','v.id','=','g.vendor_id')
+            ->orderByDesc('g.id')->limit(25)->get(['g.id','g.grn_no','g.challan_no','g.receipt_date','g.status','v.vendor_name']);
+          echo 'AM261_ALL_RECENT_GRNS='.json_encode($rows)."\n";
+          $lines=$D::table('am260_grn_lines as l')->join('am260_grns as g','g.id','=','l.grn_id')
+            ->leftJoin('parts_master as p','p.id','=','l.part_master_id')
+            ->orderByDesc('l.id')->limit(65)
+            ->get(['l.id','l.grn_id','l.part_master_id','l.qty_received','l.qty_billed',
+              'p.part_name','p.part_code','p.stock_qty','g.grn_no','g.challan_no']);
+          echo 'AM261_ALL_RECENT_GRN_LINES='.json_encode($lines)."\n";
+          $movement=$D::table('inventory_movements')->where('movement_type','GRN_RECEIPT_IN')
+            ->orderByDesc('id')->limit(65)->get();
+          echo 'AM261_ALL_RECENT_GRN_MOVEMENTS='.json_encode($movement)."\n";
+          $parts=$D::table('parts_master')->where('part_name','like','%Brake%Pad%')
+            ->get(['id','part_code','part_name','stock_qty']);
+          echo 'AM261_BRAKE_PAD_SIMILAR_ITEMS='.json_encode($parts)."\n";
+          echo "AM261_DETAIL_AUDIT_COMPLETE\n";
+          PHP
+          php "$PHP"
+
+          REMOTE
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
