@@ -1,0 +1,80 @@
+name: AM261 GRN Item Ledger Readonly Audit
+on:
+  push:
+    branches: [fix/am261-grn-item-transaction-ledger-20261117]
+    paths: [.github/workflows/am261-ledger-audit.yml]
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - name: Prepare SSH
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$SSH_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4;do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$SSH_KEY" ];then printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Inspect sales register source and OSL billing schema without writing
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ];then SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$SSH_PASSWORD";SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT");fi
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          test "$(basename "$ROOT")" = assam-erp-staging
+          cd "$ROOT"
+          echo AM261_LEDGER_SOURCE_SEARCH
+          grep -R -n -i -m 3 -E 'Item Transaction Ledger|Master Item Ledger|GRN_RECEIPT_IN' app resources/views routes/web.php | head -110 || true
+          echo AM261_MOVEMENT_TYPE_FILTERS
+          grep -R -n -m 4 -E "inventory_movements|PURCHASE_IN|PART_ISSUE|movement_type" app/Http/Controllers/Web/*Ledger* app/Services/*Ledger* 2>/dev/null | head -160 || true
+          echo AM261_LEDGER_ROUTE_MAP
+          grep -n -i -E 'item.*ledger|ledger.*item|transaction-ledger' routes/web.php | head -60 || true
+          PHP="$(mktemp --suffix=.php)"
+          trap 'rm -f "$PHP"' EXIT
+          cat > "$PHP" <<'PHP'
+          <?php
+          require getcwd().'/vendor/autoload.php';
+          $app=require getcwd().'/bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $D=\Illuminate\Support\Facades\DB::class;
+          $S=\Illuminate\Support\Facades\Schema::class;
+          $p=$D::table('parts_master')->where('part_name','like','%Front Brake Pad%')->get(['id','part_code','part_name','stock_qty']);
+          echo 'AM261_MATCHED_PART_MASTERS='.json_encode($p)."\n";
+          $ids=$p->pluck('id')->all();
+          if($ids){
+            $moves=$D::table('inventory_movements')->whereIn('part_master_id',$ids)->orderByDesc('id')->limit(40)->get();
+            echo 'AM261_LATEST_PART_MOVEMENTS='.json_encode($moves)."\n";
+            if($S::hasTable('am260_grn_lines')){
+              $grn=$D::table('am260_grn_lines as l')->join('am260_grns as g','g.id','=','l.grn_id')
+                ->leftJoin('workshop_vendors as v','v.id','=','g.vendor_id')
+                ->whereIn('l.part_master_id',$ids)->orderByDesc('l.id')->limit(20)
+                ->get(['l.id','l.part_master_id','l.qty_received','l.qty_billed','g.grn_no','g.challan_no','g.receipt_date','v.vendor_name']);
+              echo 'AM261_RECEIVED_GRN_LINES='.json_encode($grn)."\n";
+            }
+          }
+          echo 'AM261_DB_READONLY_AUDIT_PASS'."\n";
+          PHP
+          php "$PHP"
+
+          REMOTE
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
