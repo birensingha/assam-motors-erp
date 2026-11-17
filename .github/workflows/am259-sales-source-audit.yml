@@ -54,6 +54,9 @@ jobs:
           grep -n -A 4 -B 4 -i 'sales-register' resources/views/layouts/erp.blade.php | head -45
           echo AM259_SALES_VIEW_PATHS
           find resources/views -iname '*sales*' -o -iname '*osl*' | head -90
+          echo AM259_SALES_VIEW_BEGIN
+          sed -n '1,260p' resources/views/sales-register/index.blade.php
+          echo AM259_SALES_VIEW_END
           PHP="$(mktemp --suffix=.php)"
           trap 'rm -f "$PHP"' EXIT
           cat > "$PHP" <<'PHP'
@@ -78,6 +81,13 @@ jobs:
               echo 'AM259_SOURCE_STATUS '.$t.'.'.$c.'='.json_encode($r)."\n";
             }
           }
+          $rows=$D::table('invoices as i')->join('job_card_labour as l','l.job_card_id','=','i.job_card_id')
+            ->whereRaw("LOWER(COALESCE(i.status,'')) NOT IN ('reversed','void','cancelled')")
+            ->where(function($q){$q->whereNull('l.billing_included')->orWhere('l.billing_included',1);})
+            ->selectRaw("CASE WHEN UPPER(TRIM(COALESCE(l.mechanic_name,'')))='OSL' OR UPPER(TRIM(COALESCE(l.rot_code,''))) LIKE 'OSL%' THEN 'OSL' ELSE 'LABOUR' END category")
+            ->selectRaw("COUNT(*) n,SUM(l.total) total,SUM(l.discount_amount) discounts")
+            ->groupBy('category')->get();
+          echo 'AM259_SERVICE_INVOICED_GROUPS='.json_encode($rows)."\n";
           echo 'AM259_READONLY_AUDIT_PASS'."\n";
           PHP
           php "$PHP"
