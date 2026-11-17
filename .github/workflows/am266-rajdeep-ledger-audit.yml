@@ -98,6 +98,20 @@ jobs:
               ->orderByDesc('g.id')->limit(20)->get(['g.id','g.grn_no','g.challan_no','g.receipt_date','v.vendor_name'])
           )."\n";
 
+
+          foreach([292,412] as $master){
+            $part=$D::table('parts_master')->where('id',$master)
+              ->first(['id','part_code','part_name','stock_qty']);
+            echo 'AM266_DHIRAJ_PART_'.$master.'='.json_encode($part)."\n";
+            $moves=$D::table('inventory_movements as m')
+              ->leftJoin('job_cards as j','j.id','=','m.job_card_id')
+              ->where('m.part_master_id',$master)->orderBy('m.id')
+              ->get(['m.id','m.movement_type','m.qty_in','m.qty_out',
+                  'm.balance_after','m.reference_no','m.note','m.job_card_id',
+                  'j.job_no','m.created_at']);
+            echo 'AM266_DHIRAJ_PART_MOVEMENTS_'.$master.'='.json_encode($moves)."\n";
+          }
+
           echo 'AM266_AUDIT_COMPLETE_READONLY'."\n";
           PHP
           php "$PHP"
