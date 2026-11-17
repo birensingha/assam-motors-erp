@@ -1,0 +1,84 @@
+name: AM260 Purchase Service Update/Delete Guards Review
+on:
+  push:
+    branches: [feature/am260-challan-grn-procurement-20261117]
+    paths: [.github/workflows/am260-challan-source-guards.yml]
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - name: Prepare SSH
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$SSH_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4;do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$SSH_KEY" ];then printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Inspect sales register source and OSL billing schema without writing
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ];then SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$SSH_PASSWORD";SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT");fi
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          test "$(basename "$ROOT")" = assam-erp-staging
+          cd "$ROOT"
+          echo AM260_PURCHASE_SERVICE_TAIL
+          sed -n '320,690p' app/Services/PurchaseService.php
+          echo AM260_PURCHASE_SERVICE_TAIL_END
+          echo AM260_PURCHASE_CONTROLLER_SOURCE
+          sed -n '1,265p' app/Http/Controllers/Web/AdminPurchasePageController.php
+          echo AM260_PURCHASE_CONTROLLER_SOURCE_END
+          echo AM260_PURCHASE_FORM_HEAD
+          sed -n '1,100p' resources/views/purchases/create.blade.php
+          echo AM260_PURCHASE_FORM_HEAD_END
+          echo AM260_PARTS_ISSUE_SERVICE
+          grep -n -C 7 -E 'Bulk Issue stopped|lockForUpdate|stock_qty' app/Http/Controllers/Web/AdminJobCardPartsBatchController.php | head -215 || true
+          echo AM260_PARTS_ISSUE_SERVICE_END
+          PHP="$(mktemp --suffix=.php)"
+          trap 'rm -f "$PHP"' EXIT
+          cat > "$PHP" <<'PHP'
+          <?php
+          require getcwd().'/vendor/autoload.php';
+          $app=require getcwd().'/bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $D=\Illuminate\Support\Facades\DB::class;
+          $S=\Illuminate\Support\Facades\Schema::class;
+          foreach(['workshop_purchases','workshop_purchase_batches','parts_master','inventory_movements',
+            'job_card_parts','job_cards','workshop_vendors','purchase_audit_logs'] as $t){
+             if(!$S::hasTable($t))continue;
+             echo 'AM260_TABLE '.$t.' '.implode(',',$S::getColumnListing($t))."\n";
+          }
+          $job=$D::table('job_cards')->where('job_no','JC-20261116-00060')->first();
+          if($job){
+            echo 'AM260_JC_FOUND_ID '.$job->id."\n";
+            $parts=$D::table('job_card_parts as j')->leftJoin('parts_master as p','p.id','=','j.part_master_id')
+               ->where('j.job_card_id',$job->id)
+               ->get(['j.id','j.part_code','j.part_name','j.qty','j.issue_status','p.stock_qty','p.id as master_id']);
+            foreach($parts as $p)echo 'AM260_JC_PART '.json_encode($p,JSON_UNESCAPED_UNICODE)."\n";
+          }else echo 'AM260_JC_NOT_FOUND'."\n";
+          echo 'AM260_READONLY_AUDIT_PASS'."\n";
+          PHP
+          php "$PHP"
+          REMOTE
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
