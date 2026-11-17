@@ -21,8 +21,10 @@ if(!$vendor){
     $vendor=$D::table('workshop_vendors')->where('active',1)->orderBy('id')->first();
 }
 if(!$vendor)throw new RuntimeException('AM260_NO_ACTIVE_VENDOR_FOR_TEST');
-$part=$D::table('parts_master')->where('part_code','AM-0006')->first();
 $job=$D::table('job_cards')->where('job_no','JC-20261116-00060')->first();
+$jcPart=$job?$D::table('job_card_parts')->where('job_card_id',$job->id)->where('part_name','like','%Spark Plug%')->first():null;
+$part=$jcPart?$D::table('parts_master')->where('id',$jcPart->part_master_id)->first():null;
+echo 'AM260_QA_SPARK_MASTER_ID='.($part->id??'MISSING').' ACTIVE='.($part->active??'MISSING')."\n";
 if(!$part || !$job)throw new RuntimeException('AM260_REQUIRED_JC60_SPARK_PLUG_FIXTURE_MISSING');
 if($part->stock_qty===null)throw new RuntimeException('AM260_SPARK_PLUG_STOCK_UNRECORDED');
 $vendorId=(int)$vendor->id;
