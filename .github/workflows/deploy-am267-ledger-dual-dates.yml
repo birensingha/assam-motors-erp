@@ -1,0 +1,97 @@
+name: AM267 Item Ledger Invoice Receipt vs ERP Posted Dates — STAGING
+on:
+  push:
+    branches: [fix/am267-item-ledger-document-vs-posted-dates-20261117]
+    paths:
+      - '.github/workflows/deploy-am267-ledger-dual-dates.yml'
+      - 'deployment/live-fixes/AM267_LEDGER_DATE_CLARITY/**'
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: GitHub syntax preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG=deployment/live-fixes/AM267_LEDGER_DATE_CLARITY
+          python3 -m py_compile "$PKG/install.py"
+          php -l "$PKG/qa_runtime.php"
+          echo AM267_GITHUB_LEDGER_PKG_PREFLIGHT_PASS
+      - name: Configure secure STAGING SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$SSH_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4;do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$SSH_KEY" ];then
+            printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Guarded STAGING Item Ledger display-only dual date and stock supplier correction
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ];then SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$SSH_PASSWORD";SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT");fi
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"
+          test "$(basename "$APP")" = assam-erp-staging
+          test -f "$APP/artisan"
+          cd "$HOME/assam-motors-deploy"
+          git fetch origin fix/am267-item-ledger-document-vs-posted-dates-20261117
+          TMP="$(mktemp -d)"
+          trap 'rm -rf "$TMP"' EXIT
+          git archive FETCH_HEAD deployment/live-fixes/AM267_LEDGER_DATE_CLARITY | tar -x -C "$TMP"
+          PKG="$TMP/deployment/live-fixes/AM267_LEDGER_DATE_CLARITY"
+          python3 "$PKG/install.py" check "$APP"
+          python3 "$PKG/install.py" apply "$APP"
+          cd "$APP"
+          php -l app/Http/Controllers/Web/AdminMasterItemLedgerController.php
+          set +e
+          php "$PKG/qa_runtime.php" > "$TMP/qa.log" 2>&1
+          QA_RC=$?
+          set -e
+          cat "$TMP/qa.log"
+          if [ "$QA_RC" -ne 0 ] || ! grep -q AM267_FRONT_BRAKE_PAD_LEDGER_RUNTIME_ALL_PASS "$TMP/qa.log";then
+            echo AM267_RUNTIME_QA_FAILED_ROLLING_BACK
+            python3 "$PKG/install.py" rollback "$APP"
+            exit 43
+          fi
+          echo AM267_RUNTIME_QA_AUTHENTICATED_PASS
+          echo AM267_LEDGER_DATE_CLARITY_STAGING_SOURCE_DEPLOYED
+          echo AM267_NO_INVENTORY_PURCHASE_JC_OR_GRN_DATA_CHANGED_BY_QA
+          REMOTE
+      - name: Verify guest cannot view Procurement pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          for URL in 'https://staging.assammotors.com/erp/masters/item-ledger?type=PART&id=234';do
+            code=$(curl -sS --max-redirs 0 --max-time 20 -o /dev/null -w '%{http_code}' "$URL" || true)
+            echo "AM267_GUEST_DASHBOARD_HTTP=$code"
+            test "$code" = 302 || test "$code" = 303
+          done
+          echo AM267_GUEST_ACCESS_PROTECTED_PASS
+      - name: Clean credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
