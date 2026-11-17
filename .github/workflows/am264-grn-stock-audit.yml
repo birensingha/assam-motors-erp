@@ -1,0 +1,97 @@
+name: AM264 JC-60 GRN Stock and Issue Reconciliation Audit
+on:
+  push:
+    branches: [feature/am264-grn-correction-jc-stock-20261117]
+    paths: [.github/workflows/am264-grn-stock-audit.yml]
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - name: Prepare SSH
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$SSH_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4;do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$SSH_KEY" ];then printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Inspect sales register source and OSL billing schema without writing
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ];then SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$SSH_PASSWORD";SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT");fi
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          test "$(basename "$ROOT")" = assam-erp-staging
+          cd "$ROOT"
+          echo AM264_ISSUE_ALL_PARTS_SOURCE
+          grep -R -n -l -m 1 'Bulk Issue stopped' app | head -10 || true
+          echo AM264_ITEM_LEDGER_SOURCE
+          grep -R -n -l -m 1 'GRN_RECEIPT_IN' app/Http/Controllers/Web app/Services | head -15 || true
+          echo AM264_GRN_EDIT_EXISTING_FUNCTIONS
+          grep -n 'function ' app/Http/Controllers/Web/AdminProcurementGrnController.php
+          echo AM264_JC60_GRN_READONLY_TABLE_CHECK
+          PHP="$(mktemp --suffix=.php)"
+          trap 'rm -f "$PHP"' EXIT
+          cat > "$PHP" <<'PHP'
+          <?php
+          require getcwd().'/vendor/autoload.php';
+          $app=require getcwd().'/bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $D=\Illuminate\Support\Facades\DB::class;
+          $S=\Illuminate\Support\Facades\Schema::class;
+          $job=$D::table('job_cards')->where('job_no','JC-20261116-00060')->first();
+          echo 'AM264_JOB='.json_encode($job?['id'=>$job->id,'no'=>$job->job_no,'status'=>$job->status]:null)."\n";
+          if($job){
+            $parts=$D::table('job_card_parts as j')
+              ->leftJoin('parts_master as p','p.id','=','j.part_master_id')
+              ->where('j.job_card_id',$job->id)->get([
+                'j.id as jc_line','j.part_master_id','j.part_code','j.part_name','j.qty','j.issue_status',
+                'p.part_code as master_code','p.part_name as master_name','p.stock_qty']);
+            echo 'AM264_JC60_PARTS='.json_encode($parts)."\n";
+          }
+          $names=['Front Brake Pad','Brake Wheel Cylinder','Throttle Body Cleaner'];
+          foreach($names as $name){
+            $masters=$D::table('parts_master')->where('part_name','like','%'.$name.'%')->get(['id','part_code','part_name','stock_qty','active']);
+            echo 'AM264_MASTERS_'.str_replace(' ','_',$name).'='.json_encode($masters)."\n";
+            foreach($masters as $m){
+              $moves=$D::table('inventory_movements')->where('part_master_id',$m->id)->orderByDesc('id')->limit(14)
+                  ->get(['id','movement_type','qty_in','qty_out','balance_after','reference_no','created_at']);
+              echo 'AM264_MOVEMENTS_MASTER_'.$m->id.'='.json_encode($moves)."\n";
+            }
+          }
+          $grns=$D::table('am260_grns as g')->leftJoin('workshop_vendors as v','v.id','=','g.vendor_id')
+            ->orderByDesc('g.id')->limit(16)->get(['g.id','g.grn_no','g.challan_no','g.job_card_id','g.po_id','g.vendor_id','v.vendor_name','g.status','g.receipt_date']);
+          echo 'AM264_RECENT_GRNS='.json_encode($grns)."\n";
+          foreach($grns as $g){
+            $lines=$D::table('am260_grn_lines as l')->leftJoin('parts_master as p','p.id','=','l.part_master_id')
+            ->where('l.grn_id',$g->id)->get(['l.id','l.part_master_id','p.part_code','p.part_name','l.qty_received','l.qty_billed','l.provisional_unit_cost','l.po_line_id']);
+            echo 'AM264_GRN_LINES_'.$g->grn_no.'='.json_encode($lines)."\n";
+          }
+          echo 'AM264_SCHEMA_GRN_LINES='.implode(',',$S::getColumnListing('am260_grn_lines'))."\n";
+          echo 'AM264_SCHEMA_MOVEMENT='.implode(',',$S::getColumnListing('inventory_movements'))."\n";
+          echo 'AM264_READONLY_RECONCILIATION_AUDIT_PASS'."\n";
+          PHP
+          php "$PHP"
+
+          REMOTE
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
