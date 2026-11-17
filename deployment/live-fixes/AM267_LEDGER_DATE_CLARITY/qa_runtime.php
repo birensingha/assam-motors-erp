@@ -66,6 +66,13 @@ if($issue['date']!=='2026-10-03' ||
    abs((float)$issue['balance']+1)>0.0001)
     throw new RuntimeException('AM267_03OCT_JOB_ISSUE_HISTORY_CHANGED');
 echo "AM267_03OCT_NEGATIVE_JOB_ISSUE_HISTORY_UNCHANGED_PASS\n";
+echo 'AM267_STOCK_QA_FACTS='.json_encode([
+  'current'=>$report['current_stock']??null,
+  'reconstructed'=>$report['reconstructed_current']??null,
+  'variance'=>$report['variance']??null,
+  'opening'=>$report['opening']??null,
+  'closing'=>$report['closing']??null
+])."\n";
 if(abs((float)$report['current_stock']-1)>.0001 ||
    abs((float)$report['reconstructed_current']-1)>.0001 ||
    abs((float)$report['variance'])>.0001)
