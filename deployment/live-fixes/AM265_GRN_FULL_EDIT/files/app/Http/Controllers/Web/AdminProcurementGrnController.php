@@ -259,7 +259,7 @@ final class AdminProcurementGrnController extends Controller
           ->whereRaw("LOWER(TRIM(COALESCE(status,''))) NOT IN ('cancelled','canceled')")
           ->orWhere('id',$receipt->job_card_id)
           ->orderByDesc('id')->limit(1000)
-          ->get(['id','job_no','vehicle_reg_no','status','invoice_id']);
+          ->get(['id','job_no','vehicle_reg_no','status']);
         $headerToken=$this->grnHeaderToken($receipt);
         $hasBilled=$lines->contains(static fn($line)=>(float)$line->qty_billed>0.0005);
         return view('procurement.grn-edit',compact(
@@ -336,7 +336,9 @@ final class AdminProcurementGrnController extends Controller
                 if($changeVendor)$this->vendor($headerAfter['vendor_id']);
                 if($changeJob && $headerAfter['job_card_id']!==null){
                     $newJob=$this->job($headerAfter['job_card_id']);
-                    if($newJob && ($newJob->invoice_id || in_array(
+                    if($newJob && (DB::table('invoices')->where('job_card_id',$newJob->id)
+                        ->whereRaw("LOWER(TRIM(COALESCE(status,''))) NOT IN ('void','reversed','cancelled')")
+                        ->exists() || in_array(
                         strtolower(trim((string)$newJob->status)),
                         ['closed','invoiced','cancelled','canceled'],true)))
                         throw ValidationException::withMessages([
