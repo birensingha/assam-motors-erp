@@ -1,0 +1,65 @@
+name: AM262 STAGING GRN Source and Draft Preservation Audit
+on:
+  push:
+    branches: [fix/am262-grn-unrecorded-opening-20261117]
+    paths: [.github/workflows/am262-current-grn-source-audit.yml]
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - name: Prepare SSH
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$SSH_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4;do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$SSH_KEY" ];then printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Inspect sales register source and OSL billing schema without writing
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ];then SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$SSH_PASSWORD";SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT");fi
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          test "$(basename "$ROOT")" = assam-erp-staging
+          cd "$ROOT"
+          echo AM262_GRN_CURRENT_SOURCE_HASHES
+          for FILE in \
+            app/Http/Controllers/Web/AdminProcurementGrnController.php \
+            resources/views/procurement/receive.blade.php \
+            resources/views/procurement/grn-show.blade.php;do
+              sha256sum "$FILE"
+              wc -l "$FILE"
+          done
+          echo AM262_GRN_RECEIVE_VIEW_RELEVANT_ANCHORS
+          grep -n -i -E 'stock will increase|unrecorded|opening stock|opening|confirm GRN|draft|restore|discard|<form|submit' resources/views/procurement/receive.blade.php | head -100 || true
+          echo AM262_GRN_CONTROLLER_RELEVANT_ANCHORS
+          grep -n -C 2 -F "has no recorded opening stock" app/Http/Controllers/Web/AdminProcurementGrnController.php || true
+          echo AM262_GRN_DETAIL_RELEVANT_ANCHORS
+          grep -n -C 2 -E 'Stock-In Verified|GRN Stock-In Movement Verified|Received Item Details|Movement Status' resources/views/procurement/grn-show.blade.php || true
+          echo AM262_GRN_RECEIVE_LAST_SECTION
+          tail -65 resources/views/procurement/receive.blade.php
+          echo AM262_READONLY_CURRENT_GRN_SOURCE_AUDIT_PASS
+
+          REMOTE
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
