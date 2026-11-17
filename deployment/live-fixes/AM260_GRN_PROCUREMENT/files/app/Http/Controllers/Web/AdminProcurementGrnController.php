@@ -79,6 +79,8 @@ final class AdminProcurementGrnController extends Controller
             $part=(int)($line['part_master_id']??0);
             $qty=round((float)($line['qty']??0),3);
             $rate=round((float)($line['unit_cost']??0),2);
+            // Partial PO delivery can legitimately skip ordered lines (qty=0).
+            if($qty<=0 && $mode==='receipt')continue;
             if($part<=0 && $qty<=0)continue;
             if($part<=0 || $qty<=0 || $qty>999999 || $rate<0 || $rate>100000000)
                 throw ValidationException::withMessages(['lines'=>'Select a Part, positive received/order quantity and valid cost.']);
