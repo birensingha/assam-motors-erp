@@ -362,12 +362,18 @@ final class AdminProcurementGrnController extends Controller
                   'movement_type'=>'GRN_RECEIPT_IN',
                   'qty_in'=>$l['qty'],'qty_out'=>0,'balance_after'=>$after,
                   'reference_no'=>$grnNo,
-                  'note'=>'AM260 PHYSICAL CHALLAN RECEIVED · '.$vendor->vendor_name.
-                     ' · Vendor Challan '.$challan.($order?' · PO '.$order->po_no:' · Urgent receipt without PO').
-                     ' · BILL PENDING · NO PURCHASE BILL POSTED'.
+                  // Inventory movement.note is length-limited: immutable full
+                  // supplier/PO/GRN details are held in linked GRN tables.
+                  // Put opening exception at START so even truncated notes
+                  // retain the financial-audit warning.
+                  'note'=>mb_strcut(
                      ($openingUnrecorded
-                       ?' · AM262_OPENING_UNRECORDED / UNVERIFIED / PROVISIONAL_ZERO_BASE_FOR_RECEIPT_ONLY / RECONCILIATION_PENDING'
-                       :''),
+                      ?'AM262_OPENING_UNRECORDED RECONCILIATION_PENDING BASE0_PROVISIONAL | '
+                      :'GRN_RECEIPT | ').
+                     'Vendor '.$vendor->vendor_name.
+                     ' | Challan '.$challan.
+                     ($order?' | PO '.$order->po_no:' | NO PO').
+                     ' | BILL PENDING',0,180,'UTF-8'),
                   'created_at'=>now()
                 ]);
             }
