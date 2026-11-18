@@ -41,39 +41,32 @@ jobs:
           ROOT="$1"
           test "$(basename "$ROOT")" = assam-erp-staging
           cd "$ROOT"
-          echo AM271_ACCOUNTING_ROUTES
+          echo AM271_STAFF_FINANCE_ROUTES
+          php artisan route:list --path=erp/staff-finance --compact 2>/dev/null || true
+          echo AM271_STAFF_FINANCE_CONTROLLER_FUNCTIONS
+          grep -n -E 'function |journal|vendor|expense|salary|STAFF|PAYABLE' app/Http/Controllers/Web/AdminStaffFinanceLedgerController.php | head -175 || true
+          echo AM271_PAYMENT_SERVICE_CLASSES
+          find app/Services -maxdepth 1 -iname '*Payment*' -o -iname '*StaffFinance*'
+          echo AM271_PAYMENT_SOURCE_TERMS
+          grep -R -n -i -E 'STAFF_PAID|VENDOR_PAID_BY|PAID_ON_BEHALF|staff.*vendor|vendor.*staff|staff.*reimburs|EXPENSE_REIMBURSEMENT|STAFF_EXPENSE' app/Services/ExpensePaymentService.php app/Services/StaffFinance* app/Http/Controllers/Web/AdminExpensePaymentPageController.php 2>/dev/null | head -140 || true
+          echo AM271_JOURNAL_SOURCE
+          sed -n '1,225p' app/Http/Controllers/Web/AdminStaffFinanceLedgerController.php
+          echo AM271_PAYMENT_STORE_SOURCE
+          sed -n '155,247p' app/Http/Controllers/Web/AdminExpensePaymentPageController.php
+          echo AM271_STAFF_FINANCE_SCHEMA
           PHP="$(mktemp --suffix=.php)"
           trap 'rm -f "$PHP"' EXIT
           cat > "$PHP" <<'PHP'
           <?php
-          require getcwd().'/vendor/autoload.php';
-          $app=require getcwd().'/bootstrap/app.php';
+          require getcwd().'/vendor/autoload.php';$app=require getcwd().'/bootstrap/app.php';
           $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-          $routes=\Illuminate\Support\Facades\Route::getRoutes();
-          foreach($routes as $r){
-            $uri=$r->uri();
-            if(preg_match('~(payment|journal|reimburs|advance|vendor|expense|ledger)~i',$uri))
-             echo implode(',',$r->methods()).' '.$uri.' NAME='.$r->getName().' ACTION='.$r->getActionName()."\n";
-          }
           $S=\Illuminate\Support\Facades\Schema::class;
-          $D=\Illuminate\Support\Facades\DB::class;
-          $tables=$D::select('SHOW TABLES');
-          foreach($tables as $t){
-             $name=(string)array_values((array)$t)[0];
-             if(preg_match('~(payment|journal|voucher|ledger|reimburse|staff.*expense|vendor.*pay)~i',$name)){
-                echo 'AM271_TABLE '.$name.' COLUMNS='.implode(',',$S::getColumnListing($name))."\n";
-             }
+          foreach(['workshop_staff_finance_lines','workshop_expenses','workshop_vendor_debit_uses','workshop_payment_allocations','workshop_vendor_ledger'] as $table){
+            if($S::hasTable($table))echo 'AM271_SCHEMA_'.$table.'='.implode(',',$S::getColumnListing($table))."\n";
           }
-          echo 'AM271_ROUTE_SCHEMA_AUDIT_PASS'."\n";
           PHP
-          php "$PHP" | head -160
-          echo AM271_CONTROLLER_AND_VIEW_FILENAMES
-          find app/Http/Controllers resources/views -type f \( -iname '*payment*' -o -iname '*journal*' -o -iname '*expense*' \) | head -120
-          echo AM271_REIMBURSEMENT_IMPLEMENTATION_CANDIDATES
-          grep -R -n -i -E 'staff paid|paid by staff|paid_by_staff|on behalf|reimburse|staff payable|journal voucher' app/Http/Controllers/Web resources/views/payments resources/views/expenses 2>/dev/null | head -95 || true
-          echo AM271_CURRENT_PAYMENT_CONTROLLER_FUNCTIONS
-          for file in app/Http/Controllers/Web/*Payment*php app/Http/Controllers/Web/*Journal*php;do test -f "$file" || continue;echo "FILE=$file";grep -n -E 'function |staff|vendor|against|account|journal' "$file" | head -115;done
-          echo AM271_AUDIT_DONE
+          php "$PHP"
+          echo AM271_DEEP_READONLY_AUDIT_PASS
           REMOTE
       - name: Cleanup
         if: always()
