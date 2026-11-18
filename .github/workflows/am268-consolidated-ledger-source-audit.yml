@@ -1,7 +1,7 @@
 name: AM270 Purchase Part Search Ghost Dropdown — STAGING
 on:
   push:
-    branches: [fix/am270-purchase-part-search-dropdown-20261118]
+    branches: [fix/am270-part-search-ghost-menu-20261118]
     paths:
       - '.github/workflows/am268-consolidated-ledger-source-audit.yml'
 permissions: {contents: read}
@@ -23,7 +23,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          PKG=deployment/live-fixes/AM270_PURCHASE_SINGLE_PART_MENU
+          PKG=deployment/live-fixes/AM270_PURCHASE_GHOST_MENU
           python3 -m py_compile "$PKG/install.py"
           php -l "$PKG/qa_runtime.php"
           node --check "$PKG/qa_part_dropdown.cjs"
@@ -59,11 +59,11 @@ jobs:
           test "$(basename "$APP")" = assam-erp-staging
           test -f "$APP/artisan"
           cd "$HOME/assam-motors-deploy"
-          git fetch origin fix/am270-purchase-part-search-dropdown-20261118
+          git fetch origin fix/am270-part-search-ghost-menu-20261118
           TMP="$(mktemp -d)"
           trap 'rm -rf "$TMP"' EXIT
-          git archive FETCH_HEAD deployment/live-fixes/AM270_PURCHASE_SINGLE_PART_MENU | tar -x -C "$TMP"
-          PKG="$TMP/deployment/live-fixes/AM270_PURCHASE_SINGLE_PART_MENU"
+          git archive FETCH_HEAD deployment/live-fixes/AM270_PURCHASE_GHOST_MENU | tar -x -C "$TMP"
+          PKG="$TMP/deployment/live-fixes/AM270_PURCHASE_GHOST_MENU"
           python3 "$PKG/install.py" check "$APP"
           python3 "$PKG/install.py" apply "$APP"
           cd "$APP"
@@ -83,7 +83,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          PKG=deployment/live-fixes/AM270_PURCHASE_SINGLE_PART_MENU
+          PKG=deployment/live-fixes/AM270_PURCHASE_GHOST_MENU
           JS="${RUNNER_TEMP}/am270-purchase-entry.js"
           if [ -n "$SSH_KEY" ];then SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
           else export SSHPASS="$SSH_PASSWORD";SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT");fi
@@ -95,15 +95,15 @@ jobs:
           APP="$1"
           test "$(basename "$APP")" = assam-erp-staging
           cd "$HOME/assam-motors-deploy"
-          git fetch origin fix/am270-purchase-part-search-dropdown-20261118
+          git fetch origin fix/am270-part-search-ghost-menu-20261118
           TMP="$(mktemp -d)"
           trap 'rm -rf "$TMP"' EXIT
-          git archive FETCH_HEAD deployment/live-fixes/AM270_PURCHASE_SINGLE_PART_MENU | tar -x -C "$TMP"
-          python3 "$TMP/deployment/live-fixes/AM270_PURCHASE_SINGLE_PART_MENU/install.py" rollback "$APP"
+          git archive FETCH_HEAD deployment/live-fixes/AM270_PURCHASE_GHOST_MENU | tar -x -C "$TMP"
+          python3 "$TMP/deployment/live-fixes/AM270_PURCHASE_GHOST_MENU/install.py" rollback "$APP"
           ROLLBACK
             exit 44
           fi
-          echo AM270_PURCHASE_SINGLE_PART_MENU_BROWSER_SIM_PASS
+          echo AM270_PURCHASE_GHOST_MENU_BROWSER_SIM_PASS
           echo AM270_STAGING_PURCHASE_DROPDOWN_FIX_DEPLOYED
       - name: Verify STAGING Purchase Entry remains login-protected
         shell: bash
