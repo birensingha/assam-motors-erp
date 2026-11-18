@@ -41,13 +41,17 @@ jobs:
           ROOT="$1"
           test "$(basename "$ROOT")" = assam-erp-staging
           cd "$ROOT"
-            echo AM269_PURCHASE_VIEW_FILE_LOCATIONS
-          find resources/views -iname '*purch*' -o -iname '*part*' | head -110
-          echo AM269_LABEL_LOCATIONS
-          grep -R -l -m 1 -E 'Fast keyboard entry for multiple parts|Supplier Invoice' resources/views | head -55 || true
-          echo AM269_AUTOCOMPLETE_SHARED_SOURCE
-          grep -R -l -m 1 -E 'datalist|suggestion-list|part-dropdown|parts-autocomplete' public/js resources/views | head -85 || true
-          echo AM269_END         REMOTE
+            echo AM269_SOURCE_HASHES
+          sha256sum public/js/purchase-entry.js resources/views/purchases/create.blade.php
+          echo AM269_SCRIPT_SOURCE_BEGIN
+          sed -n '1,840p' public/js/purchase-entry.js
+          echo AM269_SCRIPT_SOURCE_END
+          echo AM269_VIEW_SEARCH_AND_SCRIPT
+          grep -n -E 'script|part|suggest|dropdown|datalist|autocomplete|search|purchase-entry|select|input|list=' resources/views/purchases/create.blade.php | head -195 || true
+          echo AM269_VIEW_TAIL
+          tail -230 resources/views/purchases/create.blade.php
+          echo AM269_AUDIT_COMPLETE
+          REMOTE
       - name: Cleanup
         if: always()
         run: rm -f ~/.ssh/id_ed25519
