@@ -41,34 +41,22 @@ jobs:
           ROOT="$1"
           test "$(basename "$ROOT")" = assam-erp-staging
           cd "$ROOT"
-          echo AM275_EXPENSE_CATEGORIES_SERVICE
-          sed -n '1,125p' app/Services/ExpensePaymentService.php
-          sed -n '160,195p' app/Services/ExpensePaymentService.php
-          echo AM275_EXPENSE_ENTRY_VIEW
-          sed -n '1,250p' resources/views/expenses/create.blade.php
-          echo AM275_EXPENSE_INDEX_FILTERS
-          grep -n -C 4 -E 'categor|Categor|select|@foreach' resources/views/expenses/index.blade.php | head -115 || true
-          echo AM275_CONFIGURATION_ROUTES
-          grep -n -E 'configuration|config|expense' routes/web.php | head -75
-          echo AM275_CONFIG_CONTROLLER_VIEW
-          grep -R -n -m 4 'Configuration' app/Http/Controllers/Web/AdminConfiguration* resources/views/configuration 2>/dev/null | head -50 || true
-          echo AM275_SETTINGS_FILE_CANDIDATES
-          find resources/views -maxdepth 3 -iname '*config*' -o -iname '*setting*' | head -60
-          echo AM275_EXISTING_CATEGORY_SCHEMA
-          PHP="$(mktemp --suffix=.php)"
-          trap 'rm -f "$PHP"' EXIT
-          cat > "$PHP" <<'PHP'
-          <?php
-          require getcwd().'/vendor/autoload.php';$app=require getcwd().'/bootstrap/app.php';
-          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-          $S=\Illuminate\Support\Facades\Schema::class;$D=\Illuminate\Support\Facades\DB::class;
-          foreach(['workshop_expenses','workshop_expense_categories','expense_categories','erp_settings'] as $t){if($S::hasTable($t))echo 'AM275_SCHEMA '.$t.'='.implode(',',$S::getColumnListing($t))."\n";}
-          if($S::hasTable('workshop_expenses'))echo 'AM275_CATEGORIES_IN_USE='.json_encode($D::table('workshop_expenses')->select('expense_category')->selectRaw('COUNT(*) as usage_count')->groupBy('expense_category')->orderByDesc('usage_count')->get())."\n";
-          PHP
-          php "$PHP"
-          echo AM275_SOURCE_SHA
-          sha256sum app/Services/ExpensePaymentService.php resources/views/expenses/create.blade.php resources/views/expenses/index.blade.php routes/web.php
-          echo AM275_AUDIT_COMPLETE
+          echo AM275_CONFIG_VIEW
+          sed -n '1,240p' resources/views/dashboard/configuration.blade.php
+          echo AM275_CONFIG_ROUTE_CONTEXT
+          sed -n '35,93p' routes/web.php
+          sed -n '450,495p' routes/web.php
+          echo AM275_CONFIG_CONTROLLER_METHOD
+          grep -n -C 10 'function configuration' app/Http/Controllers/Web/AdminDashboardPageController.php
+          echo AM275_PAYMENT_SERVICE_METHODS
+          grep -n -E 'function admin\(|function actor|private function admin' app/Http/Controllers/Web/AdminExpensePaymentPageController.php
+          echo AM275_LOGIN_SECURITY_SESSION
+          sed -n '1,105p' app/Http/Controllers/Web/AdminExpensePaymentPageController.php
+          echo AM275_ERP_ADMIN_LAYOUT_EXPENSE_NAV
+          grep -n -C 4 'erp.configuration\|erp.expenses' resources/views/layouts/erp.blade.php | head -95
+          echo AM275_EXPENSE_TABLE_DB_COLUMNS
+          php -r 'require "vendor/autoload.php";$app=require "bootstrap/app.php";$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();$r=\Illuminate\Support\Facades\DB::select("SHOW COLUMNS FROM workshop_expenses LIKE \"expense_category\"");echo json_encode($r);'
+          echo AM275_CONFIG_EXTRA_DONE
           REMOTE
       - name: Cleanup
         if: always()
