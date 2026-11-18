@@ -1,4 +1,4 @@
-name: AM272 Staff New Reference Payment Posting Rule Audit
+name: AM273 Journal Access Route and Permission Audit
 on:
   push:
     branches: [audit/am271-staff-paid-vendor-accounting-20261118]
@@ -41,19 +41,15 @@ jobs:
           ROOT="$1"
           test "$(basename "$ROOT")" = assam-erp-staging
           cd "$ROOT"
-          echo AM272_PAYMENT_VOUCHER_HTML_SOURCE
-          grep -R -l -m 1 'COMPLETE STAFF PAYMENT DETAILS\|Staff Payment / Advance.*Linked Financial Ledger\|New Reference / On Account Staff' resources/views app/Http/Controllers | head -20 || true
-          echo AM272_PAYMENT_PAGE_STORE_FUNCTION
-          sed -n '175,430p' app/Http/Controllers/Web/AdminExpensePaymentPageController.php
-          echo AM272_STAFF_FINANCE_LEDGER_CONTROLLER
-          sed -n '1,310p' app/Http/Controllers/Web/AdminStaffFinanceLedgerController.php
-          echo AM272_EXPENSE_PAYMENT_SERVICE
-          sed -n '1,350p' app/Services/ExpensePaymentService.php
-          echo AM272_STAFF_PAYMENT_SERVICE_CLASS
-          find app/Services -maxdepth 1 -iname '*Staff*' -o -iname '*Payment*'
-          echo AM272_PAYMENT_STAFF_CHECKS
-          grep -R -n -E 'Staff payment|staff_new_reference|STAFF_ADVANCE|staff.*reference|staff.*posting|staff.*payment|new_reference' app/Http/Controllers/Web/AdminExpensePaymentPageController.php app/Services/ExpensePaymentService.php resources/views/expenses 2>/dev/null | head -125 || true
-          echo AM272_STAFF_PAYMENT_AUDIT_END
+          echo AM273_JOURNAL_ROUTES
+          php -r 'require "vendor/autoload.php";$app=require "bootstrap/app.php";$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();foreach(\Illuminate\Support\Facades\Route::getRoutes() as $r)if(str_contains($r->uri(),"staff-finance")||str_contains($r->uri(),"journal")){echo implode(",",$r->methods())." ".$r->uri()." | ".$r->getName()." | ".$r->getActionName()." | ".implode(",",$r->gatherMiddleware())."\n";}'
+          echo AM273_STAFF_FINANCE_VIEW
+          sed -n '1,270p' resources/views/staff-finance/index.blade.php
+          echo AM273_STAFF_FINANCE_SCHEMA
+          php -r 'require "vendor/autoload.php";$app=require "bootstrap/app.php";$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();$S=\Illuminate\Support\Facades\Schema::class;foreach(["workshop_staff_finance_journals","workshop_staff_finance_lines","workshop_payment_vouchers","workshop_vendor_ledger","workshop_vendor_balances"] as $t){if($S::hasTable($t))echo $t."=".implode(",",$S::getColumnListing($t))."\n";}'
+          echo AM273_NAV_JOURNAL
+          grep -R -n -m 8 -E 'staff-finance.index|Staff Finance Ledger|Journal Entry' resources/views/layouts resources/views/admin | head -75 || true
+          echo AM273_READONLY_DONE
           REMOTE
       - name: Cleanup
         if: always()
