@@ -41,22 +41,11 @@ jobs:
           ROOT="$1"
           test "$(basename "$ROOT")" = assam-erp-staging
           cd "$ROOT"
-          echo AM275_CONFIG_VIEW
-          sed -n '1,240p' resources/views/dashboard/configuration.blade.php
-          echo AM275_CONFIG_ROUTE_CONTEXT
-          sed -n '35,93p' routes/web.php
-          sed -n '450,495p' routes/web.php
-          echo AM275_CONFIG_CONTROLLER_METHOD
-          grep -n -C 10 'function configuration' app/Http/Controllers/Web/AdminDashboardPageController.php
-          echo AM275_PAYMENT_SERVICE_METHODS
-          grep -n -E 'function admin\(|function actor|private function admin' app/Http/Controllers/Web/AdminExpensePaymentPageController.php
-          echo AM275_LOGIN_SECURITY_SESSION
-          sed -n '1,105p' app/Http/Controllers/Web/AdminExpensePaymentPageController.php
-          echo AM275_ERP_ADMIN_LAYOUT_EXPENSE_NAV
-          grep -n -C 4 'erp.configuration\|erp.expenses' resources/views/layouts/erp.blade.php | head -95
-          echo AM275_EXPENSE_TABLE_DB_COLUMNS
-          php -r 'require "vendor/autoload.php";$app=require "bootstrap/app.php";$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();$r=\Illuminate\Support\Facades\DB::select("SHOW COLUMNS FROM workshop_expenses LIKE \"expense_category\"");echo json_encode($r);'
-          echo AM275_CONFIG_EXTRA_DONE
+          echo AM275_ALL_SOURCE_SHA
+          sha256sum app/Services/ExpensePaymentService.php app/Http/Controllers/Web/AdminExpensePaymentPageController.php routes/web.php resources/views/expenses/create.blade.php resources/views/expenses/index.blade.php resources/views/dashboard/configuration.blade.php
+          echo AM275_EXPENSE_SOURCE_COUNT
+          wc -l app/Services/ExpensePaymentService.php resources/views/dashboard/configuration.blade.php
+          echo AM275_HASH_END
           REMOTE
       - name: Cleanup
         if: always()
