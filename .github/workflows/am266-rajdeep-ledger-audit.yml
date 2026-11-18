@@ -1,7 +1,7 @@
-name: AM274 Tally Journal Vendor Staff Outstanding Source Read Only
+name: AM275 Donation Expense Category and Configuration Read Only
 on:
   push:
-    branches: [feature/am274-tally-vendor-to-staff-journal-20261118]
+    branches: [feature/am275-expense-donation-category-settings-20261118]
     paths: [.github/workflows/am266-rajdeep-ledger-audit.yml]
 permissions: {contents: read}
 concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
@@ -41,17 +41,34 @@ jobs:
           ROOT="$1"
           test "$(basename "$ROOT")" = assam-erp-staging
           cd "$ROOT"
-          echo AM274_VENDOR_BILL_DUE_SOURCE
-          sed -n '215,399p' app/Services/ExpensePaymentService.php
-          echo AM274_PAYMENT_PAGE_DUE_SOURCE
-          sed -n '125,275p' app/Http/Controllers/Web/AdminExpensePaymentPageController.php
-          echo AM274_STAFF_PAYMENT_DETAILS
-          sed -n '1,285p' app/Services/StaffPaymentVoucherService.php
-          echo AM274_VIEW_LAYOUT_PART
-          grep -n -E 'Staff Finance|Payment|Purchase|Expense|Journal' resources/views/layouts/erp.blade.php | head -90
-          echo AM274_RELEVANT_SERVICE_SHA
-          sha256sum app/Services/VendorService.php app/Services/ExpensePaymentService.php app/Services/MultiPurchasePaymentService.php app/Http/Controllers/Web/AdminStaffFinanceLedgerController.php
-          echo AM274_DUE_AUDIT_FINISHED
+          echo AM275_EXPENSE_CATEGORIES_SERVICE
+          sed -n '1,125p' app/Services/ExpensePaymentService.php
+          sed -n '160,195p' app/Services/ExpensePaymentService.php
+          echo AM275_EXPENSE_ENTRY_VIEW
+          sed -n '1,250p' resources/views/expenses/create.blade.php
+          echo AM275_EXPENSE_INDEX_FILTERS
+          grep -n -C 4 -E 'categor|Categor|select|@foreach' resources/views/expenses/index.blade.php | head -115 || true
+          echo AM275_CONFIGURATION_ROUTES
+          grep -n -E 'configuration|config|expense' routes/web.php | head -75
+          echo AM275_CONFIG_CONTROLLER_VIEW
+          grep -R -n -m 4 'Configuration' app/Http/Controllers/Web/AdminConfiguration* resources/views/configuration 2>/dev/null | head -50 || true
+          echo AM275_SETTINGS_FILE_CANDIDATES
+          find resources/views -maxdepth 3 -iname '*config*' -o -iname '*setting*' | head -60
+          echo AM275_EXISTING_CATEGORY_SCHEMA
+          PHP="$(mktemp --suffix=.php)"
+          trap 'rm -f "$PHP"' EXIT
+          cat > "$PHP" <<'PHP'
+          <?php
+          require getcwd().'/vendor/autoload.php';$app=require getcwd().'/bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $S=\Illuminate\Support\Facades\Schema::class;$D=\Illuminate\Support\Facades\DB::class;
+          foreach(['workshop_expenses','workshop_expense_categories','expense_categories','erp_settings'] as $t){if($S::hasTable($t))echo 'AM275_SCHEMA '.$t.'='.implode(',',$S::getColumnListing($t))."\n";}
+          if($S::hasTable('workshop_expenses'))echo 'AM275_CATEGORIES_IN_USE='.json_encode($D::table('workshop_expenses')->select('expense_category')->selectRaw('COUNT(*) as usage_count')->groupBy('expense_category')->orderByDesc('usage_count')->get())."\n";
+          PHP
+          php "$PHP"
+          echo AM275_SOURCE_SHA
+          sha256sum app/Services/ExpensePaymentService.php resources/views/expenses/create.blade.php resources/views/expenses/index.blade.php routes/web.php
+          echo AM275_AUDIT_COMPLETE
           REMOTE
       - name: Cleanup
         if: always()
