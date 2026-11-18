@@ -50,7 +50,7 @@ foreach(['Expense Category Settings','DONATION','Add New Expense Category',
     $assert(str_contains($html,$token),'AM275_SETTINGS_VIEW_MISSING_'.$token);
 }
 $expenseView=app(\App\Http\Controllers\Web\AdminExpensePaymentPageController::class)
-  ->createExpense($r('/erp/expenses/create'));
+  ->createExpense($r('/erp/expenses/create'),app(\App\Services\ExpensePaymentService::class));
 $assert($expenseView instanceof \Illuminate\View\View,'AM275_EXPENSE_FORM_NOT_VIEW');
 $expenseHtml=$expenseView->render();
 foreach(['value="DONATION"','DONATION / CHARITY','Add / Edit Expense Categories',
