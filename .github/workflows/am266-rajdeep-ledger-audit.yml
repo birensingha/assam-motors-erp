@@ -1,7 +1,7 @@
-name: AM266 Rajdeep Purchase vs Item Transaction Ledger Read Only
+name: AM271 Staff-paid Vendor Accounting — Read Only
 on:
   push:
-    branches: [feature/am265-full-grn-header-edit-20261117]
+    branches: [audit/am271-staff-paid-vendor-accounting-20261118]
     paths: [.github/workflows/am266-rajdeep-ledger-audit.yml]
 permissions: {contents: read}
 concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
@@ -41,7 +41,7 @@ jobs:
           ROOT="$1"
           test "$(basename "$ROOT")" = assam-erp-staging
           cd "$ROOT"
-          echo AM266_READONLY_LEDGER_VENDOR_AUDIT
+          echo AM271_ACCOUNTING_ROUTES
           PHP="$(mktemp --suffix=.php)"
           trap 'rm -f "$PHP"' EXIT
           cat > "$PHP" <<'PHP'
@@ -49,73 +49,31 @@ jobs:
           require getcwd().'/vendor/autoload.php';
           $app=require getcwd().'/bootstrap/app.php';
           $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-          $D=\Illuminate\Support\Facades\DB::class;
+          $routes=\Illuminate\Support\Facades\Route::getRoutes();
+          foreach($routes as $r){
+            $uri=$r->uri();
+            if(preg_match('~(payment|journal|reimburs|advance|vendor|expense|ledger)~i',$uri))
+             echo implode(',',$r->methods()).' '.$uri.' NAME='.$r->getName().' ACTION='.$r->getActionName()."\n";
+          }
           $S=\Illuminate\Support\Facades\Schema::class;
-          echo 'AM266_SCHEMA_PURCHASE='.implode(',',$S::getColumnListing('workshop_purchases'))."\n";
-          echo 'AM266_SCHEMA_MOVEMENTS='.implode(',',$S::getColumnListing('inventory_movements'))."\n";
-          echo 'AM266_SCHEMA_VENDOR='.implode(',',$S::getColumnListing('workshop_vendors'))."\n";
-          $vendors=$D::table('workshop_vendors')->where('vendor_name','like','%RAJDEEP%')->get(['id','vendor_name','vendor_code']);
-          echo 'AM266_RAJDEEP_VENDORS='.json_encode($vendors)."\n";
-          $purchases=$D::table('workshop_purchases as p')->leftJoin('parts_master as m','m.id','=','p.part_master_id')
-            ->where(function($q)use($vendors){$ids=$vendors->pluck('id')->all();
-              $q->where('p.supplier_name','like','%RAJDEEP%');
-              if($ids)$q->orWhereIn('p.vendor_id',$ids);
-            })
-            ->orderByDesc('p.id')->limit(70)
-            ->get(['p.id','p.purchase_no','p.purchase_batch_no','p.purchase_date','p.created_at',
-                'p.supplier_name','p.supplier_invoice','p.part_master_id','m.part_code','m.part_name','m.stock_qty',
-                'p.qty','p.job_card_id','p.record_status']);
-          echo 'AM266_RAJDEEP_PURCHASE_LINES='.json_encode($purchases)."\n";
-          $ids=$purchases->pluck('part_master_id')->filter()->unique()->values()->all();
-          if($ids){
-            $movements=$D::table('inventory_movements as i')
-              ->leftJoin('job_cards as j','j.id','=','i.job_card_id')
-              ->whereIn('i.part_master_id',$ids)->orderByDesc('i.id')->limit(160)
-              ->get(['i.id','i.part_master_id','i.movement_type','i.qty_in','i.qty_out','i.balance_after',
-                'i.reference_no','i.note','i.job_card_id','j.job_no','i.created_at']);
-            echo 'AM266_MATCHED_ITEM_LEDGER_MOVEMENTS='.json_encode($movements)."\n";
+          $D=\Illuminate\Support\Facades\DB::class;
+          $tables=$D::select('SHOW TABLES');
+          foreach($tables as $t){
+             $name=(string)array_values((array)$t)[0];
+             if(preg_match('~(payment|journal|voucher|ledger|reimburse|staff.*expense|vendor.*pay)~i',$name)){
+                echo 'AM271_TABLE '.$name.' COLUMNS='.implode(',',$S::getColumnListing($name))."\n";
+             }
           }
-
-          foreach(['%RAJ%','%DEEP%','%RAJ DEEP%','%RAJ-D%'] as $needle){
-            $vendorsNear=$D::table('workshop_vendors')->where('vendor_name','like',$needle)
-              ->limit(35)->get(['id','vendor_name','vendor_code']);
-            echo 'AM266_VENDOR_FUZZY_'.str_replace('%','',str_replace(' ','_', $needle)).'='.json_encode($vendorsNear)."\n";
-            $purchaseNear=$D::table('workshop_purchases')->where('supplier_name','like',$needle)
-              ->orWhere('created_by','like',$needle)->orWhere('notes','like',$needle)
-              ->orderByDesc('id')->limit(40)->get([
-                  'id','purchase_date','purchase_no','supplier_name','supplier_invoice',
-                  'part_master_id','job_card_id','qty','record_status','created_by','notes'
-              ]);
-            echo 'AM266_PURCHASE_FUZZY_'.str_replace('%','',str_replace(' ','_', $needle)).'='.json_encode($purchaseNear)."\n";
-            $movesNear=$D::table('inventory_movements')->where('note','like',$needle)
-                ->orWhere('reference_no','like',$needle)->orderByDesc('id')->limit(50)
-                ->get(['id','part_master_id','job_card_id','movement_type','qty_in','qty_out',
-                    'balance_after','reference_no','note','created_at']);
-            echo 'AM266_MOVEMENT_FUZZY_'.str_replace('%','',str_replace(' ','_', $needle)).'='.json_encode($movesNear)."\n";
-          }
-          echo 'AM266_GRN_VENDOR_HISTORY='.json_encode(
-            $D::table('am260_grns as g')->leftJoin('workshop_vendors as v','v.id','=','g.vendor_id')
-              ->orderByDesc('g.id')->limit(20)->get(['g.id','g.grn_no','g.challan_no','g.receipt_date','v.vendor_name'])
-          )."\n";
-
-
-          foreach([292,412] as $master){
-            $part=$D::table('parts_master')->where('id',$master)
-              ->first(['id','part_code','part_name','stock_qty']);
-            echo 'AM266_DHIRAJ_PART_'.$master.'='.json_encode($part)."\n";
-            $moves=$D::table('inventory_movements as m')
-              ->leftJoin('job_cards as j','j.id','=','m.job_card_id')
-              ->where('m.part_master_id',$master)->orderBy('m.id')
-              ->get(['m.id','m.movement_type','m.qty_in','m.qty_out',
-                  'm.balance_after','m.reference_no','m.note','m.job_card_id',
-                  'j.job_no','m.created_at']);
-            echo 'AM266_DHIRAJ_PART_MOVEMENTS_'.$master.'='.json_encode($moves)."\n";
-          }
-
-          echo 'AM266_AUDIT_COMPLETE_READONLY'."\n";
+          echo 'AM271_ROUTE_SCHEMA_AUDIT_PASS'."\n";
           PHP
-          php "$PHP"
-
+          php "$PHP" | head -160
+          echo AM271_CONTROLLER_AND_VIEW_FILENAMES
+          find app/Http/Controllers resources/views -type f \( -iname '*payment*' -o -iname '*journal*' -o -iname '*expense*' \) | head -120
+          echo AM271_REIMBURSEMENT_IMPLEMENTATION_CANDIDATES
+          grep -R -n -i -E 'staff paid|paid by staff|paid_by_staff|on behalf|reimburse|staff payable|journal voucher' app/Http/Controllers/Web resources/views/payments resources/views/expenses 2>/dev/null | head -95 || true
+          echo AM271_CURRENT_PAYMENT_CONTROLLER_FUNCTIONS
+          for file in app/Http/Controllers/Web/*Payment*php app/Http/Controllers/Web/*Journal*php;do test -f "$file" || continue;echo "FILE=$file";grep -n -E 'function |staff|vendor|against|account|journal' "$file" | head -115;done
+          echo AM271_AUDIT_DONE
           REMOTE
       - name: Cleanup
         if: always()
