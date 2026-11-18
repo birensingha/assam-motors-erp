@@ -42,7 +42,7 @@ $r=static function(string $uri,string $method='GET',array $data=[])use($user){
     return $request;
 };
 $settings=app(\App\Http\Controllers\Web\AdminExpenseCategorySettingsController::class);
-$settingView=$settings->index($r('/erp/configuration/expense-categories'));
+$settingView=$settings->index($r('/erp/configuration/expense-categories'),app(\App\Services\ExpenseCategoryMasterService::class));
 $assert($settingView instanceof \Illuminate\View\View,'AM275_SETTINGS_NOT_VIEW');
 $html=$settingView->render();
 foreach(['Expense Category Settings','DONATION','Add New Expense Category',
@@ -62,7 +62,7 @@ echo "AM275_SETTINGS_AND_EXPENSE_FORM_RENDER_ADMIN_AUTH_PASS\n";
 
 $guest=\Illuminate\Http\Request::create('/erp/configuration/expense-categories','GET');
 $guest->setUserResolver(static fn()=>null);
-try{$settings->index($guest);throw new RuntimeException('AM275_GUEST_SETTINGS_ALLOWED');}
+try{$settings->index($guest,app(\App\Services\ExpenseCategoryMasterService::class));throw new RuntimeException('AM275_GUEST_SETTINGS_ALLOWED');}
 catch(\Symfony\Component\HttpKernel\Exception\HttpException $e){
  $assert($e->getStatusCode()===403,'AM275_GUEST_SETTINGS_WRONG_STATUS');
 }
