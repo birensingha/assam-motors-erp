@@ -4,6 +4,7 @@ on:
     branches: [fix/am270-part-search-ghost-menu-20261118]
     paths:
       - '.github/workflows/am268-consolidated-ledger-source-audit.yml'
+      - 'deployment/live-fixes/AM270_PURCHASE_GHOST_MENU/**'
 permissions: {contents: read}
 concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
 jobs:
