@@ -23,7 +23,7 @@ $assert=static function(bool $condition,string $message):void{
  if(!$condition)throw new RuntimeException($message);
 };
 foreach([
-  'AM270_SINGLE_ACTIVE_PART_MENU',
+  'AM269_SINGLE_ACTIVE_PART_MENU',
   'function closeOtherPartResults(activeRow)',
   'AM270_FOCUS_ONLY_PART_MENU',
   'if (!clean(query))',
