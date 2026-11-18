@@ -41,16 +41,13 @@ jobs:
           ROOT="$1"
           test "$(basename "$ROOT")" = assam-erp-staging
           cd "$ROOT"
-            echo AM269_SOURCE_HASHES
-          sha256sum public/js/purchase-entry.js resources/views/purchases/create.blade.php
-          echo AM269_SCRIPT_SOURCE_BEGIN
-          sed -n '1,840p' public/js/purchase-entry.js
-          echo AM269_SCRIPT_SOURCE_END
-          echo AM269_VIEW_SEARCH_AND_SCRIPT
-          grep -n -E 'script|part|suggest|dropdown|datalist|autocomplete|search|purchase-entry|select|input|list=' resources/views/purchases/create.blade.php | head -195 || true
-          echo AM269_VIEW_TAIL
-          tail -230 resources/views/purchases/create.blade.php
-          echo AM269_AUDIT_COMPLETE
+            echo AM269_JS_FOCUS_SOURCE
+          nl -ba public/js/purchase-entry.js | sed -n '130,285p'
+          echo AM269_JS_WIRE_SOURCE
+          nl -ba public/js/purchase-entry.js | sed -n '420,660p'
+          echo AM269_CSS_ROW_SOURCE
+          nl -ba resources/views/purchases/create.blade.php | sed -n '72,165p'
+          echo AM269_REVIEW_END
           REMOTE
       - name: Cleanup
         if: always()
