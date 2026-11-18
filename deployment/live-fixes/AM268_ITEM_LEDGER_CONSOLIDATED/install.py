@@ -21,8 +21,8 @@ view='resources/views/admin/native/item-ledger.blade.php'
 service='app/Services/MasterItemLedgerConsolidator.php'
 existing=[controller,view]
 expected={
- controller:'38efc9d70a5ccc479bb9f885f6206d1e6d99adb5d59325b0b1209cb67a572f81',
- view:'8f5650ab03763cbde5850c24841f1b75fd46cf5a9f59d920d2338e01775489d9',
+ controller:'e6db72caf7b07d152858fbcfb9f551ad865ec5c184116139a993c4ed972092dc',
+ view:'87b71e28b8455a3679828c2fc2defcefd9f8f12f529e506dab36b2937bf588dc',
 }
 backupBase=root/'storage/app/am-backups'
 pointer=backupBase/'AM268_CONSOLIDATED_LEDGER_LAST_CODE_BACKUP.txt'
