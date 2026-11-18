@@ -64,6 +64,7 @@ const document={
 const context={
  document,body:{querySelectorAll(sel){assert.equal(sel,'.purchase-line');return [a,b,c]}},
  requestSeq:0,console,
+ clean(v){return String(v??'').trim();},
  partLabel(p){return p.name},
  fetchParts(query){
   return new Promise(resolve=>requests.set(query,resolve));
