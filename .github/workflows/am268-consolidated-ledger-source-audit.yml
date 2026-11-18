@@ -1,7 +1,7 @@
-name: AM270 Readonly Purchase Dropdown Ghost Menu Audit
+name: AM270 Purchase Part Search Ghost Dropdown — STAGING
 on:
   push:
-    branches: [fix/am270-part-search-ghost-menu-20261118]
+    branches: [fix/am270-purchase-part-search-dropdown-20261118]
     paths:
       - '.github/workflows/am268-consolidated-ledger-source-audit.yml'
 permissions: {contents: read}
@@ -19,6 +19,15 @@ jobs:
       ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
     steps:
       - uses: actions/checkout@v4
+      - name: Check Purchase Picker fix package and QA script
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG=deployment/live-fixes/AM270_PURCHASE_SINGLE_PART_MENU
+          python3 -m py_compile "$PKG/install.py"
+          php -l "$PKG/qa_runtime.php"
+          node --check "$PKG/qa_part_dropdown.cjs"
+          echo AM270_PACKAGE_PREFLIGHT_PASS
       - name: Prepare STAGING SSH
         shell: bash
         run: |
@@ -38,7 +47,7 @@ jobs:
             sudo apt-get update -qq
             sudo apt-get install -qq -y sshpass
           fi
-      - name: Audit STAGING active Part picker before second fix
+      - name: Guarded STAGING fix with automatic rollback on PHP runtime failure
         shell: bash
         run: |
           set -euo pipefail
@@ -48,13 +57,63 @@ jobs:
           set -euo pipefail
           APP="$1"
           test "$(basename "$APP")" = assam-erp-staging
+          test -f "$APP/artisan"
+          cd "$HOME/assam-motors-deploy"
+          git fetch origin fix/am270-purchase-part-search-dropdown-20261118
+          TMP="$(mktemp -d)"
+          trap 'rm -rf "$TMP"' EXIT
+          git archive FETCH_HEAD deployment/live-fixes/AM270_PURCHASE_SINGLE_PART_MENU | tar -x -C "$TMP"
+          PKG="$TMP/deployment/live-fixes/AM270_PURCHASE_SINGLE_PART_MENU"
+          python3 "$PKG/install.py" check "$APP"
+          python3 "$PKG/install.py" apply "$APP"
           cd "$APP"
-          echo AM270_CURRENT_SOURCE_SHA
-          sha256sum public/js/purchase-entry.js resources/views/purchases/create.blade.php
-          echo AM270_CURRENT_PICKER_MARKERS
-          grep -n -E 'AM269|closeOtherPartResults|search.addEventListener|part-results.open|part-combo' public/js/purchase-entry.js resources/views/purchases/create.blade.php | head -90 || true
-          echo AM270_READONLY_SOURCE_PASS
+          set +e
+          php "$PKG/qa_runtime.php" > "$TMP/qa_runtime.log" 2>&1
+          QA_RC=$?
+          set -e
+          cat "$TMP/qa_runtime.log"
+          if [ "$QA_RC" -ne 0 ] || ! grep -q AM270_PURCHASE_DROPDOWN_STAGING_QA_ALL_PASS "$TMP/qa_runtime.log";then
+            echo AM270_QA_FAILED_ROLLING_BACK
+            python3 "$PKG/install.py" rollback "$APP"
+            exit 43
+          fi
+          echo AM270_PHP_RUNTIME_DB_READONLY_QA_PASS
           REMOTE
+      - name: Run Node browser simulation on real STAGING JS, rollback on failure
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG=deployment/live-fixes/AM270_PURCHASE_SINGLE_PART_MENU
+          JS="${RUNNER_TEMP}/am270-purchase-entry.js"
+          if [ -n "$SSH_KEY" ];then SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$SSH_PASSWORD";SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT");fi
+          "${SSH[@]}" "$USERNAME@$HOST" "cat '$ROOT/public/js/purchase-entry.js'" > "$JS"
+          if ! node --check "$JS" || ! node "$PKG/qa_part_dropdown.cjs" "$JS";then
+            echo AM270_JS_QA_FAILED_ROLLING_BACK
+            "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'ROLLBACK'
+          set -euo pipefail
+          APP="$1"
+          test "$(basename "$APP")" = assam-erp-staging
+          cd "$HOME/assam-motors-deploy"
+          git fetch origin fix/am270-purchase-part-search-dropdown-20261118
+          TMP="$(mktemp -d)"
+          trap 'rm -rf "$TMP"' EXIT
+          git archive FETCH_HEAD deployment/live-fixes/AM270_PURCHASE_SINGLE_PART_MENU | tar -x -C "$TMP"
+          python3 "$TMP/deployment/live-fixes/AM270_PURCHASE_SINGLE_PART_MENU/install.py" rollback "$APP"
+          ROLLBACK
+            exit 44
+          fi
+          echo AM270_PURCHASE_SINGLE_PART_MENU_BROWSER_SIM_PASS
+          echo AM270_STAGING_PURCHASE_DROPDOWN_FIX_DEPLOYED
+      - name: Verify STAGING Purchase Entry remains login-protected
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL=https://staging.assammotors.com/erp/purchases/create
+          code=$(curl -sS --max-redirs 0 --max-time 20 -o /dev/null -w '%{http_code}' "$URL" || true)
+          echo "AM270_PURCHASE_GUEST_HTTP=$code"
+          test "$code" = 302 || test "$code" = 303
+          echo AM270_GUEST_ACCESS_PROTECTION_PASS
       - name: Cleanup credentials
         if: always()
         run: rm -f ~/.ssh/id_ed25519
