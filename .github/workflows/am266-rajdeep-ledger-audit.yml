@@ -41,20 +41,26 @@ jobs:
           ROOT="$1"
           test "$(basename "$ROOT")" = assam-erp-staging
           cd "$ROOT"
-          echo AM274_VENDOR_DUE_REFERENCES
-          grep -R -n -E 'workshop_payment_allocations|workshop_payment_vouchers' app/Services app/Http/Controllers/Web | head -230
-          echo AM274_STAFF_PAYMENT_VOUCHER_SOURCE
-          sed -n '1,375p' app/Services/StaffPaymentVoucherService.php
-          echo AM274_PAYMENT_MODEL
-          sed -n '1,240p' app/Models/WorkshopPaymentVoucher.php
-          echo AM274_LAYOUT_ROUTE_GROUP
-          sed -n '235,310p' routes/web.php
-          sed -n '327,390p' routes/web.php
-          echo AM274_CURRENT_ADMIN_LAYOUT_LINKS
-          sed -n '1,170p' resources/views/layouts/new-admin.blade.php
-          echo AM274_EXPENSE_PAYMENT_SERVICE_VOID
-          grep -n -E 'function paymentSummary|function voidPayment|function searchPayments|workshop_payment_vouchers' app/Services/ExpensePaymentService.php | head -85
-          echo AM274_DEEP_AUDIT_COMPLETE
+          echo AM274_FINANCIAL_SCHEMA
+          PHP="$(mktemp --suffix=.php)"
+          trap 'rm -f "$PHP"' EXIT
+          cat > "$PHP" <<'PHP'
+          <?php
+          require getcwd().'/vendor/autoload.php';$app=require getcwd().'/bootstrap/app.php';$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $S=\Illuminate\Support\Facades\Schema::class;
+          foreach(['workshop_vendors','staff','workshop_purchases','workshop_payment_vouchers','workshop_payment_allocations','workshop_vendor_payments','workshop_staff_finance_journals','workshop_staff_finance_lines','workshop_vendor_debit_uses','workshop_vendor_debit_notes'] as $t)if($S::hasTable($t))echo 'TABLE '.$t.': '.implode(',',$S::getColumnListing($t))."\n";
+          PHP
+          php "$PHP"
+          echo AM274_VENDOR_SERVICE_CORE
+          sed -n '1,260p' app/Services/VendorService.php
+          echo AM274_MULTI_PURCHASE_PAYMENT_CORE
+          sed -n '1,230p' app/Services/MultiPurchasePaymentService.php
+          echo AM274_VENDOR_LEDGER_PAGE_CORE
+          grep -n -E 'function ledger|vendorLedger|function show' app/Http/Controllers/Web/AdminVendorPageController.php
+          sed -n '1,230p' app/Http/Controllers/Web/AdminVendorPageController.php
+          echo AM274_STAFF_FINANCE_INDEX_CORE
+          sed -n '1,160p' app/Http/Controllers/Web/AdminStaffFinanceLedgerController.php
+          echo AM274_FINANCE_AUDIT_END
           REMOTE
       - name: Cleanup
         if: always()
