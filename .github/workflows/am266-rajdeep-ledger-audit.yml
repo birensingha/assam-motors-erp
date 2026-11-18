@@ -1,4 +1,4 @@
-name: AM271 Staff-paid Vendor Accounting — Read Only
+name: AM272 Staff New Reference Payment Posting Rule Audit
 on:
   push:
     branches: [audit/am271-staff-paid-vendor-accounting-20261118]
@@ -41,32 +41,19 @@ jobs:
           ROOT="$1"
           test "$(basename "$ROOT")" = assam-erp-staging
           cd "$ROOT"
-          echo AM271_STAFF_FINANCE_ROUTES
-          php artisan route:list --path=erp/staff-finance --compact 2>/dev/null || true
-          echo AM271_STAFF_FINANCE_CONTROLLER_FUNCTIONS
-          grep -n -E 'function |journal|vendor|expense|salary|STAFF|PAYABLE' app/Http/Controllers/Web/AdminStaffFinanceLedgerController.php | head -175 || true
-          echo AM271_PAYMENT_SERVICE_CLASSES
-          find app/Services -maxdepth 1 -iname '*Payment*' -o -iname '*StaffFinance*'
-          echo AM271_PAYMENT_SOURCE_TERMS
-          grep -R -n -i -E 'STAFF_PAID|VENDOR_PAID_BY|PAID_ON_BEHALF|staff.*vendor|vendor.*staff|staff.*reimburs|EXPENSE_REIMBURSEMENT|STAFF_EXPENSE' app/Services/ExpensePaymentService.php app/Services/StaffFinance* app/Http/Controllers/Web/AdminExpensePaymentPageController.php 2>/dev/null | head -140 || true
-          echo AM271_JOURNAL_SOURCE
-          sed -n '1,225p' app/Http/Controllers/Web/AdminStaffFinanceLedgerController.php
-          echo AM271_PAYMENT_STORE_SOURCE
-          sed -n '155,247p' app/Http/Controllers/Web/AdminExpensePaymentPageController.php
-          echo AM271_STAFF_FINANCE_SCHEMA
-          PHP="$(mktemp --suffix=.php)"
-          trap 'rm -f "$PHP"' EXIT
-          cat > "$PHP" <<'PHP'
-          <?php
-          require getcwd().'/vendor/autoload.php';$app=require getcwd().'/bootstrap/app.php';
-          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-          $S=\Illuminate\Support\Facades\Schema::class;
-          foreach(['workshop_staff_finance_lines','workshop_expenses','workshop_vendor_debit_uses','workshop_payment_allocations','workshop_vendor_ledger'] as $table){
-            if($S::hasTable($table))echo 'AM271_SCHEMA_'.$table.'='.implode(',',$S::getColumnListing($table))."\n";
-          }
-          PHP
-          php "$PHP"
-          echo AM271_DEEP_READONLY_AUDIT_PASS
+          echo AM272_PAYMENT_VOUCHER_HTML_SOURCE
+          grep -R -l -m 1 'COMPLETE STAFF PAYMENT DETAILS\|Staff Payment / Advance.*Linked Financial Ledger\|New Reference / On Account Staff' resources/views app/Http/Controllers | head -20 || true
+          echo AM272_PAYMENT_PAGE_STORE_FUNCTION
+          sed -n '175,430p' app/Http/Controllers/Web/AdminExpensePaymentPageController.php
+          echo AM272_STAFF_FINANCE_LEDGER_CONTROLLER
+          sed -n '1,310p' app/Http/Controllers/Web/AdminStaffFinanceLedgerController.php
+          echo AM272_EXPENSE_PAYMENT_SERVICE
+          sed -n '1,350p' app/Services/ExpensePaymentService.php
+          echo AM272_STAFF_PAYMENT_SERVICE_CLASS
+          find app/Services -maxdepth 1 -iname '*Staff*' -o -iname '*Payment*'
+          echo AM272_PAYMENT_STAFF_CHECKS
+          grep -R -n -E 'Staff payment|staff_new_reference|STAFF_ADVANCE|staff.*reference|staff.*posting|staff.*payment|new_reference' app/Http/Controllers/Web/AdminExpensePaymentPageController.php app/Services/ExpensePaymentService.php resources/views/expenses 2>/dev/null | head -125 || true
+          echo AM272_STAFF_PAYMENT_AUDIT_END
           REMOTE
       - name: Cleanup
         if: always()
