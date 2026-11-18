@@ -41,28 +41,18 @@ jobs:
           ROOT="$1"
           test "$(basename "$ROOT")" = assam-erp-staging
           cd "$ROOT"
-          echo AM275_SOURCE_AND_ROUTE_FACTS
-          sha256sum app/Http/Controllers/Web/AdminExpensePaymentPageController.php app/Services/ExpensePaymentService.php resources/views/expenses/create.blade.php resources/views/layouts/erp.blade.php routes/web.php
-          echo AM275_EXPENSE_CREATE_AND_VALIDATION
-          sed -n '1,180p' app/Http/Controllers/Web/AdminExpensePaymentPageController.php
-          echo AM275_CATEGORY_USAGE
-          grep -R -n -m 20 -E 'expense_category|Expense Category|category_options|category.*Select|DONATION|Donation' app/Services/ExpensePaymentService.php app/Http/Controllers/Web/AdminExpensePaymentPageController.php resources/views/expenses resources/views/configuration resources/views/layouts/erp.blade.php | head -145 || true
-          echo AM275_EXPENSE_FORM
-          sed -n '1,290p' resources/views/expenses/create.blade.php
-          echo AM275_CONFIGURATION
-          grep -n -E 'function configuration|erp.configuration|CONFIGURATION|Configuration' app/Http/Controllers/Web/AdminNativeModuleController.php routes/web.php resources/views/layouts/erp.blade.php | head -80 || true
-          echo AM275_SCHEMA_AND_CATEGORIES
-          PHP="$(mktemp --suffix=.php)"
-          trap 'rm -f "$PHP"' EXIT
-          cat > "$PHP" <<'PHP'
-          <?php
-          require getcwd().'/vendor/autoload.php';$app=require getcwd().'/bootstrap/app.php';$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-          $D=\Illuminate\Support\Facades\DB::class;$S=\Illuminate\Support\Facades\Schema::class;
-          foreach(['workshop_expenses','workshop_expense_categories','erp_expense_categories','workshop_settings'] as $table)if($S::hasTable($table))echo 'AM275_TABLE '.$table.'='.implode(',',$S::getColumnListing($table))."\n";
-          echo 'AM275_EXISTING_CATEGORY_DISTRIBUTION='.json_encode($D::table('workshop_expenses')->selectRaw('expense_category,COUNT(*) n')->groupBy('expense_category')->orderBy('expense_category')->get())."\n";
-          PHP
-          php "$PHP"
-          echo AM275_AUDIT_DONE
+          echo AM275_SERVICE_CREATE_SOURCE
+          sed -n '1,190p' app/Services/ExpensePaymentService.php
+          echo AM275_CONFIG_CONTROLLER
+          grep -n 'function configuration' app/Http/Controllers/Web/AdminDashboardPageController.php
+          sed -n '1,165p' resources/views/admin/configuration.blade.php 2>/dev/null || true
+          echo AM275_CONFIG_VIEWS
+          find resources/views -iname '*config*' | head -50
+          echo AM275_ERP_ROUTE_SHELL
+          sed -n '28,105p' routes/web.php
+          echo AM275_OTHER_USE_OF_CATEGORY_LIST
+          grep -R -n -m 8 'expenseCategories' app resources/views | head -70
+          echo AM275_SERVICE_FINISH
           REMOTE
       - name: Cleanup
         if: always()
