@@ -41,31 +41,20 @@ jobs:
           ROOT="$1"
           test "$(basename "$ROOT")" = assam-erp-staging
           cd "$ROOT"
-          echo AM274_GENERAL_JOURNAL_SOURCE_MAP
-          grep -n -E 'AdminStaffFinanceLedgerController|AdminExpensePaymentPageController|staff-finance|payment-voucher|erp.payments|erp.staff-finance' routes/web.php | head -130 || true
-          echo AM274_LAYOUT_MENU_SOURCE
-          grep -R -n -m 8 -E 'Staff Finance|Payment Voucher|Staff Ledger|Payment Register' resources/views/layouts resources/views/admin 2>/dev/null | head -110 || true
-          echo AM274_ACCOUNTING_SERVICE_CLASS_NAMES
-          find app/Services app/Http/Controllers/Web -maxdepth 1 -iname '*Bank*' -o -iname '*Ledger*' -o -iname '*Payment*' -o -iname '*Finance*' -o -iname '*Expense*' | head -120
-          echo AM274_STAFF_FINANCE_CONTROLLER
-          sed -n '1,255p' app/Http/Controllers/Web/AdminStaffFinanceLedgerController.php
-          echo AM274_EXPENSE_PAYMENT_PAGE
-          sed -n '1,240p' app/Http/Controllers/Web/AdminExpensePaymentPageController.php
-          echo AM274_LEDGER_SCHEMA
-          PHP="$(mktemp --suffix=.php)"
-          trap 'rm -f "$PHP"' EXIT
-          cat > "$PHP" <<'PHP'
-          <?php
-          require getcwd().'/vendor/autoload.php';$app=require getcwd().'/bootstrap/app.php';
-          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-          $S=\Illuminate\Support\Facades\Schema::class;$D=\Illuminate\Support\Facades\DB::class;
-          foreach(['workshop_purchase_batches','workshop_purchases','workshop_payment_vouchers','workshop_payment_allocations','workshop_staff_finance_journals','workshop_staff_finance_lines','workshop_expenses','workshop_vendor_debit_uses','workshop_bank_accounts','staff','workshop_vendor_ledger','workshop_vendor_balances'] as $t){if($S::hasTable($t))echo 'AM274_SCHEMA '.$t.'='.implode(',',$S::getColumnListing($t))."\n";}
-          $tables=$D::select('SHOW TABLES');
-          foreach($tables as $t){$name=(string)array_values((array)$t)[0];if(preg_match('/(account|cash|bank|journal|ledger)/i',$name))echo 'AM274_EXISTING_TABLE '.$name."\n";}
-          echo 'AM274_ACCOUNT_PICKER_SOURCE_DONE'."\n";
-          PHP
-          php "$PHP"
-          echo AM274_FINAL_AUDIT_DONE
+          echo AM274_VENDOR_DUE_REFERENCES
+          grep -R -n -E 'workshop_payment_allocations|workshop_payment_vouchers' app/Services app/Http/Controllers/Web | head -230
+          echo AM274_STAFF_PAYMENT_VOUCHER_SOURCE
+          sed -n '1,375p' app/Services/StaffPaymentVoucherService.php
+          echo AM274_PAYMENT_MODEL
+          sed -n '1,240p' app/Models/WorkshopPaymentVoucher.php
+          echo AM274_LAYOUT_ROUTE_GROUP
+          sed -n '235,310p' routes/web.php
+          sed -n '327,390p' routes/web.php
+          echo AM274_CURRENT_ADMIN_LAYOUT_LINKS
+          sed -n '1,170p' resources/views/layouts/new-admin.blade.php
+          echo AM274_EXPENSE_PAYMENT_SERVICE_VOID
+          grep -n -E 'function paymentSummary|function voidPayment|function searchPayments|workshop_payment_vouchers' app/Services/ExpensePaymentService.php | head -85
+          echo AM274_DEEP_AUDIT_COMPLETE
           REMOTE
       - name: Cleanup
         if: always()
