@@ -41,18 +41,17 @@ jobs:
           ROOT="$1"
           test "$(basename "$ROOT")" = assam-erp-staging
           cd "$ROOT"
-          echo AM275_SERVICE_CREATE_SOURCE
-          sed -n '1,190p' app/Services/ExpensePaymentService.php
-          echo AM275_CONFIG_CONTROLLER
-          grep -n 'function configuration' app/Http/Controllers/Web/AdminDashboardPageController.php
-          sed -n '1,165p' resources/views/admin/configuration.blade.php 2>/dev/null || true
-          echo AM275_CONFIG_VIEWS
-          find resources/views -iname '*config*' | head -50
-          echo AM275_ERP_ROUTE_SHELL
-          sed -n '28,105p' routes/web.php
-          echo AM275_OTHER_USE_OF_CATEGORY_LIST
-          grep -R -n -m 8 'expenseCategories' app resources/views | head -70
-          echo AM275_SERVICE_FINISH
+          echo AM275_CONFIG_VIEW_HEADER
+          sed -n '1,225p' resources/views/dashboard/configuration.blade.php
+          echo AM275_EXPENSE_REGISTER_HEADER
+          sed -n '1,75p' resources/views/expenses/index.blade.php
+          echo AM275_EXPENSE_SHOW_HEADER
+          sed -n '1,55p' resources/views/expenses/show.blade.php
+          echo AM275_CONFIG_METHOD
+          sed -n '137,170p' app/Http/Controllers/Web/AdminDashboardPageController.php
+          echo AM275_FINGERPRINT_VIEWS
+          sha256sum resources/views/dashboard/configuration.blade.php resources/views/expenses/index.blade.php resources/views/expenses/show.blade.php
+          echo AM275_EXTRA_PREP_END
           REMOTE
       - name: Cleanup
         if: always()
