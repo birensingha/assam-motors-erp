@@ -43,6 +43,8 @@ jobs:
           cd "$ROOT"
           echo AM268_CURRENT_CONTROLLER_INDEX_SOURCE
           sed -n '325,395p' app/Http/Controllers/Web/AdminMasterItemLedgerController.php
+          echo AM268_INDEX_NEXT_LINES
+          sed -n '395,435p' app/Http/Controllers/Web/AdminMasterItemLedgerController.php
           echo AM268_CURRENT_CONTROLLER_INDEX_END
           echo AM268_TABLE_AUDIT
           PHP="$(mktemp --suffix=.php)"
