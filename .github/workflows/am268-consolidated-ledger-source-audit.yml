@@ -41,6 +41,12 @@ jobs:
           ROOT="$1"
           test "$(basename "$ROOT")" = assam-erp-staging
           cd "$ROOT"
+          echo AM268_STAGING_CODE_HASHES
+          sha256sum app/Http/Controllers/Web/AdminMasterItemLedgerController.php resources/views/admin/native/item-ledger.blade.php
+          echo AM268_CURRENT_CHANGE_MARKERS
+          grep -n -E 'AM26[789]|Consolidated|Raw Events|source_event_count|MasterItemLedgerConsolidator|grn_bill_allocations' app/Http/Controllers/Web/AdminMasterItemLedgerController.php resources/views/admin/native/item-ledger.blade.php | head -90 || true
+          echo AM268_CURRENT_INDEX_TAIL
+          sed -n '385,425p' app/Http/Controllers/Web/AdminMasterItemLedgerController.php
           echo AM268_CURRENT_CONTROLLER_INDEX_SOURCE
           sed -n '325,395p' app/Http/Controllers/Web/AdminMasterItemLedgerController.php
           echo AM268_INDEX_NEXT_LINES
