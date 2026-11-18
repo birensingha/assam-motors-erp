@@ -41,26 +41,17 @@ jobs:
           ROOT="$1"
           test "$(basename "$ROOT")" = assam-erp-staging
           cd "$ROOT"
-          echo AM274_FINANCIAL_SCHEMA
-          PHP="$(mktemp --suffix=.php)"
-          trap 'rm -f "$PHP"' EXIT
-          cat > "$PHP" <<'PHP'
-          <?php
-          require getcwd().'/vendor/autoload.php';$app=require getcwd().'/bootstrap/app.php';$app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-          $S=\Illuminate\Support\Facades\Schema::class;
-          foreach(['workshop_vendors','staff','workshop_purchases','workshop_payment_vouchers','workshop_payment_allocations','workshop_vendor_payments','workshop_staff_finance_journals','workshop_staff_finance_lines','workshop_vendor_debit_uses','workshop_vendor_debit_notes'] as $t)if($S::hasTable($t))echo 'TABLE '.$t.': '.implode(',',$S::getColumnListing($t))."\n";
-          PHP
-          php "$PHP"
-          echo AM274_VENDOR_SERVICE_CORE
-          sed -n '1,260p' app/Services/VendorService.php
-          echo AM274_MULTI_PURCHASE_PAYMENT_CORE
-          sed -n '1,230p' app/Services/MultiPurchasePaymentService.php
-          echo AM274_VENDOR_LEDGER_PAGE_CORE
-          grep -n -E 'function ledger|vendorLedger|function show' app/Http/Controllers/Web/AdminVendorPageController.php
-          sed -n '1,230p' app/Http/Controllers/Web/AdminVendorPageController.php
-          echo AM274_STAFF_FINANCE_INDEX_CORE
-          sed -n '1,160p' app/Http/Controllers/Web/AdminStaffFinanceLedgerController.php
-          echo AM274_FINANCE_AUDIT_END
+          echo AM274_VENDOR_BILL_DUE_SOURCE
+          sed -n '215,399p' app/Services/ExpensePaymentService.php
+          echo AM274_PAYMENT_PAGE_DUE_SOURCE
+          sed -n '125,275p' app/Http/Controllers/Web/AdminExpensePaymentPageController.php
+          echo AM274_STAFF_PAYMENT_DETAILS
+          sed -n '1,285p' app/Services/StaffPaymentVoucherService.php
+          echo AM274_VIEW_LAYOUT_PART
+          grep -n -E 'Staff Finance|Payment|Purchase|Expense|Journal' resources/views/layouts/erp.blade.php | head -90
+          echo AM274_RELEVANT_SERVICE_SHA
+          sha256sum app/Services/VendorService.php app/Services/ExpensePaymentService.php app/Services/MultiPurchasePaymentService.php app/Http/Controllers/Web/AdminStaffFinanceLedgerController.php
+          echo AM274_DUE_AUDIT_FINISHED
           REMOTE
       - name: Cleanup
         if: always()
