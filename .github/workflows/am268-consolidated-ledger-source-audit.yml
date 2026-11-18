@@ -1,0 +1,88 @@
+name: AM268 Readonly Consolidated Ledger Source and Allocation Audit
+on:
+  push:
+    branches: [feature/am268-consolidated-item-ledger-20261118]
+    paths: [.github/workflows/am268-consolidated-ledger-source-audit.yml]
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - name: Prepare SSH
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$SSH_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4;do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$SSH_KEY" ];then printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519;chmod 600 ~/.ssh/id_ed25519
+          else sudo apt-get update -qq;sudo apt-get install -qq -y sshpass;fi
+      - name: Inspect sales register source and OSL billing schema without writing
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ];then SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$SSH_PASSWORD";SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT");fi
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          ROOT="$1"
+          test "$(basename "$ROOT")" = assam-erp-staging
+          cd "$ROOT"
+          echo AM268_CURRENT_CONTROLLER_INDEX_SOURCE
+          sed -n '325,395p' app/Http/Controllers/Web/AdminMasterItemLedgerController.php
+          echo AM268_CURRENT_CONTROLLER_INDEX_END
+          echo AM268_TABLE_AUDIT
+          PHP="$(mktemp --suffix=.php)"
+          trap 'rm -f "$PHP"' EXIT
+          cat > "$PHP" <<'PHP'
+          <?php
+          require getcwd().'/vendor/autoload.php';
+          $app=require getcwd().'/bootstrap/app.php';
+          $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+          $D=\Illuminate\Support\Facades\DB::class;
+          $S=\Illuminate\Support\Facades\Schema::class;
+          foreach(['am260_grn_bill_allocations','am260_grn_lines','am260_grns',
+           'workshop_purchases','inventory_movements','job_card_parts'] as $table){
+             echo 'AM268_SCHEMA_'.$table.'='.json_encode($S::getColumnListing($table))."\n";
+          }
+          $id=234;
+          $grnBills=$D::table('am260_grn_bill_allocations as a')
+            ->join('am260_grn_lines as l','l.id','=','a.grn_line_id')
+            ->where('l.part_master_id',$id)->limit(15)->get();
+          echo 'AM268_GRN_BILL_ALLOCATIONS='.json_encode($grnBills)."\n";
+          echo 'AM268_LIVE_ITEM_REPORT_START'."\n";
+          $u=\App\Models\ErpAuthUser::where('active',1)->whereIn('role',['owner','admin'])->firstOrFail();
+          $r=\Illuminate\Http\Request::create('/erp/masters/item-ledger','GET',['type'=>'PART','id'=>234]);
+          $r->setUserResolver(static fn()=>$u);
+          $report=app(\App\Http\Controllers\Web\AdminMasterItemLedgerController::class)->index($r)->getData()['report'];
+          echo 'AM268_BASE_EVENTS='.json_encode(array_map(fn($e)=>[
+            'date'=>$e['date'],'sort_time'=>$e['sort_time'],'type'=>$e['type'],
+            'reference'=>$e['reference'],'url'=>$e['url'],'party'=>$e['party'],
+            'in'=>$e['in'],'out'=>$e['out'],'amount'=>$e['amount'],'balance'=>$e['balance'],
+            'doc_date'=>$e['document_date']??null,'posted'=>$e['erp_posted_date']??null
+          ],$report['events']))."\n";
+          echo 'AM268_BASE_KPIS='.json_encode([
+            'opening'=>$report['opening'],'closing'=>$report['closing'],
+            'current'=>$report['current_stock'],'variance'=>$report['variance']
+          ])."\n";
+          echo 'AM268_READONLY_DONE'."\n";
+          PHP
+          php "$PHP"
+
+          REMOTE
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
