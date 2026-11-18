@@ -1,10 +1,10 @@
-name: AM270 Purchase Part Search Ghost Dropdown — STAGING
+name: AM275 Expense Category Settings and Donation Voucher — STAGING
 on:
   push:
-    branches: [fix/am270-part-search-ghost-menu-20261118]
+    branches: [feature/am275-expense-category-master-20261118]
     paths:
       - '.github/workflows/am268-consolidated-ledger-source-audit.yml'
-      - 'deployment/live-fixes/AM270_PURCHASE_GHOST_MENU/**'
+      - 'deployment/live-fixes/AM275_EXPENSE_CATEGORIES/**'
 permissions: {contents: read}
 concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
 jobs:
@@ -20,15 +20,19 @@ jobs:
       ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
     steps:
       - uses: actions/checkout@v4
-      - name: Check Purchase Picker fix package and QA script
+      - name: Preflight Expense Category package
         shell: bash
         run: |
           set -euo pipefail
-          PKG=deployment/live-fixes/AM270_PURCHASE_GHOST_MENU
+          PKG=deployment/live-fixes/AM275_EXPENSE_CATEGORIES
           python3 -m py_compile "$PKG/install.py"
+          php -l "$PKG/migrate.php"
           php -l "$PKG/qa_runtime.php"
-          node --check "$PKG/qa_part_dropdown.cjs"
-          echo AM270_PACKAGE_PREFLIGHT_PASS
+          php -l "$PKG/files/app/Services/ExpenseCategoryMasterService.php"
+          php -l "$PKG/files/app/Http/Controllers/Web/AdminExpenseCategorySettingsController.php"
+          grep -Fq 'DONATION' "$PKG/migrate.php"
+          grep -Fq 'Expense Category Settings' "$PKG/files/resources/views/expenses/categories.blade.php"
+          echo AM275_PACKAGE_PREFLIGHT_PASS
       - name: Prepare STAGING SSH
         shell: bash
         run: |
@@ -48,7 +52,7 @@ jobs:
             sudo apt-get update -qq
             sudo apt-get install -qq -y sshpass
           fi
-      - name: Guarded STAGING fix with automatic rollback on PHP runtime failure
+      - name: Guarded STAGING category migration, code install and rollback-only financial QA
         shell: bash
         run: |
           set -euo pipefail
@@ -60,11 +64,11 @@ jobs:
           test "$(basename "$APP")" = assam-erp-staging
           test -f "$APP/artisan"
           cd "$HOME/assam-motors-deploy"
-          git fetch origin fix/am270-part-search-ghost-menu-20261118
+          git fetch origin feature/am275-expense-category-master-20261118
           TMP="$(mktemp -d)"
           trap 'rm -rf "$TMP"' EXIT
-          git archive FETCH_HEAD deployment/live-fixes/AM270_PURCHASE_GHOST_MENU | tar -x -C "$TMP"
-          PKG="$TMP/deployment/live-fixes/AM270_PURCHASE_GHOST_MENU"
+          git archive FETCH_HEAD deployment/live-fixes/AM275_EXPENSE_CATEGORIES | tar -x -C "$TMP"
+          PKG="$TMP/deployment/live-fixes/AM275_EXPENSE_CATEGORIES"
           python3 "$PKG/install.py" check "$APP"
           python3 "$PKG/install.py" apply "$APP"
           cd "$APP"
@@ -73,48 +77,23 @@ jobs:
           QA_RC=$?
           set -e
           cat "$TMP/qa_runtime.log"
-          if [ "$QA_RC" -ne 0 ] || ! grep -q AM270_PURCHASE_DROPDOWN_STAGING_QA_ALL_PASS "$TMP/qa_runtime.log";then
-            echo AM270_QA_FAILED_ROLLING_BACK
+          if [ "$QA_RC" -ne 0 ] || ! grep -q AM275_FULL_STAGING_DONATION_CATEGORY_AND_SETTINGS_QA_PASS "$TMP/qa_runtime.log";then
+            echo AM275_QA_FAILED_ROLLING_BACK_CODE
             python3 "$PKG/install.py" rollback "$APP"
             exit 43
           fi
-          echo AM270_PHP_RUNTIME_DB_READONLY_QA_PASS
+          echo AM275_DONATION_PAYMENT_AND_CATEGORY_MASTER_STAGING_QA_PASS
+          echo AM275_NO_FINANCIAL_OR_INVENTORY_TRANSACTIONS_POSTED_BY_DEPLOYMENT
           REMOTE
-      - name: Run Node browser simulation on real STAGING JS, rollback on failure
+      - name: Verify STAGING Expense Categories remain login-protected
         shell: bash
         run: |
           set -euo pipefail
-          PKG=deployment/live-fixes/AM270_PURCHASE_GHOST_MENU
-          JS="${RUNNER_TEMP}/am270-purchase-entry.js"
-          if [ -n "$SSH_KEY" ];then SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
-          else export SSHPASS="$SSH_PASSWORD";SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT");fi
-          "${SSH[@]}" "$USERNAME@$HOST" "cat '$ROOT/public/js/purchase-entry.js'" > "$JS"
-          if ! node --check "$JS" || ! node "$PKG/qa_part_dropdown.cjs" "$JS";then
-            echo AM270_JS_QA_FAILED_ROLLING_BACK
-            "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'ROLLBACK'
-          set -euo pipefail
-          APP="$1"
-          test "$(basename "$APP")" = assam-erp-staging
-          cd "$HOME/assam-motors-deploy"
-          git fetch origin fix/am270-part-search-ghost-menu-20261118
-          TMP="$(mktemp -d)"
-          trap 'rm -rf "$TMP"' EXIT
-          git archive FETCH_HEAD deployment/live-fixes/AM270_PURCHASE_GHOST_MENU | tar -x -C "$TMP"
-          python3 "$TMP/deployment/live-fixes/AM270_PURCHASE_GHOST_MENU/install.py" rollback "$APP"
-          ROLLBACK
-            exit 44
-          fi
-          echo AM270_PURCHASE_GHOST_MENU_BROWSER_SIM_PASS
-          echo AM270_STAGING_PURCHASE_DROPDOWN_FIX_DEPLOYED
-      - name: Verify STAGING Purchase Entry remains login-protected
-        shell: bash
-        run: |
-          set -euo pipefail
-          URL=https://staging.assammotors.com/erp/purchases/create
+          URL=https://staging.assammotors.com/erp/configuration/expense-categories
           code=$(curl -sS --max-redirs 0 --max-time 20 -o /dev/null -w '%{http_code}' "$URL" || true)
-          echo "AM270_PURCHASE_GUEST_HTTP=$code"
+          echo "AM275_CATEGORIES_GUEST_HTTP=$code"
           test "$code" = 302 || test "$code" = 303
-          echo AM270_GUEST_ACCESS_PROTECTION_PASS
+          echo AM275_GUEST_ACCESS_PROTECTION_PASS
       - name: Cleanup credentials
         if: always()
         run: rm -f ~/.ssh/id_ed25519
