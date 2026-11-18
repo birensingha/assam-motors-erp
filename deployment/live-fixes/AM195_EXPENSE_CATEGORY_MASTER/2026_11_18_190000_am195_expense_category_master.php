@@ -18,12 +18,13 @@ return new class extends Migration {
                 $table->timestamps();
             });
         }
-        DB::table('workshop_expense_categories')->updateOrInsert(
-            ['code' => 'DONATION'],
-            ['name' => 'Donation', 'ledger_name' => 'Donation Expense',
-             'is_active' => true, 'updated_at' => now(),
-             'created_at' => DB::raw('COALESCE(created_at, NOW())')]
-        );
+        if (!DB::table('workshop_expense_categories')->where('code', 'DONATION')->exists()) {
+            DB::table('workshop_expense_categories')->insert([
+                'code' => 'DONATION', 'name' => 'Donation',
+                'ledger_name' => 'Donation Expense', 'is_active' => true,
+                'created_at' => now(), 'updated_at' => now(),
+            ]);
+        }
     }
 
     public function down(): void {
