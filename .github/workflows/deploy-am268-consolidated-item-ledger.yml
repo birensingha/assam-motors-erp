@@ -1,0 +1,99 @@
+name: AM268 Item Ledger One Row per Purchase GRN or Job Card — STAGING
+on:
+  push:
+    branches: [feature/am268-consolidated-item-ledger-20261118]
+    paths:
+      - '.github/workflows/deploy-am268-consolidated-item-ledger.yml'
+      - 'deployment/live-fixes/AM268_ITEM_LEDGER_CONSOLIDATED/**'
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: GitHub syntax preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          PKG=deployment/live-fixes/AM268_ITEM_LEDGER_CONSOLIDATED
+          python3 -m py_compile "$PKG/install.py"
+          php -l "$PKG/qa_unit.php"
+          php -l "$PKG/qa_runtime.php"
+          php "$PKG/qa_unit.php"
+          echo AM268_GITHUB_LEDGER_PKG_PREFLIGHT_PASS
+      - name: Configure secure STAGING SSH
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          test -n "$SSH_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4;do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null;then break;fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$SSH_KEY" ];then
+            printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Guarded STAGING one row per source voucher/JC with expandable audit and immutable ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ];then SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else export SSHPASS="$SSH_PASSWORD";SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT");fi
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"
+          test "$(basename "$APP")" = assam-erp-staging
+          test -f "$APP/artisan"
+          cd "$HOME/assam-motors-deploy"
+          git fetch origin feature/am268-consolidated-item-ledger-20261118
+          TMP="$(mktemp -d)"
+          trap 'rm -rf "$TMP"' EXIT
+          git archive FETCH_HEAD deployment/live-fixes/AM268_ITEM_LEDGER_CONSOLIDATED | tar -x -C "$TMP"
+          PKG="$TMP/deployment/live-fixes/AM268_ITEM_LEDGER_CONSOLIDATED"
+          python3 "$PKG/install.py" check "$APP"
+          python3 "$PKG/install.py" apply "$APP"
+          cd "$APP"
+          php -l app/Http/Controllers/Web/AdminMasterItemLedgerController.php
+          set +e
+          php "$PKG/qa_runtime.php" > "$TMP/qa.log" 2>&1
+          QA_RC=$?
+          set -e
+          cat "$TMP/qa.log"
+          if [ "$QA_RC" -ne 0 ] || ! grep -q AM268_FULL_AUTHENTICATED_CONSOLIDATED_LEDGER_QA_PASS "$TMP/qa.log";then
+            echo AM268_RUNTIME_QA_FAILED_ROLLING_BACK
+            python3 "$PKG/install.py" rollback "$APP"
+            exit 43
+          fi
+          echo AM268_RUNTIME_QA_AUTHENTICATED_PASS
+          echo AM268_ITEM_LEDGER_CONSOLIDATED_STAGING_SOURCE_DEPLOYED
+          echo AM268_NO_ITEM_MOVEMENT_GRN_PURCHASE_JC_OR_INVOICE_MUTATED
+          REMOTE
+      - name: Verify guest cannot view Procurement pages
+        shell: bash
+        run: |
+          set -euo pipefail
+          for URL in 'https://staging.assammotors.com/erp/masters/item-ledger?type=PART&id=234';do
+            code=$(curl -sS --max-redirs 0 --max-time 20 -o /dev/null -w '%{http_code}' "$URL" || true)
+            echo "AM268_GUEST_DASHBOARD_HTTP=$code"
+            test "$code" = 302 || test "$code" = 303
+          done
+          echo AM268_GUEST_ACCESS_PROTECTED_PASS
+      - name: Clean credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
