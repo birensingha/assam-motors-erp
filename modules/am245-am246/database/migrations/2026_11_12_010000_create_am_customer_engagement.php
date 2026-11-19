@@ -9,6 +9,7 @@ return new class extends Migration {
             $t->string('customer_name',160); $t->string('vehicle',32)->nullable();
             $t->string('job_card_ref',64)->nullable(); $t->unsignedTinyInteger('rating');
             $t->text('comment'); $t->string('source',32)->default('internal');
+            $t->unsignedBigInteger('created_by')->nullable()->index();
             $t->text('reply_draft')->nullable(); $t->timestamps();
         });
         Schema::create('am_customer_complaints', function(Blueprint $t) {
