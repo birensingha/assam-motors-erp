@@ -26,5 +26,17 @@ assert "->name('targets')" in routes
 assert "complaint_status" in feedback
 assert "insertOrIgnore(" in controller
 assert "$t->unique('feedback_id')" in migration
+assert "am_customer_complaint_history" in migration
+assert "resolved_by" in migration and "resolved_at" in migration
+assert "am_customer_complaint_history" in controller
+assert "'action'=>'opened'" in controller
+assert "'action'=>'resolved'" in controller
+assert "where('status','open')" in controller
+assert "Complaint has already been resolved" in controller
+assert "complaintHistory" in feedback
+assert "name=\"rating\"" in feedback
+assert "name=\"complaint_status\"" in feedback
+assert "openComplaintCount" in feedback
+assert "averageRating" in feedback
 assert "'can:view-customer-ledger'" in routes
 print("AM245 static feedback/financial-separation and source validation checks PASSED")
