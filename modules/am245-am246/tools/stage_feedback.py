@@ -24,6 +24,8 @@ COPY_MAP = {
         "app/Contracts/AmEngagementLedger.php",
     "app/Contracts/AmFeedbackCustomerSource.php":
         "app/Contracts/AmFeedbackCustomerSource.php",
+    "app/Support/AmFeedbackCsv.php":
+        "app/Support/AmFeedbackCsv.php",
     "app/Http/Controllers/Admin/AmCustomerEngagementController.php":
         "app/Http/Controllers/Admin/AmCustomerEngagementController.php",
     "resources/views/admin/engagement/index.blade.php":
