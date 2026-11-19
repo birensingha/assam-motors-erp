@@ -21,6 +21,12 @@ assert "am.customer-messaging.message" in messages
 assert "public function feedbackTargets(" in controller
 assert "public function resolve(" in contract
 assert "$source->resolve(" in controller
+assert "($context['vehicle_id']??0)===$vehicleId" in controller
+assert "($context['job_card_id']??0)===$jobCardId" in controller
+assert "vehicle_id:int|null" in contract
+assert "job_card_id:int|null" in contract
+assert "is_finite((float)$raw)" in controller
+assert "Ledger amount out of range" in controller
 assert "'customer_name'=>['required'" not in controller
 assert "->name('targets')" in routes
 assert "complaint_status" in feedback
