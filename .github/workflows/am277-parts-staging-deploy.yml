@@ -55,7 +55,7 @@ jobs:
             SCP=(sshpass -e scp -o ConnectTimeout=14 -P "$PORT")
           fi
           "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM276_AUDIT"'
-          "${SCP[@]}" deployment/live-fixes/AM277_PARTS_PICKER/audit.sh  "$REMOTE:~/AM276_AUDIT/"
+          "${SCP[@]}" deployment/live-fixes/AM277_PARTS_PICKER/DEPLOY_STAGING.sh deployment/live-fixes/AM277_PARTS_PICKER/apply.py "$REMOTE:~/AM276_AUDIT/"
           "${SSH[@]}" "$REMOTE" "bash ~/AM276_AUDIT/DEPLOY_STAGING.sh '$ROOT'"
       - if: always()
         run: rm -f ~/.ssh/id_ed25519
