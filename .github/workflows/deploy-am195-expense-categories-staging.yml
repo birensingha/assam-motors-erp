@@ -64,7 +64,7 @@ jobs:
             SCP=(sshpass -e scp -o ConnectTimeout=14 -P "$PORT")
           fi
           "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM195_DEPLOY"'
-          "${SCP[@]}" deployment/live-fixes/AM195_EXPENSE_CATEGORY_MASTER/* "$REMOTE:~/AM195_DEPLOY/"
+          "${SCP[@]}" deployment/live-fixes/AM195_EXPENSE_CATEGORY_MASTER/apply.py deployment/live-fixes/AM195_EXPENSE_CATEGORY_MASTER/DEPLOY_STAGING.sh deployment/live-fixes/AM195_EXPENSE_CATEGORY_MASTER/ExpenseCategoryMasterController.php deployment/live-fixes/AM195_EXPENSE_CATEGORY_MASTER/category-master.blade.php deployment/live-fixes/AM195_EXPENSE_CATEGORY_MASTER/2026_11_18_190000_am195_expense_category_master.php "$REMOTE:~/AM195_DEPLOY/"
           "${SSH[@]}" "$REMOTE" "bash ~/AM195_DEPLOY/DEPLOY_STAGING.sh '$ROOT'"
       - name: Clear transient key
         if: always()
