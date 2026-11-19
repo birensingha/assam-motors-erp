@@ -38,11 +38,11 @@ after='''<style>
 <script id="am276-dependent-vehicle-catalog">
 (function(){
 'use strict';
-const records=@json($vehicleCatalog->map(fn($r)=>[
-  'make'=>(string)($r->make_name??''),'model'=>(string)($r->model_name??''),
-  'variant'=>(string)($r->variant_name??''),'fuel'=>(string)($r->fuel_type??''),
-  'yearFrom'=>(int)($r->year_from??0),'yearTo'=>(int)($r->year_to??0)
-])->values());
+const records=(@json($vehicleCatalog)).map(r=>({
+  make:r.make_name||'',model:r.model_name||'',
+  variant:r.variant_name||'',fuel:r.fuel_type||'',
+  yearFrom:Number(r.year_from||0),yearTo:Number(r.year_to||0)
+}));
 const norm=s=>String(s||'').trim().toLocaleLowerCase();
 const unique=(items)=>[...new Set(items.filter(Boolean))].sort((a,b)=>a.localeCompare(b));
 const formSelector='.am-modal form';
