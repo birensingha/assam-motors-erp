@@ -6,7 +6,9 @@ return new class extends Migration {
     public function up(): void {
         Schema::create('am_customer_feedback', function(Blueprint $t) {
             $t->id(); $t->unsignedBigInteger('customer_id')->nullable()->index();
-            $t->string('customer_name',160); $t->string('vehicle',32)->nullable();
+            $t->string('customer_name',160); $t->unsignedBigInteger('vehicle_id')->nullable()->index();
+            $t->unsignedBigInteger('job_card_id')->nullable()->index();
+            $t->string('vehicle',32)->nullable();
             $t->string('job_card_ref',64)->nullable(); $t->unsignedTinyInteger('rating');
             $t->text('comment'); $t->string('source',32)->default('internal');
             $t->unsignedBigInteger('created_by')->nullable()->index();
