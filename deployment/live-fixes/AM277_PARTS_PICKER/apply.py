@@ -105,8 +105,10 @@ with tempfile.TemporaryDirectory(prefix='am277_preflight_') as folder:
   if out.returncode:raise SystemExit('AM277_STOP_PHP_LINT_'+k+out.stderr[-300:])
  for k in ('purchase_create_js','purchase_edit_js'):
   p=t/(k+'.js');p.write_text(data[k])
-  out=subprocess.run(['node','--check',str(p)],cwd=root,capture_output=True,text=True,timeout=30)
-  if out.returncode:raise SystemExit('AM277_STOP_JS_LINT_'+k+out.stderr[-300:])
+  if shutil.which('node'):
+   out=subprocess.run(['node','--check',str(p)],cwd=root,capture_output=True,text=True,timeout=30)
+   if out.returncode:raise SystemExit('AM277_STOP_JS_LINT_'+k+out.stderr[-300:])
+  else:print('AM277_NODE_LINT_NOT_AVAILABLE_ON_HOST_'+k)
  for k in ('estimate_view','counter_view'):
   p=t/(k+'.blade.php');p.write_text(data[k])
   compiled=t/(k+'.compiled.php')
