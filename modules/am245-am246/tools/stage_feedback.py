@@ -163,8 +163,14 @@ def rollback(root, manifest):
     if not isinstance(records, list):
         raise ValueError("Invalid created-file manifest")
     targets = []
+    seen = set()
     for record in records:
+        if not isinstance(record, dict):
+            raise ValueError("Invalid manifest record; refusing rollback")
         rel = record.get("path", "")
+        if not isinstance(rel, str) or rel in seen:
+            raise ValueError("Duplicate or invalid manifest path; refusing rollback")
+        seen.add(rel)
         if rel not in (set(COPY_MAP.values()) | set(FEEDBACK_COPY_MAP.values())):
             raise ValueError("Unexpected manifest path, refusing deletion")
         target = safe_target(root, rel)
