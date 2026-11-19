@@ -100,3 +100,6 @@ The AM245 feedback save endpoint now rejects an adapter result that returns a ve
 ### AM245 register/export request hardening (2026-11-19)
 
 Both `index()` and `exportCsv()` now validate query-string filters server-side before invoking the shared query builder: `q` must be a scalar string no longer than 80 characters, `rating` must be 1–5, and `complaint_status` must be open/resolved/none (or omitted). Invalid array-valued and excessively long `q` inputs no longer reach a wildcard SQL search or cause string-conversion errors. The static regression check asserts validation exists on **both** endpoints. This is code-level hardening only, not authenticated staging verification.
+
+### Literal feedback search hardening (2026-11-19)
+AM245 register and filtered CSV export now escape user-supplied SQL LIKE wildcards (`%`, `_`, and backslash) before building the parameter-bound search pattern. Typing a literal percent/underscore no longer unintentionally matches arbitrary customer, vehicle or Job Card text. The 80-character request validation and the 5,000-row export limit remain in place. Static regression checks guard the shared search path. Actual MariaDB/Laravel end-to-end testing is still required on the deployed schema; this does not change staging deployment status.
