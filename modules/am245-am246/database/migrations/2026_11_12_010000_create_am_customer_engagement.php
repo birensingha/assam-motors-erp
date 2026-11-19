@@ -15,7 +15,19 @@ return new class extends Migration {
             $t->id(); $t->foreignId('feedback_id')->constrained('am_customer_feedback');
             $t->unique('feedback_id'); // one complaint workflow per feedback; prevents concurrent duplicates
             $t->string('status',24)->default('open'); $t->text('resolution_note')->nullable();
-            $t->unsignedBigInteger('created_by')->nullable(); $t->timestamps();
+            $t->unsignedBigInteger('created_by')->nullable();
+            $t->unsignedBigInteger('resolved_by')->nullable();
+            $t->timestamp('resolved_at')->nullable();
+            $t->timestamps();
+        });
+        Schema::create('am_customer_complaint_history',function(Blueprint $t) {
+            $t->id();
+            $t->foreignId('complaint_id')->constrained('am_customer_complaints');
+            $t->string('action',24);
+            $t->unsignedBigInteger('actor_id');
+            $t->text('note')->nullable();
+            $t->timestamps();
+            $t->index(['complaint_id','created_at']);
         });
         Schema::create('am_customer_message_log',function(Blueprint $t) {
             $t->id(); $t->unsignedBigInteger('customer_id')->index();
@@ -27,6 +39,7 @@ return new class extends Migration {
     }
     public function down(): void {
         Schema::dropIfExists('am_customer_message_log');
+        Schema::dropIfExists('am_customer_complaint_history');
         Schema::dropIfExists('am_customer_complaints');
         Schema::dropIfExists('am_customer_feedback');
     }
