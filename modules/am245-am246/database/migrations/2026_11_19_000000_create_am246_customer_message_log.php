@@ -16,6 +16,9 @@ return new class extends Migration {
             $t->text('message');
             $t->string('status',64)->default('whatsapp_opened_not_sent');
             $t->unsignedBigInteger('actor_id')->nullable();
+            // Operator attestation only; NOT evidence of customer opt-in.
+            $t->timestamp('permission_attested_at')->nullable();
+            $t->string('permission_attestation',120)->nullable();
             $t->timestamps();
         });
     }
