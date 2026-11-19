@@ -10,7 +10,7 @@ input,select,textarea{width:100%;font:inherit;border:1px solid #cdd6e2;border-ra
 button{background:#1264a3;color:white;border:0;border-radius:8px;padding:10px 15px;cursor:pointer}
 button.alt{background:#e8eff6;color:#1a3754}label{font-size:13px;font-weight:650}table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:10px;text-align:left;border-bottom:1px solid #e7ebf0;vertical-align:top}
 .note{font-size:12px;color:#62748a}.success{padding:12px;background:#e3f7ed;border-radius:8px}.warning{padding:12px;background:#fff4db;border-radius:8px}
-summary{cursor:pointer;font-weight:650} .scroll{overflow:auto} .pill{padding:3px 7px;background:#eff4f9;border-radius:7px}
+[hidden]{display:none!important}.picklist{border:1px solid #cdd6e2;border-radius:10px;padding:6px;margin:-6px 0 12px;max-height:240px;overflow:auto;background:white;box-shadow:0 6px 18px #122a4b16}.picklist button{display:block;width:100%;text-align:left;background:#f5f8fc;color:#18233b;margin-bottom:4px}.picklist button:hover,.picklist button:focus{background:#dae9f7}summary{cursor:pointer;font-weight:650} .scroll{overflow:auto} .pill{padding:3px 7px;background:#eff4f9;border-radius:7px}
 </style></head><body>
 <header><strong>ASSAM MOTORS</strong> <small> / ERP Admin / Customer / Reviews & Feedback</small></header>
 <main><h1>Customer Reviews & Feedback</h1>
@@ -19,11 +19,15 @@ summary{cursor:pointer;font-weight:650} .scroll{overflow:auto} .pill{padding:3px
 @if($errors->any())<div class="warning"><strong>Please correct:</strong><ul>@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
 <div class="grid">
 <section class="card"><h2>Record Workshop Feedback</h2>
-<form method="post" action="{{route('am.customer-engagement.feedback')}}">@csrf
-<label>ERP Customer ID (optional pending customer mapping)</label><input type="number" name="customer_id" min="1">
-<label>Customer Name</label><input name="customer_name" maxlength="160" required>
-<label>Vehicle Number</label><input name="vehicle" maxlength="32">
-<label>Job Card Reference</label><input name="job_card_ref" maxlength="64">
+<form id="feedback-entry-form" method="post" action="{{route('am.customer-engagement.feedback')}}">@csrf
+<label for="feedback-target-search">Customer / Vehicle / Job Card</label>
+<input id="feedback-target-search" type="search" autocomplete="off" placeholder="Type customer name, vehicle no. or JC no." aria-controls="feedback-target-options" aria-expanded="false">
+<div id="feedback-target-options" role="listbox" class="picklist" hidden></div>
+<input id="feedback-customer-id" type="hidden" name="customer_id" value="">
+<input id="feedback-vehicle-id" type="hidden" name="vehicle_id" value="">
+<input id="feedback-job-card-id" type="hidden" name="job_card_id" value="">
+<p id="feedback-selection" class="note" role="status">Select a customer from ERP Master. Vehicle / Job Card optional where none exists.</p>
+<p id="feedback-selection-error" class="warning" hidden></p>
 <label>Rating</label><select name="rating" required>@foreach([5,4,3,2,1] as $n)<option value="{{$n}}">{{$n}} / 5</option>@endforeach</select>
 <label>Feedback</label><textarea name="comment" maxlength="3000" required></textarea>
 <button>Save Feedback</button></form></section>
@@ -46,4 +50,97 @@ summary{cursor:pointer;font-weight:650} .scroll{overflow:auto} .pill{padding:3px
 @else {{$c->resolution_note}} @endif</td></tr>@endforeach</table></div></section>
 
 </div>
-</main></body></html>
+</main>
+<script>
+(() => {
+  const form=document.getElementById('feedback-entry-form');
+  if(!form)return;
+  const search=document.getElementById('feedback-target-search');
+  const options=document.getElementById('feedback-target-options');
+  const selected=document.getElementById('feedback-selection');
+  const error=document.getElementById('feedback-selection-error');
+  const customerId=document.getElementById('feedback-customer-id');
+  const vehicleId=document.getElementById('feedback-vehicle-id');
+  const jobId=document.getElementById('feedback-job-card-id');
+  const endpoint=@json(route('am.customer-engagement.targets'));
+  let seq=0;
+  let controller=null;
+  let searchTimer=null;
+
+  const clearSelection=()=>{
+    customerId.value='';
+    vehicleId.value='';
+    jobId.value='';
+    selected.textContent='Select a customer from ERP Master.';
+    error.hidden=true;
+    error.textContent='';
+  };
+  const showOptions=visible=>{
+    options.hidden=!visible;
+    search.setAttribute('aria-expanded',visible?'true':'false');
+  };
+  search.addEventListener('input',()=>{
+    clearSelection();
+    options.replaceChildren();
+    showOptions(false);
+    const current=++seq;
+    if(searchTimer)clearTimeout(searchTimer);
+    if(controller)controller.abort();
+    const query=search.value.trim();
+    if(query.length<2)return;
+    searchTimer=setTimeout(async()=>{
+      controller=new AbortController();
+      try {
+        const url=new URL(endpoint,window.location.href);
+        url.searchParams.set('q',query);
+        const resp=await fetch(url.toString(),{
+          method:'GET',credentials:'same-origin',
+          headers:{Accept:'application/json'},
+          cache:'no-store',signal:controller.signal
+        });
+        if(!resp.ok)throw new Error('ERP customer lookup unavailable');
+        const data=await resp.json();
+        if(current!==seq)return;
+        options.replaceChildren();
+        const items=Array.isArray(data.targets)?data.targets:[];
+        if(!items.length){
+          options.textContent='No matching Customer, Vehicle or Job Card found.';
+        } else {
+          items.forEach(item=>{
+            if(!Number.isSafeInteger(Number(item.customer_id))||Number(item.customer_id)<1)return;
+            const btn=document.createElement('button');
+            btn.type='button';
+            btn.setAttribute('role','option');
+            const parts=[String(item.customer_name||''),String(item.vehicle||''),String(item.job_card_ref||'')].filter(Boolean);
+            btn.textContent=parts.join(' · ');
+            btn.addEventListener('click',()=>{
+              customerId.value=String(item.customer_id);
+              vehicleId.value=item.vehicle_id?String(item.vehicle_id):'';
+              jobId.value=item.job_card_id?String(item.job_card_id):'';
+              search.value=parts.join(' · ');
+              selected.textContent='Selected: '+parts.join(' · ');
+              error.hidden=true;
+              showOptions(false);
+              ++seq;
+            });
+            options.appendChild(btn);
+          });
+        }
+        showOptions(true);
+      } catch (ex) {
+        if(current!==seq||ex.name==='AbortError')return;
+        options.textContent='Unable to search ERP Customer Master. Please retry.';
+        showOptions(true);
+      }
+    },250);
+  });
+  form.addEventListener('submit',event=>{
+    if(!customerId.value){
+      event.preventDefault();
+      error.textContent='Choose an existing Customer from search results before saving feedback.';
+      error.hidden=false;
+      search.focus();
+    }
+  });
+})();
+</script></body></html>
