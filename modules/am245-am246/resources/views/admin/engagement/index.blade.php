@@ -8,7 +8,7 @@ h1{font-size:24px}h2{font-size:17px;margin-top:0}.grid{display:grid;grid-templat
 .card{background:white;border-radius:14px;border:1px solid #e0e6ee;padding:20px;box-shadow:0 2px 8px #1d2a3f0b}
 input,select,textarea{width:100%;font:inherit;border:1px solid #cdd6e2;border-radius:8px;padding:10px;margin:5px 0 12px}
 button{background:#1264a3;color:white;border:0;border-radius:8px;padding:10px 15px;cursor:pointer}
-button.alt{background:#e8eff6;color:#1a3754}label{font-size:13px;font-weight:650}table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:10px;text-align:left;border-bottom:1px solid #e7ebf0;vertical-align:top}
+button.alt{background:#e8eff6;color:#1a3754}.export-link{display:inline-block;text-decoration:none;padding:10px 14px;border-radius:8px;background:#e8eff6;color:#1a3754;margin:0 0 12px;font-size:13px;font-weight:650}label{font-size:13px;font-weight:650}table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:10px;text-align:left;border-bottom:1px solid #e7ebf0;vertical-align:top}
 .note{font-size:12px;color:#62748a}.success{padding:12px;background:#e3f7ed;border-radius:8px}.warning{padding:12px;background:#fff4db;border-radius:8px}
 .filters{display:grid;grid-template-columns:minmax(180px,2fr) repeat(2,minmax(120px,1fr)) auto;gap:10px;align-items:end}.filters label{display:block}.filters button{margin-bottom:12px}@media(max-width:680px){.filters{grid-template-columns:1fr}}[hidden]{display:none!important}.picklist{border:1px solid #cdd6e2;border-radius:10px;padding:6px;margin:-6px 0 12px;max-height:240px;overflow:auto;background:white;box-shadow:0 6px 18px #122a4b16}.picklist button{display:block;width:100%;text-align:left;background:#f5f8fc;color:#18233b;margin-bottom:4px}.picklist button:hover,.picklist button:focus{background:#dae9f7}summary{cursor:pointer;font-weight:650} .scroll{overflow:auto} .pill{padding:3px 7px;background:#eff4f9;border-radius:7px}
 </style></head><body>
@@ -39,6 +39,8 @@ button.alt{background:#e8eff6;color:#1a3754}label{font-size:13px;font-weight:650
 
 </div>
 <section class="card" style="margin-top:16px"><h2>Customer Feedback Register</h2>
+<p class="note">Download up to the newest 5,000 matching feedback records. Admin access only; no financial data.</p>
+<a class="export-link" href="{{ route('am.customer-engagement.export', request()->only(['q','rating','complaint_status'])) }}">Export Filtered CSV</a>
 <form method="get" class="filters" role="search">
   <label>Customer / Vehicle / JC
     <input name="q" placeholder="Search name, vehicle or Job Card" value="{{request('q')}}" maxlength="80">
