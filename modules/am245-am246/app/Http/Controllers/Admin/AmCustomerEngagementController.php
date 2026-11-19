@@ -126,14 +126,32 @@ class AmCustomerEngagementController extends Controller
         $results=$source->search($q,15);
         $items=[];
         foreach(array_slice($results,0,15) as $r) {
-            if(!is_array($r) || (int)($r['customer_id']??0)<1) continue;
+            if(!is_array($r)) continue;
+            $customerId=(int)($r['customer_id']??0);
+            $vehicleId=!empty($r['vehicle_id'])?(int)$r['vehicle_id']:null;
+            $jobCardId=!empty($r['job_card_id'])?(int)$r['job_card_id']:null;
+            if($customerId<1 || ($vehicleId!==null && $vehicleId<1)
+                || ($jobCardId!==null && $jobCardId<1)) continue;
+            // Do not expose an adapter's unverified search labels or associations.
+            // Re-resolve each bounded candidate using the same canonical scope
+            // validation required when saving the feedback.
+            $context=$source->resolve($customerId,$vehicleId,$jobCardId);
+            if(!is_array($context)
+                || (int)($context['customer_id']??0)!==$customerId
+                || trim((string)($context['customer_name']??''))===''
+                || ($vehicleId===null
+                    ? ($context['vehicle_id']??null)!==null
+                    : (int)($context['vehicle_id']??0)!==$vehicleId)
+                || ($jobCardId===null
+                    ? ($context['job_card_id']??null)!==null
+                    : (int)($context['job_card_id']??0)!==$jobCardId)) continue;
             $items[]=[
-                'customer_id'=>(int)$r['customer_id'],
-                'customer_name'=>(string)($r['customer_name']??''),
-                'vehicle_id'=>!empty($r['vehicle_id'])?(int)$r['vehicle_id']:null,
-                'vehicle'=>(string)($r['vehicle']??''),
-                'job_card_id'=>!empty($r['job_card_id'])?(int)$r['job_card_id']:null,
-                'job_card_ref'=>(string)($r['job_card_ref']??''),
+                'customer_id'=>$customerId,
+                'customer_name'=>(string)$context['customer_name'],
+                'vehicle_id'=>$vehicleId,
+                'vehicle'=>(string)($context['vehicle']??''),
+                'job_card_id'=>$jobCardId,
+                'job_card_ref'=>(string)($context['job_card_ref']??''),
             ];
         }
         return response()->json(['targets'=>$items])
