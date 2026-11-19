@@ -158,6 +158,8 @@ class AmCustomerEngagementController extends Controller
         );
         DB::table('am_customer_feedback')->insert([
             'customer_id'=>$customerId,
+            'vehicle_id'=>$vehicleId,
+            'job_card_id'=>$jobCardId,
             'customer_name'=>mb_substr((string)$context['customer_name'],0,160),
             'vehicle'=>mb_substr((string)($context['vehicle']??''),0,32) ?: null,
             'job_card_ref'=>mb_substr((string)($context['job_card_ref']??''),0,64) ?: null,
