@@ -17,7 +17,7 @@ async function run() {
     '<table><tbody id="estimate-lines"></tbody></table>' +
     '<output id="estimate-preview-total"></output>' +
     '</body></html>',
-    {runScripts:'dangerously', url:'https://staging.assammotors.com/erp/job-cards/62/estimate'}
+    {runScripts:'dangerously', pretendToBeVisual:true, url:'https://staging.assammotors.com/erp/job-cards/62/estimate'}
   );
   const w=dom.window;
   w.AM_ESTIMATE_DATA={
