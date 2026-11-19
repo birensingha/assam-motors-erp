@@ -21,7 +21,8 @@ rollback(){
      "estimate_view:resources/views/estimates/create.blade.php" \
      "estimate_js:public/js/estimate-entry.js" \
      "counter_controller:app/Http/Controllers/Web/CounterPartsInvoiceController.php" \
-     "counter_view:resources/views/counter-sales/create.blade.php"
+     "counter_view:resources/views/counter-sales/create.blade.php" \
+     "jobcard_view:resources/views/job-cards/show.blade.php"
    do
     key="$(printf '%s' "$row" | cut -d: -f1)"
     rel="$(printf '%s' "$row" | cut -d: -f2-)"
@@ -42,6 +43,7 @@ grep -q am277-part-vehicle public/js/purchase-entry.js
 grep -q am277-part-vehicle public/js/purchase-edit.js
 grep -q am277-part-vehicle public/js/estimate-entry.js
 grep -q am277-counter-parts-context resources/views/counter-sales/create.blade.php
+grep -q am277-part-vehicle resources/views/job-cards/show.blade.php
 php -r '
 require "vendor/autoload.php";$app=require "bootstrap/app.php";
 $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
