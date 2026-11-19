@@ -43,11 +43,17 @@ class AmCustomerEngagementController extends Controller
             ->select('am_customer_feedback.*','fc.status as complaint_status')
             ->orderByDesc('am_customer_feedback.id');
         $search = trim((string)$request->query('q',''));
-        if ($search !== '') $query->where(function($q) use ($search) {
-            $q->where('customer_name','like','%'.$search.'%')
-              ->orWhere('vehicle','like','%'.$search.'%')
-              ->orWhere('job_card_ref','like','%'.$search.'%');
-        });
+        if ($search !== '') {
+            // Treat typed %, _ and backslash as literal characters, not SQL LIKE
+            // wildcards. Use one bounded, parameter-bound pattern for both views.
+            $escaped = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $search);
+            $pattern = '%'.$escaped.'%';
+            $query->where(function($q) use ($pattern) {
+                $q->where('am_customer_feedback.customer_name','like',$pattern)
+                  ->orWhere('am_customer_feedback.vehicle','like',$pattern)
+                  ->orWhere('am_customer_feedback.job_card_ref','like',$pattern);
+            });
+        }
         $rating=(string)$request->query('rating','');
         if(in_array($rating,['1','2','3','4','5'],true)) {
             $query->where('am_customer_feedback.rating',(int)$rating);
