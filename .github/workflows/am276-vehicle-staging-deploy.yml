@@ -1,4 +1,5 @@
 name: AM276 Vehicle Cascading Variant Deploy
+# Revalidate staging after guarded rollout is available on main
 on:
   pull_request:
     paths:
