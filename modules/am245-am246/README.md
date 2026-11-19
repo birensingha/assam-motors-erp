@@ -65,3 +65,11 @@ The `AM245 Customer Feedback Module Checks` GitHub Actions workflow packages `mo
 - Each feedback records the authenticated actor's `created_by` ID in the migration's newly created feedback table (if that migration has **not yet** been run). If integrating into an ERP where the migration was previously applied, create and review a safe additive migration rather than rerunning a modified migration.
 - CSV export includes date/customer/vehicle/JC/rating/feedback/complaint state/reply draft/actor ID but **no outstanding balance, payment information or WhatsApp details**. User-submitted string cells pass the formula-injection guard in `App\\Support\\AmFeedbackCsv`, covered by PHP unit tests.
 - Activation still requires verified Laravel model adapters, Owner/Admin gate bindings, route/sidebar insertion, backup, migration and authenticated staging E2E tests. The tests/ZIP from GitHub Actions are **not** a deployed installation.
+
+### Canonical ID and balance guardrails (2026-11-19)
+
+The source adapter `AmFeedbackCustomerSource::resolve()` must now return **customer_id, vehicle_id, job_card_id** and canonical labels, and validate the requested customer/vehicle/job-card association against the real deployed ERP and company scope. The feedback POST checks every non-null submitted ID against the adapter's returned canonical IDs before inserting feedback. A stale or faulty adapter that returns only labels can no longer silently attach feedback to a different vehicle or Job Card. This is a deliberate interface requirement; update the actual deployed adapter before activation.
+
+The AM246 message preview rejects non-finite or out-of-range numeric outstanding balances, rather than generating misleading WhatsApp messages or failing on DB decimal overflow. AM246 still only opens WhatsApp; no automatic message delivery is claimed.
+
+These are code-level guardrails, **not a replacement for end-to-end tests with the real Hostinger source, database, staff permissions and Customer/Vehicle/JC mappings**.
