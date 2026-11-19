@@ -30,3 +30,15 @@ Automatic messaging requires business credentials, opt-in, approved templates an
 - All ledger, customer and mobile values stay on the server during message construction. A typed browser customer name is not trusted to establish customer identity.
 - Confirm zero, credit, invoice, credit-note, advance and on-account balances against the existing ledger; verify no staff, HR, unauthenticated or cross-company lookup; verify no WhatsApp delivery acknowledgement is fabricated.
 - Pending mandatory stages: implemented adapter binding, staging PHP/Blade validation, actual sidebar insertion, database migration, customer opt-in audit, end-to-end browser testing.
+
+## AM245 Feedback Customer/Vehicle/Job Card linking (Nov 19)
+- Feedback creation now uses a search box, not manually entered Customer ID, name, vehicle number or Job Card reference.
+- Protected GET `am.customer-engagement.targets` returns only IDs, customer name, vehicle plate and job reference for valid records; rate limited at 30/minute.
+- New read-only `App\\Contracts\\AmFeedbackCustomerSource` interface:
+  - `search(string $query, int $limit = 15): array` finds customer by name/vehicle/JC in current ERP company.
+  - `resolve(int $customerId, ?int $vehicleId, ?int $jobCardId): ?array` **must verify** that selected vehicle/JC belong to that customer and current company.
+- Backend discards browser-entered labels and saves verified canonical name/vehicle/JC from `resolve()` only; rating 1–5 and comment remain validated.
+- Customer Feedback contains no outstanding, payments or WhatsApp message forms; those stay in a separate permission-protected page.
+- Before deployment, bind this interface in the actual Laravel app's service provider to a concrete existing Customer/Vehicle/Job Card repository and insert proper route/sidebar links using the real deployed code.
+- This standalone source-contract is **not yet bound** to the Hostinger Laravel models. Never enable route in live staging until this is done, or saving feedback will fail.
+- Draft PR checks: PHP syntax, static feedback separation and client JS syntax. End-to-end Customer Master/JC relational and Admin permission tests are still required.
