@@ -51,4 +51,18 @@ assert "'created_by'=>(int)$request->user()->id" in controller
 assert "limit(5000)" in controller
 assert "throttle:10,1" in routes
 assert "'can:view-customer-ledger'" in routes
+feedback_only_routes = (root / "feedback-only-routes.php").read_text()
+feedback_only_menu = (root / "resources/views/admin/engagement/feedback-only-sidebar.blade.php").read_text()
+whatsapp_migration = (root / "database/migrations/2026_11_19_000000_create_am246_customer_message_log.php").read_text()
+stage_tool = (root / "tools/stage_feedback.py").read_text()
+assert "am_customer_message_log" not in migration
+assert "am_customer_message_log" in whatsapp_migration
+assert "am.customer-engagement." in feedback_only_routes
+assert "am.customer-messaging." not in feedback_only_routes
+assert "can:view-customer-ledger" not in feedback_only_routes
+assert "can:manage-customer-engagement" in feedback_only_routes
+assert "am.customer-messaging." not in feedback_only_menu
+assert "route('am.customer-engagement.index')" in feedback_only_menu
+assert 'default="feedback"' in stage_tool
+assert "FEEDBACK_COPY_MAP" in stage_tool
 print("AM245 static feedback/financial-separation and source validation checks PASSED")
