@@ -32,14 +32,13 @@ while i<len(original) and depth:
     i+=1
 if depth:raise SystemExit('AM195_STOP_CATEGORY_METHOD_MALFORMED')
 body=original[start:i-1]
-match=re.search(r'return\s+(\[[^;]+\]);',body,re.S)
-if not match:raise SystemExit('AM195_STOP_CATEGORY_LIST_UNRECOGNISED')
-old_categories=match.group(1)
-newbody=""" // AM195_EXPENSE_CATEGORY_MASTER - active master categories and legacy defaults
-        $legacy = """+old_categories+""";
+newbody=""" // AM195_EXPENSE_CATEGORY_MASTER - preserve original category method, add active custom codes
+        $legacy = (function () {
+"""+body+"""
+        })();
         $custom = \\Illuminate\\Support\\Facades\\DB::table('workshop_expense_categories')
             ->where('is_active',true)->orderBy('name')->pluck('code')->all();
-        return array_values(array_unique(array_merge($legacy,$custom)));
+        return array_values(array_unique(array_merge((array)$legacy,$custom)));
     """
 patched=original[:start]+newbody+original[i-1:]
 anchor="    Route::post('/expenses/{expense}/void',"
