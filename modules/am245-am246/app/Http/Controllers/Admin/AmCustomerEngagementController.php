@@ -22,9 +22,30 @@ class AmCustomerEngagementController extends Controller
               ->orWhere('vehicle','like','%'.$search.'%')
               ->orWhere('job_card_ref','like','%'.$search.'%');
         });
+        $rating=(string)$request->query('rating','');
+        if(in_array($rating,['1','2','3','4','5'],true)) {
+            $query->where('am_customer_feedback.rating',(int)$rating);
+        }
+        $complaintStatus=(string)$request->query('complaint_status','');
+        if(in_array($complaintStatus,['open','resolved'],true)) {
+            $query->where('fc.status',$complaintStatus);
+        } elseif($complaintStatus==='none') {
+            $query->whereNull('fc.id');
+        }
+
+        $summary=DB::table('am_customer_feedback')
+            ->selectRaw('COUNT(*) as total, AVG(rating) as average')->first();
         return view('admin.engagement.index', [
             'feedback' => $query->paginate(20)->withQueryString(),
             'complaints' => DB::table('am_customer_complaints')->orderByDesc('id')->limit(30)->get(),
+            'complaintHistory' => DB::table('am_customer_complaint_history as h')
+                ->join('am_customer_complaints as c','c.id','=','h.complaint_id')
+                ->select('h.*','c.feedback_id')
+                ->orderByDesc('h.id')->limit(30)->get(),
+            'feedbackCount' => (int)($summary->total ?? 0),
+            'averageRating' => $summary && $summary->average !== null
+                ? round((float)$summary->average,2) : null,
+            'openComplaintCount' => DB::table('am_customer_complaints')->where('status','open')->count(),
         ]);
     }
 
@@ -118,22 +139,43 @@ class AmCustomerEngagementController extends Controller
             'action'=>['required',Rule::in(['open','resolve'])],
             'resolution_note'=>['nullable','string','max:2000'],
         ]);
-        DB::transaction(function() use ($v,$request) {
-            $existing=DB::table('am_customer_complaints')->where('feedback_id',$v['feedback_id'])->lockForUpdate()->first();
-            if ($v['action']==='open' && !$existing) {
-                DB::table('am_customer_complaints')->insertOrIgnore([
+        $message=DB::transaction(function() use ($v,$request) {
+            $existing=DB::table('am_customer_complaints')
+                ->where('feedback_id',$v['feedback_id'])->lockForUpdate()->first();
+            $actorId=(int)$request->user()->id;
+            if ($v['action']==='open') {
+                if($existing) return 'Complaint already exists; no duplicate created';
+                // Unique feedback_id constraint protects concurrent requests.
+                $inserted=DB::table('am_customer_complaints')->insertOrIgnore([
                     'feedback_id'=>$v['feedback_id'],'status'=>'open',
-                    'created_by'=>$request->user()->id,'created_at'=>now(),'updated_at'=>now()
+                    'created_by'=>$actorId,'created_at'=>now(),'updated_at'=>now()
                 ]);
-            } elseif ($v['action']==='resolve') {
-                abort_unless($existing,404);
-                abort_unless(strlen(trim($v['resolution_note']??''))>0,422,'Resolution note required');
-                DB::table('am_customer_complaints')->where('id',$existing->id)->update([
-                    'status'=>'resolved','resolution_note'=>$v['resolution_note'],'updated_at'=>now()
+                if($inserted!==1) return 'Complaint already exists; no duplicate created';
+                $complaintId=DB::table('am_customer_complaints')
+                    ->where('feedback_id',$v['feedback_id'])->value('id');
+                DB::table('am_customer_complaint_history')->insert([
+                    'complaint_id'=>$complaintId,'action'=>'opened','actor_id'=>$actorId,
+                    'note'=>null,'created_at'=>now(),'updated_at'=>now()
                 ]);
+                return 'Complaint opened';
             }
+
+            abort_unless($existing,404,'Complaint not found');
+            $note=trim((string)($v['resolution_note']??''));
+            abort_unless($note!=='',422,'Resolution note required');
+            $updated=DB::table('am_customer_complaints')
+                ->where('id',$existing->id)->where('status','open')->update([
+                    'status'=>'resolved','resolution_note'=>$note,
+                    'resolved_by'=>$actorId,'resolved_at'=>now(),'updated_at'=>now()
+                ]);
+            abort_unless($updated===1,409,'Complaint has already been resolved');
+            DB::table('am_customer_complaint_history')->insert([
+                'complaint_id'=>$existing->id,'action'=>'resolved','actor_id'=>$actorId,
+                'note'=>$note,'created_at'=>now(),'updated_at'=>now()
+            ]);
+            return 'Complaint resolved and audited';
         });
-        return back()->with('success','Complaint updated');
+        return back()->with('success',$message);
     }
 
     public function message(Request $request, AmEngagementLedger $ledger)
