@@ -1,0 +1,93 @@
+name: AM259 Estimate Type-Reference Tab Focus — STAGING
+on:
+  push:
+    branches: [fix/am259-estimate-type-tab-reference-focus-20261119]
+    paths:
+      - .github/workflows/deploy-am259-estimate-type-tab-staging.yml
+      - deployment/live-fixes/AM259_ESTIMATE_TYPE_TAB_FOCUS/**
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy-and-keyboard-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate patch and keyboard test syntax
+        run: |
+          set -euo pipefail
+          P=deployment/live-fixes/AM259_ESTIMATE_TYPE_TAB_FOCUS
+          python3 -m py_compile "$P/install.py"
+          node --check "$P/keyboard-smoke.cjs"
+          echo AM259_GITHUB_PACKAGE_PREFLIGHT_PASS
+      - name: Configure Hostinger SSH
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$USERNAME" && test -n "$PORT"
+          test -n "$SSH_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4 5 6; do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then break; fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$SSH_KEY" ]; then
+            printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Source anchored read-only check and safe STAGING JS focus correction
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"
+          test "$(basename "$APP")" = "assam-erp-staging"
+          test -f "$APP/artisan"
+          cd "$HOME/assam-motors-deploy"
+          git fetch origin fix/am259-estimate-type-tab-reference-focus-20261119
+          PATCH_DIR="$(mktemp -d)"
+          git archive FETCH_HEAD deployment/live-fixes/AM259_ESTIMATE_TYPE_TAB_FOCUS | tar -x -C "$PATCH_DIR"
+          SCRIPT="$PATCH_DIR/deployment/live-fixes/AM259_ESTIMATE_TYPE_TAB_FOCUS/install.py"
+          if grep -Fq AM259_TYPE_TAB_REFERENCE_FOCUS "$APP/public/js/estimate-entry.js"; then
+            echo AM259_ALREADY_PRESENT_VERIFY_ONLY
+          else
+            python3 "$SCRIPT" check "$APP"
+            python3 "$SCRIPT" apply "$APP"
+          fi
+          python3 "$SCRIPT" verify "$APP"
+          echo AM259_ESTIMATE_TYPE_TAB_REFERENCE_STAGING_SOURCE_VERIFIED
+          REMOTE
+      - name: Test actual deployed script with browser-like Tab keyboard events
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" "cat '$ROOT/public/js/estimate-entry.js'" > "$RUNNER_TEMP/am259-estimate-live.js"
+          node --check "$RUNNER_TEMP/am259-estimate-live.js"
+          npm install --no-save --no-audit --no-fund jsdom@26 @testing-library/user-event@14
+          node deployment/live-fixes/AM259_ESTIMATE_TYPE_TAB_FOCUS/keyboard-smoke.cjs "$RUNNER_TEMP/am259-estimate-live.js"
+          echo AM259_DEPLOYED_ESTIMATE_TYPE_TAB_REFERENCE_JS_REGRESSION_PASS
+      - name: Remove SSH credentials and temporary JavaScript
+        if: always()
+        run: |
+          rm -f ~/.ssh/id_ed25519 "$RUNNER_TEMP/am259-estimate-live.js"
