@@ -152,8 +152,12 @@ class AmCustomerEngagementController extends Controller
             is_array($context)
             && (int)($context['customer_id']??0)===$customerId
             && trim((string)($context['customer_name']??''))!==''
-            && ($vehicleId === null || (int)($context['vehicle_id']??0)===$vehicleId)
-            && ($jobCardId === null || (int)($context['job_card_id']??0)===$jobCardId),
+            && ($vehicleId === null
+                ? ($context['vehicle_id']??null) === null
+                : (int)($context['vehicle_id']??0)===$vehicleId)
+            && ($jobCardId === null
+                ? ($context['job_card_id']??null) === null
+                : (int)($context['job_card_id']??0)===$jobCardId),
             422,'Customer, vehicle or Job Card could not be verified'
         );
         DB::table('am_customer_feedback')->insert([
