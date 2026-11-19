@@ -19,6 +19,18 @@ assert "feedback-job-card-id" in feedback
 assert "am.customer-messaging.message" not in feedback
 assert "am.customer-messaging.message" in messages
 assert "public function feedbackTargets(" in controller
+# Suggestions are also canonicalized: unverified adapter search labels must
+# never be returned directly to the browser, even before a save attempt.
+suggestions = controller.split("public function feedbackTargets(", 1)[1].split("public function feedback(", 1)[0]
+assert "$source->resolve($customerId,$vehicleId,$jobCardId)" in suggestions
+assert "array_slice($results,0,15)" in suggestions
+assert "($context['vehicle_id']??null)!==null" in suggestions
+assert "($context['job_card_id']??null)!==null" in suggestions
+assert "'customer_name'=>(string)$context['customer_name']" in suggestions
+assert "'vehicle'=>(string)($context['vehicle']??'')" in suggestions
+assert "'job_card_ref'=>(string)($context['job_card_ref']??'')" in suggestions
+assert "'customer_name'=>(string)($r['customer_name']??'')" not in suggestions
+
 assert "public function resolve(" in contract
 assert "$source->resolve(" in controller
 assert "($context['vehicle_id']??0)===$vehicleId" in controller
