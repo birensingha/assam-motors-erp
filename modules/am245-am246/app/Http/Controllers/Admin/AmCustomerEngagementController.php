@@ -151,7 +151,9 @@ class AmCustomerEngagementController extends Controller
         abort_unless(
             is_array($context)
             && (int)($context['customer_id']??0)===$customerId
-            && trim((string)($context['customer_name']??''))!=='',
+            && trim((string)($context['customer_name']??''))!==''
+            && ($vehicleId === null || (int)($context['vehicle_id']??0)===$vehicleId)
+            && ($jobCardId === null || (int)($context['job_card_id']??0)===$jobCardId),
             422,'Customer, vehicle or Job Card could not be verified'
         );
         DB::table('am_customer_feedback')->insert([
@@ -242,8 +244,9 @@ class AmCustomerEngagementController extends Controller
         } else {
             // Never derive the amount from a request parameter; query canonical ledger on each send attempt.
             $raw=$ledger->outstanding((int)$v['customer_id']);
-            abort_unless(is_numeric($raw),422,'Unverified ledger amount');
+            abort_unless(is_numeric($raw) && is_finite((float)$raw),422,'Unverified ledger amount');
             $amount=round((float)$raw,2);
+            abort_unless(abs($amount)<=999999999999.99,422,'Ledger amount out of range');
             $formatted=number_format(abs($amount),2,'.',',');
             if ($amount<0) $message="Dear {$name}, your Assam Motors account has a credit balance of INR {$formatted}. Please contact us for details.";
             elseif ($amount==0) $message="Dear {$name}, your Assam Motors account currently has no outstanding balance. Thank you.";
