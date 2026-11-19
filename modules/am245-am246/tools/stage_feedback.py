@@ -117,14 +117,17 @@ def write_atomic(target, data):
         with os.fdopen(fd, "wb") as output:
             output.write(data)
         os.chmod(name, 0o640)
-        os.replace(name, target)
+        # Atomic create-if-absent: unlike os.replace(), hard-linking the
+        # complete temporary file refuses to overwrite a target created
+        # after mapped_files() checked it (TOCTOU protection).
+        os.link(name, target)
     finally:
         if os.path.exists(name):
             os.unlink(name)
 
 
 def stage(root, entries, manifest):
-    if manifest.exists():
+    if manifest.exists() or manifest.is_symlink():
         raise ValueError("Existing AM245 staging manifest; rollback/review first")
     if any(status == "CONFLICT" for _, _, _, status in entries):
         raise ValueError("Existing files differ; refusing to overwrite")
