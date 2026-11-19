@@ -25,6 +25,10 @@ assert "($context['vehicle_id']??0)===$vehicleId" in controller
 assert "($context['job_card_id']??0)===$jobCardId" in controller
 assert "vehicle_id:int|null" in contract
 assert "job_card_id:int|null" in contract
+assert "$t->unsignedBigInteger('vehicle_id')->nullable()->index()" in migration
+assert "$t->unsignedBigInteger('job_card_id')->nullable()->index()" in migration
+assert "'vehicle_id'=>$vehicleId" in controller
+assert "'job_card_id'=>$jobCardId" in controller
 assert "is_finite((float)$raw)" in controller
 assert "Ledger amount out of range" in controller
 assert "'customer_name'=>['required'" not in controller
