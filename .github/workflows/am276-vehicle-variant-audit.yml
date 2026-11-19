@@ -1,4 +1,4 @@
-name: AM276 Vehicle Variant Readonly Staging Audit
+name: AM276 Vehicle Variant STAGING Guarded Deploy
 on:
   pull_request:
     paths:
@@ -20,8 +20,8 @@ jobs:
       ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
     steps:
       - uses: actions/checkout@v4
-      - name: Validate script
-        run: bash -n deployment/live-fixes/AM276_VEHICLE_VARIANT/audit.sh
+      - name: Validate scripts
+        run: |\n          bash -n deployment/live-fixes/AM276_VEHICLE_VARIANT/deploy.sh\n          python3 -m py_compile deployment/live-fixes/AM276_VEHICLE_VARIANT/patch.py
       - name: Prepare staging SSH
         shell: bash
         run: |
@@ -39,7 +39,7 @@ jobs:
           else
             sudo apt-get update -qq;sudo apt-get install -qq -y sshpass
           fi
-      - name: Read-only audit vehicle selector and UI
+      - name: Guarded deploy vehicle cascade and UI
         shell: bash
         run: |
           set -euo pipefail
@@ -53,7 +53,7 @@ jobs:
             SCP=(sshpass -e scp -o ConnectTimeout=14 -P "$PORT")
           fi
           "${SSH[@]}" "$REMOTE" 'mkdir -p "$HOME/AM276_AUDIT"'
-          "${SCP[@]}" deployment/live-fixes/AM276_VEHICLE_VARIANT/audit.sh "$REMOTE:~/AM276_AUDIT/"
-          "${SSH[@]}" "$REMOTE" "bash ~/AM276_AUDIT/audit.sh '$ROOT'"
+          "${SCP[@]}" deployment/live-fixes/AM276_VEHICLE_VARIANT/deploy.sh deployment/live-fixes/AM276_VEHICLE_VARIANT/patch.py "$REMOTE:~/AM276_AUDIT/"
+          "${SSH[@]}" "$REMOTE" "bash ~/AM276_AUDIT/deploy.sh '$ROOT'"
       - if: always()
         run: rm -f ~/.ssh/id_ed25519
