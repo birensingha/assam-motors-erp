@@ -90,6 +90,25 @@ class SafeStageTests(unittest.TestCase):
         self.assertEqual(target.read_text(), "USER_OWNED_FILE")
         self.assertFalse(self.manifest().exists())
 
+    def test_race_created_file_is_never_overwritten(self):
+        # A second deployer can create a destination after preflight.
+        entries = self.entries()
+        target = self.root / "routes/am245-feedback.php"
+        target.write_text("OTHER_DEPLOYER_OWNED")
+        with self.assertRaises(FileExistsError):
+            stage_tool.stage(self.root, entries, self.manifest())
+        self.assertEqual(target.read_text(), "OTHER_DEPLOYER_OWNED")
+        self.assertFalse(self.manifest().exists())
+        self.assertFalse((self.root / "app/Contracts/AmFeedbackCustomerSource.php").exists())
+
+    def test_existing_manifest_symlink_refused(self):
+        outside = self.root / "manifest-outside.json"
+        outside.write_text("DO_NOT_TOUCH")
+        self.manifest().symlink_to(outside)
+        with self.assertRaisesRegex(ValueError, "Existing AM245 staging manifest"):
+            stage_tool.stage(self.root, self.entries(), self.manifest())
+        self.assertEqual(outside.read_text(), "DO_NOT_TOUCH")
+
     def test_rollback_refuses_modified_files(self):
         stage_tool.stage(self.root, self.entries(), self.manifest())
         changed = self.root / "routes/am245-feedback.php"
