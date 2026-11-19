@@ -87,3 +87,8 @@ To avoid delaying Customer Feedback on the canonical financial-ledger integratio
 - If the old combined migration was **already run** anywhere, do not run a modified historical migration; use reviewed additive migrations and a measured schema diff. No confirmed Hostinger application of these migrations is available in the current session.
 
 **The remaining AM245 blocker is integration with the actual deployed Hostinger Laravel ERP**: install the correct concrete `AmFeedbackCustomerSource` adapter, register the server-side Owner/Admin Gate, safely include only the AM245 routes and guarded sidebar link, back up database before applying feedback-only migration, then perform authenticated end-to-end regression tests. Keep AM246 disabled until it passes separate ledger/payment consent/permission testing. A GitHub Actions artifact proves build/test, not installation.
+
+### Canonical relational ID persistence (2026-11-19)
+AM245 feedback now stores `vehicle_id` and `job_card_id` (nullable indexed integers) alongside `customer_id` and human-readable snapshots. The controller writes only the IDs already checked against the deployed `AmFeedbackCustomerSource::resolve()` adapter. This prevents feedback history from depending solely on mutable vehicle plates and job reference labels. The static QA suite asserts both schema columns and controller writes.
+
+**Migration safety:** This modifies the as-yet-unverified initial AM245 migration. If it has already been executed on any environment, do NOT rerun or edit the historical migration there; instead create a reviewed additive migration for the two columns and backfill only after validating real ERP relationships. This is NOT evidence of staging installation.
