@@ -18,6 +18,7 @@ jobs:
             modules/am245-am246/routes.php \
             modules/am245-am246/database/migrations/*.php \
             modules/am245-am246/app/Contracts/*.php \
+            modules/am245-am246/app/Support/*.php \
             modules/am245-am246/app/Http/Controllers/Admin/*.php; do
             php -l "$file"
           done
