@@ -21,7 +21,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate scripts
-        run: |\n          bash -n deployment/live-fixes/AM276_VEHICLE_VARIANT/deploy.sh\n          python3 -m py_compile deployment/live-fixes/AM276_VEHICLE_VARIANT/patch.py
+        run: |
+          bash -n deployment/live-fixes/AM276_VEHICLE_VARIANT/deploy.sh
+          python3 -m py_compile deployment/live-fixes/AM276_VEHICLE_VARIANT/patch.py
       - name: Prepare staging SSH
         shell: bash
         run: |
