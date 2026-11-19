@@ -81,3 +81,23 @@ for name,terms in docs.items():
    print('AM277_FOCUS',term,repr(s[max(0,i-180):i+3400])[:3700])
 PY
 echo AM277_FOCUSED_AUDIT_PASS
+
+echo AM277_EDITOR_DETAILS
+python3 - <<'PY'
+from pathlib import Path
+pairs={
+ 'public/js/purchase-entry.js':['function drawResults','const meta =','partLabel(p)','function selectPart','const title =','function fetchParts'],
+ 'public/js/estimate-entry.js':['function renderSuggestions','function showSuggestions','function renderOptions','description','suggestion','function selectItem','part-option','part.code','const matches'],
+ 'resources/views/job-cards/show.blade.php':['id="am85-part','am85-parts','am85-part-selector','am85-part-picker','am85-select','am85-part-form'],
+ 'resources/views/counter-sales/create.blade.php':['<select data-part','<select','data-part'],
+}
+for name,needles in pairs.items():
+ p=Path(name)
+ if not p.exists():print('AM277_MISSING',name);continue
+ s=p.read_text(errors='replace')
+ print('AM277_EDITOR_FILE',name,'LEN',len(s))
+ for term in needles:
+  pos=s.find(term)
+  if pos>=0:print('AM277_EDITOR_SNIPPET',term,repr(s[max(0,pos-250):pos+2800])[:3200])
+PY
+echo AM277_EDITOR_DETAIL_PASS
