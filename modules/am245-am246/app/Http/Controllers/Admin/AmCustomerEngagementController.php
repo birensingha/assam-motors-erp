@@ -290,6 +290,10 @@ class AmCustomerEngagementController extends Controller
             'phone_last4'=>substr($phone,-4),'type'=>$v['type'],
             'balance_snapshot'=>$amount,'message'=>$message,
             'status'=>'whatsapp_opened_not_sent','actor_id'=>$request->user()->id,
+            // Server-generated audit of operator confirmation, not proof of
+            // customer opt-in or message delivery.
+            'permission_attested_at'=>now(),
+            'permission_attestation'=>'operator_confirmed_permitted_messaging',
             'created_at'=>now(),'updated_at'=>now()
         ]);
         return redirect()->away('https://wa.me/'.$phone.'?text='.rawurlencode($message));
