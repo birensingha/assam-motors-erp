@@ -12,9 +12,9 @@ final class AmFeedbackCsv
     {
         $text = (string) ($value ?? '');
         // Unicode whitespace (NBSP, ideographic space), format controls (BOM,
-// zero-width space), and ASCII controls can precede a formula trigger.
-// Use UTF-8 Unicode properties; retain the original cell contents verbatim.
-if (preg_match('/^[\\p{Z}\\p{C}\\x00-\\x20]*[=+\\-@]/u', $text)) {
+        // zero-width space), and ASCII controls can precede a formula trigger.
+        // Use UTF-8 Unicode properties; retain the original cell contents verbatim.
+        if (preg_match('/^[\\p{Z}\\p{C}\\x00-\\x20]*[=+\\-@]/u', $text)) {
             return "'".$text;
         }
         return $text;
