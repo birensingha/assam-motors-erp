@@ -137,8 +137,10 @@
     var next = nextEditable(form,field);
     if (!next) return;
     next.focus({ preventScroll: true });
-    if (next.tagName === 'INPUT' && next.type !== 'date' &&
-        next.type !== 'time' && next.type !== 'datetime-local' &&
+    // Only text-like input types support text selection. Calling select()
+    // on a number/date/email input can throw InvalidStateError in browsers.
+    if (next.tagName === 'INPUT' &&
+        ['text','search','tel','url'].includes(next.type) &&
         typeof next.select === 'function' && !isNativePicker(next)) {
       next.select();
     }
