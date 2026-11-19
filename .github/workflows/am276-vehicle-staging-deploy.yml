@@ -1,6 +1,10 @@
 name: AM276 Vehicle Cascading Variant Deploy
 # Revalidate staging after guarded rollout is available on main
 on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/am276-vehicle-staging-deploy.yml'
   pull_request:
     paths:
       - '.github/workflows/am276-vehicle-staging-deploy.yml'
