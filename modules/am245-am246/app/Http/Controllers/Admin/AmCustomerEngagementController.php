@@ -2,6 +2,7 @@
 namespace App\Http\Controllers\Admin;
 
 use App\Contracts\AmEngagementLedger;
+use App\Contracts\AmFeedbackCustomerSource;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -42,17 +43,61 @@ class AmCustomerEngagementController extends Controller
         )])->header('Cache-Control','no-store, private');
     }
 
-    public function feedback(Request $request)
+    public function feedbackTargets(Request $request, AmFeedbackCustomerSource $source)
     {
-        $v = $request->validate([
-            'customer_id'=>['nullable','integer','min:1'],
-            'customer_name'=>['required','string','max:160'],
-            'vehicle'=>['nullable','string','max:32'],
-            'job_card_ref'=>['nullable','string','max:64'],
+        $v=$request->validate(['q'=>['required','string','min:2','max:80']]);
+        $q=trim($v['q']);
+        abort_unless(mb_strlen($q)>=2,422,'Enter at least 2 characters');
+        $results=$source->search($q,15);
+        $items=[];
+        foreach(array_slice($results,0,15) as $r) {
+            if(!is_array($r) || (int)($r['customer_id']??0)<1) continue;
+            $items[]=[
+                'customer_id'=>(int)$r['customer_id'],
+                'customer_name'=>(string)($r['customer_name']??''),
+                'vehicle_id'=>!empty($r['vehicle_id'])?(int)$r['vehicle_id']:null,
+                'vehicle'=>(string)($r['vehicle']??''),
+                'job_card_id'=>!empty($r['job_card_id'])?(int)$r['job_card_id']:null,
+                'job_card_ref'=>(string)($r['job_card_ref']??''),
+            ];
+        }
+        return response()->json(['targets'=>$items])
+            ->header('Cache-Control','private, no-store');
+    }
+
+    public function feedback(Request $request, AmFeedbackCustomerSource $source)
+    {
+        $v=$request->validate([
+            'customer_id'=>['required','integer','min:1'],
+            'vehicle_id'=>['nullable','integer','min:1'],
+            'job_card_id'=>['nullable','integer','min:1'],
             'rating'=>['required','integer','between:1,5'],
             'comment'=>['required','string','max:3000'],
         ]);
-        DB::table('am_customer_feedback')->insert($v+['source'=>'internal','created_at'=>now(),'updated_at'=>now()]);
+        $customerId=(int)$v['customer_id'];
+        $vehicleId=!empty($v['vehicle_id'])?(int)$v['vehicle_id']:null;
+        $jobCardId=!empty($v['job_card_id'])?(int)$v['job_card_id']:null;
+
+        // Source must confirm that all selected master entities belong together.
+        // Do not accept names, vehicle numbers or job references from browser input.
+        $context=$source->resolve($customerId,$vehicleId,$jobCardId);
+        abort_unless(
+            is_array($context)
+            && (int)($context['customer_id']??0)===$customerId
+            && trim((string)($context['customer_name']??''))!=='',
+            422,'Customer, vehicle or Job Card could not be verified'
+        );
+        DB::table('am_customer_feedback')->insert([
+            'customer_id'=>$customerId,
+            'customer_name'=>mb_substr((string)$context['customer_name'],0,160),
+            'vehicle'=>mb_substr((string)($context['vehicle']??''),0,32) ?: null,
+            'job_card_ref'=>mb_substr((string)($context['job_card_ref']??''),0,64) ?: null,
+            'rating'=>(int)$v['rating'],
+            'comment'=>$v['comment'],
+            'source'=>'internal',
+            'created_at'=>now(),
+            'updated_at'=>now(),
+        ]);
         return back()->with('success','Feedback recorded');
     }
 
