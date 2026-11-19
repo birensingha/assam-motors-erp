@@ -61,6 +61,14 @@ assert "limit(5000)" in controller
 assert controller.count("'q'=>['nullable','string','max:80']") == 2
 assert controller.count("'rating'=>['nullable',Rule::in(['1','2','3','4','5'])]") == 2
 assert controller.count("'complaint_status'=>['nullable',Rule::in(['open','resolved','none'])]") == 2
+# Search filters must treat wildcard-looking customer input literally.
+# The same feedbackQuery() drives both the register and CSV export.
+assert "str_replace([" in controller
+assert "$pattern = '%'.$escaped.'%';" in controller
+assert "use ($pattern)" in controller
+assert "orWhere('am_customer_feedback.vehicle','like',$pattern)" in controller
+assert "orWhere('am_customer_feedback.job_card_ref','like',$pattern)" in controller
+assert "orWhere('vehicle','like','%'.$search.'%')" not in controller
 
 assert "throttle:10,1" in routes
 assert "'can:view-customer-ledger'" in routes
