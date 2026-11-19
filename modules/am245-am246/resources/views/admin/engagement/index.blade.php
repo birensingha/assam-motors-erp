@@ -10,11 +10,16 @@ input,select,textarea{width:100%;font:inherit;border:1px solid #cdd6e2;border-ra
 button{background:#1264a3;color:white;border:0;border-radius:8px;padding:10px 15px;cursor:pointer}
 button.alt{background:#e8eff6;color:#1a3754}label{font-size:13px;font-weight:650}table{width:100%;border-collapse:collapse;font-size:13px}td,th{padding:10px;text-align:left;border-bottom:1px solid #e7ebf0;vertical-align:top}
 .note{font-size:12px;color:#62748a}.success{padding:12px;background:#e3f7ed;border-radius:8px}.warning{padding:12px;background:#fff4db;border-radius:8px}
-[hidden]{display:none!important}.picklist{border:1px solid #cdd6e2;border-radius:10px;padding:6px;margin:-6px 0 12px;max-height:240px;overflow:auto;background:white;box-shadow:0 6px 18px #122a4b16}.picklist button{display:block;width:100%;text-align:left;background:#f5f8fc;color:#18233b;margin-bottom:4px}.picklist button:hover,.picklist button:focus{background:#dae9f7}summary{cursor:pointer;font-weight:650} .scroll{overflow:auto} .pill{padding:3px 7px;background:#eff4f9;border-radius:7px}
+.filters{display:grid;grid-template-columns:minmax(180px,2fr) repeat(2,minmax(120px,1fr)) auto;gap:10px;align-items:end}.filters label{display:block}.filters button{margin-bottom:12px}@media(max-width:680px){.filters{grid-template-columns:1fr}}[hidden]{display:none!important}.picklist{border:1px solid #cdd6e2;border-radius:10px;padding:6px;margin:-6px 0 12px;max-height:240px;overflow:auto;background:white;box-shadow:0 6px 18px #122a4b16}.picklist button{display:block;width:100%;text-align:left;background:#f5f8fc;color:#18233b;margin-bottom:4px}.picklist button:hover,.picklist button:focus{background:#dae9f7}summary{cursor:pointer;font-weight:650} .scroll{overflow:auto} .pill{padding:3px 7px;background:#eff4f9;border-radius:7px}
 </style></head><body>
 <header><strong>ASSAM MOTORS</strong> <small> / ERP Admin / Customer / Reviews & Feedback</small></header>
 <main><h1>Customer Reviews & Feedback</h1>
-<p class="note">Feedback, review drafts and complaints only. Financial balances and payment messaging are on a separate Admin page.</p>
+<p class="note">Service feedback, review drafts and complaints only. Financial balances and payment messaging are on a separate Admin page.</p>
+<div class="grid" aria-label="Feedback summary">
+  <section class="card"><h2>Total Feedback</h2><strong>{{ number_format($feedbackCount) }}</strong></section>
+  <section class="card"><h2>Average Rating</h2><strong>{{ $averageRating === null ? '—' : number_format($averageRating,2).' / 5' }}</strong></section>
+  <section class="card"><h2>Open Complaints</h2><strong>{{ number_format($openComplaintCount) }}</strong></section>
+</div>
 @if(session('success'))<p class="success">{{session('success')}}</p>@endif
 @if($errors->any())<div class="warning"><strong>Please correct:</strong><ul>@foreach($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>@endif
 <div class="grid">
@@ -34,7 +39,28 @@ button.alt{background:#e8eff6;color:#1a3754}label{font-size:13px;font-weight:650
 
 </div>
 <section class="card" style="margin-top:16px"><h2>Customer Feedback Register</h2>
-<form method="get" style="display:flex;gap:8px"><input name="q" placeholder="Search name, vehicle, Job Card" value="{{request('q')}}"><button>Search</button></form>
+<form method="get" class="filters" role="search">
+  <label>Customer / Vehicle / JC
+    <input name="q" placeholder="Search name, vehicle or Job Card" value="{{request('q')}}" maxlength="80">
+  </label>
+  <label>Rating
+    <select name="rating">
+      <option value="">All ratings</option>
+      @foreach([5,4,3,2,1] as $n)
+        <option value="{{$n}}" @selected(request('rating') == (string)$n)>{{$n}} / 5</option>
+      @endforeach
+    </select>
+  </label>
+  <label>Complaint Status
+    <select name="complaint_status">
+      <option value="">All statuses</option>
+      <option value="open" @selected(request('complaint_status') === 'open')>Open</option>
+      <option value="resolved" @selected(request('complaint_status') === 'resolved')>Resolved</option>
+      <option value="none" @selected(request('complaint_status') === 'none')>No complaint</option>
+    </select>
+  </label>
+  <button type="submit">Apply Filters</button>
+</form>
 <div class="scroll"><table><thead><tr><th>Customer / Job</th><th>Rating & Feedback</th><th>Reply Draft</th><th>Complaint</th></tr></thead><tbody>
 @forelse($feedback as $item)<tr><td><strong>{{$item->customer_name}}</strong><p class="note">{{$item->vehicle}} {{$item->job_card_ref}}</p></td>
 <td><span class="pill">{{$item->rating}} ★</span><p>{{$item->comment}}</p><span class="note">{{$item->source}} · {{$item->created_at}}</span></td>
@@ -55,11 +81,27 @@ button.alt{background:#e8eff6;color:#1a3754}label{font-size:13px;font-weight:650
 @empty<tr><td colspan="4">No feedback recorded yet.</td></tr>@endforelse</tbody></table></div>{{ $feedback->links() }}</section>
 <div class="grid" style="margin-top:16px">
 <section class="card"><h2>Complaints</h2><div class="scroll"><table><tr><th>Feedback</th><th>Status</th><th>Resolution</th></tr>
-@foreach($complaints as $c)<tr><td>#{{$c->feedback_id}}</td><td>{{$c->status}}</td><td>
+@forelse($complaints as $c)<tr><td>#{{$c->feedback_id}}</td><td>{{$c->status}}</td><td>
 @if($c->status!=='resolved')<form method="post" action="{{route('am.customer-engagement.complaint')}}">@csrf<input type="hidden" name="feedback_id" value="{{$c->feedback_id}}"><input type="hidden" name="action" value="resolve"><textarea name="resolution_note" required placeholder="Resolution note"></textarea><button>Resolve</button></form>
-@else {{$c->resolution_note}} @endif</td></tr>@endforeach</table></div></section>
+@else {{$c->resolution_note}} <p class="note">Resolved: {{$c->resolved_at}}</p> @endif</td></tr>
+@empty<tr><td colspan="3">No complaints recorded.</td></tr>
+@endforelse</table></div></section>
 
 </div>
+<section class="card" style="margin-top:16px">
+  <h2>Complaint Action History</h2>
+  <p class="note">Recorded operator actions for accountability. No outstanding or payment details.</p>
+  <div class="scroll"><table>
+    <thead><tr><th>Feedback</th><th>Action</th><th>Admin User ID</th><th>Time</th><th>Note</th></tr></thead>
+    <tbody>
+    @forelse($complaintHistory as $event)
+      <tr><td>#{{$event->feedback_id}}</td><td>{{$event->action}}</td>
+      <td>{{$event->actor_id}}</td><td>{{$event->created_at}}</td><td>{{$event->note ?? '—'}}</td></tr>
+    @empty<tr><td colspan="5">No complaint actions recorded.</td></tr>
+    @endforelse
+    </tbody>
+  </table></div>
+</section>
 </main>
 <script>
 (() => {
