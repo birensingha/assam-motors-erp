@@ -56,6 +56,12 @@ assert "->name('export')" in routes
 assert "AmFeedbackCsv::safeCell" in controller
 assert "'created_by'=>(int)$request->user()->id" in controller
 assert "limit(5000)" in controller
+# Both register and CSV must reject unbounded search strings, arrays and
+# unexpected filter values before constructing LIKE clauses.
+assert controller.count("'q'=>['nullable','string','max:80']") == 2
+assert controller.count("'rating'=>['nullable',Rule::in(['1','2','3','4','5'])]") == 2
+assert controller.count("'complaint_status'=>['nullable',Rule::in(['open','resolved','none'])]") == 2
+
 assert "throttle:10,1" in routes
 assert "'can:view-customer-ledger'" in routes
 feedback_only_routes = (root / "feedback-only-routes.php").read_text()
