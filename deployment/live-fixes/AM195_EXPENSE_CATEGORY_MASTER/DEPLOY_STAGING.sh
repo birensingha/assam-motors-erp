@@ -37,10 +37,10 @@ php artisan route:list --name=erp.expense-categories
 php -r '
 require "vendor/autoload.php";
 $app=require "bootstrap/app.php";
-$app->make(\\Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
-$codes=$app->make(\\App\\Services\\ExpensePaymentService::class)->expenseCategories();
+$app->make(\Illuminate\\Contracts\\Console\\Kernel::class)->bootstrap();
+$codes=$app->make(\App\\Services\\ExpensePaymentService::class)->expenseCategories();
 if(!in_array("DONATION",$codes,true))exit(8);
-echo "AM195_DONATION_SELECTABLE_PASS\\n";
+echo "AM195_DONATION_SELECTABLE_PASS\n";
 '
 STATUS="$(curl -fsSL -o /dev/null -w '%{http_code}' --max-time 25 https://staging.assammotors.com/erp/login)" || exit 9
 test "$STATUS" = 200
