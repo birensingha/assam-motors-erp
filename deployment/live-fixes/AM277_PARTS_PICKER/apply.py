@@ -13,6 +13,7 @@ files={
  'purchase_edit_js':root/'public/js/purchase-edit.js',
  'estimate_controller':root/'app/Http/Controllers/Web/AdminEstimatePageController.php',
  'estimate_view':root/'resources/views/estimates/create.blade.php',
+ 'estimate_js':root/'public/js/estimate-entry.js',
  'counter_controller':root/'app/Http/Controllers/Web/CounterPartsInvoiceController.php',
  'counter_view':root/'resources/views/counter-sales/create.blade.php',
 }
@@ -61,6 +62,32 @@ edit('estimate_view',"'description' => $p->part_name,",
  """'description' => $p->part_name,
             'vehicle_make' => trim((string)($p->vehicle_make??'')),
             'vehicle_model' => trim((string)($p->vehicle_model??'')),""",'ESTIMATE_JSON_SEPARATE')
+# Estimate dropdown gets a separate display-only child. applyReference keeps
+# item.description and the chosen input label unchanged.
+edit('estimate_js',"    menu.hidden = false;\n  }\n\n  function closeMenu(tr) {",
+"""    // AM277_PARTS_CONTEXT_ONLY: no Make/Model in selected estimate rows.
+    if(type === 'PART'){
+      const choices=menu.querySelectorAll('.estimate-ref-option');
+      rows.forEach((r,i)=>{
+        const vehicle=[r.vehicle_make,r.vehicle_model]
+          .map(v=>String(v||'').trim()).filter(Boolean).join(' · ');
+        if(vehicle && choices[i]){
+          const badge=document.createElement('small');
+          badge.className='am277-part-vehicle';
+          badge.style.display='block';
+          badge.style.fontWeight='650';
+          badge.style.color='#275e93';
+          badge.textContent='Vehicle: '+vehicle;
+          choices[i].appendChild(badge);
+        }
+      });
+    }
+    menu.hidden = false;
+  }
+
+  function closeMenu(tr) {""",'ESTIMATE_SUGGESTIONS_ONLY')
+if 'tr.querySelector(\'.e-desc\').value = item.description' not in data['estimate_js']:
+ raise SystemExit('AM277_STOP_ESTIMATE_DESCRIPTION_DRIFT')
 edit('counter_controller',"get(['id','part_code','part_name','hsn_code','selling_price','gst_percent','unit','stock_qty'])",
  "get(['id','part_code','part_name','hsn_code','selling_price','gst_percent','unit','stock_qty','vehicle_make','vehicle_model'])",
  'COUNTER_MASTER_SELECT')
@@ -103,7 +130,7 @@ with tempfile.TemporaryDirectory(prefix='am277_preflight_') as folder:
   p=t/(k+'.php');p.write_text(data[k])
   out=subprocess.run(['php','-l',str(p)],cwd=root,capture_output=True,text=True,timeout=30)
   if out.returncode:raise SystemExit('AM277_STOP_PHP_LINT_'+k+out.stderr[-300:])
- for k in ('purchase_create_js','purchase_edit_js'):
+ for k in ('purchase_create_js','purchase_edit_js','estimate_js'):
   p=t/(k+'.js');p.write_text(data[k])
   if shutil.which('node'):
    out=subprocess.run(['node','--check',str(p)],cwd=root,capture_output=True,text=True,timeout=30)
