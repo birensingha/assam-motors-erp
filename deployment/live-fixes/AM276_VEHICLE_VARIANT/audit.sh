@@ -24,4 +24,25 @@ for root in (Path('resources/views'),Path('app/Http/Controllers'),Path('app/Serv
      print('CONTEXT',term,t[max(0,i-900):i+1500].replace('\n',' ')[:2350])
      start=i+len(term)
 PY
+echo "AM276_DETAILED_JS"
+python3 - <<'PY'
+from pathlib import Path
+for name in ['resources/views/admin/native/customer-detail.blade.php','resources/views/admin/native/vehicles.blade.php','resources/views/admin/native/parts.blade.php','resources/views/admin/native/partials/customer-vehicle-form.blade.php']:
+ s=Path(name).read_text()
+ print('DOCUMENT',name,'LENGTH',len(s))
+ if 'customer-detail' in name:
+  for term in ['amVehicleVariants','amVehicleModels','@include','Add Vehicle','<datalist','amVehicleMakes']:
+   start=0
+   for ix in range(3):
+    pos=s.find(term,start)
+    if pos<0:break
+    print('SNIPPET',term,repr(s[max(0,pos-450):pos+1100]))
+    start=pos+len(term)
+ if 'vehicles.blade' in name:
+  for term in ['const catalog','const rows','am222Catalog','function options','function filter','function refresh','variant','am222-popup','add vehicle','<form']:
+   pos=s.find(term,3500 if term=='variant' else 0)
+   if pos>=0:print('SNIPPET',term,repr(s[max(0,pos-230):pos+1000]))
+ if 'parts.blade' in name:
+  print('PART_TOP',repr(s[:2600]))
+PY
 echo "AM276_AUDIT_PASS"
