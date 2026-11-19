@@ -3,6 +3,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Contracts\AmEngagementLedger;
 use App\Contracts\AmFeedbackCustomerSource;
+use App\Support\AmFeedbackCsv;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -11,6 +12,30 @@ use Illuminate\Validation\Rule;
 class AmCustomerEngagementController extends Controller
 {
     public function index(Request $request)
+    {
+        $query = $this->feedbackQuery($request);
+        $summary=DB::table('am_customer_feedback')
+            ->selectRaw('COUNT(*) as total, AVG(rating) as average')->first();
+        return view('admin.engagement.index', [
+            'feedback' => $query->paginate(20)->withQueryString(),
+            'complaints' => DB::table('am_customer_complaints')->orderByDesc('id')->limit(30)->get(),
+            'complaintHistory' => DB::table('am_customer_complaint_history as h')
+                ->join('am_customer_complaints as c','c.id','=','h.complaint_id')
+                ->select('h.*','c.feedback_id')
+                ->orderByDesc('h.id')->limit(30)->get(),
+            'feedbackCount' => (int)($summary->total ?? 0),
+            'averageRating' => $summary && $summary->average !== null
+                ? round((float)$summary->average,2) : null,
+            'openComplaintCount' => DB::table('am_customer_complaints')->where('status','open')->count(),
+        ]);
+    }
+
+
+    /**
+     * A shared filter for pagination and CSV export.
+     * No financial/WhatsApp tables are read from this query.
+     */
+    private function feedbackQuery(Request $request)
     {
         $query = DB::table('am_customer_feedback')
             ->leftJoin('am_customer_complaints as fc','fc.feedback_id','=','am_customer_feedback.id')
@@ -33,20 +58,38 @@ class AmCustomerEngagementController extends Controller
             $query->whereNull('fc.id');
         }
 
-        $summary=DB::table('am_customer_feedback')
-            ->selectRaw('COUNT(*) as total, AVG(rating) as average')->first();
-        return view('admin.engagement.index', [
-            'feedback' => $query->paginate(20)->withQueryString(),
-            'complaints' => DB::table('am_customer_complaints')->orderByDesc('id')->limit(30)->get(),
-            'complaintHistory' => DB::table('am_customer_complaint_history as h')
-                ->join('am_customer_complaints as c','c.id','=','h.complaint_id')
-                ->select('h.*','c.feedback_id')
-                ->orderByDesc('h.id')->limit(30)->get(),
-            'feedbackCount' => (int)($summary->total ?? 0),
-            'averageRating' => $summary && $summary->average !== null
-                ? round((float)$summary->average,2) : null,
-            'openComplaintCount' => DB::table('am_customer_complaints')->where('status','open')->count(),
-        ]);
+        return $query;
+    }
+
+    public function exportCsv(Request $request)
+    {
+        $feedback = $this->feedbackQuery($request)->limit(5000)->get();
+        $filename = 'assam-motors-feedback-'.now()->format('Ymd-His').'.csv';
+        return response()->streamDownload(function () use ($feedback) {
+            $out = fopen('php://output', 'wb');
+            try {
+                fwrite($out, "\xEF\xBB\xBF"); // Excel-friendly UTF-8 header
+                fputcsv($out, ['Feedback ID','Date','Customer','Vehicle','Job Card',
+                    'Rating','Feedback','Complaint Status','Reply Draft','Recorded By (Admin ID)']);
+                foreach ($feedback as $item) {
+                    fputcsv($out, [
+                        (int)$item->id,
+                        AmFeedbackCsv::safeCell($item->created_at),
+                        AmFeedbackCsv::safeCell($item->customer_name),
+                        AmFeedbackCsv::safeCell($item->vehicle),
+                        AmFeedbackCsv::safeCell($item->job_card_ref),
+                        (int)$item->rating,
+                        AmFeedbackCsv::safeCell($item->comment),
+                        AmFeedbackCsv::safeCell($item->complaint_status ?: 'none'),
+                        AmFeedbackCsv::safeCell($item->reply_draft),
+                        (int)$item->created_by
+                    ]);
+                }
+            } finally {
+                fclose($out);
+            }
+        }, $filename, ['Content-Type'=>'text/csv; charset=UTF-8',
+            'Cache-Control'=>'private, no-store']);
     }
 
     public function messaging(Request $request)
@@ -119,6 +162,7 @@ class AmCustomerEngagementController extends Controller
             'rating'=>(int)$v['rating'],
             'comment'=>$v['comment'],
             'source'=>'internal',
+            'created_by'=>(int)$request->user()->id,
             'created_at'=>now(),
             'updated_at'=>now(),
         ]);
