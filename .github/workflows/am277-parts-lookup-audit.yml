@@ -1,4 +1,4 @@
-name: AM277 Parts Picker Source Audit
+name: AM277 Parts Picker Staging Source Audit
 on:
   pull_request:
     paths:
