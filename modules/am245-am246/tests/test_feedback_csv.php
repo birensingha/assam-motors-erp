@@ -11,21 +11,21 @@ $cases=[
     ["\t=2+3","'\t=2+3"],
     ["\n+2","'\n+2"],
     ["  =X","'  =X"],
-    ["\u00a0=1+1","'\u00a0=1+1"], // non-breaking space
-    ["\u200b=1+1","'\u200b=1+1"], // zero-width space
-    ["\ufeff=1+1","'\ufeff=1+1"], // UTF-8 BOM
-    ["\u3000@SUM(1)","'\u3000@SUM(1)"], // ideographic space
-    ["\u2028+1","'\u2028+1"], // Unicode line separator
-    ["\u00a0ordinary text","\u00a0ordinary text"],
+    ["\u{00A0}=1+1","'\u{00A0}=1+1"], // non-breaking space
+    ["\u{200B}=1+1","'\u{200B}=1+1"], // zero-width space
+    ["\u{FEFF}=1+1","'\u{FEFF}=1+1"], // UTF-8 BOM
+    ["\u{3000}@SUM(1)","'\u{3000}@SUM(1)"], // ideographic space
+    ["\u{2028}+1","'\u{2028}+1"], // Unicode line separator
+    ["\u{00A0}ordinary text","\u{00A0}ordinary text"],
     ['Excellent service','Excellent service'],
     ['Rating ★★★★','Rating ★★★★'],
     ['Customer + message','Customer + message'],
     [null,''],
 ];
-foreach($cases as [$input,$expected]) {
+foreach($cases as $index=>[$input,$expected]) {
     $got=AmFeedbackCsv::safeCell($input);
     if($got!==$expected) {
-        fwrite(STDERR,"AM245 feedback CSV safety test failed\n");
+        fwrite(STDERR,"AM245 feedback CSV safety test failed at case ".($index+1)."\n");
         exit(1);
     }
 }
