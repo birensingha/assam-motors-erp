@@ -49,6 +49,13 @@ newroutes=route_original.replace(anchor,"    // AM195 Expense Category Master (i
 "    Route::post('/expense-categories', [\\App\\Http\\Controllers\\Web\\ExpenseCategoryMasterController::class,'store'])->name('erp.expense-categories.store');\n"+
 "    Route::post('/expense-categories/{category}', [\\App\\Http\\Controllers\\Web\\ExpenseCategoryMasterController::class,'update'])->whereNumber('category')->name('erp.expense-categories.update');\n"+anchor,1)
 if controller.exists() or view.exists():raise SystemExit('AM195_STOP_EXISTING_CATEGORY_FILES')
+create=root/'resources/views/expenses/create.blade.php'
+if not create.is_file():raise SystemExit('AM195_STOP_EXPENSE_FORM_MISSING')
+create_original=create.read_text()
+form_anchor='<form method="post" action="{{ route(\'erp.expenses.store\') }}"'
+if create_original.count(form_anchor)!=1:raise SystemExit('AM195_STOP_FORM_DRIFT')
+newcreate=create_original.replace(form_anchor, '<div style="margin:8px 0"><a href="{{ route(\'erp.expense-categories.index\') }}" style="font-weight:700">＋ Add / Edit Expense Categories</a></div>\\n'+form_anchor,1)
+
 with tempfile.TemporaryDirectory() as t:
     for name,value in [('service.php',patched),('web.php',newroutes),('ExpenseCategoryMasterController.php',(here/'ExpenseCategoryMasterController.php').read_text())]:
         f=Path(t)/name;f.write_text(value)
@@ -61,6 +68,7 @@ if backup.exists():raise SystemExit('AM195_STOP_BACKUP_EXISTS')
 backup.mkdir(parents=True)
 shutil.copy2(service,backup/'ExpensePaymentService.php')
 shutil.copy2(routes,backup/'web.php')
+shutil.copy2(create,backup/'create.blade.php')
 shutil.copy2(migration,backup/'migration_source.php')
 def write(path,content):
     fd,temp=tempfile.mkstemp(prefix='.am195_',dir=path.parent)
@@ -68,6 +76,7 @@ def write(path,content):
     os.replace(temp,path)
 write(service,patched)
 write(routes,newroutes)
+write(create,newcreate)
 shutil.copy2(here/'ExpenseCategoryMasterController.php',controller)
 view.parent.mkdir(parents=True,exist_ok=True)
 shutil.copy2(here/'category-master.blade.php',view)
