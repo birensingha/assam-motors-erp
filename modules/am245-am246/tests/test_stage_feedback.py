@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Unit tests: stage tool must never change existing ERP files or DB."""
 import importlib.util
+import json
 from pathlib import Path
 import tempfile
 import unittest
@@ -116,6 +117,29 @@ class SafeStageTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "File changed"):
             stage_tool.rollback(self.root, self.manifest())
         self.assertEqual(changed.read_text(), "OPERATOR_CHANGED_FILE")
+        self.assertTrue(self.manifest().exists())
+
+    def test_duplicate_manifest_records_abort_without_deleting_files(self):
+        stage_tool.stage(self.root, self.entries(), self.manifest())
+        payload = json.loads(self.manifest().read_text())
+        self.assertTrue(payload["created"])
+        payload["created"].append(dict(payload["created"][0]))
+        self.manifest().write_text(json.dumps(payload))
+        with self.assertRaisesRegex(ValueError, "Duplicate or invalid manifest path"):
+            stage_tool.rollback(self.root, self.manifest())
+        for record in payload["created"]:
+            self.assertTrue((self.root / record["path"]).exists())
+        self.assertTrue(self.manifest().exists())
+
+    def test_malformed_manifest_record_abort_without_deleting_files(self):
+        stage_tool.stage(self.root, self.entries(), self.manifest())
+        payload = json.loads(self.manifest().read_text())
+        payload["created"].append(None)
+        self.manifest().write_text(json.dumps(payload))
+        with self.assertRaisesRegex(ValueError, "Invalid manifest record"):
+            stage_tool.rollback(self.root, self.manifest())
+        for record in payload["created"][:-1]:
+            self.assertTrue((self.root / record["path"]).exists())
         self.assertTrue(self.manifest().exists())
 
     def test_existing_identical_file_not_deleted_by_rollback(self):
