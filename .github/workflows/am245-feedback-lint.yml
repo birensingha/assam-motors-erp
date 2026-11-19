@@ -23,6 +23,8 @@ jobs:
           done
       - name: Feedback and financial separation checks
         run: python3 modules/am245-am246/tests/check_feedback_separation.py
+      - name: Staging and rollback safety tests
+        run: python3 modules/am245-am246/tests/test_stage_feedback.py
       - name: Feedback client-side JavaScript syntax
         run: |
           python3 - <<'PY'
