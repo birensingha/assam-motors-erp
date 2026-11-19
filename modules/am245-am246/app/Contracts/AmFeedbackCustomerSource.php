@@ -22,9 +22,11 @@ interface AmFeedbackCustomerSource
     /**
      * Return canonical context ONLY if vehicle and job card, where supplied,
      * really belong to the requested customer and current company scope.
-     * Return null otherwise. Never trust browser-submitted labels.
+     * Return null otherwise. Return the resolved vehicle_id and job_card_id as well,
+     * so the controller can verify IDs and cannot accept mismatched combinations
+     * from a faulty or stale adapter. Never trust browser-submitted labels.
      *
-     * @return array{customer_id:int,customer_name:string,vehicle:string|null,job_card_ref:string|null}|null
+     * @return array{customer_id:int,customer_name:string,vehicle_id:int|null,vehicle:string|null,job_card_id:int|null,job_card_ref:string|null}|null
      */
     public function resolve(int $customerId, ?int $vehicleId, ?int $jobCardId): ?array;
 }
