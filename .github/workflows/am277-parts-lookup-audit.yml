@@ -1,4 +1,5 @@
 name: AM277 Parts Picker Staging Source Audit
+# Verify current shared part suggestions for contextual make/model label
 on:
   pull_request:
     paths:
