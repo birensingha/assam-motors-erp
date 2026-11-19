@@ -101,3 +101,25 @@ for name,needles in pairs.items():
   if pos>=0:print('AM277_EDITOR_SNIPPET',term,repr(s[max(0,pos-250):pos+2800])[:3200])
 PY
 echo AM277_EDITOR_DETAIL_PASS
+
+echo AM277_LAST_UI_SNIPPETS
+python3 - <<'PY'
+from pathlib import Path
+for path,terms in {
+ 'public/js/estimate-entry.js':['estimate-ref-menu','menu.innerHTML','menu.replaceChildren','menu.append','itemLabel(c)','itemLabel(r)','row.querySelector'],
+ 'resources/views/job-cards/show.blade.php':['id="am85-part-options"','am85-part-options','AM100','am100','am85-part-search','am85-part-id']
+}.items():
+ data=Path(path).read_text(errors='replace').splitlines()
+ print('AM277_LAST_FILE',path,len(data))
+ positions=[]
+ for term in terms:
+  indices=[i for i,l in enumerate(data) if term.lower() in l.lower()]
+  for i in indices[:5]:
+   if not any(abs(i-j)<12 for j in positions):positions.append(i)
+ for i in sorted(positions)[:18]:
+  a=max(0,i-12);b=min(len(data),i+36)
+  print('AM277_BLOCK',i+1,'TERM',data[i][:140])
+  for n in range(a,b):
+   print('L',n+1,data[n][:400])
+PY
+echo AM277_LAST_UI_PASS
