@@ -73,3 +73,17 @@ The source adapter `AmFeedbackCustomerSource::resolve()` must now return **custo
 The AM246 message preview rejects non-finite or out-of-range numeric outstanding balances, rather than generating misleading WhatsApp messages or failing on DB decimal overflow. AM246 still only opens WhatsApp; no automatic message delivery is claimed.
 
 These are code-level guardrails, **not a replacement for end-to-end tests with the real Hostinger source, database, staff permissions and Customer/Vehicle/JC mappings**.
+
+## Feedback-first rollout — AM245 decoupled from AM246 (2026-11-19)
+
+To avoid delaying Customer Feedback on the canonical financial-ledger integration, AM245 has an isolated activation package:
+
+- `feedback-only-routes.php` declares ONLY six routes for the AM245 Feedback admin page, lookup, feedback save, draft reply, complaint actions, and CSV export. These are all guarded by authenticated `can:manage-customer-engagement` and rate-limited where relevant.
+- `resources/views/admin/engagement/feedback-only-sidebar.blade.php` adds only Reviews & Feedback, not WhatsApp or financial messaging.
+- `2026_11_12_010000_create_am_customer_engagement.php` now creates ONLY `am_customer_feedback`, `am_customer_complaints` and `am_customer_complaint_history`, not the financial message log.
+- `2026_11_19_000000_create_am246_customer_message_log.php` is the SEPARATE AM246 migration, to be run only after finance/WhatsApp authorization and ledger adapter are verified.
+- The safety installer now defaults to `--scope feedback`; `--scope all` is an explicit opt-in for staging both modules. Neither mode registers routes/gates, runs migrations, changes existing ERP source, or claims live deployment. For AM245 feedback-only, the installer's file map intentionally excludes the ledger contract, messaging view/route and AM246 migration.
+- Both routes files have overlapping AM245 route names: **do not mount the combined routes file and the feedback-only routes file together.** Choose exactly one after checking the real deployed ERP's routes and prefix.
+- If the old combined migration was **already run** anywhere, do not run a modified historical migration; use reviewed additive migrations and a measured schema diff. No confirmed Hostinger application of these migrations is available in the current session.
+
+**The remaining AM245 blocker is integration with the actual deployed Hostinger Laravel ERP**: install the correct concrete `AmFeedbackCustomerSource` adapter, register the server-side Owner/Admin Gate, safely include only the AM245 routes and guarded sidebar link, back up database before applying feedback-only migration, then perform authenticated end-to-end regression tests. Keep AM246 disabled until it passes separate ledger/payment consent/permission testing. A GitHub Actions artifact proves build/test, not installation.
