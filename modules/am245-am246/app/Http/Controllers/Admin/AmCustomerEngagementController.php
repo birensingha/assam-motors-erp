@@ -12,7 +12,10 @@ class AmCustomerEngagementController extends Controller
 {
     public function index(Request $request)
     {
-        $query = DB::table('am_customer_feedback')->orderByDesc('id');
+        $query = DB::table('am_customer_feedback')
+            ->leftJoin('am_customer_complaints as fc','fc.feedback_id','=','am_customer_feedback.id')
+            ->select('am_customer_feedback.*','fc.status as complaint_status')
+            ->orderByDesc('am_customer_feedback.id');
         $search = trim((string)$request->query('q',''));
         if ($search !== '') $query->where(function($q) use ($search) {
             $q->where('customer_name','like','%'.$search.'%')
@@ -118,7 +121,7 @@ class AmCustomerEngagementController extends Controller
         DB::transaction(function() use ($v,$request) {
             $existing=DB::table('am_customer_complaints')->where('feedback_id',$v['feedback_id'])->lockForUpdate()->first();
             if ($v['action']==='open' && !$existing) {
-                DB::table('am_customer_complaints')->insert([
+                DB::table('am_customer_complaints')->insertOrIgnore([
                     'feedback_id'=>$v['feedback_id'],'status'=>'open',
                     'created_by'=>$request->user()->id,'created_at'=>now(),'updated_at'=>now()
                 ]);
