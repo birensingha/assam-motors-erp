@@ -20,7 +20,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Validate scripts
-        run: |\n          bash -n deployment/live-fixes/AM277_PARTS_PICKER/audit.sh\n          python3 -m py_compile 
+        run: |
+          bash -n deployment/live-fixes/AM277_PARTS_PICKER/audit.sh
       - name: Prepare staging SSH
         shell: bash
         run: |
