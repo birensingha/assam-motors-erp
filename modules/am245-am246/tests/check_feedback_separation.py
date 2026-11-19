@@ -90,6 +90,16 @@ whatsapp_migration = (root / "database/migrations/2026_11_19_000000_create_am246
 stage_tool = (root / "tools/stage_feedback.py").read_text()
 assert "am_customer_message_log" not in migration
 assert "am_customer_message_log" in whatsapp_migration
+# AM246's operator checkbox must have a server-side audit timestamp, while
+# never being misrepresented as customer opt-in or delivery confirmation.
+assert "$t->timestamp('permission_attested_at')->nullable()" in whatsapp_migration
+assert "$t->string('permission_attestation',120)->nullable()" in whatsapp_migration
+assert "'consent'=>['accepted']" in controller
+assert "'permission_attested_at'=>now()" in controller
+assert "'permission_attestation'=>'operator_confirmed_permitted_messaging'" in controller
+assert "'status'=>'whatsapp_opened_not_sent'" in controller
+assert "permission_attested_at" not in migration
+
 assert "am.customer-engagement." in feedback_only_routes
 assert "am.customer-messaging." not in feedback_only_routes
 assert "can:view-customer-ledger" not in feedback_only_routes
