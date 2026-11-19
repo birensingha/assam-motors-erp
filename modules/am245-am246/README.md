@@ -59,3 +59,9 @@ For Hostinger's Laravel root previously identified by the operator, first run th
 
 ### Tested ZIP delivery
 The `AM245 Customer Feedback Module Checks` GitHub Actions workflow packages `modules/am245-am246/` into the **`am245-feedback-staging-only`** artifact, subject to all checks passing. Download it from the GitHub Actions run associated with PR #183. This ZIP contains the module and read-only/staging tooling; **uploading it alone does not activate the feature**. Never run the installer `--stage` until the actual deployed Laravel source mapping and permissions have been reviewed. The user's Hostinger staging has not been changed by GitHub commits or Actions artifact creation.
+
+## November 19: filtered feedback export and author audit
+- The Feedback register now has `Export Filtered CSV` using the same customer, vehicle/JC, rating and complaint-status filters as the register; capped at 5,000 rows per request and rate-limited at 10 requests per minute.
+- Each feedback records the authenticated actor's `created_by` ID in the migration's newly created feedback table (if that migration has **not yet** been run). If integrating into an ERP where the migration was previously applied, create and review a safe additive migration rather than rerunning a modified migration.
+- CSV export includes date/customer/vehicle/JC/rating/feedback/complaint state/reply draft/actor ID but **no outstanding balance, payment information or WhatsApp details**. User-submitted string cells pass the formula-injection guard in `App\\Support\\AmFeedbackCsv`, covered by PHP unit tests.
+- Activation still requires verified Laravel model adapters, Owner/Admin gate bindings, route/sidebar insertion, backup, migration and authenticated staging E2E tests. The tests/ZIP from GitHub Actions are **not** a deployed installation.
