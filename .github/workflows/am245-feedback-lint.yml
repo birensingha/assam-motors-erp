@@ -38,3 +38,14 @@ jobs:
           Path("/tmp/am245-feedback.js").write_text(js)
           PY
           node --check /tmp/am245-feedback.js
+      - name: Build staging-only AM245 module bundle
+        run: |
+          cd modules
+          zip -qr /tmp/am245-feedback-staging-only.zip am245-am246
+      - name: Upload staged module bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: am245-feedback-staging-only
+          path: /tmp/am245-feedback-staging-only.zip
+          retention-days: 14
+
