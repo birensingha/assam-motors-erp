@@ -38,5 +38,11 @@ assert "name=\"rating\"" in feedback
 assert "name=\"complaint_status\"" in feedback
 assert "openComplaintCount" in feedback
 assert "averageRating" in feedback
+assert "am.customer-engagement.export" in feedback
+assert "->name('export')" in routes
+assert "AmFeedbackCsv::safeCell" in controller
+assert "'created_by'=>(int)$request->user()->id" in controller
+assert "limit(5000)" in controller
+assert "throttle:10,1" in routes
 assert "'can:view-customer-ledger'" in routes
 print("AM245 static feedback/financial-separation and source validation checks PASSED")
