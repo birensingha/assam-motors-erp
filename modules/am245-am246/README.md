@@ -96,3 +96,7 @@ AM245 feedback now stores `vehicle_id` and `job_card_id` (nullable indexed integ
 ### Exact nullable association verification (2026-11-19)
 
 The AM245 feedback save endpoint now rejects an adapter result that returns a vehicle or Job Card ID when the user did not select that association. Both nullable IDs must match exactly, including null, rather than merely checking provided non-null IDs. This prevents accidentally recording an unselected vehicle/Job Card through an over-eager or stale adapter. Static regression assertions cover both nullable and non-null ID comparisons. This is code-level validation only; real Hostinger model mapping and authenticated integration tests remain mandatory.
+
+### AM245 register/export request hardening (2026-11-19)
+
+Both `index()` and `exportCsv()` now validate query-string filters server-side before invoking the shared query builder: `q` must be a scalar string no longer than 80 characters, `rating` must be 1–5, and `complaint_status` must be open/resolved/none (or omitted). Invalid array-valued and excessively long `q` inputs no longer reach a wildcard SQL search or cause string-conversion errors. The static regression check asserts validation exists on **both** endpoints. This is code-level hardening only, not authenticated staging verification.
