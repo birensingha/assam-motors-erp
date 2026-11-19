@@ -8,6 +8,9 @@ Usage (run from anywhere after downloading a whole copy of the module):
     python3 tools/stage_feedback.py --root /path/to/laravel
     python3 tools/stage_feedback.py --root /path/to/laravel --stage
     python3 tools/stage_feedback.py --root /path/to/laravel --rollback
+    python3 tools/stage_feedback.py --root /path/to/laravel --scope all --stage
+
+The default scope is AM245 feedback-only (no AM246 messaging dependencies).
 """
 import argparse
 import hashlib
@@ -37,7 +40,28 @@ COPY_MAP = {
     "database/migrations/2026_11_12_010000_create_am_customer_engagement.php":
         "database/migrations/2026_11_12_010000_create_am_customer_engagement.php",
     "routes.php": "routes/am245-am246.php",
+    "database/migrations/2026_11_19_000000_create_am246_customer_message_log.php":
+        "database/migrations/2026_11_19_000000_create_am246_customer_message_log.php",
 }
+
+# Keep AM245 deployable without AM246's ledger binding, money/message tables,
+# financial routes, or finance sidebar. This is a staged FILE COPY only.
+FEEDBACK_COPY_MAP = {
+    key: value for key, value in COPY_MAP.items()
+    if key in {
+        "app/Contracts/AmFeedbackCustomerSource.php",
+        "app/Support/AmFeedbackCsv.php",
+        "app/Http/Controllers/Admin/AmCustomerEngagementController.php",
+        "resources/views/admin/engagement/index.blade.php",
+        "database/migrations/2026_11_12_010000_create_am_customer_engagement.php",
+    }
+}
+FEEDBACK_COPY_MAP.update({
+    "feedback-only-routes.php": "routes/am245-feedback.php",
+    "resources/views/admin/engagement/feedback-only-sidebar.blade.php":
+        "resources/views/admin/engagement/feedback-only-sidebar.blade.php",
+})
+
 MANIFEST = "storage/app/am245-stage-manifest.json"
 
 
@@ -70,9 +94,12 @@ def verify_project(root):
             raise ValueError("Expected deployed Laravel directory missing: " + key)
 
 
-def mapped_files(root):
+def mapped_files(root, scope="all"):
+    if scope not in ("all", "feedback"):
+        raise ValueError("Unknown scope")
+    selected = FEEDBACK_COPY_MAP if scope == "feedback" else COPY_MAP
     result = []
-    for src, dst in COPY_MAP.items():
+    for src, dst in selected.items():
         source = MODULE / src
         if not source.is_file() or source.is_symlink():
             raise ValueError("Missing or linked module source: " + src)
@@ -135,7 +162,7 @@ def rollback(root, manifest):
     targets = []
     for record in records:
         rel = record.get("path", "")
-        if rel not in COPY_MAP.values():
+        if rel not in (set(COPY_MAP.values()) | set(FEEDBACK_COPY_MAP.values())):
             raise ValueError("Unexpected manifest path, refusing deletion")
         target = safe_target(root, rel)
         if not target.is_file() or checksum(target) != record.get("sha256"):
@@ -152,6 +179,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, required=True,
                         help="Absolute path of existing staging Laravel root")
+    parser.add_argument("--scope", choices=["feedback", "all"], default="feedback",
+                        help="Default: AM245 Feedback only; all includes AM246")
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--stage", action="store_true",
                        help="Copy new isolated files only; NO activation")
@@ -164,8 +193,8 @@ def main():
     if args.rollback:
         rollback(root, manifest)
         return
-    entries = mapped_files(root)
-    print("AM245/AM246 STAGING FILE PLAN")
+    entries = mapped_files(root, args.scope)
+    print("AM245/AM246 STAGING FILE PLAN; SCOPE:", args.scope)
     for _, _, rel, status in entries:
         print(status.upper() + ": " + rel)
     print("LARAVEL_ROUTING_FILE_EXISTS:", (root / "routes/web.php").is_file())
