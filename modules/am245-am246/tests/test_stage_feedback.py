@@ -1,0 +1,89 @@
+#!/usr/bin/env python3
+"""Unit tests: stage tool must never change existing ERP files or DB."""
+import importlib.util
+from pathlib import Path
+import tempfile
+import unittest
+
+SOURCE = Path(__file__).resolve().parents[1] / "tools/stage_feedback.py"
+spec = importlib.util.spec_from_file_location("am245_stage", SOURCE)
+stage_tool = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(stage_tool)
+
+
+class SafeStageTests(unittest.TestCase):
+    def setUp(self):
+        self.folder = tempfile.TemporaryDirectory()
+        self.root = Path(self.folder.name).resolve()
+        for relative in ("app", "routes", "resources/views",
+                         "database/migrations", "storage/app"):
+            (self.root / relative).mkdir(parents=True, exist_ok=True)
+        (self.root / "artisan").write_text("<?php\n")
+        (self.root / "routes/web.php").write_text("ORIGINAL_ROUTES")
+
+    def tearDown(self):
+        self.folder.cleanup()
+
+    def entries(self):
+        stage_tool.verify_project(self.root)
+        return stage_tool.mapped_files(self.root)
+
+    def manifest(self):
+        return self.root / stage_tool.MANIFEST
+
+    def test_dry_run_is_read_only(self):
+        entries = self.entries()
+        self.assertTrue(entries)
+        self.assertFalse(self.manifest().exists())
+        self.assertTrue(all(item[3] == "new" for item in entries))
+        self.assertEqual((self.root / "routes/web.php").read_text(),
+                         "ORIGINAL_ROUTES")
+        self.assertFalse((self.root / "app/Contracts/AmFeedbackCustomerSource.php").exists())
+
+    def test_staging_and_rollback_preserve_existing_erp(self):
+        stage_tool.stage(self.root, self.entries(), self.manifest())
+        self.assertTrue(self.manifest().is_file())
+        self.assertTrue((self.root / "routes/am245-am246.php").is_file())
+        self.assertEqual((self.root / "routes/web.php").read_text(),
+                         "ORIGINAL_ROUTES")
+        # Staging must not create files to activate Gate/provider or run migrations.
+        self.assertFalse((self.root / "app/Providers/AppServiceProvider.php").exists())
+        self.assertFalse((self.root / "database/migrations/migrations").exists())
+        stage_tool.rollback(self.root, self.manifest())
+        self.assertFalse(self.manifest().exists())
+        self.assertFalse((self.root / "routes/am245-am246.php").exists())
+        self.assertEqual((self.root / "routes/web.php").read_text(),
+                         "ORIGINAL_ROUTES")
+
+    def test_conflicting_existing_file_blocks_all_copy(self):
+        target = self.root / "app/Contracts/AmFeedbackCustomerSource.php"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text("USER_OWNED_FILE")
+        entries = self.entries()
+        self.assertTrue(any(e[3] == "CONFLICT" for e in entries))
+        with self.assertRaisesRegex(ValueError, "refusing to overwrite"):
+            stage_tool.stage(self.root, entries, self.manifest())
+        self.assertEqual(target.read_text(), "USER_OWNED_FILE")
+        self.assertFalse(self.manifest().exists())
+
+    def test_rollback_refuses_modified_files(self):
+        stage_tool.stage(self.root, self.entries(), self.manifest())
+        changed = self.root / "routes/am245-am246.php"
+        changed.write_text("OPERATOR_CHANGED_FILE")
+        with self.assertRaisesRegex(ValueError, "File changed"):
+            stage_tool.rollback(self.root, self.manifest())
+        self.assertEqual(changed.read_text(), "OPERATOR_CHANGED_FILE")
+        self.assertTrue(self.manifest().exists())
+
+    def test_existing_identical_file_not_deleted_by_rollback(self):
+        first_source = stage_tool.MODULE / "routes.php"
+        identical = self.root / "routes/am245-am246.php"
+        identical.write_bytes(first_source.read_bytes())
+        stage_tool.stage(self.root, self.entries(), self.manifest())
+        stage_tool.rollback(self.root, self.manifest())
+        self.assertTrue(identical.exists())
+        self.assertEqual(identical.read_bytes(), first_source.read_bytes())
+
+
+if __name__ == "__main__":
+    unittest.main()
