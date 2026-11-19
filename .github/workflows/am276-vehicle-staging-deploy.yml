@@ -1,4 +1,5 @@
 name: AM276 Vehicle Cascading Variant Deploy
+# Valid YAML gated staging verification after source preflight
 # Revalidate staging after guarded rollout is available on main
 on:
   push:
