@@ -13,6 +13,7 @@ class AmCustomerEngagementController extends Controller
 {
     public function index(Request $request)
     {
+        $request->validate(['q'=>['nullable','string','max:80'], 'rating'=>['nullable',Rule::in(['1','2','3','4','5'])], 'complaint_status'=>['nullable',Rule::in(['open','resolved','none'])]]);
         $query = $this->feedbackQuery($request);
         $summary=DB::table('am_customer_feedback')
             ->selectRaw('COUNT(*) as total, AVG(rating) as average')->first();
@@ -63,6 +64,7 @@ class AmCustomerEngagementController extends Controller
 
     public function exportCsv(Request $request)
     {
+        $request->validate(['q'=>['nullable','string','max:80'], 'rating'=>['nullable',Rule::in(['1','2','3','4','5'])], 'complaint_status'=>['nullable',Rule::in(['open','resolved','none'])]]);
         $feedback = $this->feedbackQuery($request)->limit(5000)->get();
         $filename = 'assam-motors-feedback-'.now()->format('Ymd-His').'.csv';
         return response()->streamDownload(function () use ($feedback) {
