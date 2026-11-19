@@ -16,6 +16,7 @@ jobs:
         run: |
           for file in \
             modules/am245-am246/routes.php \
+            modules/am245-am246/feedback-only-routes.php \
             modules/am245-am246/database/migrations/*.php \
             modules/am245-am246/app/Contracts/*.php \
             modules/am245-am246/app/Support/*.php \
