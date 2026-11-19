@@ -1,0 +1,38 @@
+name: AM245 Customer Feedback Module Checks
+on:
+  pull_request:
+    paths:
+      - 'modules/am245-am246/**'
+      - '.github/workflows/am245-feedback-lint.yml'
+  workflow_dispatch:
+jobs:
+  am245-checks:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP syntax
+        run: |
+          for file in \
+            modules/am245-am246/routes.php \
+            modules/am245-am246/database/migrations/*.php \
+            modules/am245-am246/app/Contracts/*.php \
+            modules/am245-am246/app/Http/Controllers/Admin/*.php; do
+            php -l "$file"
+          done
+      - name: Feedback and financial separation checks
+        run: python3 modules/am245-am246/tests/check_feedback_separation.py
+      - name: Feedback client-side JavaScript syntax
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          s=Path("modules/am245-am246/resources/views/admin/engagement/index.blade.php").read_text()
+          scripts=re.findall(r'<script>(.*?)</script>',s,flags=re.S)
+          assert len(scripts)==1
+          js=re.sub(r"@json\(route\('am\.customer-engagement\.targets'\)\)",
+                    '"https://example.invalid/targets"',scripts[0])
+          Path("/tmp/am245-feedback.js").write_text(js)
+          PY
+          node --check /tmp/am245-feedback.js
