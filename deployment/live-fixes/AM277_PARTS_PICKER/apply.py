@@ -16,6 +16,7 @@ files={
  'estimate_js':root/'public/js/estimate-entry.js',
  'counter_controller':root/'app/Http/Controllers/Web/CounterPartsInvoiceController.php',
  'counter_view':root/'resources/views/counter-sales/create.blade.php',
+ 'jobcard_view':root/'resources/views/job-cards/show.blade.php',
 }
 if not (root/'artisan').is_file() or not all(p.is_file() for p in files.values()):
  raise SystemExit('AM277_STOP_APP_ROOT_OR_SOURCE_MISSING')
@@ -121,6 +122,32 @@ document.addEventListener('focusout',e=>{if(isPart(e.target))hide(e.target);});
 })();
 </script>
 """
+
+# Job Card's actual visible AM89 selector uses original hidden select option
+# values for ID selection. Add data attributes without touching option text.
+edit('jobcard_view',
+       """data-gst="{{ number_format((float)($m->gst_percent??0),2,'.','') }}">""",
+       """data-gst="{{ number_format((float)($m->gst_percent??0),2,'.','') }}"
+                  data-vehicle-make="{{ $m->vehicle_make??'' }}"
+                  data-vehicle-model="{{ $m->vehicle_model??'' }}">""",
+       'JC_MASTER_OPTION_METADATA')
+edit('jobcard_view',
+       "item.setAttribute('role','option');item.textContent=label(opt);",
+       """item.setAttribute('role','option');item.textContent=label(opt);
+       // AM277_PARTS_CONTEXT_ONLY: data visible in search result only.
+       var am277Vehicle=[opt.dataset.vehicleMake,opt.dataset.vehicleModel]
+          .map(function(v){return String(v||'').trim();}).filter(Boolean).join(' · ');
+       if(am277Vehicle){
+          var am277Badge=document.createElement('small');
+          am277Badge.className='am277-part-vehicle';
+          am277Badge.style.cssText='display:block;color:#235f97;font-size:10px;margin-top:3px';
+          am277Badge.textContent='Vehicle: '+am277Vehicle;
+          item.appendChild(am277Badge);
+       }""",
+       'JC_AM89_VISIBLE_SUGGESTION')
+if 'search.value=label(opt);search.setCustomValidity' not in data['jobcard_view']:
+ raise SystemExit('AM277_STOP_JC_CANONICAL_SELECTED_LABEL_MISSING')
+
 edit('counter_view',"<script>\n(function(){\n'use strict';",
  counter_script+"<script>\n(function(){\n'use strict';",'COUNTER_PICKER_TRANSIENT_CONTEXT')
 
