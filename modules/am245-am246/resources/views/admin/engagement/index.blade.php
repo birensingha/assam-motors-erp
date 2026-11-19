@@ -41,7 +41,17 @@ button.alt{background:#e8eff6;color:#1a3754}label{font-size:13px;font-weight:650
 <td><details><summary>{{ $item->reply_draft ? 'Edit draft' : 'Draft reply' }}</summary>
 <form method="post" action="{{route('am.customer-engagement.reply')}}">@csrf
 <input type="hidden" name="feedback_id" value="{{$item->id}}"><textarea name="reply" maxlength="2000" required>{{$item->reply_draft}}</textarea><button>Save Draft</button></form></details></td>
-<td><form method="post" action="{{route('am.customer-engagement.complaint')}}">@csrf<input type="hidden" name="feedback_id" value="{{$item->id}}"><input type="hidden" name="action" value="open"><button class="alt">Open Complaint</button></form></td></tr>
+<td>
+@if($item->complaint_status==='open')<span class="pill">Open complaint</span>
+@elseif($item->complaint_status==='resolved')<span class="pill">Resolved</span>
+@else
+<form method="post" action="{{route('am.customer-engagement.complaint')}}">@csrf
+<input type="hidden" name="feedback_id" value="{{$item->id}}">
+<input type="hidden" name="action" value="open">
+<button class="alt">Open Complaint</button>
+</form>
+@endif
+</td></tr>
 @empty<tr><td colspan="4">No feedback recorded yet.</td></tr>@endforelse</tbody></table></div>{{ $feedback->links() }}</section>
 <div class="grid" style="margin-top:16px">
 <section class="card"><h2>Complaints</h2><div class="scroll"><table><tr><th>Feedback</th><th>Status</th><th>Resolution</th></tr>
