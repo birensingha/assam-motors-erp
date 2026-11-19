@@ -69,7 +69,10 @@ if route_dir.is_dir():
     print("ROUTE_MARKERS (file:line:topic, no source excerpts):")
     route_topics = ("customer", "vehicle", "job_card", "jobcard",
                     "feedback", "admin", "sidebar")
+    shown = 0
     for path in route_files:
+        if shown >= 80:
+            break
         try:
             with path.open(errors="replace") as src:
                 for number, line in enumerate(src, 1):
@@ -77,8 +80,13 @@ if route_dir.is_dir():
                     if found and ("Route::" in line or "->name(" in line):
                         print(" ", str(path.relative_to(root))
                               + ":" + str(number) + ":" + ",".join(found[:3]))
+                        shown += 1
+                        if shown >= 80:
+                            break
         except OSError:
             pass
+    if shown >= 80:
+        print("  additional route markers omitted (80-line privacy/output limit)")
 
 for path in (
     "app/Providers/AppServiceProvider.php",
