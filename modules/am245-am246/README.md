@@ -42,3 +42,17 @@ Automatic messaging requires business credentials, opt-in, approved templates an
 - Before deployment, bind this interface in the actual Laravel app's service provider to a concrete existing Customer/Vehicle/Job Card repository and insert proper route/sidebar links using the real deployed code.
 - This standalone source-contract is **not yet bound** to the Hostinger Laravel models. Never enable route in live staging until this is done, or saving feedback will fail.
 - Draft PR checks: PHP syntax, static feedback separation and client JS syntax. End-to-end Customer Master/JC relational and Admin permission tests are still required.
+
+## Staging-only delivery with reversible, non-destructive installer (2026-11-19)
+
+The helper `tools/stage_feedback.py` accepts the **actual Laravel root** and has three strictly separated operations:
+
+- **Default / dry-run:** identifies the exact target paths and refuses to use an unrecognised Laravel directory; reads file hashes only. It never opens `.env`, reads customer data, runs Artisan, modifies routes or touches the DB.
+- **`--stage`:** copies this module's missing PHP/Blade/route/migration files into the staging code tree, aborting on any different existing target. Creates an explicit SHA-256 manifest of newly created files in `storage/app/am245-stage-manifest.json`. **Does not activate** route includes, Gates, service bindings, sidebar, or DB migrations; thus it is NOT a completed deployment.
+- **`--rollback`:** deletes only exact, unchanged files recorded as newly created by `--stage`, refusing rollback if any were edited; no DB rollback or existing application file deletion.
+
+Safety tests cover untouched existing routes, collision refusal, preservation of identical pre-existing files and modified-file rollback refusal. Do not use this helper to claim live deployment.
+
+**Activation gate:** Before the module can be enabled, a developer with access to the actual Hostinger Laravel source must (1) verify existing customer, vehicle, JC tables/relations/company scope, (2) bind both `AmFeedbackCustomerSource` and `AmEngagementLedger` to implemented scoped adapters, (3) register server-side verified Owner/Admin Gates for customer engagement and the stricter ledger Gate, (4) mount `routes/am245-am246.php` inside real route groups, (5) insert the guarded sidebar links, (6) take database backup then run and verify migration, (7) test authorized user flow and forbidden staff/HR access, (8) verify feedback save, complaint audit, rating and search, no outstanding in feedback, and (9) document tested rollback for any additional active changes. The `AmEngagementLedger` binding is for the separate financial messaging page only.
+
+For Hostinger's Laravel root previously identified by the operator, first run the read-only preflight tool `tools/staging_preflight.py` and share the non-secret structural result; full deployed source is not present in GitHub. Never run database migrations or change `routes/web.php` based on guessed schema.
