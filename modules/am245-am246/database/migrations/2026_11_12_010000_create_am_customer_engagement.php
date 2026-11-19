@@ -13,6 +13,7 @@ return new class extends Migration {
         });
         Schema::create('am_customer_complaints', function(Blueprint $t) {
             $t->id(); $t->foreignId('feedback_id')->constrained('am_customer_feedback');
+            $t->unique('feedback_id'); // one complaint workflow per feedback; prevents concurrent duplicates
             $t->string('status',24)->default('open'); $t->text('resolution_note')->nullable();
             $t->unsignedBigInteger('created_by')->nullable(); $t->timestamps();
         });
