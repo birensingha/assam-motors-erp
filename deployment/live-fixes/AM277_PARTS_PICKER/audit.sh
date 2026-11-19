@@ -51,3 +51,33 @@ for score,f,s in sorted(paths,key=lambda v:-v[0])[:22]:
  print('AM277_MATCH_COUNT',len(selected))
 PY
 echo AM277_TARGETED_AUDIT_PASS
+
+echo AM277_FOCUSED_SOURCE
+python3 - <<'PY'
+from pathlib import Path
+docs={
+ 'app/Http/Controllers/Web/AdminPurchasePageController.php':['public function partSearch','public function create('],
+ 'app/Http/Controllers/Web/AdminEstimatePageController.php':['public function create('],
+ 'app/Http/Controllers/Web/CounterPartsInvoiceController.php':['public function create('],
+ 'app/Http/Controllers/Web/AdminJobCardPageController.php':['partsMaster','PartMaster::'],
+ 'resources/views/purchases/create.blade.php':['part-option','part-results','part-search','partsSearch','@json($parts)','AM_PURCHASE_PART_SEARCH_URL'],
+ 'resources/views/purchases/edit.blade.php':['part-option','part-results','part-search'],
+ 'public/js/purchase-edit.js':['part-option','part-results','function render','part.name','part.code','part_label','part-search'],
+ 'public/js/purchase-create.js':['part-option','part-results','part_name','part.code'],
+ 'resources/views/estimates/create.blade.php':['@json($parts)','part_name','partOptions','part-option','Select Part'],
+ 'resources/views/counter-sales/create.blade.php':['@json($parts)','part_name','partOptions','part-option'],
+ 'resources/views/job-cards/show.blade.php':['partsMaster','am85-part-select','am85-part-master','am85-part-form','am85-part-search']
+}
+for name,terms in docs.items():
+ p=Path(name)
+ if not p.exists():continue
+ s=p.read_text(errors='replace')
+ print('AM277_DOC',name,'LEN',len(s))
+ spots=[]
+ for term in terms:
+  i=s.find(term)
+  if i>=0 and all(abs(i-a)>450 for a in spots):
+   spots.append(i)
+   print('AM277_FOCUS',term,repr(s[max(0,i-180):i+3400])[:3700])
+PY
+echo AM277_FOCUSED_AUDIT_PASS
