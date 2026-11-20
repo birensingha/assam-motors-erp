@@ -136,11 +136,11 @@ def stage(root, entries, manifest):
         for source, target, rel, status in entries:
             if status != "new":
                 continue
-            write_atomic(target, source.read_bytes())
+            # Recheck after planning: a directory may have been replaced by a symlink.\n            # This narrows the race window; it is not a substitute for fd-relative\n            # filesystem operations against an adversarial concurrent writer.\n            target = safe_target(root, rel)\n            write_atomic(target, source.read_bytes())
             created.append({"path": rel, "sha256": checksum(target)})
         payload = {"format": 1, "root": str(root), "created": created,
                    "mode": "staged_only_routes_not_registered_migrations_not_run"}
-        write_atomic(manifest, json.dumps(payload, indent=2).encode("utf-8"))
+        manifest = safe_target(root, MANIFEST)\n        write_atomic(manifest, json.dumps(payload, indent=2).encode("utf-8"))
     except BaseException:
         # Remove only intact files created by this invocation, not user changes.
         for record in created:
