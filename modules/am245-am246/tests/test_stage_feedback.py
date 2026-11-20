@@ -142,6 +142,29 @@ class SafeStageTests(unittest.TestCase):
             self.assertTrue((self.root / record["path"]).exists())
         self.assertTrue(self.manifest().exists())
 
+    def test_rollback_prevalidates_every_file_before_any_deletion(self):
+        stage_tool.stage(self.root, self.entries(), self.manifest())
+        payload = json.loads(self.manifest().read_text())
+        self.assertGreaterEqual(len(payload["created"]), 2)
+        first = self.root / payload["created"][0]["path"]
+        last = self.root / payload["created"][-1]["path"]
+        last.write_text("OPERATOR_CHANGED_LAST_FILE")
+        with self.assertRaisesRegex(ValueError, "File changed"):
+            stage_tool.rollback(self.root, self.manifest())
+        self.assertTrue(first.exists(), "rollback must not delete earlier valid files")
+        self.assertEqual(last.read_text(), "OPERATOR_CHANGED_LAST_FILE")
+        self.assertTrue(self.manifest().exists())
+
+    def test_symlinked_destination_directory_is_rejected(self):
+        outside = self.root / "outside"
+        outside.mkdir()
+        contract_dir = self.root / "app/Contracts"
+        contract_dir.symlink_to(outside, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "Refusing symlinked path"):
+            self.entries()
+        self.assertEqual(list(outside.iterdir()), [])
+        self.assertFalse(self.manifest().exists())
+
     def test_existing_identical_file_not_deleted_by_rollback(self):
         first_source = stage_tool.MODULE / "feedback-only-routes.php"
         identical = self.root / "routes/am245-feedback.php"
