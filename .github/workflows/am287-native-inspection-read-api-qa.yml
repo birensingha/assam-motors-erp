@@ -1,0 +1,33 @@
+name: AM287 staged native inspection read API QA
+on:
+  push:
+    branches: [feature/am287-native-inspection-read-api]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  lint-and-readonly-gates:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: PHP syntax + auth / no writes static gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          FILE=deployment/live-fixes/AM287_NATIVE_INSPECTION_READ_API/files/app/Http/Controllers/Api/V1/Am287InspectionReadController.php
+          php -l "$FILE"
+          grep -Fq 'ErpAuthUser' "$FILE"
+          grep -Fq 'isAdmin()' "$FILE"
+          grep -Fq 'InspectionQcGuard' "$FILE"
+          grep -Fq 'Am206InspectionMaster' "$FILE"
+          grep -Fq "'dynamic_submit_enabled' => false" "$FILE"
+          grep -Fq "'qc_pass_authorized' => false" "$FILE"
+          if grep -E -- '->(insert|insertGetId|update|delete|upsert|save|publish|sync|repair|verify)\(' "$FILE"; then
+            echo "Unexpected write/verification method call in AM287 read-only controller"
+            exit 1
+          fi
+          test -s deployment/live-fixes/AM287_NATIVE_INSPECTION_READ_API/README.md
+          echo "AM287_STAGING_READ_ONLY_SOURCE_LINT_PASS — not deployed"
