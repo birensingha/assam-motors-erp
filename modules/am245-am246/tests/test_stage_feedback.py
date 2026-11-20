@@ -19,7 +19,8 @@ class SafeStageTests(unittest.TestCase):
         for relative in ("app", "routes", "resources/views",
                          "database/migrations", "storage/app"):
             (self.root / relative).mkdir(parents=True, exist_ok=True)
-        (self.root / "artisan").write_text("<?php\n")
+        (self.root / "artisan").write_text("<?php
+")
         (self.root / "routes/web.php").write_text("ORIGINAL_ROUTES")
 
     def tearDown(self):
@@ -165,7 +166,19 @@ class SafeStageTests(unittest.TestCase):
         self.assertEqual(list(outside.iterdir()), [])
         self.assertFalse(self.manifest().exists())
 
-    def test_symlink_swap_after_plan_is_rejected_before_copy(self):\n        entries = self.entries()\n        outside = self.root / "outside"\n        outside.mkdir()\n        contract_dir = self.root / "app/Contracts"\n        contract_dir.rmdir() if contract_dir.exists() else None\n        contract_dir.symlink_to(outside, target_is_directory=True)\n        with self.assertRaisesRegex(ValueError, "Refusing symlinked path"):\n            stage_tool.stage(self.root, entries, self.manifest())\n        self.assertEqual(list(outside.iterdir()), [])\n        self.assertFalse(self.manifest().exists())\n\n    def test_existing_identical_file_not_deleted_by_rollback(self):
+    def test_symlink_swap_after_plan_is_rejected_before_copy(self):
+        entries = self.entries()
+        outside = self.root / "outside"
+        outside.mkdir()
+        contract_dir = self.root / "app/Contracts"
+        contract_dir.rmdir() if contract_dir.exists() else None
+        contract_dir.symlink_to(outside, target_is_directory=True)
+        with self.assertRaisesRegex(ValueError, "Refusing symlinked path"):
+            stage_tool.stage(self.root, entries, self.manifest())
+        self.assertEqual(list(outside.iterdir()), [])
+        self.assertFalse(self.manifest().exists())
+
+    def test_existing_identical_file_not_deleted_by_rollback(self):
         first_source = stage_tool.MODULE / "feedback-only-routes.php"
         identical = self.root / "routes/am245-feedback.php"
         identical.write_bytes(first_source.read_bytes())
