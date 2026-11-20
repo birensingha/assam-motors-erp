@@ -19,8 +19,7 @@ class SafeStageTests(unittest.TestCase):
         for relative in ("app", "routes", "resources/views",
                          "database/migrations", "storage/app"):
             (self.root / relative).mkdir(parents=True, exist_ok=True)
-        (self.root / "artisan").write_text("<?php
-")
+        (self.root / "artisan").write_text("<?php\n")
         (self.root / "routes/web.php").write_text("ORIGINAL_ROUTES")
 
     def tearDown(self):
