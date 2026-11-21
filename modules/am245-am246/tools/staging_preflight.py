@@ -22,10 +22,10 @@ if not safe_file(root / "artisan"):
 
 print("=== AM245 STAGING INTEGRATION PREFLIGHT ===")
 print("ARTISAN_PRESENT: yes")
-print("LARAVEL_COMPOSER_PRESENT:", (root / "composer.json").is_file())
+print("LARAVEL_COMPOSER_PRESENT:", safe_file(root / "composer.json"))
 print("APP_MODELS_PRESENT:", (root / "app/Models").is_dir())
-print("ROUTES_WEB_PRESENT:", (root / "routes/web.php").is_file())
-print("ROUTES_API_PRESENT:", (root / "routes/api.php").is_file())
+print("ROUTES_WEB_PRESENT:", safe_file(root / "routes/web.php"))
+print("ROUTES_API_PRESENT:", safe_file(root / "routes/api.php"))
 
 if safe_file(root / "composer.json"):
     try:
