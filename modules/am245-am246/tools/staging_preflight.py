@@ -5,11 +5,18 @@ secrets, .env values, customer records, tokens, SQL or private log content.
 """
 from pathlib import Path
 import json
-import re
 import sys
 
-root = Path.cwd()
-if not (root / "artisan").is_file():
+root = Path.cwd().resolve()
+
+def safe_file(path):
+    """Ignore symlinks and anything resolving outside the Laravel root."""
+    try:
+        return not path.is_symlink() and path.resolve().is_relative_to(root) and path.is_file()
+    except (OSError, RuntimeError):
+        return False
+
+if not safe_file(root / "artisan"):
     print("ERROR: Run in the Laravel directory containing artisan")
     sys.exit(2)
 
@@ -20,7 +27,7 @@ print("APP_MODELS_PRESENT:", (root / "app/Models").is_dir())
 print("ROUTES_WEB_PRESENT:", (root / "routes/web.php").is_file())
 print("ROUTES_API_PRESENT:", (root / "routes/api.php").is_file())
 
-if (root / "composer.json").is_file():
+if safe_file(root / "composer.json"):
     try:
         spec = json.loads((root / "composer.json").read_text(errors="replace"))
         print("LARAVEL_VERSION_CONSTRAINT:",
@@ -33,7 +40,7 @@ def relevant_files(folder, suffix, terms, cap=35):
         return []
     matches = []
     for path in folder.rglob("*"):
-        if not path.is_file() or not path.name.endswith(suffix):
+        if not safe_file(path) or not path.name.endswith(suffix):
             continue
         rel = str(path.relative_to(root))
         low = rel.lower()
@@ -63,7 +70,7 @@ for title, folder, suffix, keywords, cap in [
 route_dir = root / "routes"
 print("ROUTE_FILES:")
 if route_dir.is_dir():
-    route_files = sorted(route_dir.glob("*.php"))[:25]
+    route_files = sorted(p for p in route_dir.glob("*.php") if safe_file(p))[:25]
     for path in route_files:
         print(" ", str(path.relative_to(root)))
     print("ROUTE_MARKERS (file:line:topic, no source excerpts):")
@@ -94,5 +101,5 @@ for path in (
     "bootstrap/app.php",
     "resources/views/layouts/app.blade.php"
 ):
-    print("CANDIDATE:", path, "present" if (root / path).is_file() else "absent")
+    print("CANDIDATE:", path, "present" if safe_file(root / path) else "absent")
 print("=== END (READ-ONLY; NO SECRETS OR CUSTOMER DATA) ===")
