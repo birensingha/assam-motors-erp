@@ -1,0 +1,101 @@
+name: AM260 Unified Tally-Style Keyboard Entry — STAGING
+on:
+  push:
+    branches: [feature/am260-unified-erp-keyboard-entry-20261119]
+    paths:
+      - .github/workflows/deploy-am260-unified-keyboard-entry-staging.yml
+      - deployment/live-fixes/AM260_KEYBOARD_ENTRY/install.py
+      - deployment/live-fixes/AM260_KEYBOARD_ENTRY/keyboard-smoke.cjs
+      - deployment/live-fixes/AM260_KEYBOARD_ENTRY/files/**
+permissions: {contents: read}
+concurrency: {group: assam-motors-staging-control, cancel-in-progress: false}
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      SSH_KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      SSH_PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+      ROOT: ${{ vars.STAGING_APP_ROOT || '/home/u956497103/domains/assammotors.com/assam-erp-staging' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Common keyboard JS and source safety preflight
+        run: |
+          set -euo pipefail
+          P=deployment/live-fixes/AM260_KEYBOARD_ENTRY
+          python3 -m py_compile "$P/install.py"
+          node --check "$P/files/public/js/am260-unified-keyboard-entry.js"
+          node --check "$P/keyboard-smoke.cjs"
+          if grep -E 'fetch\(|XMLHttpRequest|requestSubmit\(|\.submit\(' "$P/files/public/js/am260-unified-keyboard-entry.js"; then
+            echo STOP_AM260_AUTO_TRANSACTION_NOT_ALLOWED
+            exit 8
+          fi
+          echo AM260_SOURCE_SYNTAX_AND_NO_AUTO_SUBMIT_PASS
+      - name: Simulated authenticated Admin and Staff form keyboard navigation
+        run: |
+          set -euo pipefail
+          npm install --no-save --no-audit --no-fund jsdom@26 @testing-library/user-event@14
+          node deployment/live-fixes/AM260_KEYBOARD_ENTRY/keyboard-smoke.cjs
+      - name: Configure Hostinger STAGING SSH
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$USERNAME" && test -n "$PORT"
+          test -n "$SSH_KEY" || test -n "$SSH_PASSWORD"
+          install -d -m 700 ~/.ssh
+          for retry in 1 2 3 4 5 6; do
+            if timeout 18 ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null; then break; fi
+            sleep 3
+          done
+          test -s ~/.ssh/known_hosts
+          if [ -n "$SSH_KEY" ]; then
+            printf '%s\n' "$SSH_KEY" > ~/.ssh/id_ed25519
+            chmod 600 ~/.ssh/id_ed25519
+          else
+            sudo apt-get update -qq
+            sudo apt-get install -qq -y sshpass
+          fi
+      - name: Guarded installation of shared keyboard on STAGING
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" "bash -s -- '$ROOT'" <<'REMOTE'
+          set -euo pipefail
+          APP="$1"
+          test "$(basename "$APP")" = "assam-erp-staging"
+          test -f "$APP/artisan"
+          cd "$HOME/assam-motors-deploy"
+          git fetch origin feature/am260-unified-erp-keyboard-entry-20261119
+          TMP_DIR="$(mktemp -d)"
+          git archive FETCH_HEAD deployment/live-fixes/AM260_KEYBOARD_ENTRY | tar -x -C "$TMP_DIR"
+          SCRIPT="$TMP_DIR/deployment/live-fixes/AM260_KEYBOARD_ENTRY/install.py"
+          if grep -Fq "AM260_UNIFIED_KEYBOARD_ENTRY" "$APP/public/js/am254-global-form-autosave.js"; then
+            echo AM260_EXISTING_MODULE_VERIFY_ONLY
+          else
+            python3 "$SCRIPT" check "$APP"
+            python3 "$SCRIPT" apply "$APP"
+          fi
+          python3 "$SCRIPT" verify "$APP"
+          echo AM260_STAGING_SHARED_KEYBOARD_ENTRY_INSTALLED_VERIFIED
+          REMOTE
+      - name: Node syntax-check exact deployed combined module
+        run: |
+          set -euo pipefail
+          if [ -n "$SSH_KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=15 -p "$PORT" -i ~/.ssh/id_ed25519)
+          else
+            export SSHPASS="$SSH_PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=15 -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" "cat '$ROOT/public/js/am254-global-form-autosave.js'" | node --check
+          echo AM260_DEPLOYED_AUTOSAVE_AND_KEYBOARD_NODE_SYNTAX_PASS
+      - name: Remove ephemeral SSH credentials
+        if: always()
+        run: rm -f ~/.ssh/id_ed25519
