@@ -41,6 +41,28 @@ class PreflightTests(unittest.TestCase):
             self.assertNotIn("DO_NOT_READ_OUTSIDE", result.stdout)
             self.assertIn("ROUTES_WEB_PRESENT: False", result.stdout)
 
+    def test_symlinked_artisan_outside_root_is_rejected(self):
+        with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryDirectory() as external:
+            root = Path(folder)
+            outside = Path(external) / "artisan"
+            outside.write_text("NEVER_READ_EXTERNAL_ARTISAN")
+            (root / "artisan").symlink_to(outside)
+            result = self.run_tool(root)
+            self.assertEqual(result.returncode, 2)
+            self.assertNotIn("NEVER_READ_EXTERNAL_ARTISAN", result.stdout + result.stderr)
+
+    def test_symlinked_composer_outside_root_is_ignored(self):
+        with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryDirectory() as external:
+            root = Path(folder)
+            (root / "artisan").write_text("<?php")
+            outside = Path(external) / "composer.json"
+            outside.write_text('{"require":{"laravel/framework":"NEVER_PRINT_EXTERNAL"}}')
+            (root / "composer.json").symlink_to(outside)
+            result = self.run_tool(root)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("LARAVEL_COMPOSER_PRESENT: False", result.stdout)
+            self.assertNotIn("NEVER_PRINT_EXTERNAL", result.stdout + result.stderr)
+
     def test_inventory_exposes_structure_not_secrets_or_source(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
