@@ -29,6 +29,8 @@ jobs:
         run: php modules/am245-am246/tests/test_feedback_csv.php
       - name: Staging and rollback safety tests
         run: python3 modules/am245-am246/tests/test_stage_feedback.py
+      - name: Read-only staging preflight privacy tests
+        run: python3 modules/am245-am246/tests/test_staging_preflight.py
       - name: Feedback client-side JavaScript syntax
         run: |
           python3 - <<'PY'
