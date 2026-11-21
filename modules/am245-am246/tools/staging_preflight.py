@@ -16,6 +16,19 @@ def safe_file(path):
     except (OSError, RuntimeError):
         return False
 
+def safe_dir(path):
+    """Never inventory through a symlinked directory, including ancestors."""
+    try:
+        relative = path.relative_to(root)
+        current = root
+        for part in relative.parts:
+            current = current / part
+            if current.is_symlink():
+                return False
+        return path.is_dir() and path.resolve().is_relative_to(root)
+    except (OSError, RuntimeError, ValueError):
+        return False
+
 if not safe_file(root / "artisan"):
     print("ERROR: Run in the Laravel directory containing artisan")
     sys.exit(2)
@@ -23,7 +36,7 @@ if not safe_file(root / "artisan"):
 print("=== AM245 STAGING INTEGRATION PREFLIGHT ===")
 print("ARTISAN_PRESENT: yes")
 print("LARAVEL_COMPOSER_PRESENT:", safe_file(root / "composer.json"))
-print("APP_MODELS_PRESENT:", (root / "app/Models").is_dir())
+print("APP_MODELS_PRESENT:", safe_dir(root / "app/Models"))
 print("ROUTES_WEB_PRESENT:", safe_file(root / "routes/web.php"))
 print("ROUTES_API_PRESENT:", safe_file(root / "routes/api.php"))
 
@@ -36,7 +49,7 @@ if safe_file(root / "composer.json"):
         print("LARAVEL_VERSION_CONSTRAINT: unreadable")
 
 def relevant_files(folder, suffix, terms, cap=35):
-    if not folder.is_dir():
+    if not safe_dir(folder):
         return []
     matches = []
     for path in folder.rglob("*"):
@@ -69,7 +82,7 @@ for title, folder, suffix, keywords, cap in [
 
 route_dir = root / "routes"
 print("ROUTE_FILES:")
-if route_dir.is_dir():
+if safe_dir(route_dir):
     route_files = sorted(p for p in route_dir.glob("*.php") if safe_file(p))[:25]
     for path in route_files:
         print(" ", str(path.relative_to(root)))
