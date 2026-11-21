@@ -63,6 +63,35 @@ class PreflightTests(unittest.TestCase):
             self.assertIn("LARAVEL_COMPOSER_PRESENT: False", result.stdout)
             self.assertNotIn("NEVER_PRINT_EXTERNAL", result.stdout + result.stderr)
 
+    def test_external_symlinked_models_directory_is_not_inventoried(self):
+        with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryDirectory() as external:
+            root = Path(folder)
+            (root / "artisan").write_text("<?php")
+            (root / "app").mkdir()
+            outside = Path(external) / "Models"
+            outside.mkdir()
+            (outside / "Customer.php").write_text("<?php // EXTERNAL_PRIVATE")
+            (root / "app/Models").symlink_to(outside, target_is_directory=True)
+            result = self.run_tool(root)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("APP_MODELS_PRESENT: False", result.stdout)
+            self.assertNotIn("app/Models/Customer.php", result.stdout)
+            self.assertNotIn("EXTERNAL_PRIVATE", result.stdout + result.stderr)
+
+    def test_internal_symlinked_models_directory_is_not_inventoried(self):
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            (root / "artisan").write_text("<?php")
+            (root / "app").mkdir()
+            target = root / "private-models"
+            target.mkdir()
+            (target / "Customer.php").write_text("<?php")
+            (root / "app/Models").symlink_to(target, target_is_directory=True)
+            result = self.run_tool(root)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("APP_MODELS_PRESENT: False", result.stdout)
+            self.assertNotIn("app/Models/Customer.php", result.stdout)
+
     def test_inventory_exposes_structure_not_secrets_or_source(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
