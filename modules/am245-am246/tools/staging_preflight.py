@@ -12,7 +12,13 @@ root = Path.cwd().resolve()
 def safe_file(path):
     """Ignore symlinks and anything resolving outside the Laravel root."""
     try:
-        return not path.is_symlink() and path.resolve().is_relative_to(root) and path.is_file()
+        relative = path.relative_to(root)
+        current = root
+        for part in relative.parts:
+            current = current / part
+            if current.is_symlink():
+                return False
+        return path.resolve().is_relative_to(root) and path.is_file()
     except (OSError, RuntimeError):
         return False
 
