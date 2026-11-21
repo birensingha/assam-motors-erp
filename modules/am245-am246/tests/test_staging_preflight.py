@@ -41,6 +41,20 @@ class PreflightTests(unittest.TestCase):
             self.assertNotIn("DO_NOT_READ_OUTSIDE", result.stdout)
             self.assertIn("ROUTES_WEB_PRESENT: False", result.stdout)
 
+    def test_symlinked_routes_directory_is_not_inventoried(self):
+        with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryDirectory() as external:
+            root = Path(folder)
+            (root / "artisan").write_text("<?php")
+            outside = Path(external) / "routes"
+            outside.mkdir()
+            (outside / "web.php").write_text("Route::get('/customer', 'PRIVATE');\n")
+            (root / "routes").symlink_to(outside, target_is_directory=True)
+            result = self.run_tool(root)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("ROUTES_WEB_PRESENT: False", result.stdout)
+            self.assertNotIn("routes/web.php", result.stdout)
+            self.assertNotIn("PRIVATE", result.stdout + result.stderr)
+
     def test_symlinked_artisan_outside_root_is_rejected(self):
         with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryDirectory() as external:
             root = Path(folder)
