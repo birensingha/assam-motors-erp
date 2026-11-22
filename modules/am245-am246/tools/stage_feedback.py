@@ -74,6 +74,14 @@ FEEDBACK_COPY_MAP = {
     key: value for key, value in COPY_MAP.items()
     if key in {
         "app/Contracts/AmFeedbackCustomerSource.php",
+        "app/Contracts/AmFeedbackInvitationSource.php",
+        "app/Support/AmFeedbackInvitationToken.php",
+        "app/Support/AmJobCardFeedbackInvite.php",
+        "app/Http/Controllers/Admin/AmFeedbackInvitationController.php",
+        "resources/views/admin/engagement/public-feedback.blade.php",
+        "resources/views/admin/engagement/job-card-feedback-action.blade.php",
+        "database/migrations/2026_11_22_000000_create_am245_feedback_invitations.php",
+        "feedback-invitation-routes.php",
         "app/Support/AmFeedbackCsv.php",
         "app/Http/Controllers/Admin/AmCustomerEngagementController.php",
         "resources/views/admin/engagement/index.blade.php",
