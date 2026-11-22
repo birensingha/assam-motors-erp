@@ -10,6 +10,7 @@ for rel in ['app/Http/Controllers/Web/AdminEstimatePageController.php','public/j
  lines=p.read_text('utf8','replace').splitlines()
  print('AM261_QUICK_FILE',rel,'LINES',len(lines))
  if 'AdminEstimate' in rel:ids=set(range(min(len(lines),85)))
+ elif 'job-cards/show.blade.php' in rel:ids=set(range(3580,min(len(lines),3755)))
  else:
   ids=set()
   patterns=[r'osl-masters.quick-create',r'osl_masters',r'oslMaster',r'createOsl',r'quick.?create',r'Create OSL',r'AM241_OSL',r'oslMasters']
