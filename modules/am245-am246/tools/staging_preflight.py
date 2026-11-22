@@ -4,10 +4,15 @@ Run from deployed Laravel root. Prints structural metadata ONLY, no source code,
 secrets, .env values, customer records, tokens, SQL or private log content.
 """
 from pathlib import Path
+import argparse
 import json
 import sys
 
-root = Path.cwd().resolve()
+parser = argparse.ArgumentParser(description='Read-only Laravel structural preflight; no secrets or customer data')
+parser.add_argument('--root', type=Path, default=Path.cwd(),
+                    help='Laravel project root containing artisan (defaults to current directory)')
+args = parser.parse_args()
+root = args.root.resolve()
 
 def safe_file(path):
     """Ignore symlinks and anything resolving outside the Laravel root."""
@@ -36,7 +41,7 @@ def safe_dir(path):
         return False
 
 if not safe_file(root / "artisan"):
-    print("ERROR: Run in the Laravel directory containing artisan")
+    print("ERROR: Supply --root pointing to the Laravel directory containing artisan")
     sys.exit(2)
 
 print("=== AM245 STAGING INTEGRATION PREFLIGHT ===")
