@@ -70,6 +70,30 @@ class SafeStageTests(unittest.TestCase):
         self.assertFalse((self.root / "app/Contracts/AmEngagementLedger.php").exists())
         stage_tool.rollback(self.root, self.manifest())
 
+    def test_feedback_scope_stages_complete_invitation_flow_without_finance(self):
+        paths = [item[2] for item in self.entries()]
+        required = [
+            "app/Contracts/AmFeedbackInvitationSource.php",
+            "app/Support/AmFeedbackInvitationToken.php",
+            "app/Support/AmJobCardFeedbackInvite.php",
+            "app/Http/Controllers/Admin/AmFeedbackInvitationController.php",
+            "resources/views/admin/engagement/public-feedback.blade.php",
+            "resources/views/admin/engagement/job-card-feedback-action.blade.php",
+            "database/migrations/2026_11_22_000000_create_am245_feedback_invitations.php",
+            "routes/am245-feedback-invitations.php",
+        ]
+        for target in required:
+            self.assertIn(target, paths, target)
+        self.assertNotIn("app/Contracts/AmEngagementLedger.php", paths)
+        self.assertNotIn("routes/am245-am246.php", paths)
+        stage_tool.stage(self.root, self.entries(), self.manifest())
+        for target in required:
+            self.assertTrue((self.root / target).is_file(), target)
+        self.assertEqual((self.root / "routes/web.php").read_text(), "ORIGINAL_ROUTES")
+        stage_tool.rollback(self.root, self.manifest())
+        for target in required:
+            self.assertFalse((self.root / target).exists(), target)
+
     def test_all_scope_has_finance_files_but_does_not_activate_routes(self):
         entries = self.entries("all")
         paths = [item[2] for item in entries]
