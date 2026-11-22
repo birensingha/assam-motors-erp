@@ -84,9 +84,10 @@ class AmFeedbackInvitationController extends Controller
             }
         });
 
-        return redirect()->away('https://wa.me/'.$phone.'?text='.rawurlencode($message))
-            ->withHeaders(['Cache-Control' => 'private, no-store',
-                           'Referrer-Policy' => 'no-referrer']);
+        $redirect = redirect()->away('https://wa.me/'.$phone.'?text='.rawurlencode($message));
+        $redirect->headers->set('Cache-Control', 'private, no-store');
+        $redirect->headers->set('Referrer-Policy', 'no-referrer');
+        return $redirect;
     }
 
     private function pendingInvitation(string $token, bool $lock = false)
