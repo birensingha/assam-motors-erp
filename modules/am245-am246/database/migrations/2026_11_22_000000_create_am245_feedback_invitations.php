@@ -18,7 +18,7 @@ return new class extends Migration {
             $t->string('job_card_ref_snapshot', 64);
             $t->char('token_hash', 64)->unique(); // NEVER store raw token/phone
             $t->timestamp('expires_at')->index();
-            $t->timestamp('whatsapp_opened_at')->nullable();
+            $t->timestamp('compose_redirected_at')->nullable();
             $t->unsignedBigInteger('requested_by');
             $t->unsignedInteger('request_count')->default(1);
             $t->foreignId('feedback_id')->nullable()
