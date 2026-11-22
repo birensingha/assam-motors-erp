@@ -37,6 +37,13 @@ class AmFeedbackInvitationController extends Controller
         $name = trim((string)($c['customer_name'] ?? ''));
         $vehicle = trim((string)($c['vehicle'] ?? ''));
         $ref = trim((string)($c['job_card_ref'] ?? ''));
+        // Reject incomplete or overlong canonical snapshots before the insert.
+        // A bad ERP adapter must not cause an SQL truncation/500 or issue
+        // a feedback invitation without an identifiable service record.
+        abort_unless($name !== '' && mb_strlen($name) <= 160
+            && $vehicle !== '' && mb_strlen($vehicle) <= 32
+            && $ref !== '' && mb_strlen($ref) <= 64,
+            422, 'Verified Job Card labels required');
         // Never store the phone number or trust a browser-supplied destination.
         $phoneRaw = trim((string)($c['phone'] ?? ''));
         abort_unless($phoneRaw !== '' && preg_match('/\A[+0-9() .-]+\z/D', $phoneRaw),
