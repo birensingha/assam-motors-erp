@@ -1,5 +1,26 @@
 # AM245 Job Card feedback request / AM246 WhatsApp launch integration
 
+## Implemented GitHub-only AM245 invitation increment (22 Nov 2026)
+
+- `AmFeedbackInvitationSource` is an unbound interface: an authenticated ERP adapter must verify tenant-scoped Job Card, Customer, Vehicle, finished status, consent and phone. No financial ledger dependency.
+- `AmFeedbackInvitationController` checks the verified adapter, operator confirmation and permitted recipient, creates a seven-day hashed-token invitation, and opens WhatsApp compose for a manual send. This is NOT an automatic or confirmed delivery.
+- `2026_11_22_000000_create_am245_feedback_invitations.php` keeps a unique row per Job Card, hash-only opaque token, actor, expiry, request count, and optional response ID; re-request rotates the token, while a completed response cannot be reopened.
+- `feedback-invitation-routes.php` defines an Admin-gated invitation POST and separate public CSRF-protected, throttled token GET/POST. It must be mounted separately after route-prefix verification; do not double-mount the existing feedback routes.
+- `public-feedback.blade.php` offers the public 1-5 rating/comment form without financials or identifying snapshots. The public POST consumes the token in a locked transaction and links the feedback to canonical snapshots, once.
+- `job-card-feedback-action.blade.php` is a guarded reusable button partial. It is NOT inserted into the currently deployed ERP Job Card because its real Blade action source is missing.
+- The staging-only installer now includes AM245 invitation files in feedback scope, but does not bind the adapter, activate routes, change the existing ERP, run migrations or deploy.
+
+### Required before VERIFIED STAGING
+
+1. Obtain the non-secret structure preflight report from the actual Hostinger Laravel root; check actual Customer/Vehicle/Job Card models, service status, consent, Admin Gates and Job Card Blade actions.
+2. Implement and bind the invitation source adapter, mount optional routes once, and include the guarded partial in actual Job Card page after checking route namespaces and company scope.
+3. Review database state and backup before approved migration; test role denial, wrong company, incomplete Job Card, consent/invalid phone rejection, HTTPS, expiry, token rotation and one-time feedback save.
+4. Keep AM246 finance behind its distinct ledger permission gate, and verify authentic STAGING browser flows before reporting deployment.
+
+GitHub CI PASS shows source checks only, never installation or delivery.
+
+---
+
 Status: **DRAFT CODE ONLY; NOT DEPLOYED.** The sample Job Card discussed by the operator is an acceptance scenario, not a fixture. Never commit its customer identity or phone.
 
 ## Job Card action
