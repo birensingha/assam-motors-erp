@@ -75,6 +75,15 @@ class InvitationFlowSafetyTests(unittest.TestCase):
         self.assertIn("'compose_redirected_at'", self.controller)
         self.assertNotIn("whatsapp_sent", self.controller)
 
+    def test_concurrent_invitation_creation_uses_unique_job_card_upsert_guard(self):
+        self.assertIn("->insertOrIgnore([", self.controller)
+        self.assertIn("'job_card_id' => $jobCardId", self.controller)
+        self.assertIn("->where('job_card_id', $jobCardId)->lockForUpdate()->first()", self.controller)
+        self.assertIn("abort_if($existing->responded_at !== null", self.controller)
+        self.assertIn("'request_count' => $existing->request_count + 1", self.controller)
+        self.assertIn("$issued['hash']", self.controller)
+        self.assertIn("->unique()", self.schema)
+
     def test_expiry_one_time_submission_and_canonical_snapshot(self):
         for invariant in ("whereNull('responded_at')", "'expires_at', '>', now()",
                           "lockForUpdate()", "DB::transaction",
