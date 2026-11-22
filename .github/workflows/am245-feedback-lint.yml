@@ -29,6 +29,8 @@ jobs:
         run: python3 modules/am245-am246/tests/test_feedback_route_isolation.py
       - name: CSV spreadsheet formula security tests
         run: php modules/am245-am246/tests/test_feedback_csv.php
+      - name: Job Card feedback invitation tests
+        run: php modules/am245-am246/tests/test_job_card_feedback_invite.php
       - name: Staging and rollback safety tests
         run: python3 modules/am245-am246/tests/test_stage_feedback.py
       - name: Read-only staging preflight privacy tests
