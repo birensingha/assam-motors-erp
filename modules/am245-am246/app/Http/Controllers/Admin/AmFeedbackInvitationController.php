@@ -62,9 +62,28 @@ class AmFeedbackInvitationController extends Controller
         $message = AmJobCardFeedbackInvite::compose($name, $ref, $vehicle, $feedbackUrl);
         $now = now();
         DB::transaction(function () use ($c, $jobCardId, $name, $vehicle, $ref, $issued, $request, $now) {
+            // Concurrent Admin requests may both see no invitation. Insert an
+            // initial row idempotently under the unique Job Card constraint,
+            // then lock that exact row before rotating the token.
+            DB::table('am_feedback_invitations')->insertOrIgnore([
+                'job_card_id' => $jobCardId,
+                'customer_id' => $c['customer_id'],
+                'vehicle_id' => $c['vehicle_id'],
+                'customer_name_snapshot' => $name,
+                'vehicle_snapshot' => $vehicle,
+                'job_card_ref_snapshot' => $ref,
+                'token_hash' => $issued['hash'],
+                'expires_at' => $now->copy()->addDays(7),
+                'compose_redirected_at' => $now,
+                'requested_by' => (int)$request->user()->id,
+                'request_count' => 0,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
             $existing = DB::table('am_feedback_invitations')
                 ->where('job_card_id', $jobCardId)->lockForUpdate()->first();
-            abort_if($existing && $existing->responded_at !== null,
+            abort_unless($existing, 503, 'Invitation record unavailable');
+            abort_if($existing->responded_at !== null,
                 409, 'Feedback already submitted for this Job Card');
             $values = [
                 'customer_id' => $c['customer_id'],
@@ -78,17 +97,10 @@ class AmFeedbackInvitationController extends Controller
                 'requested_by' => (int)$request->user()->id,
                 'updated_at' => $now,
             ];
-            if ($existing) {
-                // Rotating the token invalidates any previously opened links.
-                DB::table('am_feedback_invitations')->where('id', $existing->id)
-                    ->update($values + ['request_count' => $existing->request_count + 1]);
-            } else {
-                DB::table('am_feedback_invitations')->insert($values + [
-                    'job_card_id' => $jobCardId,
-                    'request_count' => 1,
-                    'created_at' => $now,
-                ]);
-            }
+            // A fresh row starts at zero; every successful request increments
+            // once. A competing request rotates the prior token under lock.
+            DB::table('am_feedback_invitations')->where('id', $existing->id)
+                ->update($values + ['request_count' => $existing->request_count + 1]);
         });
 
         $redirect = redirect()->away('https://wa.me/'.$phone.'?text='.rawurlencode($message));
