@@ -4,7 +4,7 @@ use App\Http\Controllers\Admin\AmCustomerEngagementController;
 
 // AM245 FEEDBACK ONLY — requires real Owner/Admin Gate registration.
 // Mount once, after verifying existing route prefixes/middleware in deployed ERP.
-// Do not mount AM246 customer-messaging routes until canonical ledger is mapped.
+// Keep AM246 finance messaging disabled until the canonical ledger is mapped.
 Route::middleware(['web','auth','can:manage-customer-engagement'])
     ->prefix('erp/admin/customer-engagement')
     ->name('am.customer-engagement.')
