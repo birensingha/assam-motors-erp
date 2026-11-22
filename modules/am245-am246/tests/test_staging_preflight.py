@@ -17,6 +17,27 @@ class PreflightTests(unittest.TestCase):
             timeout=10,
         )
 
+    def test_explicit_root_from_another_working_directory_is_read_only(self):
+        with tempfile.TemporaryDirectory() as folder, tempfile.TemporaryDirectory() as elsewhere:
+            root = Path(folder)
+            (root / "artisan").write_text("<?php")
+            (root / ".env").write_text("APP_KEY=NEVER_PRINT_KEY")
+            (root / "routes").mkdir()
+            (root / "routes/web.php").write_text("Route::get('/customer', 'SECRET_ROUTE_SOURCE');")
+            before = {str(p.relative_to(root)): p.read_bytes()
+                      for p in root.rglob("*") if p.is_file()}
+            result = subprocess.run(
+                [sys.executable, str(SCRIPT), "--root", str(root)],
+                cwd=elsewhere, text=True, capture_output=True, check=False, timeout=10,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            self.assertIn("ARTISAN_PRESENT: yes", result.stdout)
+            self.assertNotIn("NEVER_PRINT_KEY", result.stdout + result.stderr)
+            self.assertNotIn("SECRET_ROUTE_SOURCE", result.stdout + result.stderr)
+            after = {str(p.relative_to(root)): p.read_bytes()
+                     for p in root.rglob("*") if p.is_file()}
+            self.assertEqual(before, after)
+
     def test_missing_artisan_fails_without_writing(self):
         with tempfile.TemporaryDirectory() as folder:
             root = Path(folder)
