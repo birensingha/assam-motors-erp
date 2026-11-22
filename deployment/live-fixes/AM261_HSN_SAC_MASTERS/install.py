@@ -139,9 +139,12 @@ def patch():
         'PART_LIST_HSN_VISIBLE')
 
     x=labour
-    src[x]=exact(src[x], 'SAC / HSN *<input name="sac_code"', 'SAC Code *<input name="sac_code"','LABOUR_CREATE_SAC_LABEL')
+    if src[x].count('SAC / HSN *<input name="sac_code"')!=2:
+        raise SystemExit('STOP_AM261_LABOUR_CREATE_EDIT_SAC_FIELDS_UNEXPECTED')
+    src[x]=src[x].replace('SAC / HSN *<input name="sac_code"',
+                        'SAC Code *<input name="sac_code"',2)
     src[x]=exact(src[x], "old('sac_code','998714')", "old('sac_code','')",'LABOUR_CREATE_NO_ASSUMED_SAC')
-    src[x]=exact(src[x], 'SAC / HSN *<input name="sac_code"', 'SAC Code *<input name="sac_code"','LABOUR_EDIT_SAC_LABEL')
+    # Both Create and Edit ROT/Labour SAC controls are now consistently labelled.
     src[x]=exact(src[x], "old('sac_code',$r->sac_code??'998714')", "($r->sac_code??'')",'LABOUR_EDIT_EXACT_SAVED_SAC')
     src[x]=exact(src[x], '<th>SAC / HSN</th>', '<th>SAC Code</th>','LABOUR_TABLE_SAC_LABEL')
     src[x]=exact(src[x],
