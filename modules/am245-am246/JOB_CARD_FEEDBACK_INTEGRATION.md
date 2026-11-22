@@ -10,6 +10,12 @@
 - `job-card-feedback-action.blade.php` is a guarded reusable button partial. It is NOT inserted into the currently deployed ERP Job Card because its real Blade action source is missing.
 - The staging-only installer now includes AM245 invitation files in feedback scope, but does not bind the adapter, activate routes, change the existing ERP, run migrations or deploy.
 
+### SSH preflight handoff (no application changes)
+
+The prior command `python3 staging_preflight.py` failed from the SSH home directory because the script was not present there. The preflight now accepts `--root` and can be run from a separate, temporary directory without placing scripts in the Laravel application.
+
+First locate the Laravel `artisan` file using a read-only search limited to the staging domain folder. Download the reviewed `tools/staging_preflight.py` from the PR branch into a temporary operator-controlled location, then run `python3 /path/to/staging_preflight.py --root /actual/laravel/root`. Do not run the script without first verifying the downloaded file matches the reviewed PR; avoid untrusted URLs. Do not share `.env`, database contents, or credentials. The output is structural metadata only and cannot by itself verify deployment.
+
 ### Required before VERIFIED STAGING
 
 1. Obtain the non-secret structure preflight report from the actual Hostinger Laravel root; check actual Customer/Vehicle/Job Card models, service status, consent, Admin Gates and Job Card Blade actions.
