@@ -9,6 +9,7 @@
 - `public-feedback.blade.php` offers the public 1-5 rating/comment form without financials or identifying snapshots. The public POST consumes the token in a locked transaction and links the feedback to canonical snapshots, once.
 - `job-card-feedback-action.blade.php` is a guarded reusable button partial. It is NOT inserted into the currently deployed ERP Job Card because its real Blade action source is missing.
 - The staging-only installer now includes AM245 invitation files in feedback scope, but does not bind the adapter, activate routes, change the existing ERP, run migrations or deploy.
+- Invitation creation now uses a unique-Job-Card `insertOrIgnore` followed by a row lock before rotation. This reduces duplicate-row SQL errors when two Admins request feedback concurrently. Last rotation still invalidates earlier compose links by design; authenticated MariaDB concurrency tests remain required before deployment.
 
 ### SSH preflight handoff (no application changes)
 
