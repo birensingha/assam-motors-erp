@@ -62,6 +62,7 @@ jobs:
           git archive FETCH_HEAD deployment/live-fixes/AM261_HSN_SAC_MASTERS | tar -x -C "$PATCH_DIR"
           python3 "$PATCH_DIR/deployment/live-fixes/AM261_HSN_SAC_MASTERS/audit.py" "$APP"
           python3 "$PATCH_DIR/deployment/live-fixes/AM261_HSN_SAC_MASTERS/audit_details.py" "$APP"
+          python3 "$PATCH_DIR/deployment/live-fixes/AM261_HSN_SAC_MASTERS/audit_quick.py" "$APP"
           REMOTE
       - name: Clean up SSH credential
         if: always()
