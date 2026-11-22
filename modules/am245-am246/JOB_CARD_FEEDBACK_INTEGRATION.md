@@ -52,3 +52,7 @@ Status: **DRAFT CODE ONLY; NOT DEPLOYED.** The sample Job Card discussed by the 
 6. Run regression tests, review migration and backup, and perform authenticated staging browser QA before claiming deployment.
 
 The example vehicle/job-card scenario is for manual acceptance only and must not be stored in automated test fixtures.
+
+### 2026-11-22 canonical label validation
+
+The AM245 invitation endpoint now refuses missing or oversized canonical customer name (160 characters), vehicle registration (32) and Job Card reference (64) before attempting the invitation database write. This prevents a faulty deployed ERP adapter from generating anonymous/ambiguous requests or database truncation errors. The regression suite asserts the guards. It does not replace company-scoped adapter integration or authenticated Hostinger QA.
