@@ -54,24 +54,24 @@ jobs:
           echo '=== ATTENDANCE ROUTE SOURCE (SELECTED LINES ONLY) ==='
           python3 - <<'PY'
           from pathlib import Path
-          import re
           lines=Path('routes/web.php').read_text(errors='replace').splitlines()
           for i,line in enumerate(lines,1):
               if "erp.attendance" in line and ('Route::' in line or '->name(' in line):
-                  print(f'ATTENDANCE_ROUTE_LINE={i}: {line.strip()[:260]}')
+                  print('ATTENDANCE_ROUTE_LINE='+str(i)+': '+line.strip()[:260])
           p=Path('app/Http/Controllers/Web/AdminNativeModuleController.php')
           if p.exists():
-              source=p.read_text(errors='replace')
-              match=re.search(r'function\\s+attendance\\s*\\(',source)
-              if match:
-                  head=source[:match.start()].count('\\n')+1
-                  segment=source[match.start():match.start()+25000]
-                  next_method=re.search(r'\\n\\s*(?:public|protected|private)\\s+function\\s+',segment[100:])
-                  if next_method:
-                      segment=segment[:next_method.start()+100]
-                  print('ATTENDANCE_METHOD_LINE='+str(head))
-                  for v in re.findall(r'view\\s*\\(\\s*["\\x27]([^"\\x27]+)',segment):
-                      print('ATTENDANCE_VIEW_REFERENCE='+v)
+              lines=p.read_text(errors='replace').splitlines()
+              for i,line in enumerate(lines):
+                  if 'function attendance(' in line or 'function attendance (' in line:
+                      print('ATTENDANCE_METHOD_LINE='+str(i+1))
+                      for j in range(i+1,min(i+170,len(lines))):
+                          s=lines[j].strip()
+                          if j>i+4 and ('public function ' in s or 'protected function ' in s or 'private function ' in s):
+                              break
+                          if any(w in s for w in ['view(', 'DB::table(', 'Attendance::', 'whereDate(', 'whereBetween(']):
+                              if not any(secret in s.lower() for secret in ['password','secret','token','private_key']):
+                                  print('ATTENDANCE_METHOD_HINT='+str(j+1)+': '+s[:250])
+                      break
           PY
 
           echo '=== RELEVANT SOURCE FILE PATHS (NO CONTENT) ==='
