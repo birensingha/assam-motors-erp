@@ -34,11 +34,13 @@ jobs:
       - name: Lint new PHP files
         run: |
           set -euo pipefail
-          for f in app/Services/Attendance/AttendanceDateRangeReport.php \
+          for f in app/Services/Attendance/ExistingAttendanceRowAdapter.php \
+            app/Services/Attendance/AttendanceDateRangeReport.php \
             app/Services/Payroll/AttendancePayrollCalculator.php \
             app/Services/Payroll/SalaryProfileSelector.php \
             app/Services/Payroll/PayrollReadinessGuard.php \
             app/Services/Payroll/ExistingHrSalaryProfileAdapter.php \
+            tests/Unit/ExistingAttendanceRowAdapterTest.php \
             tests/Unit/AttendanceDateRangeReportTest.php \
             tests/Unit/AttendancePayrollCalculatorTest.php \
             tests/Unit/SalaryMasterReviewTest.php \
