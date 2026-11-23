@@ -68,7 +68,7 @@ jobs:
                           s=lines[j].strip()
                           if j>i+4 and ('public function ' in s or 'protected function ' in s or 'private function ' in s):
                               break
-                          if any(w in s for w in ['view(', 'DB::table(', 'Attendance::', 'whereDate(', 'whereBetween(']):
+                          if any(w in s for w in ['view(', 'DB::table(', 'Attendance::', 'whereDate(', 'whereBetween(', 'startDate', 'endDate', "input('from", "query('from", "input('to", "query('to", "->validate("]):
                               if not any(secret in s.lower() for secret in ['password','secret','token','private_key']):
                                   print('ATTENDANCE_METHOD_HINT='+str(j+1)+': '+s[:250])
                       break
@@ -105,8 +105,8 @@ jobs:
                   echo 'TABLE='.$name.' COLUMNS='.implode(',', \Illuminate\Support\Facades\Schema::getColumnListing($name)).PHP_EOL;
                   if (++$printed >= 70) break;
               }
-              $statuses = \\Illuminate\\Support\\Facades\\DB::table('attendance')
-                  ->select('status', \\Illuminate\\Support\\Facades\\DB::raw('COUNT(*) AS total'))
+              $statuses = \Illuminate\Support\Facades\DB::table('attendance')
+                  ->select('status', \Illuminate\Support\Facades\DB::raw('COUNT(*) AS total'))
                   ->groupBy('status')->get();
               foreach ($statuses as $item) {
                   echo 'ATTENDANCE_STATUS='.(string)($item->status ?? 'NULL').' COUNT='.(int)$item->total.PHP_EOL;
