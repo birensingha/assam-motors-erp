@@ -1,0 +1,97 @@
+name: AM Attendance From-To Install on STAGING
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/am-attendance-fromto-staging.yml']
+  push:
+    branches: [feature/attendance-payroll-report-20261123]
+    paths: ['.github/workflows/am-attendance-fromto-staging.yml']
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  staging-install:
+    if: github.event_name == 'push' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feature/attendance-payroll-report-20261123')
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+      - name: PHP and Python static preflight
+        shell: bash
+        run: |
+          set -euo pipefail
+          php -l app/Http/Controllers/Web/AdminAttendanceRangeController.php
+          python3 -m py_compile deployment/live-fixes/AM_ATTENDANCE_FROMTO_20261123/deploy.py
+          test -s resources/views/admin/native/attendance-range.blade.php
+      - name: Upload payload (temporary, non-webroot)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 12 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/am-apply-key
+            chmod 600 ~/.ssh/am-apply-key
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -i ~/.ssh/am-apply-key -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq >/dev/null
+            sudo apt-get install -y -qq sshpass >/dev/null
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          tar -czf - \
+            app/Http/Controllers/Web/AdminAttendanceRangeController.php \
+            resources/views/admin/native/attendance-range.blade.php \
+            deployment/live-fixes/AM_ATTENDANCE_FROMTO_20261123/deploy.py \
+          | "${SSH[@]}" "$USERNAME@$HOST" \
+            'mkdir -p "$HOME/.am-attendance-range-payload-20261123" && tar -xz -C "$HOME/.am-attendance-range-payload-20261123"'
+      - name: Remote dry-run and backup-protected STAGING apply
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -n "$KEY" ]; then
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -i ~/.ssh/am-apply-key -p "$PORT")
+          else
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=25 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          PACK="$HOME/.am-attendance-range-payload-20261123"
+          SCRIPT="$PACK/deployment/live-fixes/AM_ATTENDANCE_FROMTO_20261123/deploy.py"
+          echo '=== PRECHECK NO ERP WRITE ==='
+          python3 "$SCRIPT" --root "$ROOT" --payload "$PACK"
+          echo '=== INSTALL WITH BACKUP & ROLLBACK ==='
+          python3 "$SCRIPT" --root "$ROOT" --payload "$PACK" --apply
+          echo '=== VERIFY PHP ROUTE ==='
+          cd "$ROOT"
+          php artisan route:list --path=erp/attendance | grep 'date-range'
+          echo 'STAGING_DATE_RANGE_READY'
+          REMOTE
+      - name: Public HTTP auth guard preflight (does not sign in)
+        shell: bash
+        run: |
+          code=$(curl -L --max-redirs 0 -o /dev/null -sS -w '%{http_code}' \
+            --max-time 25 'https://staging.assammotors.com/erp/attendance/date-range' || true)
+          echo "DATE_REPORT_UNAUTH_HTTP_STATUS=$code"
+          if [ "$code" = "200" ]; then
+            echo 'Unexpected unauthenticated 200 response; investigate before treating route as secure.'
+            exit 1
+          fi
+      - if: always()
+        run: rm -f ~/.ssh/am-apply-key
