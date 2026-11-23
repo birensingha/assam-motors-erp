@@ -1,5 +1,8 @@
 name: AM Attendance Controller Source Inspection (Read-only)
 on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/am-attendance-inspect-source.yml']
   push:
     branches: [feature/attendance-payroll-report-20261123]
     paths:
