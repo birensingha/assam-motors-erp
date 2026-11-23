@@ -105,7 +105,7 @@ final class AdminAttendanceRangeController extends Controller
                 'date'=>$date, 'department'=>(string)($entry->department ?? ''),
                 'check_in'=>$checkIn, 'check_out'=>$checkOut,
                 'hours'=>round($hours,2), 'status'=>$status,
-                'late'=>(bool)$entry->late, 'review'=>$review,
+                'late'=>in_array(strtolower(trim((string)($entry->late ?? ''))),['1','yes','true','late'],true), 'review'=>$review,
                 'duplicate'=>false,
             ];
             $rows[] = $row;
