@@ -3,6 +3,16 @@
 ## Current status
 This branch contains a **calculation engine and unit tests**, not a deployed or fully wired ERP feature. The repository's `main` currently lacks the Laravel runtime (`composer.json`, `artisan`, `routes/web.php`) and the original attendance schema/controllers. These must be added or made accessible before any safe integration.
 
+## Verified STAGING schema (2026-11-23, read-only)
+
+- Attendance source: `attendance` (staff_id, staff_code, staff_name, date, check_in, check_out, worked_hours, status, late). Current saved status values include `present`, `absent`, `off`. The adapter maps `off` to `weekly_off` without rewriting stored values.
+- Staff master: `staff`, keyed by ID and staff_code.
+- Existing monthly HR salary source: `hr_salary_impact_profiles` (staff_id, report_month, monthly_salary, scheduled_workdays, productivity target/recovery rate). Use `ExistingHrSalaryProfileAdapter` for payroll preview; **recovery rate is not overtime pay**.
+- Approved leaves: `hr_leave_entries`. Staff credits: `workshop_staff_finance_journals` and `workshop_staff_finance_lines`.
+- Existing web routes: `erp/attendance` and `erp/hr/salary-impact`. Do not create duplicate salary-rate storage.
+- The proposed separate salary-master migration was **removed** after discovery. No database migration has been applied.
+- Existing Attendance Controller already contains a date-range query, but its request parameters and UI filtering still need inspection and correction.
+
 ## Requested report
 - Filter **From Date / To Date** (inclusive), optional staff search, attendance status.
 - Daily columns: staff ID/name, attendance date, check-in/out, worked minutes, overtime minutes, late minutes, status.
@@ -23,7 +33,7 @@ This branch contains a **calculation engine and unit tests**, not a deployed or 
 1. Restore actual Laravel ERP source and schema into the repo (exclude `.env`, credentials, customer exports, production backups).
 2. Review existing Staff/Attendance entities, statuses, business rules, role middleware and real attendance time fields.
 3. Add report endpoint with validated date bounds, staff scoping, pagination, CSV/XLSX/PDF exports.
-4. Add salary profiles, effective dates, approved leave, holiday and overtime policies; migrations with rollback path.
+4. Reuse existing HR monthly salary profiles; add only missing payroll policy controls (approved leave, holidays, OT) after reviewing HR configuration and validating payroll divisor rules.
 5. Add payroll preview, locks, approval audit, and existing ledger voucher integration.
 6. Test HR/Admin permissions; no staff access to other employees' salaries.
 7. Deploy to staging only after backup and migrations review, verify report totals against saved attendance, then approve rollout.
