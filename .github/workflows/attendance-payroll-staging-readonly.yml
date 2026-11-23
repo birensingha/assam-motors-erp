@@ -1,5 +1,8 @@
 name: Inspect Staging Attendance Payroll Schema (Read-only)
 on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/attendance-payroll-staging-readonly.yml']
   push:
     branches: [feature/attendance-payroll-report-20261123]
     paths: ['.github/workflows/attendance-payroll-staging-readonly.yml']
@@ -10,6 +13,7 @@ concurrency:
   cancel-in-progress: false
 jobs:
   read-only-inspection:
+    if: github.event_name == 'push' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'feature/attendance-payroll-report-20261123')
     runs-on: ubuntu-latest
     timeout-minutes: 8
     env:
