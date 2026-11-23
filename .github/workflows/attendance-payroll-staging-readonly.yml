@@ -1,0 +1,88 @@
+name: Inspect Staging Attendance Payroll Schema (Read-only)
+on:
+  push:
+    branches: [feature/attendance-payroll-report-20261123]
+    paths: ['.github/workflows/attendance-payroll-staging-readonly.yml']
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  read-only-inspection:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Read source paths and metadata only (no writes)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 10 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/staging-readonly
+            chmod 600 ~/.ssh/staging-readonly
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=20 -o StrictHostKeyChecking=accept-new -i ~/.ssh/staging-readonly -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq >/dev/null
+            sudo apt-get install -y -qq sshpass >/dev/null
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=20 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          if [ ! -f "$ROOT/artisan" ]; then
+            echo 'STAGING_LARAVEL_ROOT_NOT_FOUND'
+            exit 0
+          fi
+          cd "$ROOT"
+          echo 'STAGING_LARAVEL_ROOT_FOUND'
+          echo '=== RELEVANT SOURCE FILE PATHS (NO CONTENT) ==='
+          find app/Http/Controllers app/Models -type f \( -iname '*Attend*' -o -iname '*Salary*' -o -iname '*Payroll*' -o -iname '*Hr*' \) -print 2>/dev/null | head -90 || true
+          echo '=== RELEVANT ROUTES (NAMES/URIS ONLY) ==='
+          timeout 80 php artisan route:list --json 2>/dev/null | php -r '
+            $routes = json_decode(stream_get_contents(STDIN), true);
+            if (!is_array($routes)) { echo "ROUTE_JSON_UNAVAILABLE\n"; exit; }
+            $printed = 0;
+            foreach ($routes as $route) {
+                $uri = (string)($route["uri"] ?? "");
+                $name = (string)($route["name"] ?? "");
+                if (preg_match("/attendance|salary|payroll|staff|hr|leave/i", $uri." ".$name)) {
+                    echo "ROUTE=".($route["method"] ?? "")." ".$uri." name=".$name." action=".($route["action"] ?? "")."\n";
+                    if (++$printed >= 100) break;
+                }
+            }' || true
+          echo '=== RELATED DATABASE TABLE COLUMNS (NO ROWS) ==='
+          timeout 90 php -d display_errors=0 <<'PHP'
+          <?php
+          try {
+              require 'vendor/autoload.php';
+              $app = require 'bootstrap/app.php';
+              $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+              $tables = \Illuminate\Support\Facades\DB::select('SHOW TABLES');
+              $printed = 0;
+              foreach ($tables as $table) {
+                  $fields = (array) $table;
+                  $name = (string) reset($fields);
+                  if (!preg_match('/staff|attend|salary|payroll|leave|holiday|advance/i', $name)) continue;
+                  echo 'TABLE='.$name.' COLUMNS='.implode(',', \Illuminate\Support\Facades\Schema::getColumnListing($name)).PHP_EOL;
+                  if (++$printed >= 70) break;
+              }
+              echo 'DB_SCHEMA_READ_ONLY_OK'.PHP_EOL;
+          } catch (\Throwable $e) {
+              echo 'DB_SCHEMA_CHECK_FAILED_CLASS='.get_class($e).PHP_EOL;
+          }
+          PHP
+          REMOTE
+      - name: Remove temporary SSH key
+        if: always()
+        run: rm -f ~/.ssh/staging-readonly
