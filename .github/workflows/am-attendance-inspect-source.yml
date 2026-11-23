@@ -1,0 +1,95 @@
+name: AM Attendance Controller Source Inspection (Read-only)
+on:
+  pull_request:
+    branches: [main]
+    paths: ['.github/workflows/am-attendance-inspect-source.yml']
+  push:
+    branches: [feature/attendance-payroll-report-20261123]
+    paths:
+      - '.github/workflows/am-attendance-inspect-source.yml'
+permissions:
+  contents: read
+concurrency:
+  group: assam-motors-staging-control
+  cancel-in-progress: false
+jobs:
+  inspect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      HOST: ${{ secrets.STAGING_SSH_HOST }}
+      PORT: ${{ secrets.STAGING_SSH_PORT }}
+      USERNAME: ${{ secrets.STAGING_SSH_USER }}
+      KEY: ${{ secrets.STAGING_SSH_PRIVATE_KEY }}
+      PASSWORD: ${{ secrets.STAGING_SSH_PASSWORD }}
+    steps:
+      - name: Examine attendance controller and view source without changing staging
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$HOST" && test -n "$PORT" && test -n "$USERNAME"
+          mkdir -p ~/.ssh
+          ssh-keyscan -T 15 -p "$PORT" -H "$HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          if [ -n "$KEY" ]; then
+            printf '%s\n' "$KEY" > ~/.ssh/am-read
+            chmod 600 ~/.ssh/am-read
+            SSH=(ssh -o BatchMode=yes -o ConnectTimeout=20 -o StrictHostKeyChecking=accept-new -i ~/.ssh/am-read -p "$PORT")
+          else
+            test -n "$PASSWORD"
+            sudo apt-get update -qq >/dev/null
+            sudo apt-get install -y -qq sshpass >/dev/null
+            export SSHPASS="$PASSWORD"
+            SSH=(sshpass -e ssh -o ConnectTimeout=20 -o StrictHostKeyChecking=accept-new -p "$PORT")
+          fi
+          "${SSH[@]}" "$USERNAME@$HOST" 'bash -s' <<'REMOTE'
+          set -euo pipefail
+          ROOT="$HOME/domains/assammotors.com/assam-erp-staging"
+          test -f "$ROOT/artisan"
+          cd "$ROOT"
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          ctl=Path('app/Http/Controllers/Web/AdminNativeModuleController.php')
+          s=ctl.read_text(errors='replace').splitlines()
+          begin=next((i for i,line in enumerate(s) if re.search(r'function\s+attendance\s*\(',line)),None)
+          if begin is None: raise SystemExit('ATTENDANCE_METHOD_MISSING')
+          end=next((i for i in range(begin+1,len(s)) if re.search(r'(public|protected|private)\s+function\s+',s[i])),len(s))
+          print('ATTENDANCE_LINES',begin+1,end)
+          safe=lambda line: '[REDACTED]' if re.search(r'(password|secret|api.key|private.key)',line,re.I) else line[:240]
+          for i in list(range(begin,min(begin+130,end)))+list(range(max(begin+130,end-85),end)):
+              print('ATT:%04d:%s'%(i+1,safe(s[i])))
+          views=re.findall(r"(?:view|View::make)\s*\(\s*['\"]([^'\"]+)",'\n'.join(s[begin:end]))
+          print('ATTENDANCE_VIEW_NAMES',views)
+          for name in set(views):
+              p=Path('resources/views/'+name.replace('.','/')+'.blade.php')
+              if p.exists():
+                  lines=p.read_text(errors='replace').splitlines()
+                  print('VIEW_FILE',str(p),'LINES',len(lines))
+                  for i,line in enumerate(lines):
+                      if any(v in line.lower() for v in ['from_date','to_date','date_from','date_to','export','filter','attendance','@foreach','<form','staff_id']):
+                          for j in range(max(0,i-1),min(len(lines),i+2)):
+                              if j>270: break
+                              print('VIEW:%04d:%s'%(j+1,safe(lines[j])))
+          p=Path('app/Http/Controllers/Web/HrSalaryImpactController.php')
+          if p.exists():
+              print('HR_SALARY_CONTROLLER_LINES',len(p.read_text(errors='replace').splitlines()))
+              for i,line in enumerate(p.read_text(errors='replace').splitlines()[:150]):
+                  print('SALARY:%04d:%s'%(i+1,safe(line)))
+          for p, spans in [
+              ('resources/views/admin/native/attendance.blade.php',[(1,22),(152,214)]),
+              ('resources/views/hr/salary-impact.blade.php',[(1,28)]),
+              ('routes/web.php',[(390,413),(433,450)]),
+              ('app/Support/HrAccess.php',[(1,110)]),
+              ('app/Services/HrSalaryImpactService.php',[(1,155)]),
+          ]:
+              f=Path(p)
+              if not f.exists(): continue
+              lines=f.read_text(errors='replace').splitlines()
+              print('SECTION_FILE',p,'LINES',len(lines))
+              for left,right in spans:
+                  for i in range(left-1,min(right,len(lines))):
+                      print('SECTION:%s:%04d:%s'%(p,i+1,safe(lines[i])))
+          PY
+          REMOTE
+      - if: always()
+        run: rm -f ~/.ssh/am-read
