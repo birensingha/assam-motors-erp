@@ -38,10 +38,11 @@ jobs:
             app/Services/Payroll/AttendancePayrollCalculator.php \
             app/Services/Payroll/SalaryProfileSelector.php \
             app/Services/Payroll/PayrollReadinessGuard.php \
-            database/migrations/2026_11_23_131900_create_am_staff_salary_profiles_table.php \
+            app/Services/Payroll/ExistingHrSalaryProfileAdapter.php \
             tests/Unit/AttendanceDateRangeReportTest.php \
             tests/Unit/AttendancePayrollCalculatorTest.php \
             tests/Unit/SalaryMasterReviewTest.php \
+            tests/Unit/ExistingHrSalaryProfileAdapterTest.php \
             tests/smoke/attendance_payroll.php; do
             php -l "$f"
           done
