@@ -1,0 +1,43 @@
+name: Attendance Payroll Foundation Checks
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'app/Services/Attendance/**'
+      - 'app/Services/Payroll/**'
+      - 'database/migrations/*am_staff_salary_profiles*'
+      - 'tests/Unit/*Attendance*'
+      - 'tests/Unit/*Salary*'
+      - 'tests/smoke/attendance_payroll.php'
+      - '.github/workflows/attendance-payroll-checks.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  lint-and-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          coverage: none
+      - name: Lint new PHP files
+        run: |
+          set -euo pipefail
+          for f in app/Services/Attendance/AttendanceDateRangeReport.php \
+            app/Services/Payroll/AttendancePayrollCalculator.php \
+            app/Services/Payroll/SalaryProfileSelector.php \
+            app/Services/Payroll/PayrollReadinessGuard.php \
+            database/migrations/2026_11_23_131900_create_am_staff_salary_profiles_table.php \
+            tests/Unit/AttendanceDateRangeReportTest.php \
+            tests/Unit/AttendancePayrollCalculatorTest.php \
+            tests/Unit/SalaryMasterReviewTest.php \
+            tests/smoke/attendance_payroll.php; do
+            php -l "$f"
+          done
+      - name: Dependency-free smoke test
+        run: php tests/smoke/attendance_payroll.php
+      - name: Notice
+        run: echo 'No staging deployment, database migration or accounting writes performed.'
