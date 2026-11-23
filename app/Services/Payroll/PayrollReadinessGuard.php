@@ -26,6 +26,9 @@ final class PayrollReadinessGuard
         }
 
         $issues = [];
+        if ($first->format('j') !== '1' || $last->format('Y-m-d') !== $last->format('Y-m-t')) {
+            $issues[] = 'Monthly payroll approval needs the full calendar month. For joiners/leavers, use a separate authorised prorated workflow.';
+        }
         $expected = [];
         foreach ($expectedDates as $date) {
             $this->validDate($date);
@@ -66,8 +69,12 @@ final class PayrollReadinessGuard
             if (($row['verified'] ?? false) !== true) {
                 $issues[] = 'Attendance needs HR verification: '.$date;
             }
+            if (in_array($status, ['present','half_day'], true)
+                && empty($row['check_in'])) {
+                $issues[] = 'Missing check-in: '.$date;
+            }
             if (($row['missing_checkout'] ?? false) === true
-                || (!empty($row['check_in']) && empty($row['check_out']))) {
+                || (in_array($status, ['present','half_day'], true) && empty($row['check_out']))) {
                 $issues[] = 'Missing checkout: '.$date;
             }
 
