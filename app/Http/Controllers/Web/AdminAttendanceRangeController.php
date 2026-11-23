@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\View\View;
 use Symfony\Component\HttpFoundation\StreamedResponse;
+use Illuminate\Http\RedirectResponse;
 
 final class AdminAttendanceRangeController extends Controller
 {
@@ -18,7 +19,7 @@ final class AdminAttendanceRangeController extends Controller
      * attendance corrections, check-in/out and staff APIs are NOT modified.
      * Salary figures here are indicative allocation only, NEVER payroll posting.
      */
-    public function index(Request $request): View|StreamedResponse
+    public function index(Request $request): View|StreamedResponse|RedirectResponse
     {
         $actor = $request->user();
         abort_unless(
