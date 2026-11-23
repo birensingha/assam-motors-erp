@@ -9,10 +9,12 @@ declare(strict_types=1);
 require_once __DIR__.'/../../app/Services/Attendance/AttendanceDateRangeReport.php';
 require_once __DIR__.'/../../app/Services/Payroll/SalaryProfileSelector.php';
 require_once __DIR__.'/../../app/Services/Payroll/PayrollReadinessGuard.php';
+require_once __DIR__.'/../../app/Services/Payroll/ExistingHrSalaryProfileAdapter.php';
 
 use App\Services\Attendance\AttendanceDateRangeReport;
 use App\Services\Payroll\SalaryProfileSelector;
 use App\Services\Payroll\PayrollReadinessGuard;
+use App\Services\Payroll\ExistingHrSalaryProfileAdapter;
 
 function check(bool $condition, string $label): void
 {
@@ -38,6 +40,14 @@ $policy = (new SalaryProfileSelector())->forPeriod('AM9472','2026-11-01','2026-1
         'payable_days_basis'=>'calendar','overtime_hourly_rate'=>100],
 ]);
 check($policy['monthly_salary'] === 30000.0, 'salary master rate selection');
+$existing = (new ExistingHrSalaryProfileAdapter())->policyForMonth('4','2026-11', [
+    ['staff_id'=>4,'report_month'=>'2026-11-01','monthly_salary'=>'27000.00',
+     'scheduled_workdays'=>26,'estimated_recovery_rate_per_hour'=>780],
+]);
+check($existing['monthly_salary'] === 27000.0, 'existing HR monthly salary reused');
+check($existing['overtime_hourly_rate'] === 0.0, 'recovery rate not treated as overtime wage');
+check($existing['requires_hr_policy_confirmation'] === true, 'HR payroll policy review required');
+
 
 $fullDates = [];
 $fullRecords = [];
