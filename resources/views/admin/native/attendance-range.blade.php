@@ -35,7 +35,7 @@
 <div class="amrange">
   <div class="no-print" style="margin-bottom:9px">
     <a class="action secondary" href="{{ route('erp.attendance') }}">← Monthly Attendance Matrix</a>
-    <a class="action secondary" href="{{ route('erp.hr.salary-impact') }}">HR Salary Configuration</a>
+    <a class="action secondary" href="{{ route('erp.staff-finance.index') }}">Staff Finance Ledger</a>
   </div>
   <h1>ASSAM MOTORS — Date Range Attendance Report</h1>
   <p>Staff App aur ERP ke saved attendance records · From Date–To Date · IST</p>
