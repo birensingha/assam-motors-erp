@@ -75,6 +75,20 @@ jobs:
               print('HR_SALARY_CONTROLLER_LINES',len(p.read_text(errors='replace').splitlines()))
               for i,line in enumerate(p.read_text(errors='replace').splitlines()[:150]):
                   print('SALARY:%04d:%s'%(i+1,safe(line)))
+          for p, spans in [
+              ('resources/views/admin/native/attendance.blade.php',[(1,22),(152,214)]),
+              ('resources/views/hr/salary-impact.blade.php',[(1,28)]),
+              ('routes/web.php',[(390,413),(433,450)]),
+              ('app/Support/HrAccess.php',[(1,110)]),
+              ('app/Services/HrSalaryImpactService.php',[(1,155)]),
+          ]:
+              f=Path(p)
+              if not f.exists(): continue
+              lines=f.read_text(errors='replace').splitlines()
+              print('SECTION_FILE',p,'LINES',len(lines))
+              for left,right in spans:
+                  for i in range(left-1,min(right,len(lines))):
+                      print('SECTION:%s:%04d:%s'%(p,i+1,safe(lines[i])))
           PY
           REMOTE
       - if: always()
