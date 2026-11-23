@@ -59,16 +59,22 @@ final class SalaryMasterReviewTest extends TestCase
         self::assertStringContainsString('Missing attendance day classification', implode(';', $result['issues']));
     }
 
-    public function test_review_succeeds_only_with_verified_daily_rows(): void
+    public function test_review_succeeds_only_with_verified_full_month(): void
     {
+        $days = [];
+        $attendance = [];
+        foreach (range(1, 30) as $day) {
+            $date = sprintf('2026-11-%02d', $day);
+            $days[] = $date;
+            $attendance[] = ['date' => $date, 'status' => 'weekly_off', 'verified' => true];
+        }
+        $attendance[1] = [
+            'date' => '2026-11-02', 'status' => 'present', 'verified' => true,
+            'check_in' => '09:00', 'check_out' => '18:00',
+            'overtime_minutes' => 60, 'overtime_approved' => true,
+        ];
         $result = (new PayrollReadinessGuard())->inspect(
-            '2026-11-01','2026-11-02', ['2026-11-01','2026-11-02'],
-            [
-                ['date'=>'2026-11-01','status'=>'weekly_off','verified'=>true],
-                ['date'=>'2026-11-02','status'=>'present','verified'=>true,
-                 'check_in'=>'09:00','check_out'=>'18:00','overtime_minutes'=>60,
-                 'overtime_approved'=>true],
-            ]
+            '2026-11-01','2026-11-30', $days, $attendance
         );
         self::assertTrue($result['ready']);
         self::assertSame([], $result['issues']);
