@@ -7,11 +7,13 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/../../app/Services/Attendance/AttendanceDateRangeReport.php';
+require_once __DIR__.'/../../app/Services/Attendance/ExistingAttendanceRowAdapter.php';
 require_once __DIR__.'/../../app/Services/Payroll/SalaryProfileSelector.php';
 require_once __DIR__.'/../../app/Services/Payroll/PayrollReadinessGuard.php';
 require_once __DIR__.'/../../app/Services/Payroll/ExistingHrSalaryProfileAdapter.php';
 
 use App\Services\Attendance\AttendanceDateRangeReport;
+use App\Services\Attendance\ExistingAttendanceRowAdapter;
 use App\Services\Payroll\SalaryProfileSelector;
 use App\Services\Payroll\PayrollReadinessGuard;
 use App\Services\Payroll\ExistingHrSalaryProfileAdapter;
@@ -29,6 +31,13 @@ $report = (new AttendanceDateRangeReport())->build([
     ['staff_id'=>'AM9472','staff_name'=>'Sample Staff','date'=>'2026-11-02','status'=>'missing_checkout','check_in'=>'09:00'],
     ['staff_id'=>'AM7887','staff_name'=>'Other Staff','date'=>'2026-11-01','status'=>'absent'],
 ], '2026-11-01','2026-11-02','AM9472');
+
+$saved = (new ExistingAttendanceRowAdapter())->map([
+    'staff_id'=>4,'staff_code'=>'AM9472','date'=>'2026-11-02',
+    'status'=>'off','worked_hours'=>0,
+]);
+check($saved['status'] === 'weekly_off', 'staging OFF status mapped to weekly off');
+check($saved['verified'] === false, 'unverified saved rows not automatically payroll-approved');
 
 check($report['total_rows'] === 2, 'inclusive From-To filter, staff-only rows');
 check($report['staff_summary'][0]['review_days'] === 1, 'missing checkout reported');
