@@ -1,5 +1,13 @@
 name: Attendance Payroll Foundation Checks
 on:
+  push:
+    branches:
+      - feature/attendance-payroll-report-20261123
+    paths:
+      - '.github/workflows/attendance-payroll-checks.yml'
+      - 'app/Services/Attendance/**'
+      - 'app/Services/Payroll/**'
+      - 'tests/smoke/attendance_payroll.php'
   pull_request:
     branches: [main]
     paths:
