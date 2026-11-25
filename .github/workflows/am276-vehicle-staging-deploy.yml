@@ -1,4 +1,5 @@
 name: AM276 Vehicle Cascading Variant Deploy
+# Run guarded staging deployment for requested customer variant fix
 # Revalidate staging after guarded rollout is available on main
 on:
   push:
