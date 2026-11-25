@@ -1,4 +1,5 @@
 name: AM277 Parts Picker Staging Source Audit
+# AM277 verification trigger: current staging code only
 on:
   pull_request:
     paths:
