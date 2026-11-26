@@ -1,0 +1,31 @@
+--- a/routes/web.php
++++ b/routes/web.php
+@@ -547,2 +547,5 @@
+ )->whereNumber('job')->name('erp.job-cards.delete-unused');
+ 
++// AM245_FEEDBACK_INTEGRATION: mount only after source/consent review and AM245 file staging.
++require __DIR__.'/am245-feedback.php';
++require __DIR__.'/am245-feedback-invitations.php';
+--- a/resources/views/job-cards/show.blade.php
++++ b/resources/views/job-cards/show.blade.php
+@@ -460,4 +460,8 @@
+ <nav class="am75-quick-actions" aria-label="Job Card quick actions">
+   <a class="am75-action" href="{{ route('erp.job-cards.summary-print',$job->id) }}" target="_blank" rel="noopener">Job Card Summary</a>
++  {{-- AM245: server-verified Job Card invitation, never a direct auto-send. --}}
++  @if(\Illuminate\Support\Facades\Route::has('am.feedback.invitations.open'))
++    @include('admin.engagement.job-card-feedback-action', ['jobCardId' => (int)$job->id])
++  @endif
+   <a class="am75-action am75-credit" href="{{ route('erp.job-cards.credit-correction',$job->id) }}">Credit Note</a>
+     @if($supplementaryReady)
+--- a/resources/views/layouts/erp.blade.php
++++ b/resources/views/layouts/erp.blade.php
+@@ -152,4 +152,9 @@
+         <a href="{{ route('erp.profit-control.index') }}" class="{{ request()->routeIs('erp.profit-control.*')?'active':'' }}"><span>📈</span> Profit Control</a>
+         <a href="{{ route('erp.customers') }}" class="{{ request()->routeIs('erp.customers*')?'active':'' }}"><span>👥</span> Customer</a>
++        @if(\Illuminate\Support\Facades\Route::has('am.customer-engagement.index'))
++          @can('manage-customer-engagement')
++            <a href="{{ route('am.customer-engagement.index') }}"><span>⭐</span> Customer Reviews &amp; Feedback</a>
++          @endcan
++        @endif
+         <a href="{{ route('erp.purchases.index') }}" class="{{ request()->routeIs('erp.purchases.*')?'active':'' }}"><span>📦</span> Purchase</a>
+         {{-- AM260_PO_GRN_SIDEBAR: Challan Procurement before Purchase Bill --}}
