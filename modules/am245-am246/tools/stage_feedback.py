@@ -23,6 +23,13 @@ import tempfile
 
 MODULE = Path(__file__).resolve().parent.parent
 COPY_MAP = {
+    "app/Support/Am245HostingerFeedbackCustomerSource.php":
+        "app/Support/Am245HostingerFeedbackCustomerSource.php",
+    "app/Support/Am245HostingerFeedbackInvitationSource.php":
+        "app/Support/Am245HostingerFeedbackInvitationSource.php",
+    "app/Providers/Am245HostingerServiceProvider.php":
+        "app/Providers/Am245HostingerServiceProvider.php",
+    "config/am245.php": "config/am245.php",
     "app/Contracts/AmFeedbackInvitationSource.php":
         "app/Contracts/AmFeedbackInvitationSource.php",
     "app/Support/AmFeedbackInvitationToken.php":
@@ -65,6 +72,10 @@ COPY_MAP = {
 FEEDBACK_COPY_MAP = {
     key: value for key, value in COPY_MAP.items()
     if key in {
+        "app/Support/Am245HostingerFeedbackCustomerSource.php",
+        "app/Support/Am245HostingerFeedbackInvitationSource.php",
+        "app/Providers/Am245HostingerServiceProvider.php",
+        "config/am245.php",
         "app/Contracts/AmFeedbackCustomerSource.php",
         "app/Contracts/AmFeedbackInvitationSource.php",
         "app/Support/AmFeedbackInvitationToken.php",
