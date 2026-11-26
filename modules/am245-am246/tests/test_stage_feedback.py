@@ -94,6 +94,26 @@ class SafeStageTests(unittest.TestCase):
         for target in required:
             self.assertFalse((self.root / target).exists(), target)
 
+    def test_hostinger_source_bindings_stage_without_activation(self):
+        entries = self.entries("feedback")
+        paths = {item[2] for item in entries}
+        for required in (
+            "app/Providers/Am245HostingerServiceProvider.php",
+            "app/Support/Am245HostingerFeedbackCustomerSource.php",
+            "app/Support/Am245HostingerFeedbackInvitationSource.php",
+            "config/am245.php",
+            "resources/views/admin/engagement/job-card-feedback-action.blade.php",
+        ):
+            self.assertIn(required, paths)
+        self.assertNotIn("app/Contracts/AmEngagementLedger.php", paths)
+        stage_tool.stage(self.root, entries, self.manifest())
+        self.assertFalse((self.root / "bootstrap/providers.php").exists())
+        self.assertEqual((self.root / "routes/web.php").read_text(),
+                         "ORIGINAL_ROUTES")
+        self.assertTrue((self.root / "config/am245.php").is_file())
+        stage_tool.rollback(self.root, self.manifest())
+        self.assertFalse((self.root / "config/am245.php").exists())
+
     def test_all_scope_has_finance_files_but_does_not_activate_routes(self):
         entries = self.entries("all")
         paths = [item[2] for item in entries]
