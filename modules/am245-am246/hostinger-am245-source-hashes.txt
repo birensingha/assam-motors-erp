@@ -1,0 +1,6 @@
+# SHA-256 hashes of user-supplied STAGING source snapshot (26 November 2026).
+# BEFORE applying the AM245 patch, compare against CURRENT Hostinger files.
+# A mismatch means STOP and re-review/rebase; do not overwrite current code.
+51c62d4b9b54495df4de3f21e8a0508b5320043eeeb1b7cb435cae96fbe877d8  routes/web.php
+aa9c2640f14d14187e6295ad417b75424d72d348bdf0aff11600acb3726d0f12  resources/views/job-cards/show.blade.php
+a3011aa5b12332cafeeeb5fe2499507c3df7346bcc63825bb99ebc42a2429bae  resources/views/layouts/erp.blade.php
