@@ -20,6 +20,12 @@ fail() { echo "AM245_STOP: $*" >&2; exit 2; }
 # All three hashes are from the user-supplied STAGING archive (26 Nov 2026).
 while read -r expected rel; do
   [[ -n "$expected" ]] || continue
+  [[ "$expected" == \#* ]] && continue  # human-readable manifest header
+  [[ "$expected" =~ ^[0-9a-f]{64}$ ]] || fail 'Invalid SHA-256 in source manifest'
+  case "$rel" in
+    routes/web.php|resources/views/job-cards/show.blade.php|resources/views/layouts/erp.blade.php) ;;
+    *) fail "Unapproved path in source manifest: $rel" ;;
+  esac
   [[ -f "$rel" && ! -L "$rel" ]] || fail "Missing or linked source: $rel"
   actual="$(sha256sum "$rel" | cut -d' ' -f1)"
   [[ "$actual" == "$expected" ]] || fail "Source changed since review: $rel"
