@@ -3,7 +3,7 @@ from pathlib import Path
 import sys,re
 root=Path(sys.argv[1]).resolve()
 assert (root/'artisan').is_file()
-paths=[root/'resources/views/job-cards/form.blade.php']
+paths=[root/'resources/views/job-cards/form.blade.php',root/'resources/views/job-cards/edit.blade.php']
 paths+=list((root/'app/Http/Controllers').rglob('*JobCard*Controller.php'))
 paths+=list((root/'app/Models').glob('*JobCard*.php'))
 paths+=list((root/'app/Services').glob('*JobCard*.php'))
@@ -15,5 +15,11 @@ for p in paths:
  print('FILE',p.relative_to(root))
  idx=set()
  for i in hits:idx.update(range(max(0,i-15),min(len(lines),i+35)))
+ if p.name=='edit.blade.php':idx.update(range(len(lines)))
+ if p.name=='AdminJobCardPageController.php':
+  for i,line in enumerate(lines):
+   if 'public function update(' in line:
+    end=next((j for j in range(i+1,len(lines)) if re.match(r'    (public|private|protected) function ',lines[j])),len(lines))
+    idx.update(range(i,end))
  for i in sorted(idx):print(f'{i+1}: {lines[i]}')
 print('ODOMETER_SOURCE_AUDIT_PASS')
